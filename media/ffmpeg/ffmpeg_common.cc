@@ -1,0 +1,138 @@
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+#include "media/ffmpeg/ffmpeg_common.h"
+
+#include "base/logging.h"
+
+namespace media {
+
+static const AVRational kMicrosBase = { 1, base::Time::kMicrosecondsPerSecond };
+
+base::TimeDelta ConvertFromTimeBase(const AVRational& time_base,
+                                    int64 timestamp) {
+  int64 microseconds = av_rescale_q(timestamp, time_base, kMicrosBase);
+  return base::TimeDelta::FromMicroseconds(microseconds);
+}
+
+int64 ConvertToTimeBase(const AVRational& time_base,
+                        const base::TimeDelta& timestamp) {
+  return av_rescale_q(timestamp.InMicroseconds(), kMicrosBase, time_base);
+}
+
+VideoCodec CodecIDToVideoCodec(CodecID codec_id) {
+  switch (codec_id) {
+    case CODEC_ID_VC1:
+      return kCodecVC1;
+    case CODEC_ID_H264:
+      return kCodecH264;
+    case CODEC_ID_THEORA:
+      return kCodecTheora;
+    case CODEC_ID_MPEG2VIDEO:
+      return kCodecMPEG2;
+    case CODEC_ID_MPEG4:
+      return kCodecMPEG4;
+    case CODEC_ID_VP8:
+      return kCodecVP8;
+    default:
+      NOTREACHED();
+  }
+  return kUnknown;
+}
+
+CodecID VideoCodecToCodecID(VideoCodec video_codec) {
+  switch (video_codec) {
+    case kCodecVC1:
+      return CODEC_ID_VC1;
+    case kCodecH264:
+      return CODEC_ID_H264;
+    case kCodecTheora:
+      return CODEC_ID_THEORA;
+    case kCodecMPEG2:
+      return CODEC_ID_MPEG2VIDEO;
+    case kCodecMPEG4:
+      return CODEC_ID_MPEG4;
+    case kCodecVP8:
+      return CODEC_ID_VP8;
+    default:
+      NOTREACHED();
+  }
+  return CODEC_ID_NONE;
+}
+
+bool GetSeekTimeAfter(AVStream* stream, const base::TimeDelta& timestamp,
+                      base::TimeDelta* seek_time) {
+  DCHECK(stream);
+  DCHECK(timestamp >= base::TimeDelta::FromSeconds(0));
+  DCHECK(seek_time);
+
+  // Make sure we have index data.
+  if (!stream->index_entries || stream->nb_index_entries <= 0)
+    return false;
+
+  // Search for the index entry >= the specified timestamp.
+  int64 stream_ts = ConvertToTimeBase(stream->time_base, timestamp);
+  int i = av_index_search_timestamp(stream, stream_ts, 0);
+
+  if (i < 0)
+    return false;
+
+  if (stream->index_entries[i].timestamp == static_cast<int64>(AV_NOPTS_VALUE))
+    return false;
+
+  *seek_time = ConvertFromTimeBase(stream->time_base,
+                                   stream->index_entries[i].timestamp);
+  return true;
+}
+
+
+bool GetStreamByteCountOverRange(AVStream* stream,
+                                 const base::TimeDelta& start_time,
+                                 const base::TimeDelta& end_time,
+                                 int64* bytes,
+                                 base::TimeDelta* range_start,
+                                 base::TimeDelta* range_end) {
+  DCHECK(stream);
+  DCHECK(start_time < end_time);
+  DCHECK(start_time >= base::TimeDelta::FromSeconds(0));
+  DCHECK(bytes);
+  DCHECK(range_start);
+  DCHECK(range_end);
+
+  // Make sure the stream has index data.
+  if (!stream->index_entries || stream->nb_index_entries <= 1)
+    return false;
+
+  // Search for the index entries associated with the timestamps.
+  int64 start_ts = ConvertToTimeBase(stream->time_base, start_time);
+  int64 end_ts = ConvertToTimeBase(stream->time_base, end_time);
+  int i = av_index_search_timestamp(stream, start_ts, AVSEEK_FLAG_BACKWARD);
+  int j = av_index_search_timestamp(stream, end_ts, 0);
+
+  // Make sure start & end indexes are valid.
+  if (i < 0 || j < 0)
+    return false;
+
+  // Shouldn't happen because start & end use different seek flags, but we want
+  // to know about it if they end up pointing to the same index entry.
+  DCHECK_NE(i, j);
+
+  AVIndexEntry* start_ie = &stream->index_entries[i];
+  AVIndexEntry* end_ie = &stream->index_entries[j];
+
+  // Make sure index entries have valid timestamps & position data.
+  if (start_ie->timestamp == static_cast<int64>(AV_NOPTS_VALUE) ||
+      end_ie->timestamp == static_cast<int64>(AV_NOPTS_VALUE) ||
+      start_ie->timestamp >= end_ie->timestamp ||
+      start_ie->pos >= end_ie->pos) {
+    return false;
+  }
+
+  *bytes = end_ie->pos - start_ie->pos;
+  *range_start = ConvertFromTimeBase(stream->time_base, start_ie->timestamp);
+  *range_end = ConvertFromTimeBase(stream->time_base, end_ie->timestamp);
+  return true;
+}
+
+}  // namespace media

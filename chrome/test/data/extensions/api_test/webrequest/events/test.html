@@ -1,0 +1,283 @@
+<script>
+var getURL = chrome.extension.getURL;
+var expectedEventData;
+var capturedEventData;
+var tabId;
+
+// PORT will be changed to the port of the test server.
+var URL_HTTP_SIMPLE_LOAD =
+    'http://www.a.com:PORT/files/extensions/api_test/webrequest/events/simpleLoad/a.html';
+
+function runTests(tests) {
+  chrome.tabs.getSelected(null, function(tab) {
+    tabId = tab.id;
+    chrome.test.getConfig(function(config) {
+      var fixPort = function(url) {
+        return url.replace(/PORT/, config.testServer.port);
+      };
+      URL_HTTP_SIMPLE_LOAD = fixPort(URL_HTTP_SIMPLE_LOAD);
+
+      chrome.test.runTests(tests);
+    });
+  });
+}
+
+var readyCount = 0;
+function succeedIfReady() {
+  if (++readyCount == 0)
+    chrome.test.succeed();
+}
+
+// Helper to advance to the next test only when the tab has finished loading.
+// This is because tabs.update can sometimes fail if the tab is in the middle
+// of a navigation (from the previous test), resulting in flakiness.
+function navigateAndWait(url) {
+  chrome.tabs.onUpdated.addListener(function listener(_, info, tab) {
+    if (tab.id == tabId && info.status == "complete") {
+      chrome.tabs.onUpdated.removeListener(listener);
+      succeedIfReady();
+    }
+  });
+  --readyCount;
+  chrome.tabs.update(tabId, {url: url});
+}
+
+function expect(data, filter, extraInfoSpec) {
+  expectedEventData = data;
+  capturedEventData = [];
+  --readyCount;
+  removeListeners();
+  initListeners(filter, extraInfoSpec);
+}
+
+function checkExpectations() {
+  if (capturedEventData.length < expectedEventData.length) {
+    return;
+  }
+  // TODO(mpcomplete): allow partial ordering of events
+  chrome.test.assertEq(JSON.stringify(expectedEventData),
+      JSON.stringify(capturedEventData));
+  succeedIfReady();
+}
+
+function captureEvent(name, details) {
+  // Ignore system-level requests like safebrowsing updates and favicon fetches
+  // since they are unpredictable.
+  if (details.tabId == -1 || details.type == "other" ||
+      details.url.match(/\/favicon.ico$/))
+    return;
+
+  // Pull the extra per-event options out of the expected data. These let
+  // us specify special return values per event.
+  var currentIndex = capturedEventData.length;
+  var extraOptions;
+  if (expectedEventData.length > currentIndex) {
+    extraOptions = expectedEventData[currentIndex][2];
+    expectedEventData[currentIndex].splice(2, 1);
+  }
+
+  delete details.requestId;
+  delete details.timeStamp;
+  capturedEventData.push([name, details]);
+  checkExpectations();
+  return extraOptions ? extraOptions.retval : undefined;
+}
+
+function initListeners(filter, extraInfoSpec) {
+  chrome.experimental.webRequest.onBeforeRequest.addListener(
+      function(details) {
+    return captureEvent("onBeforeRequest", details);
+  }, filter, extraInfoSpec);
+  chrome.experimental.webRequest.onBeforeSendHeaders.addListener(
+      function(details) {
+    return captureEvent("onBeforeSendHeaders", details);
+  }, filter, extraInfoSpec);
+  chrome.experimental.webRequest.onRequestSent.addListener(
+      function(details) {
+    return captureEvent("onRequestSent", details);
+  }, filter, extraInfoSpec);
+  chrome.experimental.webRequest.onHeadersReceived.addListener(
+      function(details) {
+    return captureEvent("onHeadersReceived", details);
+  }, filter, extraInfoSpec);
+  chrome.experimental.webRequest.onBeforeRedirect.addListener(
+      function(details) {
+    return captureEvent("onBeforeRedirect", details);
+  }, filter, extraInfoSpec);
+  chrome.experimental.webRequest.onCompleted.addListener(
+      function(details) {
+    return captureEvent("onCompleted", details);
+  }, filter, extraInfoSpec);
+  chrome.experimental.webRequest.onErrorOccurred.addListener(
+      function(details) {
+    return captureEvent("onErrorOccurred", details);
+  }, filter, extraInfoSpec);
+}
+
+function removeListeners() {
+  function helper(event) {
+    // Note: We're poking at the internal event data, but it's easier than
+    // the alternative. If this starts failing, we just need to update this
+    // helper.
+    for (var cb in event.callbackMap_) {
+      event.removeListener(cb);
+    }
+    chrome.test.assertEq(0, event.subEvents_.length);
+  }
+  helper(chrome.experimental.webRequest.onBeforeRequest);
+  helper(chrome.experimental.webRequest.onBeforeSendHeaders);
+  helper(chrome.experimental.webRequest.onRequestSent);
+  helper(chrome.experimental.webRequest.onHeadersReceived);
+  helper(chrome.experimental.webRequest.onBeforeRedirect);
+  helper(chrome.experimental.webRequest.onCompleted);
+  helper(chrome.experimental.webRequest.onErrorOccurred);
+}
+
+runTests([
+  // Navigates to a blank page.
+  function simpleLoad() {
+    expect([
+      [ "onBeforeRequest",
+        {
+          method: "GET",
+          tabId: tabId,
+          type: "main_frame",
+          url: getURL("simpleLoad/a.html")
+        }
+      ],
+    ]);
+    navigateAndWait(getURL("simpleLoad/a.html"));
+  },
+
+  // Navigates to a blank page via HTTP. Only HTTP requests get the
+  // onBeforeSendHeaders event.
+  function simpleLoadHttp() {
+    expect([
+      [ "onBeforeRequest",
+        {
+          method: "GET",
+          tabId: tabId,
+          type: "main_frame",
+          url: URL_HTTP_SIMPLE_LOAD
+        }
+      ],
+      [ "onBeforeSendHeaders",
+        {
+          url: URL_HTTP_SIMPLE_LOAD
+        }
+      ],
+    ]);
+    navigateAndWait(URL_HTTP_SIMPLE_LOAD);
+  },
+
+  // Navigates to a page with subresources.
+  // TODO(mpcomplete): add multiple subresources; requires support for
+  // recognizing partial ordering.
+  function complexLoad() {
+    expect([
+      [ "onBeforeRequest",
+        {
+          method: "GET",
+          tabId: tabId,
+          type: "main_frame",
+          url: getURL("complexLoad/a.html")
+        }
+      ],
+      [ "onBeforeRequest",
+        {
+          method: "GET",
+          tabId: tabId,
+          type: "sub_frame",
+          url: getURL("complexLoad/b.html")
+        }
+      ],
+      [ "onBeforeRequest",
+        {
+          method: "GET",
+          tabId: tabId,
+          type: "image",
+          url: getURL("complexLoad/b.jpg")
+        }
+      ],
+    ]);
+    navigateAndWait(getURL("complexLoad/a.html"));
+  },
+
+  // Navigates to a page with subresources, with a blocking handler that
+  // cancels the page request. The page will not load, and we should not
+  // see the subresources.
+  function complexLoadCancelled() {
+    expect([
+      [ "onBeforeRequest",
+        {
+          method: "GET",
+          tabId: tabId,
+          type: "main_frame",
+          url: getURL("complexLoad/a.html")
+        },
+        { retval: {cancel: true} }
+      ]
+    ], {}, ["blocking"]);
+    navigateAndWait(getURL("complexLoad/a.html"));
+  },
+
+  // Navigates to a page with a blocking handler that redirects to a different
+  // page.
+  // TODO(mpcomplete): will get an onBeforeRedirect event for the new request.
+  function complexLoadRedirected() {
+    expect([
+      [ "onBeforeRequest",
+        {
+          method: "GET",
+          tabId: tabId,
+          type: "main_frame",
+          url: getURL("complexLoad/a.html")
+        },
+        { retval: {redirectUrl: getURL("simpleLoad/a.html")} }
+      ],
+      // TODO(mpcomplete): This second event should not fire in general. Our
+      // process switching logic cancels the original redirect request and
+      // starts this new one. See http://crbug.com/79520.
+      [ "onBeforeRequest",
+        {
+          method: "GET",
+          tabId: tabId,
+          type: "main_frame",
+          url: getURL("simpleLoad/a.html")
+        },
+      ]
+    ], {}, ["blocking"]);
+    navigateAndWait(getURL("complexLoad/a.html"));
+  },
+
+  // Loads several resources, but should only see the complexLoad main_frame
+  // and image due to the filter.
+  function complexLoadFiltered() {
+    expect([
+      [ "onBeforeRequest",
+        {
+          method: "GET",
+          tabId: tabId,
+          type: "main_frame",
+          url: getURL("complexLoad/a.html")
+        }
+      ],
+      [ "onBeforeRequest",
+        {
+          method: "GET",
+          tabId: tabId,
+          type: "image",
+          url: getURL("complexLoad/b.jpg")
+        }
+      ]
+    ], {urls: [getURL("complexLoad/*")],
+        types: ["main_frame", "image"],
+        tabId: tabId}, []);
+    chrome.tabs.create({ url: getURL("simpleLoad/a.html") },
+        function(newTab) {
+      chrome.tabs.remove(newTab.id);
+      navigateAndWait(getURL("complexLoad/a.html"));
+    });
+  },
+]);
+</script>

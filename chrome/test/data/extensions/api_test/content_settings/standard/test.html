@@ -1,0 +1,37 @@
+<script>
+// Content settings API test
+// Run with browser_tests --gtest_filter=ExtensionApiTest.ContentSettings
+
+var cs = chrome.experimental.contentSettings;
+function expect(expected, message) {
+  return chrome.test.callbackPass(function(value) {
+    chrome.test.assertEq(expected, value, message);
+  });
+}
+chrome.test.runTests([
+  function getBlockThirdPartyCookies() {
+    cs.misc.blockThirdPartyCookies.get(
+        {}, 
+        expect({ 'value': true,
+                 'levelOfControl': "ControllableByThisExtension" },
+               "third-party cookies should be blocked"));
+  },
+  function getEnableReferrers() {
+    cs.misc.enableReferrers.get(
+        {},
+        expect({ 'value': false,
+                 'levelOfControl': "ControllableByThisExtension" },
+               "referrers should be disabled"));
+  },
+  function setBlockThirdPartyCookies() {
+    cs.misc.blockThirdPartyCookies.set(
+        {'value': false},
+        chrome.test.callbackPass());
+  },
+  function setEnableReferrers() {
+    cs.misc.enableReferrers.set(
+        {'value': true},
+        chrome.test.callbackPass());
+  }
+]);
+</script>

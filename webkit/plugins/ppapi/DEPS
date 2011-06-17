@@ -1,0 +1,9 @@
+include_rules = [
+  "+gpu/command_buffer",
+  "+ppapi/c",
+  "+ppapi/shared_impl",
+  "+printing",
+  "+media/video",
+  "+skia",
+  "+ui/base",
+]
