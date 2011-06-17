@@ -7,3 +7,33 @@ A browser based on Chromium open-source project.
 Features:
 - automatic updates on Windows
 - manual/automatic updates on Mac
+
+Build instructions:
+- create a project directory somewhere (PROJECT_DIR)
+- $ cd PROJECT_DIR
+- $ git clone git://github.com/crystalnix/BitPop.git src
+  this will clone the repo to PROJECT_DIR/src directory
+  (you should use exact name "src")
+- install the depot_tools using 
+  http://dev.chromium.org/developers/how-tos/install-depot-tools
+  as a reference
+- $ gclient config http://src.chromium.org/svn/releases/12.0.742.100
+- Optionally: edit .gclient file replacing "custom_deps" entry with
+  "custom_deps": {      
+    "src/third_party/WebKit/LayoutTests": None,
+    "src/chrome/tools/test/reference_build/chrome": None,
+    "src/chrome_frame/tools/test/reference_build/chrome": None,
+    "src/chrome/tools/test/reference_build/chrome_linux": None,
+    "src/chrome/tools/test/reference_build/chrome_mac": None,
+    "src/third_party/hunspell_dictionaries": None,
+  }
+  This will reduce the size of your checkout.
+- $ gclient sync
+- Windows:
+    - open src/chrome/chrome.sln
+    - build one of the projects (you will possibly want to build "chrome")
+    - do what you like with it
+  Mac:
+    - $ cd src/chrome
+    - $ xcodebuild -project chrome.xcodeproj -configuration Debug -target chrome
+    - do what you like with a build in src/xcodebuild/Debug 
