@@ -494,6 +494,8 @@ extern const char kRegisteredProtocolHandlers[];
 
 extern const char kUserCreatedLoginItem[];
 
+extern const char kAutomaticUpdatesEnabled[];
+  
 }  // namespace prefs
 
 #endif  // CHROME_COMMON_PREF_NAMES_H_

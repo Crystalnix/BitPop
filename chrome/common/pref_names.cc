@@ -1340,4 +1340,5 @@ const char kRegisteredProtocolHandlers[] = "registered_protocol_handlers";
 // uninstalling background apps.
 const char kUserCreatedLoginItem[] = "background_mode.user_created_login_item";
 
+const char kAutomaticUpdatesEnabled[] = "automatic_updates.enabled";
 }  // namespace prefs

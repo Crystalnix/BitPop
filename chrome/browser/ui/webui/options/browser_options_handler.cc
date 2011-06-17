@@ -74,6 +74,8 @@ void BrowserOptionsHandler::GetLocalizedValues(
     { "instantConfirmTitle", IDS_INSTANT_OPT_IN_TITLE },
     { "instantConfirmMessage", IDS_INSTANT_OPT_IN_MESSAGE },
     { "defaultBrowserGroupName", IDS_OPTIONS_DEFAULTBROWSER_GROUP_NAME },
+    { "checkForUpdateGroupName", IDS_OPTIONS_CHECKFORUPDATE_GROUP_NAME },
+    { "updatesAutoCheckDaily", IDS_OPTIONS_UPDATES_AUTOCHECK_LABEL },
   };
 
   RegisterStrings(localized_strings, resources, arraysize(resources));
