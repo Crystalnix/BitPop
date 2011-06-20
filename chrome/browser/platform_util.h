@@ -63,6 +63,7 @@ std::string GetVersionStringModifier();
 // Returns true if the running browser can be set as the default browser.
 bool CanSetAsDefaultBrowser();
 
+void setUseAutomaticUpdates(bool useAutomaticUpdates);
 }
 
 #endif  // CHROME_BROWSER_PLATFORM_UTIL_H_

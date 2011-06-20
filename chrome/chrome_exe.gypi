@@ -306,6 +306,7 @@
           ],
           'mac_bundle_resources': [
             '<(PRODUCT_DIR)/<(mac_bundle_id).manifest',
+            'app/resources/dsa_pub.pem',
           ],
           'actions': [
             {

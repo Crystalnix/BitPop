@@ -17,6 +17,8 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
+#import "SUUpdater.h"
+
 namespace platform_util {
 
 void ShowItemInFolder(const FilePath& full_path) {
@@ -211,6 +213,11 @@ std::string GetVersionStringModifier() {
 
 bool CanSetAsDefaultBrowser() {
   return GetVersionStringModifier().compare("canary") != 0;
+}
+
+void setUseAutomaticUpdates(bool useAutomaticUpdates)
+{
+  [[SUUpdater sharedUpdater] setAutomaticallyDownloadsUpdates: (useAutomaticUpdates ? YES : NO)];
 }
 
 }  // namespace platform_util

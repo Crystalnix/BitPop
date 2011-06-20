@@ -121,6 +121,9 @@ void BrowserOptionsHandler::RegisterMessages() {
   web_ui_->RegisterMessageCallback(
       "toggleShowBookmarksBar",
       NewCallback(this, &BrowserOptionsHandler::ToggleShowBookmarksBar));
+  web_ui_->RegisterMessageCallback(
+      "toggleAutomaticUpdates",
+      NewCallback(this, &BrowserOptionsHandler::ToggleAutomaticUpdates));
 }
 
 void BrowserOptionsHandler::Initialize() {
@@ -431,6 +434,11 @@ void BrowserOptionsHandler::ToggleShowBookmarksBar(const ListValue* args) {
       NotificationType::BOOKMARK_BAR_VISIBILITY_PREF_CHANGED,
       source,
       NotificationService::NoDetails());
+}
+
+void BrowserOptionsHandler::ToggleAutomaticUpdates(const ListValue* args) {
+  PrefService* prefService = web_ui_->GetProfile()->GetPrefs();
+  platform_util::setUseAutomaticUpdates(prefService->GetBoolean(prefs::kAutomaticUpdatesEnabled));
 }
 
 void BrowserOptionsHandler::OnResultChanged(bool default_match_changed) {

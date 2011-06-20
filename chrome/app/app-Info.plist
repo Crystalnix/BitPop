@@ -232,7 +232,7 @@
 		</dict>
 	</array>
 	<key>LSFileQuarantineEnabled</key>
-	<true/>
+	<false/>
 	<key>LSHasLocalizedDisplayName</key>
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
@@ -257,5 +257,11 @@
 			</dict>
 		</dict>
 	</array>
+	<key>SUPublicDSAKeyFile</key>
+	<string>dsa_pub.pem</string>
+	<key>SUFeedURL</key>
+	<string>http://localhost/mac/feed</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 </dict>
 </plist>

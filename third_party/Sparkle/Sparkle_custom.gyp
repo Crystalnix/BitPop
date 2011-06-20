@@ -19,7 +19,7 @@
               'xcode_config_file': 'Configurations/ConfigFrameworkRelease.xcconfig',
             },
           },
-          'product_name': 'Sparkle Framework',
+          'product_name': 'Sparkle',
           'mac_bundle': 1,
           'xcode_settings': {
             'DYLIB_INSTALL_NAME_BASE': '@loader_path/Frameworks',
