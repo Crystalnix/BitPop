@@ -29,10 +29,14 @@
           },
           'variables': {
             'sparkle_public_headers': [
-              'SUUpdater.h',
-              'SUPlainInstallerInternals.h',
+              'Sparkle.h',
               'SUAppcast.h',
               'SUAppcastItem.h',
+              'SUUpdater.h',
+              'SUVersionComparisonProtocol.h',
+            ],
+            'sparkle_private_headers': [
+              'SUPlainInstallerInternals.h',
               'SUUpdateAlert.h',
               'SUStatusController.h',
               'SUDSAVerifier.h',
@@ -60,8 +64,6 @@
               'SUHost.h',
               'bspatch.h',
               'SUBinaryDeltaUnarchiver.h',
-            ],
-            'sparkle_private_headers': [
               'SUBinaryDeltaApply.h',
               'SUBinaryDeltaCommon.h',
             ],
