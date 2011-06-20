@@ -76,7 +76,7 @@
       # 'branding', such as symbol generation, will need to be refactored based
       # on 'buildtype' (i.e. we don't care about saving symbols for non-Official
       # builds).
-      'buildtype%': 'Dev',
+      'buildtype%': 'Official',
 
       # Default architecture we're building for is the architecture we're
       # building on.
@@ -428,7 +428,7 @@
           ['branding=="Chrome"', {
             'mac_product_name%': 'Google Chrome',
           }, { # else: branding!="Chrome"
-            'mac_product_name%': 'Chromium',
+            'mac_product_name%': 'BitPop',
           }],
 
           # Feature variables for enabling Mac Breakpad and Keystone auto-update

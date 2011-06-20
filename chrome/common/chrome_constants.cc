@@ -12,7 +12,7 @@
 #if defined(GOOGLE_CHROME_BUILD)
 #define PRODUCT_STRING "Google Chrome"
 #elif defined(CHROMIUM_BUILD)
-#define PRODUCT_STRING "Chromium"
+#define PRODUCT_STRING "BitPop"
 #else
 #error Unknown branding
 #endif
@@ -58,8 +58,8 @@ const wchar_t kNaClAppName[] = L"nacl64";
 const wchar_t kBrowserAppName[] = L"Chrome";
 const char    kStatsFilename[] = "ChromeStats2";
 #else
-const wchar_t kBrowserAppName[] = L"Chromium";
-const char    kStatsFilename[] = "ChromiumStats2";
+const wchar_t kBrowserAppName[] = L"BitPop";
+const char    kStatsFilename[] = "BitPopStats2";
 #endif
 
 #if defined(OS_WIN)
