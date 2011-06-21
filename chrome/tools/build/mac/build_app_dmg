@@ -45,5 +45,4 @@ BITPOP_DMG_RESOURCES_PATH="${SRCROOT}/installer/mac/resources"
              --copy "${SRC_APP_PATH}/:/${APP_NAME}.app/" \
              --copy "${BITPOP_DMG_RESOURCES_PATH}/DS_Store:/.DS_Store" \
              --copy "${BITPOP_DMG_RESOURCES_PATH}/background/:/.background/" \
-             --copy "${BITPOP_DMG_RESOURCES_PATH}/VolumeIcon.icns:/.VolumeIcon.icns" \
              --symlink "/Applications: "

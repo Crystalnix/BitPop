@@ -17,6 +17,9 @@
             },
             'Release': {
               'xcode_config_file': 'Configurations/ConfigFrameworkRelease.xcconfig',
+              'xcode_settings': {
+                'GCC_GENERATE_DEBUGGING_SYMBOLS': 'YES',
+              },
             },
           },
           'product_name': 'Sparkle',
@@ -134,7 +137,7 @@
             '<(PRODUCT_DIR)/relaunch',
           ],
           'include_dirs': [
-            '..',
+            '.', '..',
           ],
           'link_settings': {
             'libraries': [
@@ -150,27 +153,19 @@
           },
           'postbuilds': [
             {
-              'postbuild_name': 'Set git Version Info',
-              'inputs': ['postbuild_1.rb'],
-              'action': [
-                '/usr/bin/env', 'ruby',
-                'postbuild_1.rb',
-              ],
-            },
-            {
               'postbuild_name': 'Link fr_CA to fr',
-              'inputs': ['postbuild_2.rb'],
               'action': [
                 '/usr/bin/env', 'ruby',
-                'postbuild_2.rb',
+                '-e', 'resources = "#{ENV["BUILT_PRODUCTS_DIR"]}/#{ENV["WRAPPER_NAME"]}/Resources"',
+                '-e', '`ln -sfh "fr.lproj" "#{resources}/fr_CA.lproj"`', 
               ],
             },
             {
               'postbuild_name': 'Link pt to pt_BR',
-              'inputs': ['postbuild_3.rb'],
               'action': [
                 '/usr/bin/env', 'ruby',
-                'postbuild_3.rb',
+                '-e', 'resources = "#{ENV["BUILT_PRODUCTS_DIR"]}/#{ENV["WRAPPER_NAME"]}/Resources"',
+                '-e', '`ln -sfh "pt_BR.lproj" "#{resources}/pt.lproj"`',
               ],
             },
           ],
