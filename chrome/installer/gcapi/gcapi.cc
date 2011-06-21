@@ -19,16 +19,16 @@
 namespace {
 
 const wchar_t kChromeRegClientsKey[] =
-    L"Software\\Google\\Update\\Clients\\"
-    L"{8A69D345-D564-463c-AFF1-A69D9E530F96}";
+    L"Software\\HouseOfLife\\Update\\Clients\\"
+    L"{5B73C40A-84CA-406C-B1FD-5863DA4A41EE}";
 const wchar_t kChromeRegClientStateKey[] =
-    L"Software\\Google\\Update\\ClientState\\"
-    L"{8A69D345-D564-463c-AFF1-A69D9E530F96}";
+    L"Software\\HouseOfLife\\Update\\ClientState\\"
+    L"{5B73C40A-84CA-406C-B1FD-5863DA4A41EE}";
 const wchar_t kChromeRegLaunchCmd[] = L"InstallerSuccessLaunchCmdLine";
 const wchar_t kChromeRegLastLaunchCmd[] = L"LastInstallerSuccessLaunchCmdLine";
 const wchar_t kChromeRegVersion[] = L"pv";
 const wchar_t kNoChromeOfferUntil[] =
-    L"SOFTWARE\\Google\\No Chrome Offer Until";
+    L"SOFTWARE\\HouseOfLife\\No Chrome Offer Until";
 
 // Return the company name specified in the file version info resource.
 bool GetCompanyName(const wchar_t* filename, wchar_t* buffer, DWORD out_len) {

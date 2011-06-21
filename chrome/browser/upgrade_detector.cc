@@ -165,7 +165,7 @@ UpgradeDetector::UpgradeDetector()
   // Windows: only enable upgrade notifications for official builds.
   // Mac: only enable them if the updater (Keystone) is present.
   // Linux (and other POSIX): always enable regardless of branding.
-#if (defined(OS_WIN) && defined(GOOGLE_CHROME_BUILD)) || defined(OS_POSIX)
+#if (defined(OS_WIN) /*&& defined(GOOGLE_CHROME_BUILD)*/) || defined(OS_POSIX)
 #if defined(OS_MACOSX)
   if (keystone_glue::KeystoneEnabled())
 #endif

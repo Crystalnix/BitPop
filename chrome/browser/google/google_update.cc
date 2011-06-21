@@ -30,14 +30,15 @@ namespace {
 
 // The registry location of the Google Update policies.
 const wchar_t kGUPolicyRegistrySubKey[] =
-    L"SOFTWARE\\Policies\\Google\\Update";
+    L"SOFTWARE\\Policies\\HouseOfLife\\Update";
 const wchar_t kGUPolicyGlobalValue[] = L"UpdateDefault";
 const wchar_t kGUPolicyAppValuePrefix[] = L"Update";
 const DWORD kGUPolicyUpdatesDisabled = 0;
 
 // Checks if the updates have been disabled by policy.
 bool IsUpdateDisabledByPolicy(const std::wstring& guid) {
-#if !defined(GOOGLE_CHROME_BUILD)
+//#if !defined(GOOGLE_CHROME_BUILD)
+#if !defined(OS_WIN)
   return true;
 #else
   std::wstring value_name(kGUPolicyAppValuePrefix);
@@ -59,7 +60,8 @@ bool IsUpdateDisabledByPolicy(const std::wstring& guid) {
 // distribution installed in a standard location.
 GoogleUpdateErrorCode CanUpdateCurrentChrome(
     const std::wstring& chrome_exe_path) {
-#if !defined(GOOGLE_CHROME_BUILD)
+#if !defined(OS_WIN)
+//#if !defined(GOOGLE_CHROME_BUILD)
   return CANNOT_UPGRADE_CHROME_IN_THIS_DIRECTORY;
 #else
   // TODO(tommi): Check if using the default distribution is always the right

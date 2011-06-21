@@ -6,10 +6,10 @@
 
 namespace google_update {
 
-const wchar_t kChromeUpgradeCode[] = L"{8A69D345-D564-463C-AFF1-A69D9E530F96}";
+const wchar_t kChromeUpgradeCode[] = L"{5B73C40A-84CA-406C-B1FD-5863DA4A41EE}";
 
-const wchar_t kRegPathClients[] = L"Software\\Google\\Update\\Clients";
-const wchar_t kRegPathClientState[] = L"Software\\Google\\Update\\ClientState";
+const wchar_t kRegPathClients[] = L"Software\\HouseOfLife\\Update\\Clients";
+const wchar_t kRegPathClientState[] = L"Software\\HouseOfLife\\Update\\ClientState";
 const wchar_t kRegPathClientStateMedium[]
     = L"Software\\Google\\Update\\ClientStateMedium";
 
