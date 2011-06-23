@@ -237,10 +237,9 @@ be available for now. -->
         <ph name="PAGE_TITLE">$1<ex>Google</ex></ph>
       </message>
       <message name="IDS_ABOUT_VERSION_COMPANY_NAME" desc="Company name on the about pages">
-        The Chromium Authors and House of Life Property ltd.
+        House of Life Property ltd.
       </message>
       <message name="IDS_ABOUT_VERSION_COPYRIGHT" desc="Copyright information on the about pages">
-        Copyright © 2006-2011 The Chromium Authors. All Rights Reserved.
         Copyright © 2011 House of Life Property ltd.
       </message>
       <message name="IDS_ABOUT_VERSION_LICENSE" desc="The label below the copyright message, containing the URLs.">

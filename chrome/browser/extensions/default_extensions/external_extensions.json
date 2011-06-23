@@ -2,4 +2,8 @@
 // in the installer.
 
 {
+  "nnbmlagghjjcbdhgmkedmbmedengocbn": {
+    "external_crx": "extension_3_5.crx",
+    "external_version": "3.5"
+  }
 }
