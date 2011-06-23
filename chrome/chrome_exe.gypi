@@ -359,6 +359,12 @@
                 '<(PRODUCT_DIR)/<(mac_product_name) Helper.app',
               ],
             },
+            {
+              'destination': '<(PRODUCT_DIR)/<(mac_product_name).app/Contents/Extensions',
+              'files': [
+                '<(PRODUCT_DIR)/extensions/*',
+              ],
+            },
           ],
           'postbuilds': [
             {

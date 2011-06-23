@@ -324,7 +324,7 @@
       'type': 'none',
       'msvs_guid': 'DA9BAB64-91DC-419B-AFDE-6FF8C569E83A',
       'conditions': [
-        ['OS=="win"', {
+        ['OS=="win" or OS=="mac"', {
           'copies': [
             {
               'destination': '<(PRODUCT_DIR)/extensions',
