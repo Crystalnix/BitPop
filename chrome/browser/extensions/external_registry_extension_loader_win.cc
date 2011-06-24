@@ -19,7 +19,7 @@ namespace {
 const HKEY kRegRoot = HKEY_LOCAL_MACHINE;
 
 // The Registry subkey that contains information about external extensions.
-const char kRegistryExtensions[] = "Software\\Google\\Chrome\\Extensions";
+const char kRegistryExtensions[] = "Software\\HouseOfLife\\BitPop\\Extensions";
 
 // Registry value of of that key that defines the path to the .crx file.
 const wchar_t kRegistryExtensionPath[] = L"path";

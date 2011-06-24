@@ -11,7 +11,7 @@ const wchar_t kChromeUpgradeCode[] = L"{5B73C40A-84CA-406C-B1FD-5863DA4A41EE}";
 const wchar_t kRegPathClients[] = L"Software\\HouseOfLife\\Update\\Clients";
 const wchar_t kRegPathClientState[] = L"Software\\HouseOfLife\\Update\\ClientState";
 const wchar_t kRegPathClientStateMedium[]
-    = L"Software\\Google\\Update\\ClientStateMedium";
+    = L"Software\\HouseOfLife\\Update\\ClientStateMedium";
 
 const wchar_t kRegCommandsKey[] = L"Commands";
 

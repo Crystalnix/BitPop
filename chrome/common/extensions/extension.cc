@@ -240,7 +240,7 @@ const FilePath::CharType Extension::kMessagesFilename[] =
 
 #if defined(OS_WIN)
 const char Extension::kExtensionRegistryPath[] =
-    "Software\\Google\\Chrome\\Extensions";
+    "Software\\HouseOfLife\\BitPop\\Extensions";
 #endif
 
 // first 16 bytes of SHA256 hashed public key.
