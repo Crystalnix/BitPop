@@ -76,7 +76,7 @@
       # 'branding', such as symbol generation, will need to be refactored based
       # on 'buildtype' (i.e. we don't care about saving symbols for non-Official
       # builds).
-      'buildtype%': 'Official',
+      'buildtype%': 'Dev',
 
       # Default architecture we're building for is the architecture we're
       # building on.

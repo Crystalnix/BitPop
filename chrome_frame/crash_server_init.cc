@@ -6,8 +6,8 @@
 
 #include "version.h"  // NOLINT
 
-const wchar_t kChromePipeName[] = L"\\\\.\\pipe\\ChromeCrashServices";
-const wchar_t kGoogleUpdatePipeName[] = L"\\\\.\\pipe\\GoogleCrashServices\\";
+const wchar_t kChromePipeName[] = L"\\\\.\\pipe\\BitPopCrashServices";
+const wchar_t kGoogleUpdatePipeName[] = L"\\\\.\\pipe\\HouseOfLifeCrashServices\\";
 const wchar_t kSystemPrincipalSid[] = L"S-1-5-18";
 
 const wchar_t kFullMemoryCrashReport[] = L"full-memory-crash-report";

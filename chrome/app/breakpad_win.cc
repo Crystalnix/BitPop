@@ -53,8 +53,8 @@ const MINIDUMP_TYPE kFullDumpType = static_cast<MINIDUMP_TYPE>(
     MiniDumpWithHandleData |  // Get all handle information.
     MiniDumpWithUnloadedModules);  // Get unloaded modules when available.
 
-const wchar_t kGoogleUpdatePipeName[] = L"\\\\.\\pipe\\GoogleCrashServices\\";
-const wchar_t kChromePipeName[] = L"\\\\.\\pipe\\ChromeCrashServices";
+const wchar_t kGoogleUpdatePipeName[] = L"\\\\.\\pipe\\HouseOfLifeCrashServices\\";
+const wchar_t kChromePipeName[] = L"\\\\.\\pipe\\BitPopCrashServices";
 
 // This is the well known SID for the system principal.
 const wchar_t kSystemPrincipalSid[] =L"S-1-5-18";
