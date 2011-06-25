@@ -25,8 +25,8 @@ const char kChromeVersionEnvVar[] = "CHROME_VERSION";
 // The following should not be used for UI strings; they are meant
 // for system strings only. UI changes should be made in the GRD.
 #if defined(OS_WIN)
-const FilePath::CharType kBrowserProcessExecutableName[] = FPL("chrome.exe");
-const FilePath::CharType kHelperProcessExecutableName[] = FPL("chrome.exe");
+const FilePath::CharType kBrowserProcessExecutableName[] = FPL("bitpop.exe");
+const FilePath::CharType kHelperProcessExecutableName[] = FPL("bitpop.exe");
 #elif defined(OS_LINUX)
 const FilePath::CharType kBrowserProcessExecutableName[] = FPL("chrome");
 // Helper processes end up with a name of "exe" due to execing via
@@ -38,8 +38,8 @@ const FilePath::CharType kHelperProcessExecutableName[] =
     FPL(PRODUCT_STRING " Helper");
 #endif  // OS_*
 #if defined(OS_WIN)
-const FilePath::CharType kBrowserProcessExecutablePath[] = FPL("chrome.exe");
-const FilePath::CharType kHelperProcessExecutablePath[] = FPL("chrome.exe");
+const FilePath::CharType kBrowserProcessExecutablePath[] = FPL("bitpop.exe");
+const FilePath::CharType kHelperProcessExecutablePath[] = FPL("bitpop.exe");
 #elif defined(OS_LINUX)
 const FilePath::CharType kBrowserProcessExecutablePath[] = FPL("chrome");
 const FilePath::CharType kHelperProcessExecutablePath[] = FPL("chrome");

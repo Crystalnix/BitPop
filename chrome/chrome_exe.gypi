@@ -428,7 +428,7 @@
               # NOTE: chrome/app/theme/chromium/BRANDING and
               # chrome/app/theme/google_chrome/BRANDING have the short names,
               # etc.; should we try to extract from there instead?
-              'product_name': 'chrome'
+              'product_name': 'bitpop'
             }],
             # On Mac, this is done in chrome_dll.gypi.
             ['internal_pdf', {
