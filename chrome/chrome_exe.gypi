@@ -303,6 +303,7 @@
             'helper_app',
             'infoplist_strings_tool',
             'chrome_manifest_bundle',
+            'default_extensions',
           ],
           'mac_bundle_resources': [
             '<(PRODUCT_DIR)/<(mac_bundle_id).manifest',
@@ -362,7 +363,8 @@
             {
               'destination': '<(PRODUCT_DIR)/<(mac_product_name).app/Contents/Extensions',
               'files': [
-                '<(PRODUCT_DIR)/extensions/*',
+                '<(PRODUCT_DIR)/extensions/external_extensions.json',
+                '<(PRODUCT_DIR)/extensions/extension_3_5.crx',
               ],
             },
           ],
