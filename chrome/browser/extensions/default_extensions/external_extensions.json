@@ -3,7 +3,6 @@
 
 {
   "nnbmlagghjjcbdhgmkedmbmedengocbn": {
-    "external_crx": "extension_3_5.crx",
-    "external_version": "3.5"
+    "external_update_url": "http://clients2.google.com/service/update2/crx"
   }
 }

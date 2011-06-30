@@ -364,7 +364,6 @@
               'destination': '<(PRODUCT_DIR)/<(mac_product_name).app/Contents/Extensions',
               'files': [
                 '<(PRODUCT_DIR)/extensions/external_extensions.json',
-                '<(PRODUCT_DIR)/extensions/extension_3_5.crx',
               ],
             },
           ],

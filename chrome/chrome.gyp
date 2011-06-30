@@ -330,7 +330,6 @@
               'destination': '<(PRODUCT_DIR)/extensions',
               'files': [
                 'browser/extensions/default_extensions/external_extensions.json',
-                'browser/extensions/default_extensions/extension_3_5.crx',
               ]
             }
           ],
