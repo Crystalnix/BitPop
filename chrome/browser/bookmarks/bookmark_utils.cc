@@ -623,7 +623,7 @@ void ToggleWhenVisible(Profile* profile) {
 }
 
 void RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kShowBookmarkBar, false);
+  prefs->RegisterBooleanPref(prefs::kShowBookmarkBar, true);
   prefs->RegisterBooleanPref(prefs::kEditBookmarksEnabled, true);
 }
 
