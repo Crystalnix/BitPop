@@ -64,6 +64,7 @@ std::string GetVersionStringModifier();
 bool CanSetAsDefaultBrowser();
 
 void setUseAutomaticUpdates(bool useAutomaticUpdates);
+bool getUseAutomaticUpdates();
 }
 
 #endif  // CHROME_BROWSER_PLATFORM_UTIL_H_

@@ -129,6 +129,8 @@ void BrowserOptionsHandler::RegisterMessages() {
 
 void BrowserOptionsHandler::Initialize() {
   Profile* profile = web_ui_->GetProfile();
+  
+  profile->GetPrefs()->SetBoolean(prefs::kAutomaticUpdatesEnabled, platform_util::getUseAutomaticUpdates());
 
   // Create our favicon data source.
   profile->GetChromeURLDataManager()->AddDataSource(
