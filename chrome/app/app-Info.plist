@@ -232,7 +232,7 @@
 		</dict>
 	</array>
 	<key>LSFileQuarantineEnabled</key>
-	<false/>
+	<true/>
 	<key>LSHasLocalizedDisplayName</key>
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
