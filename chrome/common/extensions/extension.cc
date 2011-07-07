@@ -1789,7 +1789,7 @@ bool Extension::InitFromValue(const DictionaryValue& source, int flags,
     }
 
     scoped_ptr<Version> current_version(
-        Version::GetVersionFromString(current_version_info.Version()));
+        Version::GetVersionFromString(current_version_info.ChromiumReleaseVersion()));
     if (!current_version.get()) {
       DCHECK(false);
       return false;

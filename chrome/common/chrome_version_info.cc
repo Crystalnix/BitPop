@@ -10,6 +10,9 @@
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
 
+// Generated header
+#include "chrome/common/chrome_release_version_info.h"
+
 namespace chrome {
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
@@ -86,5 +89,9 @@ bool VersionInfo::IsOfficialBuild() const {
 }
 
 #endif
+
+std::string VersionInfo::ChromiumReleaseVersion() const {
+  return CHROMIUM_RELEASE_VERSION;
+}
 
 }  // namespace chrome
