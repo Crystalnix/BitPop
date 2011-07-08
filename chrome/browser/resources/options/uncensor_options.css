@@ -1,0 +1,28 @@
+#uncensorPage table {
+  border-collapse: collapse;
+  border: 1px solid #ccc;
+  width: 80%;
+}
+
+#uncensorPage table th {
+  padding: 5px;
+  text-align: left;
+}
+
+#uncensorPage table td {
+  padding: 2px 3px;
+  text-align: left;
+}
+
+#uncensorPage .highlight {
+  background-color: #ddf;
+}
+
+#uncensorPage .delete-icon {
+  display: none;
+  float: right;
+}
+
+#uncensorPage .highlight .delete-icon {
+  display: block;
+}

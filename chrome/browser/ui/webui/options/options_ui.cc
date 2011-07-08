@@ -35,6 +35,7 @@
 #include "chrome/browser/ui/webui/options/search_engine_manager_handler.h"
 #include "chrome/browser/ui/webui/options/stop_syncing_handler.h"
 #include "chrome/browser/ui/webui/options/sync_setup_handler.h"
+#include "chrome/browser/ui/webui/options/uncensor_options_handler.h"
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/jstemplate_builder.h"
 #include "chrome/common/time_format.h"
@@ -235,6 +236,8 @@ OptionsUI::OptionsUI(TabContents* contents)
 #if defined(USE_NSS)
   AddOptionsPageUIHandler(localized_strings, new CertificateManagerHandler());
 #endif
+
+  AddOptionsPageUIHandler(localized_strings, new UncensorOptionsHandler());
 
   // |localized_strings| ownership is taken over by this constructor.
   OptionsUIHTMLSource* html_source =

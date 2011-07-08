@@ -1,0 +1,21 @@
+{
+  "name": "Uncensor filter",
+  "version": "1.0",
+  "description": "BitPop will redirect you to new locations of unlawfully censored sites.",
+  "background_page": "background.html",
+  "options_page": "options.html",
+//  "page_action" :
+//  {
+//    "default_icon" : "icon-19.png",
+//    "default_title" : "There's a 'G' in this URL!"
+//  },
+  "permissions" : [
+    "tabs",
+    "notifications",
+    "chrome://favicon/"
+  ]
+//  "icons" : {
+//    "48" : "icon-48.png",
+//    "128" : "icon-128.png"
+//  }
+}

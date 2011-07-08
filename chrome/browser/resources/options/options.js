@@ -27,6 +27,8 @@ var SearchEngineManager = options.SearchEngineManager;
 var SearchPage = options.SearchPage;
 var SyncSetupOverlay = options.SyncSetupOverlay;
 
+var UncensorOptions = options.UncensorOptions;
+
 /**
  * DOMContentLoaded handler, sets up the page.
  */
@@ -163,6 +165,8 @@ function load() {
                                 SystemOptions.getInstance(),
                                 [$('modifier-keys-button')]);
   }
+
+  OptionsPage.register(UncensorOptions.getInstance());
 
   Preferences.getInstance().initialize();
   OptionsPage.initialize();
