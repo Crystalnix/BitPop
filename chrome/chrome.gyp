@@ -1004,6 +1004,43 @@
           'variables': {
             'build_app_dmg_script_path': 'tools/build/mac/build_app_dmg',
           },
+          'conditions': [
+            ['buildtype=="Official"', {
+              'dependencies': ['installer_packaging'],
+              'variables': {
+                'mac_packaging_dir':
+                    '<(PRODUCT_DIR)/<(mac_product_name) Packaging',
+                'sign_app_script_path': '<(mac_packaging_dir)/sign_app.sh',
+                'sign_versioned_dir_script_path': '<(mac_packaging_dir)/sign_versioned_dir.sh',
+                'codesign_id': 'House of Life',
+                'codesign_keychain': 'login.keychain',
+              },
+              'actions+': [
+                {
+                  'action_name': 'Sign versioned directory',
+                  'inputs': ['<(sign_versioned_dir_script_path)', '<(PRODUCT_DIR)/<(mac_product_name).app', ],
+                  'outputs': [],
+                  'action': [
+                    '<(sign_versioned_dir_script_path)',
+                    '<(PRODUCT_DIR)/<(mac_product_name).app',
+                    '<(codesign_keychain)',
+                    '<(codesign_id)',
+                  ],
+                },
+                {
+                  'action_name': 'Sign application',
+                  'inputs': ['<(sign_app_script_path)', '<(PRODUCT_DIR)/<(mac_product_name).app', ],
+                  'outputs': [],
+                  'action': [
+                    '<(sign_app_script_path)',
+                    '<(PRODUCT_DIR)/<(mac_product_name).app',
+                    '<(codesign_keychain)',
+                    '<(codesign_id)',
+                  ],
+                },
+              ],
+            },],
+          ],
           'actions': [
             {
               'inputs': [
