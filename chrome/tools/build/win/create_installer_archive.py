@@ -308,6 +308,8 @@ def main(options):
   CopyAllFilesToStagingDir(config, options.distribution,
                            staging_dir, options.output_dir)
 
+  RunSystemCommand('C:\dev\sign.bat %s %s' % (staging_dir, current_version))
+
   version_numbers = current_version.split('.')
   current_build_number = version_numbers[2] + '.' + version_numbers[3]
   prev_build_number = ''
