@@ -55,6 +55,91 @@ function save() {
   localStorage.prefs = JSON.stringify(prefs);
 }
 
+function insertRow(dst, domainPair)
+{
+  var table = dst;
+  var compartmentTable = null;
+  var prefDictionary = null;
+  var compartmentDictionary = null;
+  var anchorTitle = "";
+  
+  switch (dst.id) {
+    case 'domain_filter_table':
+      prefDictionary = 'domainFilter';
+      compartmentDictionary = 'domainExceptions';
+      compartmentTable = document.getElementById('domain_exceptions_table');
+      anchorTitle = 'Exclude domains. Moves highlighted domain pair to Exceptions list.';
+      break;
+    case 'domain_exceptions_table':
+      prefDictionary = 'domainExceptions';
+      compartmentDictionary = 'domainFilter';
+      compartmentTable = document.getElementById('domain_filter_table');
+      anchorTitle = 'Enable domains. Moves highlighted domain pair to The Filter list.'
+      break;
+  }
+  
+  var tbody = table.getElementsByTagName('tbody').length ? table.getElementsByTagName('tbody')[0] : undefined;
+  if (tbody == undefined) {
+    tbody = document.createElement('tbody');
+    table.appendChild(tbody);
+  }
+  
+  var newRow = tbody.insertRow(-1);
+  newRow.onmouseover = function() { this.className = 'highlight'; };
+  newRow.onmouseout = function() { this.className = ''; };
+  
+  var oCell = newRow.insertCell(-1);
+  oCell.innerHTML = "<img src='web.png' width='16' height='16' alt='' />";
+  oCell.vAlign = "middle";
+  oCell.style.width = "20px";
+  
+  oCell = newRow.insertCell(-1);
+  oCell.innerHTML = domainPair.originalDomain;
+  oCell.style.width = "50%";
+
+  oCell = newRow.insertCell(-1);
+  oCell.innerHTML = domainPair.newLocation;
+  oCell.style.width = "50%";
+  
+  anchor = document.createElement('a');
+  anchor.href = "javascript:void(0)";
+  anchor.className = "delete-icon";
+  anchor.title = anchorTitle;
+  anchor.domainPair = domainPair;
+  icon = document.createElement('img');
+  icon.src = "delete.png";
+  icon.vAlign = "middle";
+  icon.width = "16";
+  icon.height = "16";
+  anchor.appendChild(icon);
+  
+  anchor.onclick = function() {
+    var row;
+    var rowIndex = 0;
+    // Search current row index
+    for ( ; rowIndex < tbody.getElementsByTagName('tr').length; rowIndex++) {
+      row = tbody.getElementsByTagName('tr')[rowIndex];
+      rowCells = row.getElementsByTagName('td');
+      if (rowCells.length != 3)
+        return;
+      if (rowCells[1].innerHTML == this.domainPair.originalDomain)
+        break;
+    }
+    
+    insertRow(compartmentTable, this.domainPair);
+    tbody.deleteRow(rowIndex);
+    
+    var prefs = JSON.parse(localStorage.prefs);
+    
+    prefs[compartmentDictionary][this.domainPair.originalDomain] = this.domainPair.newLocation;
+    delete prefs[prefDictionary][this.domainPair.originalDomain];
+    
+    localStorage.prefs = JSON.stringify(prefs);
+  };
+  
+  oCell.appendChild(anchor);
+}
+
 // Make sure the checkbox checked state gets properly initialized from the
 // saved preference.
 window.onload = function() {
@@ -62,48 +147,15 @@ window.onload = function() {
   setCheckedValue(document.uncensor_form.shouldRedirect, prefs.shouldRedirect ? "1" : "0");
   document.uncensor_form.showMessage.checked = prefs.showMessage;
   document.uncensor_form.notifyUpdate.checked = prefs.notifyUpdate;
-  var table = document.getElementById("domain_filter_table");
-  var rowIndex = 1;
+  var filterTable = document.getElementById("domain_filter_table");
   for (var originalDomain in prefs.domainFilter) {
-    var newRow = table.children[1].insertRow(-1);
-    newRow.onmouseover = function () { this.className = 'highlight'; };
-    newRow.onmouseout = function() { this.className = ''; };
-    
-    var oCell = newRow.insertCell(-1);
-    oCell.innerHTML = "<img src='web.png' width='16' height='16' alt='' />";
-    oCell.vAlign = "middle";
-    oCell.style.width = "20px";
-    
-    oCell = newRow.insertCell(-1);
-    oCell.innerHTML = originalDomain;
-    oCell.style.width = "50%";
-
-    oCell = newRow.insertCell(-1);
-    oCell.innerHTML = prefs.domainFilter[originalDomain];
-    oCell.style.width = "50%";
-    
-    anchor = document.createElement('a');
-    anchor.href = "javascript:void(0)";
-    anchor.className = "delete-icon";
-    anchor.title = 'Exclude domains. Moves highlighted domain pair to exceptions list.'
-    anchor.domainKey = originalDomain;
-    anchor.rowIndex = rowIndex;
-    icon = document.createElement('img');
-    icon.src = "delete.png";
-    icon.vAlign = "middle";
-    icon.width = "16";
-    icon.height = "16";
-    anchor.appendChild(icon);
-    
-    anchor.onclick = function() { 
-      table.deleteRow(this.rowIndex);
-      delete prefs.domainFilter[this.domainKey];
-      localStorage.prefs = JSON.stringify(prefs);
-    };
-    
-    oCell.appendChild(anchor);    
-    
-    rowIndex++;
+    insertRow(filterTable, { originalDomain: originalDomain,
+                          newLocation: prefs.domainFilter[originalDomain] });
+  }
+  var exceptionsTable = document.getElementById("domain_exceptions_table");
+  for (var originalDomain in prefs.domainExceptions) {
+    insertRow(exceptionsTable, { originalDomain: originalDomain, 
+                          newLocation: prefs.domainExceptions[originalDomain] });
   }
 }
 
@@ -166,9 +218,10 @@ margin: 5px 0;
 }
 
 .page table {
+/*  max-width: 300px;*/
   border-collapse: collapse;
   border: 1px solid #ccc;
-  width: 80%;
+  width: 500px;
 }
 
 .page table th {
@@ -213,6 +266,16 @@ margin: 5px 0;
 
 </style>
 
+<script type="text/javascript">
+  var isInIFrame = (window.location != window.parent.location) ? true : false;
+  if (!isInIFrame) {
+    var sheet = document.createElement('style')
+    sheet.innerHTML = "html { padding: 0 24px; }";
+    sheet.type = 'text/css';
+    document.getElementsByTagName('head')[0].appendChild(sheet);
+  }
+</script>
+
 </head>
 <body class="page" style="font-family: Helvetica, sans-serif; ">
   <h1>Uncensor filter</h1>
@@ -241,7 +304,7 @@ margin: 5px 0;
       </div>
     </section>
     <section>
-      <h3>The filter</h3>
+      <h3>The Filter</h3>
       <div>
         <table id="domain_filter_table">
           <thead><tr>
@@ -249,7 +312,7 @@ margin: 5px 0;
             <th>Original domain</th>
             <th>New location</th>
           </tr></thead>          
-          <tbody style="display:block; width:100%; height:200px; overflow:auto">
+          <tbody>
           </tbody>
         </table>
       </div>
@@ -264,7 +327,7 @@ margin: 5px 0;
           <th>Original domain</th>
           <th>New location</th>
         </tr></thead>          
-        <tbody style="display:block; width:100%; height:200px; overflow:auto">
+        <tbody>
         </tbody>
       </table>
     </div>

@@ -31,7 +31,7 @@
           "1h": "a",
           "1i": "a",
         };
-        prefs.exceptions = {};
+        prefs.domainExceptions = {};
         
         localStorage.prefs = JSON.stringify(prefs);
       }
@@ -58,7 +58,7 @@
                 !(tabId == recent.tabId && tab.url == recent.url && (Date.now() - recent.timestamp) < 500)
                ) {
               var notification = webkitNotifications.createNotification(
-                'chrome://favicon/',  // icon url - can be relative
+                '48uncensor.png',  // icon url - can be relative
                 'Uncensor filter',  // notification title
                 'You are being redirected to ' + newUri  // notification body text
               );
@@ -77,7 +77,7 @@
       };
 
 //      if (!localStorage.prefs)
-        initPrefs();
+      initPrefs();
         
       // Listen for any changes to the URL of any tab.
       chrome.tabs.onUpdated.addListener(redirectListener);

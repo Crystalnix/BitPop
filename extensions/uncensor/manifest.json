@@ -13,9 +13,9 @@
     "tabs",
     "notifications",
     "chrome://favicon/"
-  ]
-//  "icons" : {
-//    "48" : "icon-48.png",
-//    "128" : "icon-128.png"
-//  }
+  ],
+  "icons" : {
+    "48" : "48uncensor.png",
+    "128" : "128uncensor.png"
+  }
 }
