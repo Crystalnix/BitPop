@@ -1341,4 +1341,5 @@ const char kRegisteredProtocolHandlers[] = "registered_protocol_handlers";
 const char kUserCreatedLoginItem[] = "background_mode.user_created_login_item";
 
 const char kAutomaticUpdatesEnabled[] = "automatic_updates.enabled";
+const char kUncensorPrefs[] = "profile.uncensor";
 }  // namespace prefs

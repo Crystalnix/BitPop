@@ -64,6 +64,10 @@ PrefMappingEntry kPrefMapping[] = {
     prefs::kProxy,
     Extension::kProxyPermission
   },
+  { "uncensorPrefs",
+    prefs::kUncensorPrefs,
+    Extension::kContentSettingsPermission
+  },
 };
 
 class IdentityPrefTransformer : public PrefTransformerInterface {

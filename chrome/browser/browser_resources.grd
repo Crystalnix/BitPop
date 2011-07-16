@@ -122,6 +122,7 @@
       <if expr="pp_ifdef('chromeos') and pp_ifdef('_google_chrome')">
         <include name="IDR_HELP_MANIFEST" file="resources\help_app\manifest.json" type="BINDATA" />
       </if>
+      <include name="IDR_UNCENSOR_MANIFEST" file="resources\uncensor\manifest.json" type="BINDATA" />
     </includes>
   </release>
 </grit>

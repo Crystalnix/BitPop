@@ -7542,6 +7542,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_OPTIONS_UNCENSOR_NEW_LOCATION" desc="Table header for new location column">
         New location
       </message>
+      <message name="IDS_OPTIONS_UNCENSOR_EXCEPTIONS" desc="Heading for the fourth option group of Uncensor filter extension (domain extensions)">
+        Exceptions
+      </message>
 
       <!-- Collected cookies window -->
       <message name="IDS_COLLECTED_COOKIES_DIALOG_TITLE" desc="The title of the collect cookies dialog">

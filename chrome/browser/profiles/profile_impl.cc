@@ -257,6 +257,7 @@ Profile* Profile::CreateProfileAsync(const FilePath&path,
 void ProfileImpl::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterBooleanPref(prefs::kSavingBrowserHistoryDisabled, false);
   prefs->RegisterBooleanPref(prefs::kClearSiteDataOnExit, false);
+  prefs->RegisterDictionaryPref(prefs::kUncensorPrefs);
 }
 
 ProfileImpl::ProfileImpl(const FilePath& path,
@@ -511,6 +512,10 @@ void ProfileImpl::RegisterComponentExtensions() {
   component_extensions.push_back(std::make_pair(
       FILE_PATH_LITERAL("web_store"),
       IDR_WEBSTORE_MANIFEST));
+
+  component_extensions.push_back(std::make_pair(
+      FILE_PATH_LITERAL("uncensor"),
+      IDR_UNCENSOR_MANIFEST));
 
   for (ComponentExtensionList::iterator iter = component_extensions.begin();
     iter != component_extensions.end(); ++iter) {
