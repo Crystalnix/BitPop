@@ -1,0 +1,101 @@
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  cursor: default;
+  font-size: 13px;
+}
+
+.page h1 {
+  -webkit-user-select: none;
+  color: #53637d;
+  font-size: 200%;
+  font-weight: normal;
+  margin: 0;
+  padding-top: 13px;  
+  padding-bottom: 4px;
+  text-shadow: white 0 1px 2px;
+}
+
+.page > h3 {
+  -webkit-padding-end: 24px;
+  border-bottom: 1px solid #eeeeee;
+  font-size: 100%;  
+  color: #53637d;
+  font-weight: normal;
+  margin: 0;
+  padding-bottom: 4px;
+}
+
+section {
+-webkit-box-orient: horizontal;
+border-bottom: 1px solid #EEE;
+display: -webkit-box;
+margin-top: 17px;
+padding-bottom: 20px;
+}
+
+section > h3 {
+font-size: 105%;
+font-weight: bold;
+margin: 0;
+vertical-align: middle;
+width: 140px;
+}
+
+section > div:only-of-type {
+-webkit-box-flex: 1;
+}
+
+div.checkbox, div.radio {
+margin: 5px 0;
+}
+
+.page table {
+/*  max-width: 300px;*/
+  border-collapse: collapse;
+  border: 1px solid #ccc;
+  width: 500px;
+}
+
+.page table th {
+  padding: 5px 10px;
+  text-align: left;
+}
+
+.page table th + th {
+  padding: 5px;
+  width: 50%;
+}
+
+.page table td {
+  padding: 2px 3px;
+  text-align: left;
+}
+
+.page table thead tr {
+  display:block;
+  position:relative;
+}
+
+.page table tbody {
+  display:block;
+  width:100%;
+  height:200px;
+  overflow:auto;
+}
+
+.highlight {
+  background-color: #ddf;
+}
+
+.delete-icon {
+  display: none;
+  float: right;
+}
+
+.highlight .delete-icon {
+  display: block;
+}

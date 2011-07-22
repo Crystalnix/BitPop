@@ -23,21 +23,40 @@ cr.define('options', function() {
     // Inherit BrowserOptions from OptionsPage.
     __proto__: options.OptionsPage.prototype,
     
-    prefs: null,
+    prefs_: {
+      'name': 'uncensorPrefs',
+      'value': '',
+      'managed': false,
+      'dict': {}
+    },
+    
+    atStartup: true,
     
     initializePage: function() {
-       // Call base class implementation to start preference initialization.
-       OptionsPage.prototype.initializePage.call(this);
+      // Call base class implementation to start preference initialization.
+      OptionsPage.prototype.initializePage.call(this);
        
-       
+      Preferences.getInstance().addEventListener(this.prefs_.name,
+          this.updatePageControlStates_.bind(this));
+    },
+    
+    updatePageControlStates_: function(event) {
+      this.prefs_.value = event.value["value"];
+      this.prefs_.managed = event.value["managed"];
+      
+      this.prefs_.dict = JSON.parse(this.prefs_.value);
+      if (this.atStartup) {
+        this.initUncensorOptions(this.prefs_.dict);
+        this.atStartup = false;
+      }
     },
     
     save: function() {
-      var prefs = JSON.parse(localStorage.prefs);
+      var prefs = this.prefs_.dict;
       prefs.shouldRedirect = document.getElementById('uncensor_always_redirect').checked;
       prefs.showMessage = document.getElementById('uncensor_show_message').checked;
       prefs.notifyUpdate = document.getElementById('uncensor_notify_update').checked;
-      localStorage.prefs = JSON.stringify(prefs);
+      Preferences.setStringPref("profile.uncensor", JSON.stringify(prefs));
     },
 
     insertRow: function(dst, domainPair)
@@ -114,16 +133,16 @@ cr.define('options', function() {
         insertRow(compartmentTable, this.domainPair);
         tbody.deleteRow(rowIndex);
 
-        var prefs = JSON.parse(localStorage.prefs);
+        var prefs = UncensorOptions.getInstance().prefs_.dict;
 
         prefs[compartmentDictionary][this.domainPair.originalDomain] = this.domainPair.newLocation;
         delete prefs[prefDictionary][this.domainPair.originalDomain];
 
-        localStorage.prefs = JSON.stringify(prefs);
+        Preferences.setStringPref("profile.uncensor", JSON.stringify(prefs));
       };
 
       oCell.appendChild(anchor);
-    }
+    },
 
     // Make sure the checkbox checked state gets properly initialized from the
     // saved preference.

@@ -257,7 +257,7 @@ Profile* Profile::CreateProfileAsync(const FilePath&path,
 void ProfileImpl::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterBooleanPref(prefs::kSavingBrowserHistoryDisabled, false);
   prefs->RegisterBooleanPref(prefs::kClearSiteDataOnExit, false);
-  prefs->RegisterDictionaryPref(prefs::kUncensorPrefs);
+  prefs->RegisterStringPref(prefs::kUncensorPrefs, "");
 }
 
 ProfileImpl::ProfileImpl(const FilePath& path,

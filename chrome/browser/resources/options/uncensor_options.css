@@ -26,3 +26,50 @@
 #uncensorPage .highlight .delete-icon {
   display: block;
 }
+
+#uncensorPage table {
+/*  max-width: 300px;*/
+  border-collapse: collapse;
+  border: 1px solid #ccc;
+  width: 500px;
+}
+
+#uncensorPage table th {
+  padding: 5px 10px;
+  text-align: left;
+}
+
+#uncensorPage table th + th {
+  padding: 5px;
+  width: 50%;
+}
+
+#uncensorPage table td {
+  padding: 2px 3px;
+  text-align: left;
+}
+
+#uncensorPage table thead tr {
+  display:block;
+  position:relative;
+}
+
+#uncensorPage table tbody {
+  display:block;
+  width:100%;
+  height:200px;
+  overflow:auto;
+}
+
+.highlight {
+  background-color: #ddf;
+}
+
+.delete-icon {
+  display: none;
+  float: right;
+}
+
+.highlight .delete-icon {
+  display: block;
+}

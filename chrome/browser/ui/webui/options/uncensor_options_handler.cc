@@ -46,7 +46,8 @@ void UncensorOptionsHandler::GetLocalizedValues(DictionaryValue* localized_strin
     { "uncensorNotifyUpdates", IDS_OPTIONS_UNCENSOR_NOTIFY_UPDATES },
     { "uncensorTheFilter", IDS_OPTIONS_UNCENSOR_THE_FILTER },
     { "uncensorOriginalDomain", IDS_OPTIONS_UNCENSOR_ORIGINAL_DOMAIN },
-    { "uncensorNewLocation", IDS_OPTIONS_UNCENSOR_NEW_LOCATION }
+    { "uncensorNewLocation", IDS_OPTIONS_UNCENSOR_NEW_LOCATION },
+    { "uncensorExceptions", IDS_OPTIONS_UNCENSOR_EXCEPTIONS }
   };
   
   RegisterStrings(localized_strings, resources, arraysize(resources));
@@ -55,44 +56,64 @@ void UncensorOptionsHandler::GetLocalizedValues(DictionaryValue* localized_strin
 }
 
 void UncensorOptionsHandler::Initialize() {
-  /*
-  Profile* profile = web_ui_->GetProfile();
+/*  Profile* profile = web_ui_->GetProfile();
   
   ExtensionService *service = profile->GetExtensionService();
-  const ExtensionList *extensions = service->extensions();
+  const Extension *uncensor = service->GetExtensionById("ndhfinldkgmicnfcaobmkijoamgcfkhn", false);
   
-  //std::string s_id = "";
-  const Extension *uncensor = NULL;
-  for (ExtensionList::const_iterator it = extensions->begin(); it != extensions->end(); it++) {
-    //s_id += (*it)->id() + "\n";
-    if ((*it)->id() == "cggihifpjlnhpfogmkdfmfgmchbncjpn") {
-      uncensor = (*it);
-      break;
-    }
+  if (uncensor) {
+    ExtensionExtent &ee = const_cast<ExtensionExtent&>(uncensor->GetEffectiveHostPermissions());
+    URLPattern pat(URLPattern::SCHEME_CHROMEUI, "chrome://settings/uncensor");
+    ee.AddPattern(pat);
   }
-  
+
   if (uncensor) {
     GURL backgrUrl = uncensor->background_url();
     
-    BackgroundContentsService* background_contents_service =
-         BackgroundContentsServiceFactory::GetForProfile(profile);
-    const std::vector<BackgroundContents*> bgrContents = background_contents_service->GetBackgroundContents();
-    std::string s = backgrUrl.spec() + "\n";
-    for (std::vector<BackgroundContents*>::const_iterator it = bgrContents.begin(); it != bgrContents.end(); it++) {
-      s += (*it)->GetURL().spec() + "\n";
-      //if ((*it)->GetURL() == backgrUrl) {
-      //   
-      //}
-    }
+    // BackgroundContentsService* background_contents_service =
+    //      BackgroundContentsServiceFactory::GetForProfile(profile);
+    // const std::vector<BackgroundContents*> bgrContents = background_contents_service->GetBackgroundContents();
+    // std::string s = backgrUrl.spec() + "\n\n";
+    // for (std::vector<BackgroundContents*>::const_iterator it = bgrContents.begin(); it != bgrContents.end(); it++) {
+    //   s += (*it)->GetURL().spec() + "\n";
+    // }
   
-    scoped_ptr<Value> test_string(Value::CreateStringValue(s));
+    scoped_ptr<Value> test_string(Value::CreateStringValue(backgrUrl.spec()));
 
     web_ui_->CallJavascriptFunction("UncensorOptions.test",
                                     *(test_string.get()));
   }
-  */
+*/
 }
 
 void UncensorOptionsHandler::RegisterMessages() {
+//  web_ui_->RegisterMessageCallback(
+//      "testCallback",
+//      NewCallback(this, &UncensorOptionsHandler::TestCallback));
+}
+
+void UncensorOptionsHandler::TestCallback(const ListValue* args) {
+/*  Profile* profile = web_ui_->GetProfile();
   
+  ExtensionService *service = profile->GetExtensionService();
+  const Extension *uncensor = service->GetExtensionById("ndhfinldkgmicnfcaobmkijoamgcfkhn", false);
+  
+//  ExtensionExtent &ee = const_cast<ExtensionExtent&>(uncensor->GetEffectiveHostPermissions());
+  
+//  ExtensionProcessManager* extProcManager = profile->GetExtensionProcessManager();
+//  ExtensionHost* extHost = extProcManager->GetBackgroundHostForExtension(uncensor);
+  
+  // BackgroundContentsService* background_contents_service =
+  //      BackgroundContentsServiceFactory::GetForProfile(profile);
+  // const std::vector<BackgroundContents*> bgrContents = background_contents_service->GetBackgroundContents();
+  // std::string s = "";
+  // for (std::vector<BackgroundContents*>::const_iterator it = bgrContents.begin(); it != bgrContents.end(); it++) {
+  //   s += (*it)->GetURL().spec() + "\n";
+  // }
+
+  scoped_ptr<Value> test_string(Value::CreateStringValue(s));
+
+  web_ui_->CallJavascriptFunction("UncensorOptions.test",
+                                  *(test_string.get()));
+*/
 }

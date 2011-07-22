@@ -66,7 +66,7 @@ PrefMappingEntry kPrefMapping[] = {
   },
   { "uncensorPrefs",
     prefs::kUncensorPrefs,
-    Extension::kContentSettingsPermission
+    Extension::kContentSettingsPermission    
   },
 };
 

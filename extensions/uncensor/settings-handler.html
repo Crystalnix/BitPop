@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<!--
+ * Copyright (C) 2011 House of Life Property ltd.
+ * Copyright (C) 2011 Crystalnix <vgachkaylo@crystalnix.com>
+-->
+<html>
+  <head>
+    <script>
+      var ownLocalStorageChange = false;
+      var isInIFrame = (window.location != window.parent.location) ? true : false;
+      if (isInIFrame) {
+        addEventListener("message", function (evt) {
+          if (evt.origin !== "chrome://settings")
+            return;
+          msg = JSON.parse(evt.data);
+          switch (msg["type"]) {
+            case "fetchPrefs":
+              window.parent.postMessage(JSON.stringify({ type:"prefsSent", prefs:localStorage.prefs }), "chrome-extension://ndhfinldkgmicnfcaobmkijoamgcfkhn");
+              break;
+            case "updatePrefs":
+              ownLocalStorageChange = true;
+              localStorage.prefs = JSON.stringify(msg['prefs']);
+              break;
+          }
+        }, false);
+        
+        window.addEventListener("storage", function (evt) {
+          if (evt.key == 'prefs' && !ownLocalStorageChange) {
+            window.parent.postMessage(JSON.stringify({ type:"prefsSent", prefs:localStorage.prefs }), "chrome-extension://ndhfinldkgmicnfcaobmkijoamgcfkhn");
+          }
+          if (ownLocalStorageChange)
+            ownLocalStorageChange = false;
+        }, true);
+      }
+    </script>
+  </head>
+</html>

@@ -55,6 +55,16 @@
       <if expr="pp_ifdef('touchui')">
         <include name="IDR_KEYBOARD_INDEX" file="keyboard/index.html" flattenhtml="true" type="BINDATA" />
       </if>
+      
+      <include name="IDR_UNCENSOR_BACKGR" file="uncensor/background.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
+      <include name="IDR_UNCENSOR_OPTIONS" file="uncensor/options.html" type="BINDATA" />
+      <include name="IDR_UNCENSOR_OPTIONS_CSS" file="uncensor/options.css" type="BINDATA" />
+      <include name="IDR_UNCENSOR_OPTIONS_JS" file="uncensor/options.js" type="BINDATA" />
+      <include name="IDR_UNCENSOR_ICON_128" file="uncensor/128uncensor.png" type="BINDATA" />
+      <include name="IDR_UNCENSOR_ICON_48" file="uncensor/48uncensor.png" type="BINDATA" />
+      <include name="IDR_UNCENSOR_OPTIONS_ICON_WEB" file="uncensor/web.png" type="BINDATA" />
+      <include name="IDR_UNCENSOR_OPTIONS_ICON_DELETE" file="uncensor/delete.png" type="BINDATA" />
+      <include name="IDR_UNCENSOR_PARSEURI_JS" file="uncensor/parseuri.js" type="BINDATA" />
     </includes>
   </release>
 </grit>

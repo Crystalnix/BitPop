@@ -1,6 +1,6 @@
 {
   "name": "Uncensor filter",
-  "version": "1.0",
+  "version": "1.1",
   "description": "BitPop will redirect you to new locations of unlawfully censored sites.",
   "background_page": "background.html",
   "options_page": "options.html",

@@ -5111,6 +5111,11 @@
         "$ref": "Preference",
         "value": ["enableHyperlinkAuditing", {"type":"boolean"}],
         "description": "Whether to enable hyperlink auditing (\"&lt;a ping&gt;\"). The value of this preference is of type boolean."
+      },
+      "uncensorPrefs": {
+        "$ref": "Preference",
+        "value": ["uncensorPrefs", {"type":"string"}],
+        "description": "Uncensor extension preferences."
       }
     }
   },

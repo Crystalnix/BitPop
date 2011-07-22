@@ -1,0 +1,21 @@
+#uncensorPage h1 {
+  -webkit-user-select: none;
+  color: #53637d;
+  font-size: 200%;
+  font-weight: normal;
+  margin: 0;
+  padding-top: 13px;  
+  padding-bottom: 4px;
+  text-shadow: white 0 1px 2px;
+  border: none;
+}
+
+#uncensorPage > h3 {
+  -webkit-padding-end: 24px;
+  border-bottom: 1px solid #eeeeee;
+  font-size: 100%;  
+  color: #53637d;
+  font-weight: normal;
+  margin: 0;
+  padding-bottom: 4px;
+}

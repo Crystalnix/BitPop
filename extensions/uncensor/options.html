@@ -5,270 +5,14 @@
 -->
 <html>
 <head><title>Uncensor filter options</title>
-<script type="text/javascript">
-
-// return the value of the radio button that is checked
-// return an empty string if none are checked, or
-// there are no radio buttons
-function getCheckedValue(radioObj) {
-	if(!radioObj)
-		return "";
-	var radioLength = radioObj.length;
-	if(radioLength == undefined)
-		if(radioObj.checked)
-			return radioObj.value;
-		else
-			return "";
-	for(var i = 0; i < radioLength; i++) {
-		if(radioObj[i].checked) {
-			return radioObj[i].value;
-		}
-	}
-	return "";
-}
-
-// set the radio button with the given value as being checked
-// do nothing if there are no radio buttons
-// if the given value does not exist, all the radio buttons
-// are reset to unchecked
-function setCheckedValue(radioObj, newValue) {
-	if(!radioObj)
-		return;
-	var radioLength = radioObj.length;
-	if(radioLength == undefined) {
-		radioObj.checked = (radioObj.value == newValue.toString());
-		return;
-	}
-	for(var i = 0; i < radioLength; i++) {
-		radioObj[i].checked = false;
-		if(radioObj[i].value == newValue.toString()) {
-			radioObj[i].checked = true;
-		}
-	}
-}
-
-function save() {
-  var prefs = JSON.parse(localStorage.prefs);
-  prefs.shouldRedirect = (getCheckedValue(document.uncensor_form.shouldRedirect) == "1");
-  prefs.showMessage = document.uncensor_form.showMessage.checked;
-  prefs.notifyUpdate = document.uncensor_form.notifyUpdate.checked;
-  localStorage.prefs = JSON.stringify(prefs);
-}
-
-function insertRow(dst, domainPair)
-{
-  var table = dst;
-  var compartmentTable = null;
-  var prefDictionary = null;
-  var compartmentDictionary = null;
-  var anchorTitle = "";
-  
-  switch (dst.id) {
-    case 'domain_filter_table':
-      prefDictionary = 'domainFilter';
-      compartmentDictionary = 'domainExceptions';
-      compartmentTable = document.getElementById('domain_exceptions_table');
-      anchorTitle = 'Exclude domains. Moves highlighted domain pair to Exceptions list.';
-      break;
-    case 'domain_exceptions_table':
-      prefDictionary = 'domainExceptions';
-      compartmentDictionary = 'domainFilter';
-      compartmentTable = document.getElementById('domain_filter_table');
-      anchorTitle = 'Enable domains. Moves highlighted domain pair to The Filter list.'
-      break;
-  }
-  
-  var tbody = table.getElementsByTagName('tbody').length ? table.getElementsByTagName('tbody')[0] : undefined;
-  if (tbody == undefined) {
-    tbody = document.createElement('tbody');
-    table.appendChild(tbody);
-  }
-  
-  var newRow = tbody.insertRow(-1);
-  newRow.onmouseover = function() { this.className = 'highlight'; };
-  newRow.onmouseout = function() { this.className = ''; };
-  
-  var oCell = newRow.insertCell(-1);
-  oCell.innerHTML = "<img src='web.png' width='16' height='16' alt='' />";
-  oCell.vAlign = "middle";
-  oCell.style.width = "20px";
-  
-  oCell = newRow.insertCell(-1);
-  oCell.innerHTML = domainPair.originalDomain;
-  oCell.style.width = "50%";
-
-  oCell = newRow.insertCell(-1);
-  oCell.innerHTML = domainPair.newLocation;
-  oCell.style.width = "50%";
-  
-  anchor = document.createElement('a');
-  anchor.href = "javascript:void(0)";
-  anchor.className = "delete-icon";
-  anchor.title = anchorTitle;
-  anchor.domainPair = domainPair;
-  icon = document.createElement('img');
-  icon.src = "delete.png";
-  icon.vAlign = "middle";
-  icon.width = "16";
-  icon.height = "16";
-  anchor.appendChild(icon);
-  
-  anchor.onclick = function() {
-    var row;
-    var rowIndex = 0;
-    // Search current row index
-    for ( ; rowIndex < tbody.getElementsByTagName('tr').length; rowIndex++) {
-      row = tbody.getElementsByTagName('tr')[rowIndex];
-      rowCells = row.getElementsByTagName('td');
-      if (rowCells.length != 3)
-        return;
-      if (rowCells[1].innerHTML == this.domainPair.originalDomain)
-        break;
-    }
-    
-    insertRow(compartmentTable, this.domainPair);
-    tbody.deleteRow(rowIndex);
-    
-    var prefs = JSON.parse(localStorage.prefs);
-    
-    prefs[compartmentDictionary][this.domainPair.originalDomain] = this.domainPair.newLocation;
-    delete prefs[prefDictionary][this.domainPair.originalDomain];
-    
-    localStorage.prefs = JSON.stringify(prefs);
-  };
-  
-  oCell.appendChild(anchor);
-}
-
-// Make sure the checkbox checked state gets properly initialized from the
-// saved preference.
-window.onload = function() {
-  var prefs = JSON.parse(localStorage.prefs);
-  setCheckedValue(document.uncensor_form.shouldRedirect, prefs.shouldRedirect ? "1" : "0");
-  document.uncensor_form.showMessage.checked = prefs.showMessage;
-  document.uncensor_form.notifyUpdate.checked = prefs.notifyUpdate;
-  var filterTable = document.getElementById("domain_filter_table");
-  for (var originalDomain in prefs.domainFilter) {
-    insertRow(filterTable, { originalDomain: originalDomain,
-                          newLocation: prefs.domainFilter[originalDomain] });
-  }
-  var exceptionsTable = document.getElementById("domain_exceptions_table");
-  for (var originalDomain in prefs.domainExceptions) {
-    insertRow(exceptionsTable, { originalDomain: originalDomain, 
-                          newLocation: prefs.domainExceptions[originalDomain] });
-  }
-}
-
-</script>
-
-<style type="text/css">
-html, body {
-  margin: 0;
-  padding: 0;
-}
-
-body {
-  cursor: default;
-  font-size: 13px;
-}
-
-.page h1 {
-  -webkit-user-select: none;
-  color: #53637d;
-  font-size: 200%;
-  font-weight: normal;
-  margin: 0;
-  padding-top: 13px;  
-  padding-bottom: 4px;
-  text-shadow: white 0 1px 2px;
-}
-
-.page > h3 {
-  -webkit-padding-end: 24px;
-  border-bottom: 1px solid #eeeeee;
-  font-size: 100%;  
-  color: #53637d;
-  font-weight: normal;
-  margin: 0;
-  padding-bottom: 4px;
-}
-
-section {
--webkit-box-orient: horizontal;
-border-bottom: 1px solid #EEE;
-display: -webkit-box;
-margin-top: 17px;
-padding-bottom: 20px;
-}
-
-section > h3 {
-font-size: 105%;
-font-weight: bold;
-margin: 0;
-vertical-align: middle;
-width: 140px;
-}
-
-section > div:only-of-type {
--webkit-box-flex: 1;
-}
-
-div.checkbox, div.radio {
-margin: 5px 0;
-}
-
-.page table {
-/*  max-width: 300px;*/
-  border-collapse: collapse;
-  border: 1px solid #ccc;
-  width: 500px;
-}
-
-.page table th {
-  padding: 5px 10px;
-  text-align: left;
-}
-
-.page table th + th {
-  padding: 5px;
-  width: 50%;
-}
-
-.page table td {
-  padding: 2px 3px;
-  text-align: left;
-}
-
-.page table thead tr {
-  display:block;
-  position:relative;
-}
-
-.page table tbody {
-  display:block;
-  width:100%;
-  height:200px;
-  overflow:auto;
-}
-
-.highlight {
-  background-color: #ddf;
-}
-
-.delete-icon {
-  display: none;
-  float: right;
-}
-
-.highlight .delete-icon {
-  display: block;
-}
-
-</style>
+<script type="text/javascript" src="options.js"></script>
+<link rel="stylesheet" href="options.css" type="text/css" media="screen" charset="utf-8">
 
 <script type="text/javascript">
+  window.onload = initUncensorOptions;
+  
   var isInIFrame = (window.location != window.parent.location) ? true : false;
-  if (!isInIFrame) {
+  if (!isInIframe) {  // not in an IFrame
     var sheet = document.createElement('style')
     sheet.innerHTML = "html { padding: 0 24px; }";
     sheet.type = 'text/css';
@@ -285,10 +29,10 @@ margin: 5px 0;
       <h3>Filter control</h3>
       <div>
         <div class="radio">
-          <label><input type="radio" name="shouldRedirect" value="1"> Always redirect / ON </label>
+          <label><input type="radio" id="uncensor_always_redirect" name="shouldRedirect" value="1"> Always redirect / ON </label>
         </div>
         <div class="radio">
-          <label><input type="radio" name="shouldRedirect" value="0"> Never redirect / OFF </label>
+          <label><input type="radio" id="uncensor_never_redirect" name="shouldRedirect" value="0"> Never redirect / OFF </label>
         </div>
       </div>
     </section>
@@ -296,10 +40,10 @@ margin: 5px 0;
       <h3>Notices</h3>
       <div>
         <div class="checkbox">
-          <label><input type="checkbox" name="showMessage"> Show message when redirected </label>
+          <label><input type="checkbox" id="uncensor_show_message" name="showMessage"> Show message when redirected </label>
         </div>
         <div class="checkbox">
-          <label><input type="checkbox" name="notifyUpdate"> Be notified when list updates </label>
+          <label><input type="checkbox" id="uncensor_notify_update" name="notifyUpdate"> Be notified when list updates </label>
         </div>
       </div>
     </section>
