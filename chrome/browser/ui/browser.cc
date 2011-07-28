@@ -2120,6 +2120,7 @@ void Browser::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterBooleanPref(prefs::kEnableReferrers, true);
   
   prefs->RegisterBooleanPref(prefs::kAutomaticUpdatesEnabled, true);
+  prefs->RegisterStringPref(prefs::kUncensorPrefs, std::string());
 }
 
 // static

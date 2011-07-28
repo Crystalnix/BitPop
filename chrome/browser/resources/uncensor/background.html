@@ -8,11 +8,11 @@ Copyright (c) 2011 Crystalnix <vgachkaylo@crystalnix.com>
 -->
 <head>
 <meta name="google" value="notranslate">
-<!-- X-WebKit-CSP is our development name for Content-Security-Policy.
-     TODO(abarth): Change the name to Content-Security-Policy once CSP is done.
-     Also, chrome-extension: should really be 'self', but we haven't implemented 'self' yet! -->
-<meta http-equiv="X-WebKit-CSP" content="object-src 'none'; script-src chrome://resources chrome-extension:">
 <title>Uncensor Filter background page</title>
+<!--
+<script src="chrome://resources/js/cr.js"></script>
+<script src="chrome://resources/js/cr/event_target.js"></script>
+-->
 <script type="text/javascript" src="parseuri.js"></script>
 <script type="text/javascript">
   String.prototype.endsWith = function(suffix) {
@@ -21,6 +21,17 @@ Copyright (c) 2011 Crystalnix <vgachkaylo@crystalnix.com>
 
   var up = chrome.experimental.contentSettings.misc.uncensorPrefs;
   var prefs = null;
+  
+  /**
+   * Returns whether the |levelOfControl| means that the extension can change the
+   * preference value.
+   *
+   * @param levelOfControl{string}
+   */
+  function settingIsControllable(levelOfControl) {
+    return (levelOfControl == "ControllableByThisExtension" ||
+            levelOfControl == "ControlledByThisExtension");
+  }
   
   function downloadFilterData() {
     prefs.domainFilter = {
@@ -55,17 +66,22 @@ Copyright (c) 2011 Crystalnix <vgachkaylo@crystalnix.com>
   
   
   up.get({}, function (details) {
-    if (details.value = "") {
-      firstInitPrefs();
-      downloadFilterData();
-    }
-    else {
-      prefs = JSON.parse(details.value);
+    if (settingIsControllable(details.levelOfControl)) {
+      if (details.value == "") {
+        firstInitPrefs();
+        downloadFilterData();
+      }
+      else {
+        prefs = JSON.parse(details.value);
+      }
     }
   });
   
   up.onChange.addListener(function (details) {
-    prefs = JSON.parse(details.value);
+    if (settingIsControllable(details.levelOfControl)) {
+      if (details.value != "")
+        prefs = JSON.parse(details.value);
+    }
   });
   
   var recent = {};
@@ -75,7 +91,7 @@ Copyright (c) 2011 Crystalnix <vgachkaylo@crystalnix.com>
   
   // Called when the url of a tab changes.
   function redirectListener(tabId, changeInfo, tab) {
-    if (!prefs.shouldRedirect)
+    if (!prefs || !prefs.shouldRedirect)
       return;
       
     var uri = parseUri(tab.url);

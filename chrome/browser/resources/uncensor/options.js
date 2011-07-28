@@ -24,7 +24,7 @@ cr.define('options', function() {
     __proto__: options.OptionsPage.prototype,
     
     prefs_: {
-      'name': 'uncensorPrefs',
+      'name': 'profile.uncensor',
       'value': '',
       'managed': false,
       'dict': {}
@@ -41,13 +41,15 @@ cr.define('options', function() {
     },
     
     updatePageControlStates_: function(event) {
-      this.prefs_.value = event.value["value"];
-      this.prefs_.managed = event.value["managed"];
+      if (event.value["value"] != "") {
+        this.prefs_.value = event.value["value"];
+        this.prefs_.managed = event.value["managed"];
       
-      this.prefs_.dict = JSON.parse(this.prefs_.value);
-      if (this.atStartup) {
-        this.initUncensorOptions(this.prefs_.dict);
-        this.atStartup = false;
+        this.prefs_.dict = JSON.parse(this.prefs_.value);
+        if (this.atStartup) {
+          this.initUncensorOptions(this.prefs_.dict);
+          this.atStartup = false;
+        }
       }
     },
     
@@ -130,7 +132,7 @@ cr.define('options', function() {
             break;
         }
 
-        insertRow(compartmentTable, this.domainPair);
+        UncensorOptions.getInstance().insertRow(compartmentTable, this.domainPair);
         tbody.deleteRow(rowIndex);
 
         var prefs = UncensorOptions.getInstance().prefs_.dict;
@@ -160,12 +162,12 @@ cr.define('options', function() {
       document.getElementById('uncensor_notify_update').checked = prefs.notifyUpdate;
       var filterTable = document.getElementById("domain_filter_table");
       for (var originalDomain in prefs.domainFilter) {
-        insertRow(filterTable, { originalDomain: originalDomain,
+        this.insertRow(filterTable, { originalDomain: originalDomain,
                               newLocation: prefs.domainFilter[originalDomain] });
       }
       var exceptionsTable = document.getElementById("domain_exceptions_table");
       for (var originalDomain in prefs.domainExceptions) {
-        insertRow(exceptionsTable, { originalDomain: originalDomain, 
+        this.insertRow(exceptionsTable, { originalDomain: originalDomain, 
                               newLocation: prefs.domainExceptions[originalDomain] });
       }
 

@@ -1,5 +1,5 @@
 {
-  "key": "MIGdMA0GCSqGSIb3DQEBAQUAA4GLADCBhwKBgQDjsNFxsasNSbx89AemS53SOy7ilvGNmh0VuRVsTTkjo5ikk0I5LS2ASqf2JP0TzaB1lXyCZKHBgFtW5cJkNvlz/ZfcwAtsHh0aUtAEne2mkwom90tHhNpAHHgQZ5kHdJ/DKA98ffIT0rK8NXM17v0dPM4KlCzbrPMNJRU6X6vlvwIBIw==",
+  //"key": "MIGdMA0GCSqGSIb3DQEBAQUAA4GLADCBhwKBgQDwXhVzJXbc9tqR1AjQwMksRCopgDziDffza16CsGZ9Z6Jz2bB2uBBaESqXQM7rFY4TSpbFgjhHUgBbGu+fFvcL8VSeeVPk81cztLjyyQL+1TflsS/qr56xFuwGNFVLjlSyyX2IEK5efhN6ALdZcjuia6zAak7oXAByg8WoanVJKwIBIw==",
   "name": "Uncensor Filter",
   "version": "1.0",
   "description": "BitPop will redirect you to new locations of unlawfully censored sites.",
@@ -8,9 +8,8 @@
     "experimental",
     "contentSettings",
     "tabs",
-    "notifications",
-//    "chrome://resources/",
-//    "chrome://favicon/"
+    "notifications" //,
+ //   "chrome://resources/"
   ],
   "icons" : {
     "48" : "48uncensor.png",
