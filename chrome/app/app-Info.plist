@@ -260,7 +260,7 @@
 	<key>SUPublicDSAKeyFile</key>
 	<string>dsa_pub.pem</string>
 	<key>SUFeedURL</key>
-	<string>http://localhost/mac/feed</string>
+	<string>http://tools.bitpop.com/service/mac_feed</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 </dict>
