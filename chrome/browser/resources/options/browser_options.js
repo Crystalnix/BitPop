@@ -63,6 +63,11 @@ cr.define('options', function() {
       $('toolbarShowBookmarksBar').onchange = function() {
         chrome.send('toggleShowBookmarksBar');
       };
+      if (cr.isMac) {
+        $('autoCheckCheckbox').onchange = function() {
+          chrome.send('toggleAutomaticUpdates');
+        };
+      }
       $('defaultSearchManageEnginesButton').onclick = function(event) {
         OptionsPage.navigateToPage('searchEngines');
         chrome.send('coreOptionsUserMetricsAction',

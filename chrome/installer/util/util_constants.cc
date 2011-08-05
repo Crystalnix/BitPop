@@ -158,7 +158,7 @@ const char kToastResultsKey[] = "toast-results-key";
 }  // namespace switches
 
 const wchar_t kChromeDll[] = L"chrome.dll";
-const wchar_t kChromeExe[] = L"chrome.exe";
+const wchar_t kChromeExe[] = L"bitpop.exe";
 const wchar_t kChromeFrameDll[] = L"npchrome_frame.dll";
 const wchar_t kChromeFrameHelperExe[] = L"chrome_frame_helper.exe";
 const wchar_t kChromeFrameHelperWndClass[] = L"ChromeFrameHelperWindowClass";

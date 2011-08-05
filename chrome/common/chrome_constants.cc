@@ -12,7 +12,7 @@
 #if defined(GOOGLE_CHROME_BUILD)
 #define PRODUCT_STRING "Google Chrome"
 #elif defined(CHROMIUM_BUILD)
-#define PRODUCT_STRING "Chromium"
+#define PRODUCT_STRING "BitPop"
 #else
 #error Unknown branding
 #endif
@@ -25,8 +25,8 @@ const char kChromeVersionEnvVar[] = "CHROME_VERSION";
 // The following should not be used for UI strings; they are meant
 // for system strings only. UI changes should be made in the GRD.
 #if defined(OS_WIN)
-const FilePath::CharType kBrowserProcessExecutableName[] = FPL("chrome.exe");
-const FilePath::CharType kHelperProcessExecutableName[] = FPL("chrome.exe");
+const FilePath::CharType kBrowserProcessExecutableName[] = FPL("bitpop.exe");
+const FilePath::CharType kHelperProcessExecutableName[] = FPL("bitpop.exe");
 #elif defined(OS_LINUX)
 const FilePath::CharType kBrowserProcessExecutableName[] = FPL("chrome");
 // Helper processes end up with a name of "exe" due to execing via
@@ -38,8 +38,8 @@ const FilePath::CharType kHelperProcessExecutableName[] =
     FPL(PRODUCT_STRING " Helper");
 #endif  // OS_*
 #if defined(OS_WIN)
-const FilePath::CharType kBrowserProcessExecutablePath[] = FPL("chrome.exe");
-const FilePath::CharType kHelperProcessExecutablePath[] = FPL("chrome.exe");
+const FilePath::CharType kBrowserProcessExecutablePath[] = FPL("bitpop.exe");
+const FilePath::CharType kHelperProcessExecutablePath[] = FPL("bitpop.exe");
 #elif defined(OS_LINUX)
 const FilePath::CharType kBrowserProcessExecutablePath[] = FPL("chrome");
 const FilePath::CharType kHelperProcessExecutablePath[] = FPL("chrome");
@@ -58,8 +58,8 @@ const wchar_t kNaClAppName[] = L"nacl64";
 const wchar_t kBrowserAppName[] = L"Chrome";
 const char    kStatsFilename[] = "ChromeStats2";
 #else
-const wchar_t kBrowserAppName[] = L"Chromium";
-const char    kStatsFilename[] = "ChromiumStats2";
+const wchar_t kBrowserAppName[] = L"BitPop";
+const char    kStatsFilename[] = "BitPopStats2";
 #endif
 
 #if defined(OS_WIN)

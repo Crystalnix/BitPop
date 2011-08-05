@@ -74,6 +74,8 @@ void BrowserOptionsHandler::GetLocalizedValues(
     { "instantConfirmTitle", IDS_INSTANT_OPT_IN_TITLE },
     { "instantConfirmMessage", IDS_INSTANT_OPT_IN_MESSAGE },
     { "defaultBrowserGroupName", IDS_OPTIONS_DEFAULTBROWSER_GROUP_NAME },
+    { "checkForUpdateGroupName", IDS_OPTIONS_CHECKFORUPDATE_GROUP_NAME },
+    { "updatesAutoCheckDaily", IDS_OPTIONS_UPDATES_AUTOCHECK_LABEL },
   };
 
   RegisterStrings(localized_strings, resources, arraysize(resources));
@@ -119,10 +121,15 @@ void BrowserOptionsHandler::RegisterMessages() {
   web_ui_->RegisterMessageCallback(
       "toggleShowBookmarksBar",
       NewCallback(this, &BrowserOptionsHandler::ToggleShowBookmarksBar));
+  web_ui_->RegisterMessageCallback(
+      "toggleAutomaticUpdates",
+      NewCallback(this, &BrowserOptionsHandler::ToggleAutomaticUpdates));
 }
 
 void BrowserOptionsHandler::Initialize() {
   Profile* profile = web_ui_->GetProfile();
+  
+  profile->GetPrefs()->SetBoolean(prefs::kAutomaticUpdatesEnabled, platform_util::getUseAutomaticUpdates());
 
   // Create our favicon data source.
   profile->GetChromeURLDataManager()->AddDataSource(
@@ -428,6 +435,11 @@ void BrowserOptionsHandler::ToggleShowBookmarksBar(const ListValue* args) {
       NotificationType::BOOKMARK_BAR_VISIBILITY_PREF_CHANGED,
       source,
       NotificationService::NoDetails());
+}
+
+void BrowserOptionsHandler::ToggleAutomaticUpdates(const ListValue* args) {
+  PrefService* prefService = web_ui_->GetProfile()->GetPrefs();
+  platform_util::setUseAutomaticUpdates(prefService->GetBoolean(prefs::kAutomaticUpdatesEnabled));
 }
 
 void BrowserOptionsHandler::OnResultChanged(bool default_match_changed) {

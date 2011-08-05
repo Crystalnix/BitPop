@@ -17,6 +17,8 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
+#import "SUUpdater.h"
+
 namespace platform_util {
 
 void ShowItemInFolder(const FilePath& full_path) {
@@ -232,6 +234,16 @@ bool CanSetAsDefaultBrowser() {
 
 bool CanSetAsDefaultProtocolClient(const std::string& protocol) {
   return CanSetAsDefaultBrowser();
+}
+
+void setUseAutomaticUpdates(bool useAutomaticUpdates)
+{
+  [[SUUpdater sharedUpdater] setAutomaticallyDownloadsUpdates: (useAutomaticUpdates ? YES : NO)];
+}
+  
+bool getUseAutomaticUpdates()
+{
+  return ([[SUUpdater sharedUpdater] automaticallyDownloadsUpdates] == YES);
 }
 
 }  // namespace platform_util

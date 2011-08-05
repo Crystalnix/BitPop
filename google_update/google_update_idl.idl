@@ -1,6 +1,17 @@
-// Copyright 2006 Google Inc. All Rights Reserved.
+// Copyright 2007-2009 Google Inc.
 //
-// Author: Vivek Rao - vivekrao@google.com
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========================================================================
 //
 // The proxy clsid #defined as PROXY_CLSID_IS in mk_common needs to be changed
 // anytime any interface below changes, or if a new interface is added.
@@ -10,7 +21,7 @@ import "ocidl.idl";
 
 [
   object,
-  uuid(5B25A8DC-1780-4178-A629-6BE8B8DEFAA2),
+  uuid(a72900a5-0f41-4280-98a5-654201b3fd36),
   oleautomation,
   nonextensible,
   pointer_default(unique)
@@ -22,7 +33,7 @@ interface IBrowserHttpRequest2 : IUnknown {
   // @param request_headers         HTTP request headers, if any. Can be NULL.
   // @param response_headers_needed HTTP response headers that are needed.
   //                                Should be one of the values listed here:
-  //                                    http://go/queryinfoflags
+  //                                    http://msdn.microsoft.com/aa385351.aspx
   //                                The input is a SAFEARRAY of DWORD. Can be a
   //                                VT_EMPTY.
   // @param response_headers        HTTP response headers, returned as SAFEARRAY
@@ -43,8 +54,8 @@ interface IBrowserHttpRequest2 : IUnknown {
 [
   object,
   oleautomation,
-  uuid(128C2DA6-2BC0-44c0-B3F6-4EC22E647964),
-  helpstring("Google Update IProcessLauncher Interface"),
+  uuid(459d816a-0a94-4807-8f69-9aae85f18aa1),
+  helpstring("House of Life Update IProcessLauncher Interface"),
   pointer_default(unique)
 ]
 interface IProcessLauncher : IUnknown {
@@ -82,8 +93,8 @@ typedef enum {
 [
   object,
   oleautomation,
-  uuid(1C642CED-CA3B-4013-A9DF-CA6CE5FF6503),
-  helpstring("GoogleUpdate UI-specific events Interface"),
+  uuid(d31ce3b9-0008-48a5-8891-1adb4d3814ae),
+  helpstring("House of Life Update UI-specific events Interface"),
   pointer_default(unique)
 ]
 interface IProgressWndEvents : IUnknown {
@@ -111,7 +122,7 @@ interface IProgressWndEvents : IUnknown {
 [
   object,
   oleautomation,
-  uuid(49D7563B-2DDB-4831-88C8-768A53833837),
+  uuid(68e0bd3c-6aa9-4ed0-9b05-a015961160d5),
   helpstring("IJobObserver Interface"),
   pointer_default(unique)
 ]
@@ -129,15 +140,11 @@ interface IJobObserver : IUnknown {
   HRESULT SetEventSink([in] IProgressWndEvents* ui_sink);
 };
 
-// TODO(ganesh): Component story.
-// TODO(ganesh): Should CheckForUpdate be synchronous? We can avoid the
-// observer. However, it may block the UI.
-// TODO(ganesh): On-Demand Installs.
 [
   object,
   oleautomation,
-  uuid(31AC3F11-E5EA-4a85-8A3D-8E095A39C27B),
-  helpstring("IGoogleUpdate Interface"),
+  uuid(6d6a292c-6e5f-4805-9d94-ff2ffe2b7c25),
+  helpstring("House of Life IGoogleUpdate Interface"),
   pointer_default(unique)
 ]
 interface IGoogleUpdate : IUnknown {
@@ -156,8 +163,8 @@ interface IGoogleUpdate : IUnknown {
 [
   object,
   oleautomation,
-  uuid(909489C2-85A6-4322-AA56-D25278649D67),
-  helpstring("Google Update Core Interface"),
+  uuid(9e43f908-6e6b-40c4-b757-b29794174dca),
+  helpstring("House of Life Update Core Interface"),
   pointer_default(unique)
 ]
 interface IGoogleUpdateCore : IUnknown
@@ -175,14 +182,14 @@ interface IGoogleUpdateCore : IUnknown
 };
 
 [
-  uuid(7E6CD20B-8688-4960-96D9-B979471577B8),
+  uuid(395c0086-27b7-41aa-9a10-1f9a9f5705a5),
   version(1.0),
-  helpstring("Google Update Type Library")
+  helpstring("House of Life Update Type Library")
 ]
 library GoogleUpdateLib {
   importlib("stdole2.tlb");
   [
-    uuid(ABC01078-F197-4b0b-ADBC-CFE684B39C82),
+    uuid(25d45bde-ed42-4bf8-999c-7612eb1ea11d),
     helpstring("ProcessLauncherClass Class")
   ]
   coclass ProcessLauncherClass {
@@ -194,7 +201,7 @@ library GoogleUpdateLib {
   // required so that we can marshal/unmarshal the interfaces using the TypeLib
   // marshaler.
   [
-    uuid(9564861C-3469-4c9a-956A-74D5690790E6),
+    uuid(911081b6-09a6-466b-87f5-9e82be8d2ae6),
     helpstring("InterfaceRegistrar Class")
   ]
   coclass InterfaceRegistrar {
@@ -204,7 +211,7 @@ library GoogleUpdateLib {
   }
 
   [
-    uuid(2F0E2680-9FF5-43c0-B76E-114A56E93598),
+    uuid(24154fa3-262f-4869-be06-0fde3bcffdab),
     helpstring("OnDemand updates for per-user applications.")
   ]
   coclass OnDemandUserAppsClass {
@@ -212,7 +219,7 @@ library GoogleUpdateLib {
   }
 
   [
-    uuid(6F8BD55B-E83D-4a47-85BE-81FFA8057A69),
+    uuid(8ef7bf49-ed05-4083-b8aa-0386b9b935fd),
     helpstring("OnDemand updates for per-machine applications.")
   ]
   coclass OnDemandMachineAppsClass {
@@ -220,8 +227,8 @@ library GoogleUpdateLib {
   }
 
   [
-    uuid(E225E692-4B47-4777-9BED-4FD7FE257F0E),
-    helpstring("GoogleUpdateCore Class")
+    uuid(9525f47c-a47a-4785-a0d6-92031391f9ce),
+    helpstring("House of Life GoogleUpdateCore Class")
   ]
   coclass GoogleUpdateCoreClass
   {
@@ -229,3 +236,4 @@ library GoogleUpdateLib {
   }
 
 };
+

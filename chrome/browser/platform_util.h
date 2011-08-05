@@ -91,6 +91,8 @@ bool CanSetAsDefaultBrowser();
 // application for the given protocol.
 bool CanSetAsDefaultProtocolClient(const std::string& protocol);
 
+void setUseAutomaticUpdates(bool useAutomaticUpdates);
+bool getUseAutomaticUpdates();
 }
 
 #endif  // CHROME_BROWSER_PLATFORM_UTIL_H_

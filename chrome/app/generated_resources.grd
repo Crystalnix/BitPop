@@ -1074,6 +1074,9 @@ Other platform defines such as use_titlecase are declared in build/common.gypi.
         <message name="IDS_EXIT" desc="The text label of the Exit menu item">
           E&amp;xit
         </message>
+        <message name="IDS_CHECK_FOR_UPDATES" desc="Title of menu item starting update check.">
+          Check for updates...
+        </message>
       </if>
       <if expr="pp_ifdef('use_titlecase')">
         <message name="IDS_SHOW_HISTORY" desc="In Title Case: The show history menu in the app menu">
@@ -1120,6 +1123,9 @@ Other platform defines such as use_titlecase are declared in build/common.gypi.
         </message>
         <message name="IDS_EXIT" desc="In Title Case: The text label of the Exit menu item">
           E&amp;xit
+        </message>
+        <message name="IDS_CHECK_FOR_UPDATES" desc="In Title Case: Title of menu item starting update check.">
+          Check For Updates...
         </message>
       </if>
       <if expr="pp_ifdef('chromeos')">
@@ -7193,6 +7199,22 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_OPTIONS_DEFAULTBROWSER_SXS" desc="The text displayed when Chrome is installed in side-by-side mode, which does not support setting as the default browser.">
         This is a secondary installation of <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>, and cannot be made your default browser.
       </message>
+
+      <!-- Tree of life browser additions -->
+      <if expr="not pp_ifdef('use_titlecase')">
+        <message name="IDS_OPTIONS_CHECKFORUPDATE_GROUP_NAME" desc="The title of the check for update group">
+          Check for update
+        </message>
+      </if>
+      <if expr="pp_ifdef('use_titlecase')">
+        <message name="IDS_OPTIONS_CHECKFORUPDATE_GROUP_NAME" desc="In Title Case: The title of the check for update group">
+          Check For Update
+        </message>
+      </if>
+      <message name="IDS_OPTIONS_UPDATES_AUTOCHECK_LABEL" desc="The label for automatic updates checkbox">
+        Automatically check daily
+      </message>
+      <!-- end of Tree of life browser options -->
 
       <if expr="pp_ifdef('use_titlecase')">
         <message name="IDS_OPTIONS_DEFAULTBROWSER_USEASDEFAULT" desc="In Title Case: The label of the 'Use Chrome as default' browser button">

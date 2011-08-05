@@ -310,9 +310,11 @@
             'helper_app',
             'infoplist_strings_tool',
             'chrome_manifest_bundle',
+            'default_extensions',
           ],
           'mac_bundle_resources': [
             '<(PRODUCT_DIR)/<(mac_bundle_id).manifest',
+            'app/resources/dsa_pub.pem',
           ],
           'actions': [
             {
@@ -363,6 +365,12 @@
               'destination': '<(PRODUCT_DIR)/<(mac_product_name).app/Contents/Versions/<(version_full)',
               'files': [
                 '<(PRODUCT_DIR)/<(mac_product_name) Helper.app',
+              ],
+            },
+            {
+              'destination': '<(PRODUCT_DIR)/<(mac_product_name).app/Contents/Extensions',
+              'files': [
+                '<(PRODUCT_DIR)/extensions/external_extensions.json',
               ],
             },
           ],
@@ -430,7 +438,7 @@
               # NOTE: chrome/app/theme/chromium/BRANDING and
               # chrome/app/theme/google_chrome/BRANDING have the short names,
               # etc.; should we try to extract from there instead?
-              'product_name': 'chrome'
+              'product_name': 'bitpop'
             }],
             # On Mac, this is done in chrome_dll.gypi.
             ['internal_pdf', {

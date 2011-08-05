@@ -242,7 +242,7 @@ const FilePath::CharType Extension::kMessagesFilename[] =
 
 #if defined(OS_WIN)
 const char Extension::kExtensionRegistryPath[] =
-    "Software\\Google\\Chrome\\Extensions";
+    "Software\\HouseOfLife\\BitPop\\Extensions";
 #endif
 
 // first 16 bytes of SHA256 hashed public key.
@@ -1847,7 +1847,7 @@ bool Extension::InitFromValue(const DictionaryValue& source, int flags,
     }
 
     scoped_ptr<Version> current_version(
-        Version::GetVersionFromString(current_version_info.Version()));
+        Version::GetVersionFromString(current_version_info.ChromiumReleaseVersion()));
     if (!current_version.get()) {
       DCHECK(false);
       return false;

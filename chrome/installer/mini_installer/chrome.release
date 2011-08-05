@@ -28,7 +28,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 [GENERAL]
-chrome.exe: %(ChromeDir)s\
+bitpop.exe: %(ChromeDir)s\
 wow_helper.exe: %(ChromeDir)s\
 Dictionaries\en-US.bdic: %(ChromeDir)s\Dictionaries
 chrome.dll: %(VersionDir)s\

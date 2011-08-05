@@ -11,6 +11,8 @@
       # This part is shared between the two versions of the target.
       ['installer_util_target==1', {
         'sources': [
+          'installer/util/bitpop_distribution.cc',
+          'installer/util/bitpop_distribution.h',
           'installer/util/browser_distribution.cc',
           'installer/util/browser_distribution.h',
           'installer/util/channel_info.cc',

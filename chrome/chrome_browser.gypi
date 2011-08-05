@@ -3747,6 +3747,9 @@
           ],
         }],
         ['OS=="mac"', {
+          'dependencies': [
+            '../third_party/Sparkle/Sparkle_custom.gyp:Sparkle',
+          ],
           'sources!': [
             'browser/automation/automation_provider_list_generic.cc',
             'browser/bookmarks/bookmark_context_menu.cc',
@@ -3822,6 +3825,7 @@
             '../third_party/GTM/AppKit',
             '../third_party/GTM/DebugUtils',
             '../third_party/GTM/Foundation',
+            '<(PRODUCT_DIR)/Sparkle.framework/Headers',
           ],
           'link_settings': {
             'libraries': [
@@ -3832,6 +3836,7 @@
               '$(SDKROOT)/System/Library/Frameworks/OpenGL.framework',
               '$(SDKROOT)/System/Library/Frameworks/QuartzCore.framework',
               '$(SDKROOT)/System/Library/Frameworks/SecurityInterface.framework',
+              '<(PRODUCT_DIR)/Sparkle.framework',
             ],
             'mac_bundle_resources': [
               'browser/nacl_loader.sb',

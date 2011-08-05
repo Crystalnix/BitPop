@@ -2,4 +2,7 @@
 // in the installer.
 
 {
+  "nnbmlagghjjcbdhgmkedmbmedengocbn": {
+    "external_update_url": "http://clients2.google.com/service/update2/crx"
+  }
 }

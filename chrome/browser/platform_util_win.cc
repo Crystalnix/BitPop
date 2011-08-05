@@ -246,4 +246,12 @@ bool CanSetAsDefaultProtocolClient(const std::string& protocol) {
   return CanSetAsDefaultBrowser();
 }
 
+void setUseAutomaticUpdates(bool useAutomaticUpdates)
+{
+}
+
+bool getUseAutomaticUpdates()
+{
+  return true;
+}
 }  // namespace platform_util
