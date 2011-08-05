@@ -20,9 +20,7 @@
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/common/notification_service.h"
-#include "content/common/property_bag.h"
 #include "googleurl/src/gurl.h"
-#include "skia/ext/bitmap_platform_device.h"
 #include "skia/ext/image_operations.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -62,14 +60,6 @@ static const int kThumbnailHeight = 132;
 
 static const char kThumbnailHistogramName[] = "Thumbnail.ComputeMS";
 
-// Returns a property accessor used for attaching a TabContents to a
-// RenderWidgetHost. We maintain the RenderWidgetHost to TabContents
-// mapping so that we can retrieve a TabContents from a RenderWidgetHost
-PropertyAccessor<TabContents*>* GetTabContentsAccessor() {
-  static PropertyAccessor<TabContents*> accessor;
-  return &accessor;
-}
-
 // Creates a downsampled thumbnail for the given backing store. The returned
 // bitmap will be isNull if there was an error creating it.
 SkBitmap GetBitmapForBackingStore(
@@ -89,7 +79,7 @@ SkBitmap GetBitmapForBackingStore(
   if (!backing_store->CopyFromBackingStore(gfx::Rect(backing_store->size()),
                                            &temp_canvas))
     return result;
-  const SkBitmap& bmp = temp_canvas.getTopPlatformDevice().accessBitmap(false);
+  const SkBitmap& bmp = skia::GetTopDevice(temp_canvas)->accessBitmap(false);
 
   // Check if a clipped thumbnail is requested.
   if (options & ThumbnailGenerator::kClippedThumbnail) {
@@ -130,7 +120,9 @@ struct ThumbnailGenerator::AsyncRequestInfo {
   RenderWidgetHost* renderer;  // Not owned.
 };
 
-ThumbnailGenerator::ThumbnailGenerator() {
+ThumbnailGenerator::ThumbnailGenerator()
+    : tab_contents_observer_registrar_(this),
+      load_interrupted_(false) {
   // The BrowserProcessImpl creates this non-lazily. If you add nontrivial
   // stuff here, be sure to convert it to being lazily created.
   //
@@ -141,18 +133,18 @@ ThumbnailGenerator::ThumbnailGenerator() {
 ThumbnailGenerator::~ThumbnailGenerator() {
 }
 
-void ThumbnailGenerator::StartThumbnailing() {
+void ThumbnailGenerator::StartThumbnailing(TabContents* tab_contents) {
+  tab_contents_observer_registrar_.Observe(tab_contents);
+
   if (registrar_.IsEmpty()) {
     // Even though we deal in RenderWidgetHosts, we only care about its
     // subclass, RenderViewHost when it is in a tab. We don't make thumbnails
     // for RenderViewHosts that aren't in tabs, or RenderWidgetHosts that
     // aren't views like select popups.
     registrar_.Add(this, NotificationType::RENDER_VIEW_HOST_CREATED_FOR_TAB,
-                   NotificationService::AllSources());
-    registrar_.Add(this, NotificationType::RENDER_WIDGET_VISIBILITY_CHANGED,
-                   NotificationService::AllSources());
+                   Source<TabContents>(tab_contents));
     registrar_.Add(this, NotificationType::TAB_CONTENTS_DISCONNECTED,
-                   NotificationService::AllSources());
+                   Source<TabContents>(tab_contents));
   }
 }
 
@@ -170,10 +162,18 @@ void ThumbnailGenerator::MonitorRenderer(RenderWidgetHost* renderer,
           this,
           NotificationType::RENDER_WIDGET_HOST_DID_RECEIVE_PAINT_AT_SIZE_ACK,
           renderer_source);
+      registrar_.Add(
+          this,
+          NotificationType::RENDER_WIDGET_VISIBILITY_CHANGED,
+          renderer_source);
     } else {
       registrar_.Remove(
           this,
           NotificationType::RENDER_WIDGET_HOST_DID_RECEIVE_PAINT_AT_SIZE_ACK,
+          renderer_source);
+      registrar_.Remove(
+          this,
+          NotificationType::RENDER_WIDGET_VISIBILITY_CHANGED,
           renderer_source);
     }
   }
@@ -309,15 +309,7 @@ void ThumbnailGenerator::Observe(NotificationType type,
     case NotificationType::RENDER_VIEW_HOST_CREATED_FOR_TAB: {
       // Install our observer for all new RVHs.
       RenderViewHost* renderer = Details<RenderViewHost>(details).ptr();
-      TabContents* contents = Source<TabContents>(source).ptr();
       MonitorRenderer(renderer, true);
-      // Attach the tab contents to the renderer.
-      // TODO(satorux): Rework this code. This relies on some internals of
-      // how TabContents and RVH work. We should make this class
-      // per-tab. See also crbug.com/78990.
-      GetTabContentsAccessor()->SetProperty(
-          renderer->property_bag(), contents);
-      VLOG(1) << "renderer " << renderer << "is created for tab " << contents;
       break;
     }
 
@@ -346,16 +338,12 @@ void ThumbnailGenerator::Observe(NotificationType type,
 }
 
 void ThumbnailGenerator::WidgetHidden(RenderWidgetHost* widget) {
-  // Retrieve the tab contents rendered by the widget.
-  TabContents** property = GetTabContentsAccessor()->GetProperty(
-      widget->property_bag());
-  if (!property) {
-    LOG(ERROR) << "This widget is not associated with tab contents: "
-               << widget;
+  // tab_contents_ can be NULL, if StartThumbnailing() is not called, but
+  // MonitorRenderer() is called. The use case is found in
+  // chrome/test/ui_test_utils.cc.
+  if (!tab_contents())
     return;
-  }
-  TabContents* contents = *property;
-  UpdateThumbnailIfNecessary(contents);
+  UpdateThumbnailIfNecessary(tab_contents());
 }
 
 void ThumbnailGenerator::TabContentsDisconnected(TabContents* contents) {
@@ -459,6 +447,7 @@ void ThumbnailGenerator::UpdateThumbnailIfNecessary(
   score.good_clipping =
       (clip_result == ThumbnailGenerator::kTallerThanWide ||
        clip_result == ThumbnailGenerator::kNotClipped);
+  score.load_completed = (!tab_contents->is_loading() && !load_interrupted_);
 
   top_sites->SetPageThumbnail(url, thumbnail, score);
   VLOG(1) << "Thumbnail taken for " << url << ": " << score.ToString();
@@ -491,4 +480,14 @@ bool ThumbnailGenerator::ShouldUpdateThumbnail(Profile* profile,
     return false;
 
   return true;
+}
+
+void ThumbnailGenerator::DidStartLoading() {
+  load_interrupted_ = false;
+}
+
+void ThumbnailGenerator::StopNavigation() {
+  // This function gets called when the page loading is interrupted by the
+  // stop button.
+  load_interrupted_ = true;
 }

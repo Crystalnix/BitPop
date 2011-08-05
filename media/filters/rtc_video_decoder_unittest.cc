@@ -4,6 +4,7 @@
 
 #include <deque>
 
+#include "base/bind.h"
 #include "base/memory/singleton.h"
 #include "base/string_util.h"
 #include "media/base/data_buffer.h"
@@ -104,12 +105,13 @@ TEST_F(RTCVideoDecoderTest, DoSeek) {
   InitializeDecoderSuccessfully();
 
   decoder_->set_consume_video_frame_callback(
-      NewCallback(renderer_.get(), &MockVideoRenderer::ConsumeVideoFrame));
+      base::Bind(&MockVideoRenderer::ConsumeVideoFrame,
+                 base::Unretained(renderer_.get())));
 
   // Expect Seek and verify the results.
   EXPECT_CALL(*renderer_.get(), ConsumeVideoFrame(_))
       .Times(Limits::kMaxVideoFrames);
-  decoder_->Seek(kZero, NewExpectedCallback());
+  decoder_->Seek(kZero, NewExpectedStatusCB(PIPELINE_OK));
 
   message_loop_.RunAllPending();
   EXPECT_EQ(RTCVideoDecoder::kNormal, decoder_->state_);
@@ -123,11 +125,13 @@ TEST_F(RTCVideoDecoderTest, DoDeliverFrame) {
 
   // Pass the frame back to decoder
   decoder_->set_consume_video_frame_callback(
-      NewCallback(decoder_.get(), &RTCVideoDecoder::ProduceVideoFrame));
-  decoder_->Seek(kZero, NewExpectedCallback());
+      base::Bind(&RTCVideoDecoder::ProduceVideoFrame,
+                 base::Unretained(decoder_.get())));
+  decoder_->Seek(kZero, NewExpectedStatusCB(PIPELINE_OK));
 
   decoder_->set_consume_video_frame_callback(
-      NewCallback(renderer_.get(), &MockVideoRenderer::ConsumeVideoFrame));
+      base::Bind(&MockVideoRenderer::ConsumeVideoFrame,
+                 base::Unretained(renderer_.get())));
   EXPECT_CALL(*renderer_.get(), ConsumeVideoFrame(_))
       .Times(Limits::kMaxVideoFrames);
 

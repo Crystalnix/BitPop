@@ -69,7 +69,10 @@ class TabStripController {
   // non drag-able Tab.
   virtual int HasAvailableDragActions() const = 0;
 
-  // Performans a drop at the specified location.
+  // Notifies controller of a drop index update.
+  virtual void OnDropIndexUpdate(int index, bool drop_before) = 0;
+
+  // Performs a drop at the specified location.
   virtual void PerformDrop(bool drop_before, int index, const GURL& url) = 0;
 
   // Return true if this tab strip is compatible with the provided tab strip.
@@ -78,6 +81,10 @@ class TabStripController {
 
   // Creates the new tab.
   virtual void CreateNewTab() = 0;
+
+  // Informs that an active tab is selected when already active (ie - clicked
+  // when already active/foreground).
+  virtual void ClickActiveTab(int index) = 0;
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_TABS_TAB_STRIP_CONTROLLER_H_

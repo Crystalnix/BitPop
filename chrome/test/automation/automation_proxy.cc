@@ -157,7 +157,7 @@ void AutomationProxy::InitializeChannel(const std::string& channel_id,
     use_named_interface ? IPC::Channel::MODE_NAMED_CLIENT
                         : IPC::Channel::MODE_SERVER,
     this,  // we are the listener
-    thread_->message_loop(),
+    thread_->message_loop_proxy(),
     true,
     shutdown_event_.get()));
   channel_->AddFilter(new AutomationMessageFilter(this));
@@ -416,9 +416,9 @@ bool AutomationProxy::GetBrowserLocale(string16* locale) {
   return !locale->empty();
 }
 
-scoped_refptr<BrowserProxy> AutomationProxy::FindNormalBrowserWindow() {
+scoped_refptr<BrowserProxy> AutomationProxy::FindTabbedBrowserWindow() {
   int handle = 0;
-  if (!Send(new AutomationMsg_FindNormalBrowserWindow(&handle)))
+  if (!Send(new AutomationMsg_FindTabbedBrowserWindow(&handle)))
     return NULL;
 
   return ProxyObjectFromHandle<BrowserProxy>(handle);

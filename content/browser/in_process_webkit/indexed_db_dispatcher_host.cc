@@ -6,14 +6,12 @@
 
 #include "base/command_line.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "content/browser/browser_thread.h"
 #include "content/browser/in_process_webkit/indexed_db_callbacks.h"
 #include "content/browser/in_process_webkit/indexed_db_database_callbacks.h"
 #include "content/browser/in_process_webkit/indexed_db_transaction_callbacks.h"
 #include "content/browser/renderer_host/render_message_filter.h"
-#include "content/browser/renderer_host/render_view_host_notification_task.h"
+#include "content/browser/user_metrics.h"
 #include "content/common/content_switches.h"
 #include "content/common/indexed_db_messages.h"
 #include "content/common/result_codes.h"
@@ -61,10 +59,8 @@ void DeleteOnWebKitThread(T* obj) {
 }
 
 IndexedDBDispatcherHost::IndexedDBDispatcherHost(
-    int process_id, WebKitContext* webkit_context,
-    HostContentSettingsMap* host_content_settings_map)
+    int process_id, WebKitContext* webkit_context)
     : webkit_context_(webkit_context),
-      host_content_settings_map_(host_content_settings_map),
       ALLOW_THIS_IN_INITIALIZER_LIST(database_dispatcher_host_(
           new DatabaseDispatcherHost(this))),
       ALLOW_THIS_IN_INITIALIZER_LIST(index_dispatcher_host_(
@@ -84,18 +80,28 @@ IndexedDBDispatcherHost::~IndexedDBDispatcherHost() {
 
 void IndexedDBDispatcherHost::OnChannelClosing() {
   BrowserMessageFilter::OnChannelClosing();
-  BrowserThread::DeleteSoon(
-        BrowserThread::WEBKIT, FROM_HERE, database_dispatcher_host_.release());
-  BrowserThread::DeleteSoon(
-        BrowserThread::WEBKIT, FROM_HERE, index_dispatcher_host_.release());
-  BrowserThread::DeleteSoon(
-        BrowserThread::WEBKIT, FROM_HERE,
-        object_store_dispatcher_host_.release());
-  BrowserThread::DeleteSoon(
-        BrowserThread::WEBKIT, FROM_HERE, cursor_dispatcher_host_.release());
-  BrowserThread::DeleteSoon(
-        BrowserThread::WEBKIT, FROM_HERE,
-        transaction_dispatcher_host_.release());
+
+  bool success = BrowserThread::PostTask(
+      BrowserThread::WEBKIT, FROM_HERE,
+      NewRunnableMethod(this, &IndexedDBDispatcherHost::ResetDispatcherHosts));
+
+  if (!success)
+    ResetDispatcherHosts();
+}
+
+void IndexedDBDispatcherHost::ResetDispatcherHosts() {
+  // It is important that the various *_dispatcher_host_ members are reset
+  // on the WebKit thread, since there might be incoming messages on that
+  // thread, and we must not reset the dispatcher hosts until after those
+  // messages are processed.
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT) ||
+         CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess));
+
+  database_dispatcher_host_.reset();
+  index_dispatcher_host_.reset();
+  object_store_dispatcher_host_.reset();
+  cursor_dispatcher_host_.reset();
+  transaction_dispatcher_host_.reset();
 }
 
 void IndexedDBDispatcherHost::OverrideThreadForMessage(
@@ -112,8 +118,6 @@ bool IndexedDBDispatcherHost::OnMessageReceived(const IPC::Message& message,
 
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT));
 
-  // TODO(dgrogan): The page cycler test can crash here because
-  // database_dispatcher_host_ becomes invalid.
   bool handled =
       database_dispatcher_host_->OnMessageReceived(message, message_was_ok) ||
       index_dispatcher_host_->OnMessageReceived(message, message_was_ok) ||
@@ -181,32 +185,6 @@ int32 IndexedDBDispatcherHost::Add(WebIDBTransaction* idb_transaction) {
   return id;
 }
 
-bool IndexedDBDispatcherHost::CheckContentSetting(const GURL& origin,
-                                                  const string16& description,
-                                                  int routing_id,
-                                                  int response_id) {
-  ContentSetting content_setting =
-      host_content_settings_map_->GetContentSetting(
-          origin, CONTENT_SETTINGS_TYPE_COOKIES, "");
-
-  CallRenderViewHostContentSettingsDelegate(
-      process_id_, routing_id,
-      &RenderViewHostDelegate::ContentSettings::OnIndexedDBAccessed,
-      origin, description, content_setting == CONTENT_SETTING_BLOCK);
-
-  if (content_setting == CONTENT_SETTING_BLOCK) {
-    // TODO(jorlow): Change this to the proper error code once we figure out
-    // one.
-    int error_code = 0; // Defined by the IndexedDB spec.
-    static string16 error_message = ASCIIToUTF16(
-        "The user denied permission to access the database.");
-    Send(new IndexedDBMsg_CallbacksError(response_id, error_code,
-                                         error_message));
-    return false;
-  }
-  return true;
-}
-
 void IndexedDBDispatcherHost::OnIDBFactoryOpen(
     const IndexedDBHostMsg_FactoryOpen_Params& params) {
   FilePath base_path = webkit_context_->data_path();
@@ -224,11 +202,6 @@ void IndexedDBDispatcherHost::OnIDBFactoryOpen(
   GURL url(origin.toString());
 
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT));
-  if (!CheckContentSetting(url, params.name, params.routing_id,
-                           params.response_id)) {
-    return;
-  }
-
   DCHECK(kDefaultQuota == params.maximum_size);
 
   uint64 quota = kDefaultQuota;
@@ -271,11 +244,6 @@ void IndexedDBDispatcherHost::OnIDBFactoryDeleteDatabase(
   GURL url(origin.toString());
 
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT));
-  if (!CheckContentSetting(url, params.name, params.routing_id,
-                           params.response_id)) {
-    return;
-  }
-
   Context()->GetIDBFactory()->deleteDatabase(
       params.name,
       new IndexedDBCallbacks<WebIDBDatabase>(this, params.response_id),

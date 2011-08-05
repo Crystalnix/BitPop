@@ -4,14 +4,19 @@
 
 #include "content/browser/renderer_host/clipboard_message_filter.h"
 
+#if defined(USE_SYSTEM_ZLIB)
+#include <zlib.h>
+#else
+#include "third_party/zlib/zlib.h"
+#endif
+
 #include "base/stl_util-inl.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/clipboard_dispatcher.h"
+#include "content/browser/clipboard_dispatcher.h"
 #include "content/common/clipboard_messages.h"
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_message_macros.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "third_party/zlib/zlib.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/size.h"
 

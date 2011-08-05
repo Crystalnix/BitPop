@@ -88,11 +88,6 @@ void WizardWebPageViewTabContents::DidFinishLoad(
     long long /*frame_id*/) {
 }
 
-void WizardWebPageViewTabContents::OnContentBlocked(ContentSettingsType type) {
-  LOG(ERROR) << "Page load failed: content blocked. Type: " << type;
-  page_delegate_->OnPageLoadFailed("");
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 // WebPageDomView, public:
 
@@ -103,6 +98,10 @@ void WebPageDomView::SetTabContentsDelegate(
 
 ///////////////////////////////////////////////////////////////////////////////
 // WebPageView, public:
+
+WebPageView::WebPageView() : throbber_(NULL), connecting_label_(NULL) {}
+
+WebPageView::~WebPageView() {}
 
 void WebPageView::Init() {
   views::Painter* painter = CreateWizardPainter(

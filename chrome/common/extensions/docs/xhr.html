@@ -326,13 +326,14 @@ An extension can talk to remote servers outside of its origin,
 as long as it first requests cross-origin permissions.</p>
 
 <p class="note">
-<b>Note:</b>
-Content scripts can't directly make cross-origin requests.
-However, a content script can
+<b>Version note:</b>
+As of Chrome 13,
+content scripts can make cross-origin requests
+to the same servers as the rest of the extension.
+Before Chrome 13, a content script couldn't directly make requests;
+instead, it had to
 send a message to its parent extension
-that asks the extension to make a cross-origin request.
-For an example of this technique, see the
-<a href="http://src.chromium.org/viewvc/chrome/trunk/src/chrome/common/extensions/docs/examples/howto/contentscript_xhr">contentscript_xhr example</a>.
+asking the extension to make a cross-origin request.
 </p>
 
 <h2 id="extension-origin">Extension origin</h2>
@@ -583,7 +584,7 @@ prefer HTTPS whenever possible.
 
               <div class="summary">
                 <!-- Note: intentionally longer 80 columns -->
-                <span class="subdued">chrome.bookmarks</span><span>onEvent</span><span class="subdued">.addListener</span>(function(<span>Type param1, Type param2</span>) <span class="subdued">{...}</span>);
+                <span class="subdued">chrome.bookmarks</span><span>onEvent</span><span class="subdued">.addListener</span>(function(<span>Type param1, Type param2</span>) <span class="subdued">{...}</span><span>, Type opt_param1, Type opt_param2</span>));
               </div>
 
               <div class="description">
@@ -592,9 +593,9 @@ prefer HTTPS whenever possible.
                   A description from the json schema def of the event goes here.
                 </p>
 
-                <!-- PARAMETERS -->
+                <!-- LISTENER PARAMETERS -->
                 <div>
-                  <h4>Parameters</h4>
+                  <h4>Listener parameters</h4>
                   <dl>
                     <div>
                       <div>
@@ -602,8 +603,28 @@ prefer HTTPS whenever possible.
                     </div>
                   </dl>
                 </div>
-              </div> <!-- /decription -->
 
+                <!-- EXTRA PARAMETERS -->
+                <div>
+                  <h4>Extra parameters to addListener</h4>
+                  <dl>
+                    <div>
+                      <div>
+                      </div>
+                    </div>
+                  </dl>
+                </div>
+
+                <!-- LISTENER RETURN VALUE -->
+                <h4>Listener returns</h4>
+                <dl>
+                  <div>
+                    <div>
+                    </div>
+                  </div>
+                </dl>
+
+              </div> <!-- /description -->
             </div> <!-- /apiItem -->
 
           </div> <!-- /apiGroup -->

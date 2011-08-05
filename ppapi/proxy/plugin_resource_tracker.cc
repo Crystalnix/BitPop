@@ -10,6 +10,7 @@
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/plugin_resource.h"
 #include "ppapi/proxy/serialized_var.h"
+#include "ppapi/shared_impl/tracker_base.h"
 
 namespace pp {
 namespace proxy {
@@ -18,6 +19,10 @@ namespace {
 
 // When non-NULL, this object overrides the ResourceTrackerSingleton.
 PluginResourceTracker* g_resource_tracker_override = NULL;
+
+::ppapi::TrackerBase* GetTrackerBase() {
+  return PluginResourceTracker::GetInstance();
+}
 
 }  // namespace
 
@@ -33,6 +38,8 @@ PluginResourceTracker::ResourceInfo::ResourceInfo(int rc,
 PluginResourceTracker::ResourceInfo::ResourceInfo(const ResourceInfo& other)
     : ref_count(other.ref_count),
       resource(other.resource) {
+  // Wire up the new shared resource tracker base to use our implementation.
+  ::ppapi::TrackerBase::Init(&GetTrackerBase);
 }
 
 PluginResourceTracker::ResourceInfo::~ResourceInfo() {
@@ -67,6 +74,12 @@ PluginResourceTracker* PluginResourceTracker::GetInstance() {
   return Singleton<PluginResourceTracker>::get();
 }
 
+// static
+::ppapi::TrackerBase*
+PluginResourceTracker::GetTrackerBaseInstance() {
+  return GetInstance();
+}
+
 PluginResource* PluginResourceTracker::GetResourceObject(
     PP_Resource pp_resource) {
   ResourceMap::iterator found = resource_map_.find(pp_resource);
@@ -77,17 +90,14 @@ PluginResource* PluginResourceTracker::GetResourceObject(
 
 PP_Resource PluginResourceTracker::AddResource(
     linked_ptr<PluginResource> object) {
-  if (object->host_resource().is_null()) {
-    // Prevent adding null resources or GetResourceObject(0) will return a
-    // valid pointer!
-    NOTREACHED();
-    return 0;
-  }
-
   PP_Resource plugin_resource = ++last_resource_id_;
   DCHECK(resource_map_.find(plugin_resource) == resource_map_.end());
   resource_map_[plugin_resource] = ResourceInfo(1, object);
-  host_resource_map_[object->host_resource()] = plugin_resource;
+  if (!object->host_resource().is_null()) {
+    // The host resource ID will be 0 for resources that only exist in the
+    // plugin process. Don't add those to the list.
+    host_resource_map_[object->host_resource()] = plugin_resource;
+  }
   return plugin_resource;
 }
 
@@ -112,6 +122,31 @@ PP_Resource PluginResourceTracker::PluginResourceForHostResource(
   return found->second;
 }
 
+::ppapi::ResourceObjectBase* PluginResourceTracker::GetResourceAPI(
+    PP_Resource res) {
+  ResourceMap::iterator found = resource_map_.find(res);
+  if (found == resource_map_.end())
+    return NULL;
+  return found->second.resource.get();
+}
+
+::ppapi::FunctionGroupBase* PluginResourceTracker::GetFunctionAPI(
+    PP_Instance inst,
+    pp::proxy::InterfaceID id) {
+  PluginDispatcher* dispatcher = PluginDispatcher::GetForInstance(inst);
+  if (dispatcher)
+    return dispatcher->GetFunctionAPI(id);
+  return NULL;
+}
+
+PP_Instance PluginResourceTracker::GetInstanceForResource(
+    PP_Resource resource) {
+  ResourceMap::iterator found = resource_map_.find(resource);
+  if (found == resource_map_.end())
+    return 0;
+  return found->second.resource->instance();
+}
+
 void PluginResourceTracker::ReleasePluginResourceRef(
     const PP_Resource& resource,
     bool notify_browser_on_release) {
@@ -127,14 +162,17 @@ void PluginResourceTracker::ReleasePluginResourceRef(
     PluginDispatcher* dispatcher =
         PluginDispatcher::GetForInstance(plugin_resource->instance());
     HostResource host_resource = plugin_resource->host_resource();
-    host_resource_map_.erase(host_resource);
+    if (!host_resource.is_null())
+      host_resource_map_.erase(host_resource);
     resource_map_.erase(found);
     plugin_resource.reset();
 
     // dispatcher can be NULL if the plugin held on to a resource after the
     // instance was destroyed. In that case the browser-side resource has
-    // already been freed correctly on the browser side.
-    if (notify_browser_on_release && dispatcher) {
+    // already been freed correctly on the browser side. The host_resource
+    // will be NULL for proxy-only resources, which we obviously don't need to
+    // tell the host about.
+    if (notify_browser_on_release && dispatcher && !host_resource.is_null()) {
       dispatcher->Send(new PpapiHostMsg_PPBCore_ReleaseResource(
           INTERFACE_ID_PPB_CORE, host_resource));
     }

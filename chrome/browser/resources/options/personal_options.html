@@ -1,4 +1,4 @@
-<div id="personal-page" class="page hidden">
+<div id="personal-page" class="page" hidden>
   <h1 i18n-content="personalPage"></h1>
 <if expr="pp_ifdef('chromeos')">
   <section>
@@ -50,7 +50,7 @@
           <button id="new-profile" i18n-content="createProfileButton"></button>
         </div>
       </div>
-      <a href="https://www.google.com/dashboard" id="privacy-dashboard-link"
+      <a id="privacy-dashboard-link" href="https://www.google.com/dashboard"
           i18n-content="privacyDashboardLink" target="_blank" hidden></a>
     </div>
   </section>
@@ -86,7 +86,7 @@
     <div>
       <div class="checkbox">
         <label>
-          <input id="autofillEnabled" pref="autofill.enabled"
+          <input id="autofill-enabled" pref="autofill.enabled"
               metric="Options_FormAutofill" type="checkbox">
           <span i18n-content="autofillEnabled"></span>
         </label>
@@ -103,7 +103,7 @@
     </div>
   </section>
 </if>
-<if expr="not pp_ifdef('toolkit_views') and (os == 'linux2' or os.find('bsd') != -1)">
+<if expr="not pp_ifdef('toolkit_views') and (os == 'linux2' or os.find('bsd') != -1 or os == 'sunos5')">
   <section>
     <h3 i18n-content="appearance"></h3>
     <div>
@@ -150,5 +150,4 @@
     </div>
   </section>
 </if>
-
 </div>

@@ -19,9 +19,19 @@ P2PSocketDispatcher::~P2PSocketDispatcher() {
   }
 }
 
+void P2PSocketDispatcher::RequestNetworks() {
+  Send(new P2PHostMsg_GetNetworkList(routing_id()));
+}
+
+void P2PSocketDispatcher::GetNetworks(net::NetworkInterfaceList* networks) {
+  base::AutoLock auto_lock(networks_lock_);
+  *networks = networks_;
+}
+
 bool P2PSocketDispatcher::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(P2PSocketDispatcher, message)
+    IPC_MESSAGE_HANDLER(P2PMsg_NetworkList, OnNetworkList)
     IPC_MESSAGE_HANDLER(P2PMsg_OnSocketCreated, OnSocketCreated)
     IPC_MESSAGE_HANDLER(P2PMsg_OnIncomingTcpConnection, OnIncomingTcpConnection)
     IPC_MESSAGE_HANDLER(P2PMsg_OnError, OnError)
@@ -46,6 +56,12 @@ void P2PSocketDispatcher::SendP2PMessage(IPC::Message* msg) {
 
 base::MessageLoopProxy* P2PSocketDispatcher::message_loop() {
   return message_loop_;
+}
+
+void P2PSocketDispatcher::OnNetworkList(
+    const net::NetworkInterfaceList& networks) {
+  base::AutoLock auto_lock(networks_lock_);
+  networks_ = networks;
 }
 
 void P2PSocketDispatcher::OnSocketCreated(

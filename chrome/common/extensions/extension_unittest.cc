@@ -13,8 +13,8 @@
 #include "base/file_util.h"
 #include "base/i18n/rtl.h"
 #include "base/path_service.h"
+#include "base/stringprintf.h"
 #include "base/string_number_conversions.h"
-#include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension_action.h"
@@ -48,7 +48,7 @@ void CompareLists(const std::vector<std::string>& expected,
   }
 }
 
-static void AddPattern(ExtensionExtent* extent, const std::string& pattern) {
+static void AddPattern(URLPatternSet* extent, const std::string& pattern) {
   int schemes = URLPattern::SCHEME_ALL;
   extent->AddPattern(URLPattern(schemes, pattern));
 }
@@ -463,24 +463,24 @@ TEST(ExtensionTest, InitFromValueValidNameInRTL) {
 
   input_value.SetString(keys::kVersion, "1.0.0.0");
   // No strong RTL characters in name.
-  std::wstring name(L"Dictionary (by Google)");
-  input_value.SetString(keys::kName, WideToUTF16Hack(name));
+  string16 name(ASCIIToUTF16("Dictionary (by Google)"));
+  input_value.SetString(keys::kName, name);
   EXPECT_TRUE(extension.InitFromValue(input_value, Extension::NO_FLAGS,
                                       &error));
   EXPECT_EQ("", error);
-  std::wstring localized_name(name);
+  string16 localized_name(name);
   base::i18n::AdjustStringForLocaleDirection(&localized_name);
-  EXPECT_EQ(localized_name, UTF8ToWide(extension.name()));
+  EXPECT_EQ(localized_name, UTF8ToUTF16(extension.name()));
 
   // Strong RTL characters in name.
-  name = L"Dictionary (\x05D1\x05D2"L" Google)";
-  input_value.SetString(keys::kName, WideToUTF16Hack(name));
+  name = WideToUTF16(L"Dictionary (\x05D1\x05D2"L" Google)");
+  input_value.SetString(keys::kName, name);
   EXPECT_TRUE(extension.InitFromValue(input_value, Extension::NO_FLAGS,
                                       &error));
   EXPECT_EQ("", error);
   localized_name = name;
   base::i18n::AdjustStringForLocaleDirection(&localized_name);
-  EXPECT_EQ(localized_name, UTF8ToWide(extension.name()));
+  EXPECT_EQ(localized_name, UTF8ToUTF16(extension.name()));
 
   // Reset locale.
 #if defined(TOOLKIT_GTK)
@@ -847,65 +847,65 @@ static scoped_refptr<Extension> LoadManifest(const std::string& dir,
 
 TEST(ExtensionTest, EffectiveHostPermissions) {
   scoped_refptr<Extension> extension;
-  ExtensionExtent hosts;
+  URLPatternSet hosts;
 
   extension = LoadManifest("effective_host_permissions", "empty.json");
   EXPECT_EQ(0u, extension->GetEffectiveHostPermissions().patterns().size());
-  EXPECT_FALSE(hosts.ContainsURL(GURL("http://www.google.com")));
+  EXPECT_FALSE(hosts.MatchesURL(GURL("http://www.google.com")));
   EXPECT_FALSE(extension->HasEffectiveAccessToAllHosts());
 
   extension = LoadManifest("effective_host_permissions", "one_host.json");
   hosts = extension->GetEffectiveHostPermissions();
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://www.google.com")));
-  EXPECT_FALSE(hosts.ContainsURL(GURL("https://www.google.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://www.google.com")));
+  EXPECT_FALSE(hosts.MatchesURL(GURL("https://www.google.com")));
   EXPECT_FALSE(extension->HasEffectiveAccessToAllHosts());
 
   extension = LoadManifest("effective_host_permissions",
                            "one_host_wildcard.json");
   hosts = extension->GetEffectiveHostPermissions();
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://google.com")));
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://foo.google.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://google.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://foo.google.com")));
   EXPECT_FALSE(extension->HasEffectiveAccessToAllHosts());
 
   extension = LoadManifest("effective_host_permissions", "two_hosts.json");
   hosts = extension->GetEffectiveHostPermissions();
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://www.google.com")));
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://www.reddit.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://www.google.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://www.reddit.com")));
   EXPECT_FALSE(extension->HasEffectiveAccessToAllHosts());
 
   extension = LoadManifest("effective_host_permissions",
                            "https_not_considered.json");
   hosts = extension->GetEffectiveHostPermissions();
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://google.com")));
-  EXPECT_TRUE(hosts.ContainsURL(GURL("https://google.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://google.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("https://google.com")));
   EXPECT_FALSE(extension->HasEffectiveAccessToAllHosts());
 
   extension = LoadManifest("effective_host_permissions",
                            "two_content_scripts.json");
   hosts = extension->GetEffectiveHostPermissions();
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://google.com")));
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://www.reddit.com")));
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://news.ycombinator.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://google.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://www.reddit.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://news.ycombinator.com")));
   EXPECT_FALSE(extension->HasEffectiveAccessToAllHosts());
 
   extension = LoadManifest("effective_host_permissions", "all_hosts.json");
   hosts = extension->GetEffectiveHostPermissions();
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://test/")));
-  EXPECT_FALSE(hosts.ContainsURL(GURL("https://test/")));
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://www.google.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://test/")));
+  EXPECT_FALSE(hosts.MatchesURL(GURL("https://test/")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://www.google.com")));
   EXPECT_TRUE(extension->HasEffectiveAccessToAllHosts());
 
   extension = LoadManifest("effective_host_permissions", "all_hosts2.json");
   hosts = extension->GetEffectiveHostPermissions();
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://test/")));
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://www.google.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://test/")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://www.google.com")));
   EXPECT_TRUE(extension->HasEffectiveAccessToAllHosts());
 
   extension = LoadManifest("effective_host_permissions", "all_hosts3.json");
   hosts = extension->GetEffectiveHostPermissions();
-  EXPECT_FALSE(hosts.ContainsURL(GURL("http://test/")));
-  EXPECT_TRUE(hosts.ContainsURL(GURL("https://test/")));
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://www.google.com")));
+  EXPECT_FALSE(hosts.MatchesURL(GURL("http://test/")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("https://test/")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://www.google.com")));
   EXPECT_TRUE(extension->HasEffectiveAccessToAllHosts());
 }
 
@@ -980,7 +980,7 @@ TEST(ExtensionTest, IsPrivilegeIncrease) {
     for (size_t j = 0; kTests[i].granted_apis[j] != NULL; ++j)
       granted_apis.insert(kTests[i].granted_apis[j]);
 
-    ExtensionExtent granted_hosts;
+    URLPatternSet granted_hosts;
     for (size_t j = 0; kTests[i].granted_hosts[j] != NULL; ++j)
       AddPattern(&granted_hosts, kTests[i].granted_hosts[j]);
 
@@ -1014,6 +1014,8 @@ TEST(ExtensionTest, PermissionMessages) {
   // TODO(erikkay) add a string for this permission.
   skip.insert(Extension::kBackgroundPermission);
 
+  skip.insert(Extension::kClipboardWritePermission);
+
   // The cookie permission does nothing unless you have associated host
   // permissions.
   skip.insert(Extension::kCookiePermission);
@@ -1029,10 +1031,13 @@ TEST(ExtensionTest, PermissionMessages) {
   // to warn you further.
   skip.insert(Extension::kExperimentalPermission);
 
-  // These are only usable by component extensions.
+  // These are private.
   skip.insert(Extension::kWebstorePrivatePermission);
   skip.insert(Extension::kFileBrowserPrivatePermission);
-  skip.insert(Extension::kChromeosInfoPrivatePermissions);
+  skip.insert(Extension::kMediaPlayerPrivatePermission);
+  skip.insert(Extension::kChromePrivatePermission);
+  skip.insert(Extension::kChromeosInfoPrivatePermission);
+  skip.insert(Extension::kWebSocketProxyPrivatePermission);
 
   const Extension::PermissionMessage::MessageId ID_NONE =
       Extension::PermissionMessage::ID_NONE;

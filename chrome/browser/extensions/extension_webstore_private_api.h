@@ -77,6 +77,11 @@ class BeginInstallWithManifestFunction : public AsyncExtensionFunction,
   // the normal requirement that it is called during a user gesture.
   static void SetIgnoreUserGestureForTests(bool ignore);
 
+  // For use only in tests - sets a flag that makes invocations of
+  // beginInstallWithManifest skip putting up a real dialog, and instead act
+  // as if the dialog choice was to proceed or abort.
+  static void SetAutoConfirmForTests(bool should_proceed);
+
   // Called when we've successfully parsed the manifest and icon data in the
   // utility process. Ownership of parsed_manifest is transferred.
   void OnParseSuccess(const SkBitmap& icon, DictionaryValue* parsed_manifest);
@@ -101,6 +106,7 @@ class BeginInstallWithManifestFunction : public AsyncExtensionFunction,
   std::string id_;
   std::string manifest_;
   std::string icon_data_;
+  std::string localized_name_;
 
   // The results of parsing manifest_ and icon_data_ go into these two.
   scoped_ptr<DictionaryValue> parsed_manifest_;
@@ -109,7 +115,7 @@ class BeginInstallWithManifestFunction : public AsyncExtensionFunction,
   // A dummy Extension object we create for the purposes of using
   // ExtensionInstallUI to prompt for confirmation of the install.
   scoped_refptr<Extension> dummy_extension_;
-  DECLARE_EXTENSION_FUNCTION_NAME("webstorePrivate.beginInstallWithManifest");
+  DECLARE_EXTENSION_FUNCTION_NAME("webstorePrivate.beginInstallWithManifest2");
 };
 
 class CompleteInstallFunction : public SyncExtensionFunction {

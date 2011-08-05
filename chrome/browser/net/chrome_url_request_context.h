@@ -10,17 +10,16 @@
 #include <vector>
 
 #include "base/file_path.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/extensions/extension_info_map.h"
 #include "chrome/browser/extensions/extension_webrequest_api.h"
 #include "chrome/browser/prefs/pref_change_registrar.h"
 #include "chrome/browser/prefs/pref_service.h"
-#include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/chrome_blob_storage_context.h"
-#include "content/browser/host_zoom_map.h"
-#include "net/base/cookie_policy.h"
+#include "content/common/notification_observer.h"
+#include "content/common/notification_registrar.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "webkit/fileapi/file_system_context.h"
@@ -28,13 +27,15 @@
 class ChromeURLDataManagerBackend;
 class ChromeURLRequestContextFactory;
 class IOThread;
-namespace net {
-class DnsCertProvenanceChecker;
-class NetworkDelegate;
-}
 class PrefService;
 class Profile;
 class ProfileIOData;
+namespace base {
+class WaitableEvent;
+}
+namespace net {
+class NetworkDelegate;
+}
 
 // Subclass of net::URLRequestContext which can be used to store extra
 // information for requests.
@@ -75,21 +76,13 @@ class ChromeURLRequestContext : public net::URLRequestContext {
 
   virtual const std::string& GetUserAgent(const GURL& url) const;
 
-  HostContentSettingsMap* host_content_settings_map() {
-    return host_content_settings_map_;
-  }
-
-  const HostZoomMap* host_zoom_map() const { return host_zoom_map_; }
-
   const ExtensionInfoMap* extension_info_map() const {
     return extension_info_map_;
   }
 
-  prerender::PrerenderManager* prerender_manager() {
-    return prerender_manager_.get();
-  }
-
-  ChromeURLDataManagerBackend* GetChromeURLDataManagerBackend();
+  // TODO(willchan): Get rid of the need for this accessor. Really, this should
+  // move completely to ProfileIOData.
+  ChromeURLDataManagerBackend* chrome_url_data_manager_backend() const;
 
   // Setters to simplify initializing from factory objects.
   void set_user_script_dir_path(const FilePath& path) {
@@ -97,13 +90,6 @@ class ChromeURLRequestContext : public net::URLRequestContext {
   }
   void set_is_incognito(bool is_incognito) {
     is_incognito_ = is_incognito;
-  }
-  void set_host_content_settings_map(
-      HostContentSettingsMap* host_content_settings_map) {
-    host_content_settings_map_ = host_content_settings_map;
-  }
-  void set_host_zoom_map(HostZoomMap* host_zoom_map) {
-    host_zoom_map_ = host_zoom_map;
   }
   void set_appcache_service(ChromeAppCacheService* service) {
     appcache_service_ = service;
@@ -117,9 +103,8 @@ class ChromeURLRequestContext : public net::URLRequestContext {
   void set_extension_info_map(ExtensionInfoMap* map) {
     extension_info_map_ = map;
   }
-  void set_prerender_manager(prerender::PrerenderManager* prerender_manager) {
-    prerender_manager_ = prerender_manager;
-  }
+  void set_chrome_url_data_manager_backend(
+      ChromeURLDataManagerBackend* backend);
 
   // Callback for when the accept language changes.
   void OnAcceptLanguageChange(const std::string& accept_language);
@@ -141,15 +126,12 @@ class ChromeURLRequestContext : public net::URLRequestContext {
 
   // TODO(willchan): Make these non-refcounted.
   scoped_refptr<ChromeAppCacheService> appcache_service_;
-  scoped_refptr<HostContentSettingsMap> host_content_settings_map_;
-  scoped_refptr<HostZoomMap> host_zoom_map_;
   scoped_refptr<ChromeBlobStorageContext> blob_storage_context_;
   scoped_refptr<fileapi::FileSystemContext> file_system_context_;
   // TODO(aa): This should use chrome/common/extensions/extension_set.h.
   scoped_refptr<ExtensionInfoMap> extension_info_map_;
-  scoped_refptr<prerender::PrerenderManager> prerender_manager_;
-  scoped_ptr<ChromeURLDataManagerBackend> chrome_url_data_manager_backend_;
 
+  ChromeURLDataManagerBackend* chrome_url_data_manager_backend_;
   bool is_incognito_;
 
   // ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_temp_dir.h"
+#include "base/scoped_temp_dir.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_switches.h"
@@ -24,6 +24,10 @@ class IndexedDBBrowserTest : public InProcessBrowserTest {
  public:
   IndexedDBBrowserTest() {
     EnableDOMAutomation();
+  }
+
+  virtual void SetUpCommandLine(CommandLine* command_line) {
+    command_line->AppendSwitch(switches::kUnlimitedQuotaForIndexedDB);
   }
 
   GURL testUrl(const FilePath& file_path) {
@@ -49,7 +53,18 @@ class IndexedDBBrowserTest : public InProcessBrowserTest {
   }
 };
 
+class IndexedDBLevelDBBrowserTest : public IndexedDBBrowserTest {
+ public:
+  virtual void SetUpCommandLine(CommandLine* command_line) {
+    command_line->AppendSwitch(switches::kLevelDBIndexedDatabase);
+  }
+};
+
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, CursorTest) {
+  SimpleTest(testUrl(FilePath(FILE_PATH_LITERAL("cursor_test.html"))));
+}
+
+IN_PROC_BROWSER_TEST_F(IndexedDBLevelDBBrowserTest, CursorTest) {
   SimpleTest(testUrl(FilePath(FILE_PATH_LITERAL("cursor_test.html"))));
 }
 
@@ -87,6 +102,13 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, DISABLED_DoesntHangTest) {
       FILE_PATH_LITERAL("transaction_run_forever.html"))));
   ui_test_utils::CrashTab(browser()->GetSelectedTabContents());
   SimpleTest(testUrl(FilePath(FILE_PATH_LITERAL("transaction_test.html"))));
+}
+
+IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, Bug84933Test) {
+  const GURL url = testUrl(FilePath(FILE_PATH_LITERAL("bug_84933.html")));
+
+  // Just navigate to the URL. Test will crash if it fails.
+  ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(browser(), url, 1);
 }
 
 // In proc browser test is needed here because ClearLocalState indirectly calls

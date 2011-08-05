@@ -1,12 +1,14 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/sync/engine/conflict_resolver.h"
 
+#include <algorithm>
 #include <map>
 #include <set>
 
+#include "base/metrics/histogram.h"
 #include "chrome/browser/sync/engine/syncer.h"
 #include "chrome/browser/sync/engine/syncer_util.h"
 #include "chrome/browser/sync/protocol/service_constants.h"
@@ -62,7 +64,8 @@ void ConflictResolver::OverwriteServerChanges(WriteTransaction* trans,
 
 ConflictResolver::ProcessSimpleConflictResult
 ConflictResolver::ProcessSimpleConflict(WriteTransaction* trans,
-                                        const Id& id) {
+                                        const Id& id,
+                                        StatusController* status) {
   MutableEntry entry(trans, syncable::GET_BY_ID, id);
   // Must be good as the entry won't have been cleaned up.
   CHECK(entry.good());
@@ -101,6 +104,7 @@ ConflictResolver::ProcessSimpleConflict(WriteTransaction* trans,
     // be nice if we could route this back to ModelAssociator code to pick one
     // of three options: CLIENT, SERVER, or MERGE.  Some datatypes (autofill)
     // are easily mergeable.
+    // See http://crbug.com/77339.
     bool name_matches = entry.Get(syncable::NON_UNIQUE_NAME) ==
                         entry.Get(syncable::SERVER_NON_UNIQUE_NAME);
     bool parent_matches = entry.Get(syncable::PARENT_ID) ==
@@ -108,13 +112,18 @@ ConflictResolver::ProcessSimpleConflict(WriteTransaction* trans,
     bool entry_deleted = entry.Get(syncable::IS_DEL);
 
     if (!entry_deleted && name_matches && parent_matches) {
+      // TODO(zea): We may prefer to choose the local changes over the server
+      // if we know the local changes happened before (or vice versa).
+      // See http://crbug.com/76596
       VLOG(1) << "Resolving simple conflict, ignoring local changes for:"
               << entry;
       IgnoreLocalChanges(&entry);
+      status->increment_num_local_overwrites();
     } else {
       VLOG(1) << "Resolving simple conflict, overwriting server changes for:"
               << entry;
       OverwriteServerChanges(trans, &entry);
+      status->increment_num_server_overwrites();
     }
     return SYNC_PROGRESS;
   } else {  // SERVER_IS_DEL is true
@@ -139,6 +148,7 @@ ConflictResolver::ProcessSimpleConflict(WriteTransaction* trans,
           "know to re-create, client-tagged items should revert to version 0 "
           "when server-deleted.";
       OverwriteServerChanges(trans, &entry);
+      status->increment_num_server_overwrites();
       // Clobber the versions, just in case the above DCHECK is violated.
       entry.Put(syncable::SERVER_VERSION, 0);
       entry.Put(syncable::BASE_VERSION, 0);
@@ -174,6 +184,7 @@ namespace {
 
 bool AttemptToFixCircularConflict(WriteTransaction* trans,
                                   ConflictSet* conflict_set) {
+  UMA_HISTOGRAM_COUNTS("Sync.ConflictFixCircularity", 1);
   ConflictSet::const_iterator i, j;
   for (i = conflict_set->begin() ; i != conflict_set->end() ; ++i) {
     MutableEntry entryi(trans, syncable::GET_BY_ID, *i);
@@ -338,7 +349,8 @@ bool AttemptToFixUpdateEntryInDeletedLocalTree(WriteTransaction* trans,
 
 bool AttemptToFixRemovedDirectoriesWithContent(WriteTransaction* trans,
                                                ConflictSet* conflict_set) {
-  ConflictSet::const_iterator i,j;
+  UMA_HISTOGRAM_COUNTS("Sync.ConflictFixRemovedDirectoriesWithContent", 1);
+  ConflictSet::const_iterator i, j;
   for (i = conflict_set->begin() ; i != conflict_set->end() ; ++i) {
     Entry entry(trans, syncable::GET_BY_ID, *i);
     if (AttemptToFixUnsyncedEntryInDeletedServerTree(trans,
@@ -410,6 +422,7 @@ bool ConflictResolver::LogAndSignalIfConflictStuck(
   }
 
   status->set_syncer_stuck(true);
+  UMA_HISTOGRAM_COUNTS("Sync.SyncerConflictStuck", 1);
 
   return true;
   // TODO(sync): If we're stuck for a while we need to alert the user, clear
@@ -433,7 +446,7 @@ bool ConflictResolver::ResolveSimpleConflicts(const ScopedDirLookup& dir,
     if (item_set_it == progress.IdToConflictSetEnd() ||
         0 == item_set_it->second) {
       // We have a simple conflict.
-      switch (ProcessSimpleConflict(&trans, id)) {
+      switch (ProcessSimpleConflict(&trans, id, status)) {
         case NO_SYNC_PROGRESS:
           {
             int conflict_count = (simple_conflict_count_map_[id] += 2);
@@ -465,8 +478,6 @@ bool ConflictResolver::ResolveConflicts(const ScopedDirLookup& dir,
   if (ResolveSimpleConflicts(dir, status))
     rv = true;
   WriteTransaction trans(dir, syncable::SYNCER, __FILE__, __LINE__);
-  set<Id> children_of_dirs_merged_last_round;
-  std::swap(children_of_merged_dirs_, children_of_dirs_merged_last_round);
   set<ConflictSet*>::const_iterator set_it;
   for (set_it = progress.ConflictSetsBegin();
        set_it != progress.ConflictSetsEnd();
@@ -478,14 +489,6 @@ bool ConflictResolver::ResolveConflicts(const ScopedDirLookup& dir,
     // Keep a metric for new sets.
     if (2 == conflict_count) {
       // METRIC conflict sets seen ++
-    }
-    // See if this set contains entries whose parents were merged last round.
-    if (SortedCollectionsIntersect(children_of_dirs_merged_last_round.begin(),
-                                   children_of_dirs_merged_last_round.end(),
-                                   conflict_set->begin(),
-                                   conflict_set->end())) {
-      VLOG(1) << "Accelerating resolution for hierarchical merge.";
-      conflict_count += 2;
     }
     // See if we should process this set.
     if (ProcessConflictSet(&trans, conflict_set, conflict_count)) {

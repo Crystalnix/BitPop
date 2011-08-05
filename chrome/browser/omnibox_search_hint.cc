@@ -11,7 +11,6 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete.h"
 #include "chrome/browser/autocomplete/autocomplete_edit.h"
-#include "chrome/browser/autocomplete/autocomplete_edit_view.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
@@ -21,14 +20,16 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
+#include "chrome/browser/ui/omnibox/omnibox_view.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/browser/tab_contents/navigation_details.h"
 #include "content/common/notification_details.h"
 #include "content/common/notification_source.h"
 #include "content/common/notification_type.h"
 #include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -56,15 +57,14 @@ class HintInfoBar : public ConfirmInfoBarDelegate {
 
   // ConfirmInfoBarDelegate:
   virtual bool ShouldExpire(
-      const NavigationController::LoadCommittedDetails& details) const;
-  virtual void InfoBarDismissed();
-  virtual void InfoBarClosed();
-  virtual SkBitmap* GetIcon() const;
-  virtual Type GetInfoBarType() const;
-  virtual string16 GetMessageText() const;
-  virtual int GetButtons() const;
-  virtual string16 GetButtonLabel(InfoBarButton button) const;
-  virtual bool Accept();
+      const content::LoadCommittedDetails& details) const OVERRIDE;
+  virtual void InfoBarDismissed() OVERRIDE;
+  virtual gfx::Image* GetIcon() const OVERRIDE;
+  virtual Type GetInfoBarType() const OVERRIDE;
+  virtual string16 GetMessageText() const OVERRIDE;
+  virtual int GetButtons() const OVERRIDE;
+  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual bool Accept() OVERRIDE;
 
   // The omnibox hint that shows us.
   OmniboxSearchHint* omnibox_hint_;
@@ -82,7 +82,7 @@ class HintInfoBar : public ConfirmInfoBarDelegate {
 };
 
 HintInfoBar::HintInfoBar(OmniboxSearchHint* omnibox_hint)
-    : ConfirmInfoBarDelegate(omnibox_hint->tab()),
+    : ConfirmInfoBarDelegate(omnibox_hint->tab()->tab_contents()),
       omnibox_hint_(omnibox_hint),
       action_taken_(false),
       should_expire_(false),
@@ -95,11 +95,13 @@ HintInfoBar::HintInfoBar(OmniboxSearchHint* omnibox_hint)
 }
 
 HintInfoBar::~HintInfoBar() {
+  if (!action_taken_)
+    UMA_HISTOGRAM_COUNTS("OmniboxSearchHint.Ignored", 1);
 }
 
 bool HintInfoBar::ShouldExpire(
-    const NavigationController::LoadCommittedDetails& details) const {
-  return should_expire_;
+    const content::LoadCommittedDetails& details) const {
+  return details.is_user_initiated_main_frame_load() && should_expire_;
 }
 
 void HintInfoBar::InfoBarDismissed() {
@@ -109,14 +111,8 @@ void HintInfoBar::InfoBarDismissed() {
   omnibox_hint_->DisableHint();
 }
 
-void HintInfoBar::InfoBarClosed() {
-  if (!action_taken_)
-    UMA_HISTOGRAM_COUNTS("OmniboxSearchHint.Ignored", 1);
-  delete this;
-}
-
-SkBitmap* HintInfoBar::GetIcon() const {
-  return ResourceBundle::GetSharedInstance().GetBitmapNamed(
+gfx::Image* HintInfoBar::GetIcon() const {
+  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
      IDR_INFOBAR_QUESTION_MARK);
 }
 
@@ -149,7 +145,7 @@ bool HintInfoBar::Accept() {
 
 // OmniboxSearchHint ----------------------------------------------------------
 
-OmniboxSearchHint::OmniboxSearchHint(TabContents* tab) : tab_(tab) {
+OmniboxSearchHint::OmniboxSearchHint(TabContentsWrapper* tab) : tab_(tab) {
   NavigationController* controller = &(tab->controller());
   notification_registrar_.Add(this,
                               NotificationType::NAV_ENTRY_COMMITTED,
@@ -208,14 +204,14 @@ void OmniboxSearchHint::ShowInfoBar() {
 void OmniboxSearchHint::ShowEnteringQuery() {
   LocationBar* location_bar = BrowserList::GetLastActive()->window()->
       GetLocationBar();
-  AutocompleteEditView*  edit_view = location_bar->location_entry();
+  OmniboxView* omnibox_view = location_bar->location_entry();
   location_bar->FocusLocation(true);
-  edit_view->SetUserText(
+  omnibox_view->SetUserText(
       l10n_util::GetStringUTF16(IDS_OMNIBOX_SEARCH_HINT_OMNIBOX_TEXT));
-  edit_view->SelectAll(false);
-  // Entering text in the autocomplete edit view triggers the suggestion popup
-  // that we don't want to show in this case.
-  edit_view->ClosePopup();
+  omnibox_view->SelectAll(false);
+  // Entering text in the omnibox view triggers the suggestion popup that we
+  // don't want to show in this case.
+  omnibox_view->ClosePopup();
 }
 
 void OmniboxSearchHint::DisableHint() {

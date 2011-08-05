@@ -548,10 +548,9 @@ LRESULT NativeTableWin::OnCustomDraw(NMLVCUSTOMDRAW* draw_info) {
                               (intersection.right - intersection.left);
               to_draw.bottom = to_draw.top +
                               (intersection.bottom - intersection.top);
-              canvas.getTopPlatformDevice().drawToHDC(draw_info->nmcd.hdc,
-                                                      intersection.left,
-                                                      intersection.top,
-                                                      &to_draw);
+              skia::DrawToNativeContext(&canvas, draw_info->nmcd.hdc,
+                                       intersection.left, intersection.top,
+                                       &to_draw);
               r = CDRF_SKIPDEFAULT;
             }
           }
@@ -586,7 +585,7 @@ void NativeTableWin::UpdateListViewCache(int start, int length, bool add) {
     item.mask |= LVIF_IMAGE;
 
   for (size_t j = start_column; j < table_->GetVisibleColumnCount(); ++j) {
-    TableColumn& col = table_->GetVisibleColumnAt(j);
+    TableColumn col = table_->GetVisibleColumnAt(j);
     int max_text_width = ListView_GetStringWidth(native_view(),
                                                  col.title.c_str());
     for (int i = start; i < max_row; ++i) {

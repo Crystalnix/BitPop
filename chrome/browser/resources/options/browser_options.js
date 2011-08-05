@@ -103,6 +103,11 @@ cr.define('options', function() {
         if (event.keyIdentifier == 'Enter')
           homepageField.blur();
       });
+      // Text fields may change widths when the window changes size, so make
+      // sure the suggestion list stays in sync.
+      window.addEventListener('resize', function() {
+        self.autocompleteList_.syncWidthToInput();
+      });
 
       // Ensure that changes are committed when closing the page.
       window.addEventListener('unload', function() {
@@ -123,7 +128,7 @@ cr.define('options', function() {
       // Check if we are in the guest mode.
       if (cr.commandLine.options['--bwsi']) {
         // Hide the startup section.
-        $('startupSection').classList.add('hidden');
+        $('startupSection').hidden = true;
       } else {
         // Initialize control enabled states.
         Preferences.getInstance().addEventListener('session.restore_on_startup',
@@ -189,10 +194,13 @@ cr.define('options', function() {
      * Updates the search engine popup with the given entries.
      * @param {Array} engines List of available search engines.
      * @param {number} defaultValue The value of the current default engine.
+     * @param {boolean} defaultManaged Whether the default search provider is
+     *     managed. If true, the default search provider can't be changed.
      */
-    updateSearchEngines_: function(engines, defaultValue) {
+    updateSearchEngines_: function(engines, defaultValue, defaultManaged) {
       this.clearSearchEngines_();
       engineSelect = $('defaultSearchEngine');
+      engineSelect.disabled = defaultManaged;
       engineCount = engines.length;
       var defaultIndex = -1;
       for (var i = 0; i < engineCount; i++) {
@@ -457,8 +465,10 @@ cr.define('options', function() {
     }
   };
 
-  BrowserOptions.updateSearchEngines = function(engines, defaultValue) {
-    BrowserOptions.getInstance().updateSearchEngines_(engines, defaultValue);
+  BrowserOptions.updateSearchEngines = function(engines, defaultValue,
+                                                defaultManaged) {
+    BrowserOptions.getInstance().updateSearchEngines_(engines, defaultValue,
+                                                      defaultManaged);
   };
 
   BrowserOptions.updateStartupPages = function(pages) {

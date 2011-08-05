@@ -48,7 +48,7 @@ class ExistingUserController : public LoginDisplay::Delegate,
  public:
   // All UI initialization is deferred till Init() call.
   explicit ExistingUserController(LoginDisplayHost* host);
-  ~ExistingUserController();
+  virtual ~ExistingUserController();
 
   // Returns the current existing user controller if it has been created.
   static ExistingUserController* current_controller() {
@@ -72,6 +72,12 @@ class ExistingUserController : public LoginDisplay::Delegate,
   virtual void Observe(NotificationType type,
                        const NotificationSource& source,
                        const NotificationDetails& details);
+
+  // Set a delegate that we will pass LoginStatusConsumer events to.
+  // Used for testing.
+  void set_login_status_consumer(LoginStatusConsumer* consumer) {
+    login_status_consumer_ = consumer;
+  }
 
  private:
   friend class ExistingUserControllerTest;
@@ -121,6 +127,10 @@ class ExistingUserController : public LoginDisplay::Delegate,
     login_performer_delegate_.reset(d);
   }
 
+  // Passes owner user to cryptohomed and initiates disk control control check.
+  // Subsequent disk space control checks are invoked by cryptohomed timer.
+  void StartAutomaticFreeDiskSpaceControl();
+
   // Used to execute login operations.
   scoped_ptr<LoginPerformer> login_performer_;
 
@@ -130,6 +140,10 @@ class ExistingUserController : public LoginDisplay::Delegate,
   // Delegate for login performer to be overridden by tests.
   // |this| is used if |login_performer_delegate_| is NULL.
   scoped_ptr<LoginPerformer::Delegate> login_performer_delegate_;
+
+  // Delegate to forward all login status events to.
+  // Tests can use this to receive login status events.
+  LoginStatusConsumer* login_status_consumer_;
 
   // Username of the last login attempt.
   std::string last_login_attempt_username_;

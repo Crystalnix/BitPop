@@ -14,6 +14,7 @@
 #include "base/time.h"
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/cancelable_request.h"
+#include "content/common/notification_observer.h"
 #include "content/common/notification_registrar.h"
 
 class ExtensionSpecialStoragePolicy;
@@ -90,6 +91,9 @@ class BrowsingDataRemover : public NotificationObserver,
 
   static bool is_removing() { return removing_; }
 
+  // Removes the Gears plugin data.
+  static void ClearGearsData(const FilePath& profile_dir);
+
  private:
   enum CacheState {
     STATE_NONE,
@@ -104,7 +108,7 @@ class BrowsingDataRemover : public NotificationObserver,
   // to be deleted by other objects so make destructor private and DeleteTask
   // a friend.
   friend class DeleteTask<BrowsingDataRemover>;
-  ~BrowsingDataRemover();
+  virtual ~BrowsingDataRemover();
 
   // NotificationObserver method. Callback when TemplateURLModel has finished
   // loading. Deletes the entries from the model, and if we're not waiting on
@@ -145,6 +149,13 @@ class BrowsingDataRemover : public NotificationObserver,
   // Invoked on the FILE thread to delete HTML5 databases.
   void ClearDatabasesOnFILEThread();
 
+  // Callback when HTML5 file systems have been cleared.  Invokes
+  // NotifyAndDeleteIfDone.
+  void OnClearedFileSystems();
+
+  // Invoked on the FILE thread to delete HTML5 file systems.
+  void ClearFileSystemsOnFILEThread();
+
   // Callback when the appcache has been cleared. Invokes
   // NotifyAndDeleteIfDone.
   void OnClearedAppCache();
@@ -157,6 +168,12 @@ class BrowsingDataRemover : public NotificationObserver,
   void OnAppCacheDeleted(int rv);
   ChromeAppCacheService* GetAppCacheService();
 
+  // Callback when Gears data has been deleted. Invokes NotifyAndDeleteIfDone.
+  void OnClearedGearsData();
+
+  // Invoked on the FILE thread to delete old Gears data.
+  void ClearGearsDataOnFILEThread(const FilePath& profile_dir);
+
   // Calculate the begin time for the deletion range specified by |time_period|.
   base::Time CalculateBeginDeleteTime(TimePeriod time_period);
 
@@ -166,7 +183,8 @@ class BrowsingDataRemover : public NotificationObserver,
            !waiting_for_clear_history_ &&
            !waiting_for_clear_networking_history_ &&
            !waiting_for_clear_databases_ && !waiting_for_clear_appcache_ &&
-           !waiting_for_clear_lso_data_;
+           !waiting_for_clear_lso_data_ && !waiting_for_clear_gears_data_ &&
+           !waiting_for_clear_file_systems_;
   }
 
   NotificationRegistrar registrar_;
@@ -217,6 +235,8 @@ class BrowsingDataRemover : public NotificationObserver,
   bool waiting_for_clear_cache_;
   bool waiting_for_clear_appcache_;
   bool waiting_for_clear_lso_data_;
+  bool waiting_for_clear_gears_data_;
+  bool waiting_for_clear_file_systems_;
 
   ObserverList<Observer> observer_list_;
 

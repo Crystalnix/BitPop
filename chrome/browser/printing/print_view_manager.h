@@ -14,7 +14,7 @@
 #include "printing/printed_pages_source.h"
 
 class RenderViewHost;
-class TabContents;
+class TabContentsWrapper;
 struct PrintHostMsg_DidPrintPage_Params;
 
 namespace printing {
@@ -29,7 +29,7 @@ class PrintViewManager : public NotificationObserver,
                          public PrintedPagesSource,
                          public TabContentsObserver {
  public:
-  explicit PrintViewManager(TabContents* tab_contents);
+  explicit PrintViewManager(TabContentsWrapper* tab);
   virtual ~PrintViewManager();
 
   // Override the title for this PrintViewManager's PrintJobs using the title
@@ -40,6 +40,12 @@ class PrintViewManager : public NotificationObserver,
   // asynchronous, the actual printing will not be completed on the return of
   // this function. Returns false if printing is impossible at the moment.
   bool PrintNow();
+
+  // Initiate print preview of the current document by first notifying the
+  // renderer. Since this happens asynchronous, the print preview tab creation
+  // will not be completed on the return of this function. Returns false if
+  // print preview is impossible at the moment.
+  bool PrintPreviewNow();
 
   // PrintedPagesSource implementation.
   virtual string16 RenderSourceName();
@@ -60,8 +66,10 @@ class PrintViewManager : public NotificationObserver,
   virtual void StopNavigation();
 
  private:
+  // IPC Message handlers.
   void OnDidGetPrintedPagesCount(int cookie, int number_pages);
   void OnDidPrintPage(const PrintHostMsg_DidPrintPage_Params& params);
+  void OnPrintingFailed(int cookie);
 
   // Processes a NOTIFY_PRINT_JOB_EVENT notification.
   void OnNotifyPrintJobEvent(const JobEventDetails& event_details);
@@ -111,6 +119,9 @@ class PrintViewManager : public NotificationObserver,
   // print_job_ is initialized.
   bool OpportunisticallyCreatePrintJob(int cookie);
 
+  // TabContentsWrapper we're associated with.
+  TabContentsWrapper* tab_;
+
   NotificationRegistrar registrar_;
 
   // Manages the low-level talk to the printer.
@@ -118,11 +129,6 @@ class PrintViewManager : public NotificationObserver,
 
   // Number of pages to print in the print job.
   int number_pages_;
-
-  // Waiting for print_job_ initialization to be completed to start printing.
-  // Specifically the DEFAULT_INIT_DONE notification. Set when PrintNow() is
-  // called.
-  bool waiting_to_print_;
 
   // Indication of success of the print job.
   bool printing_succeeded_;

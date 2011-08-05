@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -180,7 +180,9 @@ NET_ERROR(SSL_WEAK_SERVER_EPHEMERAL_DH_KEY, -129)
 // of an HTTP proxy.
 NET_ERROR(PROXY_CONNECTION_FAILED, -130)
 
-// Free: 131
+// A mandatory proxy configuration could not be used. Currently this means
+// that a mandatory PAC script could not be fetched, parsed or executed.
+NET_ERROR(MANDATORY_PROXY_CONFIGURATION_FAILED, -131)
 
 // We detected an ESET product intercepting our HTTPS connections. Since these
 // products are False Start intolerant, we return this error so that we can
@@ -444,13 +446,19 @@ NET_ERROR(RESPONSE_HEADERS_MULTIPLE_CONTENT_LENGTH, -346)
 // headers are missing, so we're expecting additional frames to complete them.
 NET_ERROR(INCOMPLETE_SPDY_HEADERS, -347)
 
+// No PAC URL configuration could be retrieved from DHCP. This can indicate
+// either a failure to retrieve the DHCP configuration, or that there was no
+// PAC URL configured in DHCP.
+NET_ERROR(PAC_NOT_IN_DHCP, -348)
+
 // The cache does not have the requested entry.
 NET_ERROR(CACHE_MISS, -400)
 
 // Unable to read from the disk cache.
 NET_ERROR(CACHE_READ_FAILURE, -401)
 
-// ****NOTE THAT code -402 is available****
+// Unable to write to the disk cache.
+NET_ERROR(CACHE_WRITE_FAILURE, -402)
 
 // The operation is not supported for this entry.
 NET_ERROR(CACHE_OPERATION_NOT_SUPPORTED, -403)

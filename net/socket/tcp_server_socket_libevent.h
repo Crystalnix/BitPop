@@ -22,12 +22,12 @@ class TCPServerSocketLibevent : public ServerSocket,
  public:
   TCPServerSocketLibevent(net::NetLog* net_log,
                           const net::NetLog::Source& source);
-  ~TCPServerSocketLibevent();
+  virtual ~TCPServerSocketLibevent();
 
   // net::ServerSocket implementation.
   virtual int Listen(const net::IPEndPoint& address, int backlog);
   virtual int GetLocalAddress(IPEndPoint* address) const;
-  virtual int Accept(scoped_ptr<ClientSocket>* socket,
+  virtual int Accept(scoped_ptr<StreamSocket>* socket,
                      CompletionCallback* callback);
 
   // MessageLoopForIO::Watcher implementation.
@@ -35,14 +35,14 @@ class TCPServerSocketLibevent : public ServerSocket,
   virtual void OnFileCanWriteWithoutBlocking(int fd);
 
  private:
-  int AcceptInternal(scoped_ptr<ClientSocket>* socket);
+  int AcceptInternal(scoped_ptr<StreamSocket>* socket);
   void Close();
 
   int socket_;
 
   MessageLoopForIO::FileDescriptorWatcher accept_socket_watcher_;
 
-  scoped_ptr<ClientSocket>* accept_socket_;
+  scoped_ptr<StreamSocket>* accept_socket_;
   CompletionCallback* accept_callback_;
 
   BoundNetLog net_log_;

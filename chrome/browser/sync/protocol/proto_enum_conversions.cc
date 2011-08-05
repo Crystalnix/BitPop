@@ -23,9 +23,9 @@ namespace browser_sync {
 const char* GetBrowserTypeString(
     sync_pb::SessionWindow::BrowserType browser_type) {
   ASSERT_ENUM_BOUNDS(sync_pb::SessionWindow, BrowserType,
-                     TYPE_NORMAL, TYPE_POPUP);
+                     TYPE_TABBED, TYPE_POPUP);
   switch (browser_type) {
-    ENUM_CASE(sync_pb::SessionWindow, TYPE_NORMAL);
+    ENUM_CASE(sync_pb::SessionWindow, TYPE_TABBED);
     ENUM_CASE(sync_pb::SessionWindow, TYPE_POPUP);
   }
   NOTREACHED();
@@ -71,7 +71,7 @@ const char* GetPageTransitionQualifierString(
 const char* GetUpdatesSourceString(
     sync_pb::GetUpdatesCallerInfo::GetUpdatesSource updates_source) {
   ASSERT_ENUM_BOUNDS(sync_pb::GetUpdatesCallerInfo, GetUpdatesSource,
-                     UNKNOWN, CLEAR_PRIVATE_DATA);
+                     UNKNOWN, RECONFIGURATION);
   switch (updates_source) {
     ENUM_CASE(sync_pb::GetUpdatesCallerInfo, UNKNOWN);
     ENUM_CASE(sync_pb::GetUpdatesCallerInfo, FIRST_UPDATE);
@@ -80,6 +80,10 @@ const char* GetUpdatesSourceString(
     ENUM_CASE(sync_pb::GetUpdatesCallerInfo, PERIODIC);
     ENUM_CASE(sync_pb::GetUpdatesCallerInfo, SYNC_CYCLE_CONTINUATION);
     ENUM_CASE(sync_pb::GetUpdatesCallerInfo, CLEAR_PRIVATE_DATA);
+    ENUM_CASE(sync_pb::GetUpdatesCallerInfo, NEWLY_SUPPORTED_DATATYPE);
+    ENUM_CASE(sync_pb::GetUpdatesCallerInfo, MIGRATION);
+    ENUM_CASE(sync_pb::GetUpdatesCallerInfo, NEW_CLIENT);
+    ENUM_CASE(sync_pb::GetUpdatesCallerInfo, RECONFIGURATION);
   }
   NOTREACHED();
   return "";

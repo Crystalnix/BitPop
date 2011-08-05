@@ -115,8 +115,10 @@ bool CrossSiteResourceHandler::OnResponseCompleted(
     const net::URLRequestStatus& status,
     const std::string& security_info) {
   if (!in_cross_site_transition_) {
-    if (has_started_response_) {
-      // We've already completed the transition, so just pass it through.
+    if (has_started_response_ ||
+        status.status() != net::URLRequestStatus::FAILED) {
+      // We've already completed the transition or we're canceling the request,
+      // so just pass it through.
       return next_handler_->OnResponseCompleted(request_id, status,
                                                 security_info);
     } else {
@@ -178,10 +180,6 @@ void CrossSiteResourceHandler::ResumeResponse() {
   if (completed_during_transition_) {
     next_handler_->OnResponseCompleted(request_id_, completed_status_,
                                        completed_security_info_);
-
-    // Since we didn't notify the world or clean up the pending request in
-    // RDH::OnResponseCompleted during the transition, we should do it now.
-    rdh_->NotifyResponseCompleted(request, render_process_host_id_);
     rdh_->RemovePendingRequest(render_process_host_id_, request_id_);
   }
 }

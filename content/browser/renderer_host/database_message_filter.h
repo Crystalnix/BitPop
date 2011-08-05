@@ -8,20 +8,15 @@
 
 #include "base/hash_tables.h"
 #include "base/string16.h"
-#include "chrome/common/content_settings.h"
 #include "content/browser/browser_message_filter.h"
 #include "webkit/database/database_connections.h"
 #include "webkit/database/database_tracker.h"
-
-class HostContentSettingsMap;
 
 class DatabaseMessageFilter
     : public BrowserMessageFilter,
       public webkit_database::DatabaseTracker::Observer {
  public:
-  DatabaseMessageFilter(
-      webkit_database::DatabaseTracker* db_tracker,
-      HostContentSettingsMap *host_content_settings_map);
+  explicit DatabaseMessageFilter(webkit_database::DatabaseTracker* db_tracker);
 
   // BrowserMessageFilter implementation.
   virtual void OnChannelClosing();
@@ -54,6 +49,10 @@ class DatabaseMessageFilter
   void OnDatabaseGetFileSize(const string16& vfs_file_name,
                              IPC::Message* reply_msg);
 
+  // Quota message handler (io thread)
+  void OnDatabaseGetSpaceAvailable(const string16& origin_identifier,
+                                   IPC::Message* reply_msg);
+
   // Database tracker message handlers (file thread)
   void OnDatabaseOpened(const string16& origin_identifier,
                         const string16& database_name,
@@ -63,17 +62,11 @@ class DatabaseMessageFilter
                           const string16& database_name);
   void OnDatabaseClosed(const string16& origin_identifier,
                         const string16& database_name);
-  void OnAllowDatabase(const std::string& origin_url,
-                       const string16& name,
-                       const string16& display_name,
-                       unsigned long estimated_size,
-                       IPC::Message* reply_msg);
 
   // DatabaseTracker::Observer callbacks (file thread)
   virtual void OnDatabaseSizeChanged(const string16& origin_identifier,
                                      const string16& database_name,
-                                     int64 database_size,
-                                     int64 space_available);
+                                     int64 database_size);
   virtual void OnDatabaseScheduledForDeletion(const string16& origin_identifier,
                                               const string16& database_name);
 
@@ -81,10 +74,6 @@ class DatabaseMessageFilter
                           bool sync_dir,
                           IPC::Message* reply_msg,
                           int reschedule_count);
-
-  // CookiePromptModalDialog response handler (io thread)
-  void AllowDatabaseResponse(IPC::Message* reply_msg,
-                             ContentSetting content_setting);
 
   // The database tracker for the current profile.
   scoped_refptr<webkit_database::DatabaseTracker> db_tracker_;
@@ -95,9 +84,6 @@ class DatabaseMessageFilter
 
   // Keeps track of all DB connections opened by this renderer
   webkit_database::DatabaseConnections database_connections_;
-
-  // Used to look up permissions at database creation time.
-  scoped_refptr<HostContentSettingsMap> host_content_settings_map_;
 };
 
 #endif  // CONTENT_BROWSER_RENDERER_HOST_DATABASE_MESSAGE_FILTER_H_

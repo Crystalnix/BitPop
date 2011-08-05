@@ -15,6 +15,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/string_piece.h"
 #include "base/time.h"
+#include "net/base/net_api.h"
 #include "net/base/x509_cert_types.h"
 
 #if defined(OS_WIN)
@@ -48,7 +49,8 @@ class CertVerifyResult;
 typedef std::vector<scoped_refptr<X509Certificate> > CertificateList;
 
 // X509Certificate represents an X.509 certificate used by SSL.
-class X509Certificate : public base::RefCountedThreadSafe<X509Certificate> {
+class NET_API X509Certificate
+    : public base::RefCountedThreadSafe<X509Certificate> {
  public:
   // A handle to the certificate object in the underlying crypto library.
   // We assume that OSCertHandle is a pointer type on all platforms and
@@ -69,7 +71,7 @@ class X509Certificate : public base::RefCountedThreadSafe<X509Certificate> {
   typedef std::vector<OSCertHandle> OSCertHandles;
 
   // Predicate functor used in maps when X509Certificate is used as the key.
-  class LessThan {
+  class NET_API LessThan {
    public:
     bool operator() (X509Certificate* lhs,  X509Certificate* rhs) const;
   };
@@ -113,6 +115,10 @@ class X509Certificate : public base::RefCountedThreadSafe<X509Certificate> {
                   FORMAT_PKCS7,
   };
 
+  // PickleType is intended for deserializing certificates that were pickled
+  // by previous releases as part of a net::HttpResponseInfo, which in version
+  // 1 only contained a single certificate. When serializing certificates to a
+  // new Pickle, PICKLETYPE_CERTIFICATE_CHAIN is always used.
   enum PickleType {
     // When reading a certificate from a Pickle, the Pickle only contains a
     // single certificate.
@@ -409,11 +415,11 @@ class X509Certificate : public base::RefCountedThreadSafe<X509Certificate> {
   // not guaranteed to be the same across different underlying cryptographic
   // libraries, nor acceptable to CreateFromBytes(). Returns an invalid
   // handle, NULL, on failure.
-  static OSCertHandle ReadCertHandleFromPickle(const Pickle& pickle,
-                                               void** pickle_iter);
+  static OSCertHandle ReadOSCertHandleFromPickle(const Pickle& pickle,
+                                                 void** pickle_iter);
 
   // Writes a single certificate to |pickle|. Returns false on failure.
-  static bool WriteCertHandleToPickle(OSCertHandle handle, Pickle* pickle);
+  static bool WriteOSCertHandleToPickle(OSCertHandle handle, Pickle* pickle);
 
   // The subject of the certificate.
   CertPrincipal subject_;

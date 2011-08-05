@@ -19,6 +19,7 @@
 #include "base/path_service.h"
 #include "base/process_util.h"
 #include "base/string_util.h"
+#include "base/system_monitor/system_monitor.h"
 #include "base/threading/platform_thread.h"
 #include "base/time.h"
 #include "content/common/content_counters.h"
@@ -29,7 +30,6 @@
 #include "content/renderer/render_process_impl.h"
 #include "content/renderer/render_thread.h"
 #include "content/renderer/renderer_main_platform_delegate.h"
-#include "ui/base/system_monitor/system_monitor.h"
 #include "ui/base/ui_base_switches.h"
 
 #if defined(OS_MACOSX)
@@ -112,12 +112,12 @@ class RendererMessageLoopObserver : public MessageLoop::TaskObserver {
             1, 3600000, 50, base::Histogram::kUmaTargetedHistogramFlag)) {}
   virtual ~RendererMessageLoopObserver() {}
 
-  virtual void WillProcessTask(const Task* task) {
+  virtual void WillProcessTask(base::TimeTicks time_posted) {
     begin_process_message_ = base::TimeTicks::Now();
   }
 
-  virtual void DidProcessTask(const Task* task) {
-    if (begin_process_message_ != base::TimeTicks())
+  virtual void DidProcessTask(base::TimeTicks time_posted) {
+    if (!begin_process_message_.is_null())
       process_times_->AddTime(base::TimeTicks::Now() - begin_process_message_);
   }
 
@@ -129,7 +129,7 @@ class RendererMessageLoopObserver : public MessageLoop::TaskObserver {
 
 // mainline routine for running as the Renderer process
 int RendererMain(const MainFunctionParams& parameters) {
-  TRACE_EVENT_BEGIN("RendererMain", 0, "");
+  TRACE_EVENT_BEGIN_ETW("RendererMain", 0, "");
 
   const CommandLine& parsed_command_line = parameters.command_line_;
   base::mac::ScopedNSAutoreleasePool* pool = parameters.autorelease_pool_;
@@ -176,7 +176,7 @@ int RendererMain(const MainFunctionParams& parameters) {
 
   base::PlatformThread::SetName("CrRendererMain");
 
-  ui::SystemMonitor system_monitor;
+  base::SystemMonitor system_monitor;
   HighResolutionTimerManager hi_res_timer_manager;
 
   platform.PlatformInitialize();
@@ -191,8 +191,10 @@ int RendererMain(const MainFunctionParams& parameters) {
     statistics.reset(new base::StatisticsRecorder());
   }
 
-  // Initialize statistical testing infrastructure.
-  base::FieldTrialList field_trial;
+  // Initialize statistical testing infrastructure.  We set client_id to the
+  // empty string to disallow the renderer process from creating its own
+  // one-time randomized trials; they should be created in the browser process.
+  base::FieldTrialList field_trial(EmptyString());
   // Ensure any field trials in browser are reflected into renderer.
   if (parsed_command_line.HasSwitch(switches::kForceFieldTestNameAndValue)) {
     std::string persistent = parsed_command_line.GetSwitchValueASCII(
@@ -205,7 +207,7 @@ int RendererMain(const MainFunctionParams& parameters) {
   PepperPluginRegistry::GetInstance();
 
   {
-#if !defined(OS_LINUX)
+#if defined(OS_WIN) || defined(OS_MACOSX)
     // TODO(markus): Check if it is OK to unconditionally move this
     // instruction down.
     RenderProcessImpl render_process;
@@ -217,7 +219,7 @@ int RendererMain(const MainFunctionParams& parameters) {
     } else {
       LOG(ERROR) << "Running without renderer sandbox";
     }
-#if defined(OS_LINUX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
     RenderProcessImpl render_process;
     render_process.set_main_thread(new RenderThread());
 #endif
@@ -229,12 +231,12 @@ int RendererMain(const MainFunctionParams& parameters) {
     if (run_loop) {
       if (pool)
         pool->Recycle();
-      TRACE_EVENT_BEGIN("RendererMain.START_MSG_LOOP", 0, 0);
+      TRACE_EVENT_BEGIN_ETW("RendererMain.START_MSG_LOOP", 0, 0);
       MessageLoop::current()->Run();
-      TRACE_EVENT_END("RendererMain.START_MSG_LOOP", 0, 0);
+      TRACE_EVENT_END_ETW("RendererMain.START_MSG_LOOP", 0, 0);
     }
   }
   platform.PlatformUninitialize();
-  TRACE_EVENT_END("RendererMain", 0, "");
+  TRACE_EVENT_END_ETW("RendererMain", 0, "");
   return 0;
 }

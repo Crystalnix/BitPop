@@ -10,7 +10,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
-#include "chrome/browser/favicon_service.h"
+#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 
 class GURL;
@@ -20,7 +20,16 @@ class Profile;
 // requests for favicons and the history backend that serves these.
 class FaviconSource : public ChromeURLDataManager::DataSource {
  public:
-  explicit FaviconSource(Profile* profile);
+  // Defines the type of icon the FaviconSource will provide.
+  enum IconType {
+    FAVICON,
+    // Any available icon in the priority of TOUCH_ICON_PRECOMPOSED, TOUCH_ICON,
+    // FAVICON, and default favicon.
+    ANY
+  };
+
+  // |type| is the type of icon this FaviconSource will provide.
+  FaviconSource(Profile* profile, IconType type);
 
   // Called when the network layer has requested a resource underneath
   // the path we registered.
@@ -48,6 +57,9 @@ class FaviconSource : public ChromeURLDataManager::DataSource {
   // Raw PNG representation of the favicon to show when the favicon
   // database doesn't have a favicon for a webpage.
   scoped_refptr<RefCountedMemory> default_favicon_;
+
+  // The history::IconTypes of icon that this FaviconSource handles.
+  const int icon_types_;
 
   DISALLOW_COPY_AND_ASSIGN(FaviconSource);
 };

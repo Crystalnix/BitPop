@@ -47,9 +47,9 @@ class ChannelProxy;
 }
 
 class AutofillProfile;
-class AutomationAutocompleteEditTracker;
 class AutomationBrowserTracker;
 class AutomationExtensionTracker;
+class AutomationOmniboxTracker;
 class AutomationResourceMessageFilter;
 class AutomationTabTracker;
 class AutomationWindowTracker;
@@ -96,6 +96,8 @@ class AutomationProvider
   // a connection on its primary IPC channel. See ipc/ipc_channel_posix.cc
   // for more information about kPrimaryIPCChannel.
   bool InitializeChannel(const std::string& channel_id) WARN_UNUSED_RESULT;
+
+  virtual IPC::Channel::Mode GetChannelMode(bool use_named_interface);
 
   // Sets the number of tabs that we expect; when this number of tabs has
   // loaded, an AutomationMsg_InitialLoadsComplete message is sent.
@@ -175,7 +177,7 @@ class AutomationProvider
   // and closes the IPC channel.
   void OnMessageDeserializationFailure();
 
-  scoped_ptr<AutomationAutocompleteEditTracker> autocomplete_edit_tracker_;
+  scoped_ptr<AutomationOmniboxTracker> automation_omnibox_tracker_;
   scoped_ptr<AutomationBrowserTracker> browser_tracker_;
   scoped_ptr<InitialLoadObserver> initial_load_observer_;
   scoped_ptr<MetricEventDurationObserver> metric_event_duration_observer_;

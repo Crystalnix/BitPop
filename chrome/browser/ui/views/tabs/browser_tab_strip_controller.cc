@@ -7,7 +7,7 @@
 #include "base/auto_reset.h"
 #include "base/command_line.h"
 #include "chrome/browser/extensions/extension_tab_helper.h"
-#include "chrome/browser/metrics/user_metrics.h"
+#include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/browser.h"
@@ -18,6 +18,7 @@
 #include "chrome/common/url_constants.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/tab_contents/tab_contents.h"
+#include "content/browser/user_metrics.h"
 #include "content/common/notification_service.h"
 #include "views/controls/menu/menu_2.h"
 #include "views/widget/widget.h"
@@ -129,7 +130,8 @@ BrowserTabStripController::BrowserTabStripController(Browser* browser,
                                                      TabStripModel* model)
     : model_(model),
       tabstrip_(NULL),
-      browser_(browser) {
+      browser_(browser),
+      hover_tab_selector_(model) {
   model_->AddObserver(this);
 
   notification_registrar_.Add(this,
@@ -231,6 +233,9 @@ void BrowserTabStripController::AddSelectionFromAnchorTo(int model_index) {
 }
 
 void BrowserTabStripController::CloseTab(int model_index) {
+  // Cancel any pending tab transition.
+  hover_tab_selector_.CancelTabTransition();
+
   tabstrip_->PrepareForCloseAt(model_index);
   model_->CloseTabContentsAt(model_index,
                              TabStripModel::CLOSE_USER_GESTURE |
@@ -263,6 +268,17 @@ int BrowserTabStripController::HasAvailableDragActions() const {
   return model_->delegate()->GetDragActions();
 }
 
+void BrowserTabStripController::OnDropIndexUpdate(int index,
+                                                  bool drop_before) {
+  // Perform a delayed tab transition if hovering directly over a tab.
+  // Otherwise, cancel the pending one.
+  if (index != -1 && !drop_before) {
+    hover_tab_selector_.StartTabTransition(index);
+  } else {
+    hover_tab_selector_.CancelTabTransition();
+  }
+}
+
 void BrowserTabStripController::PerformDrop(bool drop_before,
                                             int index,
                                             const GURL& url) {
@@ -270,12 +286,10 @@ void BrowserTabStripController::PerformDrop(bool drop_before,
   params.tabstrip_index = index;
 
   if (drop_before) {
-    UserMetrics::RecordAction(UserMetricsAction("Tab_DropURLBetweenTabs"),
-                              model_->profile());
+    UserMetrics::RecordAction(UserMetricsAction("Tab_DropURLBetweenTabs"));
     params.disposition = NEW_FOREGROUND_TAB;
   } else {
-    UserMetrics::RecordAction(UserMetricsAction("Tab_DropURLOnTab"),
-                              model_->profile());
+    UserMetrics::RecordAction(UserMetricsAction("Tab_DropURLOnTab"));
     params.disposition = CURRENT_TAB;
     params.source_contents = model_->GetTabContentsAt(index);
   }
@@ -290,10 +304,14 @@ bool BrowserTabStripController::IsCompatibleWith(BaseTabStrip* other) const {
 }
 
 void BrowserTabStripController::CreateNewTab() {
-  UserMetrics::RecordAction(UserMetricsAction("NewTab_Button"),
-                            model_->profile());
+  UserMetrics::RecordAction(UserMetricsAction("NewTab_Button"));
 
   model_->delegate()->AddBlankTab(true);
+}
+
+void BrowserTabStripController::ClickActiveTab(int index) {
+  DCHECK(model_->active_index() == index);
+  model_->ActiveTabClicked(index);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -306,6 +324,9 @@ void BrowserTabStripController::TabInsertedAt(TabContentsWrapper* contents,
   DCHECK(model_index == TabStripModel::kNoTab ||
          model_->ContainsIndex(model_index));
 
+  // Cancel any pending tab transition.
+  hover_tab_selector_.CancelTabTransition();
+
   TabRendererData data;
   SetTabRendererDataFromModel(contents->tab_contents(), model_index, &data);
   tabstrip_->AddTabAt(model_index, data);
@@ -313,13 +334,17 @@ void BrowserTabStripController::TabInsertedAt(TabContentsWrapper* contents,
 
 void BrowserTabStripController::TabDetachedAt(TabContentsWrapper* contents,
                                               int model_index) {
+  // Cancel any pending tab transition.
+  hover_tab_selector_.CancelTabTransition();
+
   tabstrip_->RemoveTabAt(model_index);
 }
 
-void BrowserTabStripController::TabSelectedAt(TabContentsWrapper* old_contents,
-                                              TabContentsWrapper* contents,
-                                              int model_index,
-                                              bool user_gesture) {
+void BrowserTabStripController::ActiveTabChanged(
+    TabContentsWrapper* old_contents,
+    TabContentsWrapper* contents,
+    int model_index,
+    bool user_gesture) {
   tabstrip_->SelectTabAt(model_->GetIndexOfTabContents(old_contents),
                          model_index);
 }
@@ -327,6 +352,9 @@ void BrowserTabStripController::TabSelectedAt(TabContentsWrapper* old_contents,
 void BrowserTabStripController::TabMoved(TabContentsWrapper* contents,
                                          int from_model_index,
                                          int to_model_index) {
+  // Cancel any pending tab transition.
+  hover_tab_selector_.CancelTabTransition();
+
   // Update the data first as the pinned state may have changed.
   TabRendererData data;
   SetTabRendererDataFromModel(contents->tab_contents(), to_model_index, &data);
@@ -396,14 +424,14 @@ void BrowserTabStripController::SetTabRendererDataFromModel(
   if (app_icon)
     data->favicon = *app_icon;
   else
-    data->favicon = contents->GetFavicon();
+    data->favicon = wrapper->favicon_tab_helper()->GetFavicon();
   data->network_state = TabContentsNetworkState(contents);
   data->title = contents->GetTitle();
   data->url = contents->GetURL();
   data->loading = contents->is_loading();
   data->crashed_status = contents->crashed_status();
   data->incognito = contents->profile()->IsOffTheRecord();
-  data->show_icon = contents->ShouldDisplayFavicon();
+  data->show_icon = wrapper->favicon_tab_helper()->ShouldDisplayFavicon();
   data->mini = model_->IsMiniTab(model_index);
   data->blocked = model_->IsTabBlocked(model_index);
   data->app = wrapper->extension_tab_helper()->is_app();

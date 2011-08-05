@@ -18,9 +18,9 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupType.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebRect.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebTextDirection.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebTextInputType.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebWidgetClient.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/base/ime/text_input_type.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
@@ -154,6 +154,12 @@ class RenderWidget : public IPC::Channel::Listener,
   void CompleteInit(gfx::NativeViewId parent,
                     gfx::PluginWindowHandle compositing_surface);
 
+  // Sets whether this RenderWidget has been swapped out to be displayed by
+  // a RenderWidget in a different process.  If so, no new IPC messages will be
+  // sent (only ACKs) and the process is free to exit when there are no other
+  // active RenderWidgets.
+  void SetSwappedOut(bool is_swapped_out);
+
   // Paints the given rectangular region of the WebWidget into canvas (a
   // shared memory segment returned by AllocPaintBuf on Windows). The caller
   // must ensure that the given rect fits within the bounds of the WebWidget.
@@ -165,7 +171,8 @@ class RenderWidget : public IPC::Channel::Listener,
 
   void AnimationCallback();
   void AnimateIfNeeded();
-  void CallDoDeferredUpdate();
+  void InvalidationCallback();
+  void DoDeferredUpdateAndSendInputAck();
   void DoDeferredUpdate();
   void DoDeferredClose();
   void DoDeferredSetWindowRect(const WebKit::WebRect& pos);
@@ -183,6 +190,7 @@ class RenderWidget : public IPC::Channel::Listener,
                         const gfx::Rect& resizer_rect);
   virtual void OnWasHidden();
   virtual void OnWasRestored(bool needs_repainting);
+  virtual void OnWasSwappedOut();
   void OnUpdateRectAck();
   void OnCreateVideoAck(int32 video_id);
   void OnUpdateVideoAck(int32 video_id);
@@ -191,18 +199,19 @@ class RenderWidget : public IPC::Channel::Listener,
   void OnMouseCaptureLost();
   virtual void OnSetFocus(bool enable);
   void OnSetInputMethodActive(bool is_active);
-  void OnImeSetComposition(
+  virtual void OnImeSetComposition(
       const string16& text,
       const std::vector<WebKit::WebCompositionUnderline>& underlines,
       int selection_start,
       int selection_end);
-  void OnImeConfirmComposition(const string16& text);
+  virtual void OnImeConfirmComposition(const string16& text);
   void OnMsgPaintAtSize(const TransportDIB::Handle& dib_id,
                         int tag,
                         const gfx::Size& page_size,
                         const gfx::Size& desired_size);
   void OnMsgRepaint(const gfx::Size& size_to_paint);
   void OnSetTextDirection(WebKit::WebTextDirection direction);
+  void OnGetFPS();
 
   // Override point to notify derived classes that a paint has happened.
   // DidInitiatePaint happens when we've generated a new bitmap and sent it to
@@ -210,6 +219,19 @@ class RenderWidget : public IPC::Channel::Listener,
   // screen has actually been updated.
   virtual void DidInitiatePaint() {}
   virtual void DidFlushPaint() {}
+
+  // Override and return true when the widget is rendered with a graphics
+  // context that supports asynchronous swapbuffers. When returning true, the
+  // subclass must call OnSwapBuffersPosted() when swap is posted,
+  // OnSwapBuffersComplete() when swaps complete, and OnSwapBuffersAborted if
+  // the context is lost.
+  virtual bool SupportsAsynchronousSwapBuffers();
+
+  // Notifies scheduler that the RenderWidget's subclass has finished or aborted
+  // a swap buffers.
+  void OnSwapBuffersPosted();
+  void OnSwapBuffersComplete();
+  void OnSwapBuffersAborted();
 
   // Detects if a suitable opaque plugin covers the given paint bounds with no
   // compositing necessary.
@@ -252,6 +274,14 @@ class RenderWidget : public IPC::Channel::Listener,
   // Checks if the input method state and caret position have been changed.
   // If they are changed, the new value will be sent to the browser process.
   void UpdateInputMethod();
+
+  // Override point to obtain that the current input method state and caret
+  // position.
+  virtual ui::TextInputType GetTextInputType();
+
+  // Override point to obtain that the current input method state about
+  // composition text.
+  virtual bool CanComposeInline();
 
   // Tells the renderer it does not have focus. Used to prevent us from getting
   // the focus on our own when the browser did not focus us.
@@ -316,9 +346,27 @@ class RenderWidget : public IPC::Channel::Listener,
   // Flags for the next ViewHostMsg_UpdateRect message.
   int next_paint_flags_;
 
+  // Filtered time per frame based on UpdateRect messages.
+  float filtered_time_per_frame_;
+
   // True if we are expecting an UpdateRect_ACK message (i.e., that a
   // UpdateRect message has been sent).
   bool update_reply_pending_;
+
+  // True if the underlying graphics context supports asynchronous swap.
+  // Cached on the RenderWidget because determining support is costly.
+  bool using_asynchronous_swapbuffers_;
+
+  // Number of OnSwapBuffersComplete we are expecting. Incremented each time
+  // WebWidget::composite has been been performed when the RenderWidget subclass
+  // SupportsAsynchronousSwapBuffers. Decremented in OnSwapBuffers. Will block
+  // rendering.
+  int num_swapbuffers_complete_pending_;
+
+  // When accelerated rendering is on, is the maximum number of swapbuffers that
+  // can be outstanding before we start throttling based on
+  // OnSwapBuffersComplete callback.
+  static const int kMaxSwapBuffersPending = 2;
 
   // Set to true if we should ignore RenderWidget::Show calls.
   bool did_show_;
@@ -343,11 +391,19 @@ class RenderWidget : public IPC::Channel::Listener,
   // be sent, except for a Close.
   bool closing_;
 
+  // Whether this RenderWidget is currently swapped out, such that the view is
+  // being rendered by another process.  If all RenderWidgets in a process are
+  // swapped out, the process can exit.
+  bool is_swapped_out_;
+
   // Indicates if an input method is active in the browser process.
   bool input_method_is_active_;
 
   // Stores the current text input type of |webwidget_|.
-  WebKit::WebTextInputType text_input_type_;
+  ui::TextInputType text_input_type_;
+
+  // Stores the current type of composition text rendering of |webwidget_|.
+  bool can_compose_inline_;
 
   // Stores the current caret bounds of input focus.
   WebKit::WebRect caret_bounds_;
@@ -383,6 +439,9 @@ class RenderWidget : public IPC::Channel::Listener,
   base::Time animation_floor_time_;
   bool animation_update_pending_;
   bool animation_task_posted_;
+  bool invalidation_task_posted_;
+
+  base::TimeTicks last_do_deferred_update_time_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidget);
 };

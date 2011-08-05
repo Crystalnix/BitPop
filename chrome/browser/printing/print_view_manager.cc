@@ -11,12 +11,14 @@
 #include "chrome/browser/printing/print_job_manager.h"
 #include "chrome/browser/printing/print_preview_tab_controller.h"
 #include "chrome/browser/printing/printer_query.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/browser/ui/webui/print_preview_ui.h"
 #include "chrome/common/print_messages.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/tab_contents/navigation_entry.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/common/notification_details.h"
+#include "content/common/notification_service.h"
 #include "content/common/notification_source.h"
 #include "grit/generated_resources.h"
 #include "printing/metafile.h"
@@ -39,10 +41,10 @@ string16 GenerateRenderSourceName(TabContents* tab_contents) {
 
 namespace printing {
 
-PrintViewManager::PrintViewManager(TabContents* tab_contents)
-    : TabContentsObserver(tab_contents),
+PrintViewManager::PrintViewManager(TabContentsWrapper* tab)
+    : TabContentsObserver(tab->tab_contents()),
+      tab_(tab),
       number_pages_(0),
-      waiting_to_print_(false),
       printing_succeeded_(false),
       inside_inner_message_loop_(false),
       is_title_overridden_(false) {
@@ -61,6 +63,14 @@ bool PrintViewManager::PrintNow() {
     return false;
 
   return Send(new PrintMsg_PrintPages(routing_id()));
+}
+
+bool PrintViewManager::PrintPreviewNow() {
+  // Don't print preview interstitials.
+  if (tab_contents()->showing_interstitial_page())
+    return false;
+
+  return Send(new PrintMsg_InitiatePrintPreview(routing_id()));
 }
 
 void PrintViewManager::StopNavigation() {
@@ -103,15 +113,7 @@ void PrintViewManager::OnDidGetPrintedPagesCount(int cookie, int number_pages) {
   DCHECK_GT(cookie, 0);
   DCHECK_GT(number_pages, 0);
   number_pages_ = number_pages;
-  if (!OpportunisticallyCreatePrintJob(cookie))
-    return;
-
-  PrintedDocument* document = print_job_->document();
-  if (!document || cookie != document->cookie()) {
-    // Out of sync. It may happens since we are completely asynchronous. Old
-    // spurious message can happen if one of the processes is overloaded.
-    return;
-  }
+  OpportunisticallyCreatePrintJob(cookie);
 }
 
 void PrintViewManager::OnDidPrintPage(
@@ -174,12 +176,30 @@ void PrintViewManager::OnDidPrintPage(
   ShouldQuitFromInnerMessageLoop();
 }
 
+void PrintViewManager::OnPrintingFailed(int cookie) {
+  scoped_refptr<PrinterQuery> printer_query;
+  g_browser_process->print_job_manager()->PopPrinterQuery(cookie,
+                                                          &printer_query);
+  if (printer_query.get()) {
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        NewRunnableMethod(printer_query.get(),
+                          &printing::PrinterQuery::StopWorker));
+  }
+
+  NotificationService::current()->Notify(
+      NotificationType::PRINT_JOB_RELEASED,
+      Source<TabContents>(tab_contents()),
+      NotificationService::NoDetails());
+}
+
 bool PrintViewManager::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(PrintViewManager, message)
     IPC_MESSAGE_HANDLER(PrintHostMsg_DidGetPrintedPagesCount,
                         OnDidGetPrintedPagesCount)
     IPC_MESSAGE_HANDLER(PrintHostMsg_DidPrintPage, OnDidPrintPage)
+    IPC_MESSAGE_HANDLER(PrintHostMsg_PrintingFailed, OnPrintingFailed)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -205,6 +225,11 @@ void PrintViewManager::OnNotifyPrintJobEvent(
   switch (event_details.type()) {
     case JobEventDetails::FAILED: {
       TerminatePrintJob(true);
+
+      NotificationService::current()->Notify(
+          NotificationType::PRINT_JOB_RELEASED,
+          Source<TabContentsWrapper>(tab_),
+          NotificationService::NoDetails());
       break;
     }
     case JobEventDetails::USER_INIT_DONE:
@@ -219,12 +244,9 @@ void PrintViewManager::OnNotifyPrintJobEvent(
     }
     case JobEventDetails::NEW_DOC:
     case JobEventDetails::NEW_PAGE:
-    case JobEventDetails::PAGE_DONE: {
-      // Don't care about the actual printing process.
-      break;
-    }
+    case JobEventDetails::PAGE_DONE:
     case JobEventDetails::DOC_DONE: {
-      waiting_to_print_ = false;
+      // Don't care about the actual printing process.
       break;
     }
     case JobEventDetails::JOB_DONE: {
@@ -233,6 +255,11 @@ void PrintViewManager::OnNotifyPrintJobEvent(
       // of object registration.
       printing_succeeded_ = true;
       ReleasePrintJob();
+
+      NotificationService::current()->Notify(
+          NotificationType::PRINT_JOB_RELEASED,
+          Source<TabContentsWrapper>(tab_),
+          NotificationService::NoDetails());
       break;
     }
     default: {
@@ -243,22 +270,18 @@ void PrintViewManager::OnNotifyPrintJobEvent(
 }
 
 bool PrintViewManager::RenderAllMissingPagesNow() {
-  if (!print_job_.get() || !print_job_->is_job_pending()) {
-    DCHECK_EQ(waiting_to_print_, false);
+  if (!print_job_.get() || !print_job_->is_job_pending())
     return false;
-  }
 
   // We can't print if there is no renderer.
   if (!tab_contents() ||
       !tab_contents()->render_view_host() ||
       !tab_contents()->render_view_host()->IsRenderViewLive()) {
-    waiting_to_print_ = false;
     return false;
   }
 
   // Is the document already complete?
   if (print_job_->document() && print_job_->document()->IsComplete()) {
-    waiting_to_print_ = false;
     printing_succeeded_ = true;
     return true;
   }
@@ -292,17 +315,11 @@ void PrintViewManager::ShouldQuitFromInnerMessageLoop() {
     // it.
     MessageLoop::current()->Quit();
     inside_inner_message_loop_ = false;
-    waiting_to_print_ = false;
   }
 }
 
 bool PrintViewManager::CreateNewPrintJob(PrintJobWorkerOwner* job) {
   DCHECK(!inside_inner_message_loop_);
-  if (waiting_to_print_) {
-    // We can't help; we are waiting for a print job initialization. The user is
-    // button bashing. The only thing we could do is to batch up the requests.
-    return false;
-  }
 
   // Disconnect the current print_job_.
   DisconnectFromCurrentPrintJob();
@@ -353,9 +370,7 @@ void PrintViewManager::PrintingDone(bool success) {
   if (!print_job_.get() || !tab_contents())
     return;
   RenderViewHost* rvh = tab_contents()->render_view_host();
-  rvh->Send(new PrintMsg_PrintingDone(rvh->routing_id(),
-                                      print_job_->cookie(),
-                                      success));
+  rvh->Send(new PrintMsg_PrintingDone(rvh->routing_id(), success));
 }
 
 void PrintViewManager::TerminatePrintJob(bool cancel) {
@@ -365,12 +380,10 @@ void PrintViewManager::TerminatePrintJob(bool cancel) {
   if (cancel) {
     // We don't need the metafile data anymore because the printing is canceled.
     print_job_->Cancel();
-    waiting_to_print_ = false;
     inside_inner_message_loop_ = false;
   } else {
     DCHECK(!inside_inner_message_loop_);
-    DCHECK(!print_job_->document() || print_job_->document()->IsComplete() ||
-           !waiting_to_print_);
+    DCHECK(!print_job_->document() || print_job_->document()->IsComplete());
 
     // TabContents is either dying or navigating elsewhere. We need to render
     // all the pages in an hurry if a print job is still pending. This does the
@@ -381,7 +394,6 @@ void PrintViewManager::TerminatePrintJob(bool cancel) {
 }
 
 void PrintViewManager::ReleasePrintJob() {
-  DCHECK_EQ(waiting_to_print_, false);
   if (!print_job_.get())
     return;
 

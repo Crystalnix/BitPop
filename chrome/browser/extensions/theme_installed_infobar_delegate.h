@@ -7,10 +7,12 @@
 #pragma once
 
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
+#include "content/common/notification_observer.h"
 #include "content/common/notification_registrar.h"
 
 class ThemeService;
 class Extension;
+class Profile;
 class SkBitmap;
 class TabContents;
 
@@ -21,7 +23,8 @@ class ThemeInstalledInfoBarDelegate : public ConfirmInfoBarDelegate,
  public:
   ThemeInstalledInfoBarDelegate(TabContents* tab_contents,
                                 const Extension* new_theme,
-                                const std::string& previous_theme_id);
+                                const std::string& previous_theme_id,
+                                bool previous_using_native_theme);
 
   // Returns true if the given theme is the same as the one associated with this
   // info bar.
@@ -37,17 +40,17 @@ class ThemeInstalledInfoBarDelegate : public ConfirmInfoBarDelegate,
 
  private:
   // ConfirmInfoBarDelegate:
-  virtual void InfoBarClosed();
-  virtual SkBitmap* GetIcon() const;
-  virtual ThemeInstalledInfoBarDelegate* AsThemePreviewInfobarDelegate();
-  virtual string16 GetMessageText() const;
-  virtual int GetButtons() const;
-  virtual string16 GetButtonLabel(InfoBarButton button) const;
+  virtual gfx::Image* GetIcon() const OVERRIDE;
+  virtual ThemeInstalledInfoBarDelegate*
+      AsThemePreviewInfobarDelegate() OVERRIDE;
+  virtual string16 GetMessageText() const OVERRIDE;
+  virtual int GetButtons() const OVERRIDE;
+  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
 
   // NotificationObserver:
   virtual void Observe(NotificationType type,
                        const NotificationSource& source,
-                       const NotificationDetails& details);
+                       const NotificationDetails& details) OVERRIDE;
 
   Profile* profile_;
   ThemeService* theme_service_;
@@ -60,6 +63,7 @@ class ThemeInstalledInfoBarDelegate : public ConfirmInfoBarDelegate,
 
   // Used to undo theme install.
   std::string previous_theme_id_;
+  bool previous_using_native_theme_;
 
   // Tab to which this info bar is associated.
   TabContents* tab_contents_;

@@ -76,7 +76,9 @@ void ProfileImplIOData::Handle::Init(const FilePath& cookie_path,
 const content::ResourceContext&
 ProfileImplIOData::Handle::GetResourceContext() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  LazyInitialize();
+  // Don't call LazyInitialize here, since the resource context is created at
+  // the beginning of initalization and is used by some members while they're
+  // being initialized (i.e. AppCacheService).
   return io_data_->GetResourceContext();
 }
 
@@ -180,10 +182,6 @@ void ProfileImplIOData::LazyInitializeInternal(
   ApplyProfileParamsToContext(media_request_context_);
   ApplyProfileParamsToContext(extensions_context);
 
-  main_context->set_cookie_policy(cookie_policy());
-  media_request_context_->set_cookie_policy(cookie_policy());
-  extensions_context->set_cookie_policy(cookie_policy());
-
   main_context->set_net_log(io_thread->net_log());
   media_request_context_->set_net_log(io_thread->net_log());
   extensions_context->set_net_log(io_thread->net_log());
@@ -274,8 +272,7 @@ void ProfileImplIOData::LazyInitializeInternal(
 
   main_context->set_cookie_store(cookie_store);
   media_request_context_->set_cookie_store(cookie_store);
-  extensions_context->set_cookie_store(
-      extensions_cookie_store);
+  extensions_context->set_cookie_store(extensions_cookie_store);
 
   main_http_factory_.reset(main_cache);
   media_http_factory_.reset(media_cache);
@@ -284,6 +281,13 @@ void ProfileImplIOData::LazyInitializeInternal(
 
   main_context->set_ftp_transaction_factory(
       new net::FtpNetworkLayer(io_thread_globals->host_resolver.get()));
+
+  main_context->set_chrome_url_data_manager_backend(
+      chrome_url_data_manager_backend());
+
+  main_context->set_job_factory(job_factory());
+  media_request_context_->set_job_factory(job_factory());
+  extensions_context->set_job_factory(job_factory());
 
   lazy_params_.reset();
 }

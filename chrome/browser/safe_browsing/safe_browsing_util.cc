@@ -5,6 +5,8 @@
 #include "chrome/browser/safe_browsing/safe_browsing_util.h"
 
 #include "base/base64.h"
+#include "base/logging.h"
+#include "base/stringprintf.h"
 #include "base/string_util.h"
 #include "crypto/hmac.h"
 #include "crypto/sha2.h"
@@ -497,13 +499,14 @@ bool VerifyMAC(const std::string& key, const std::string& mac,
 }
 
 GURL GeneratePhishingReportUrl(const std::string& report_page,
-                               const std::string& url_to_report) {
+                               const std::string& url_to_report,
+                               bool is_client_side_detection) {
   icu::Locale locale = icu::Locale::getDefault();
   const char* lang = locale.getLanguage();
   if (!lang)
     lang = "en";  // fallback
   const std::string continue_esc =
-      EscapeQueryParamValue(StringPrintf(kContinueUrlFormat, lang), true);
+      EscapeQueryParamValue(base::StringPrintf(kContinueUrlFormat, lang), true);
   const std::string current_esc = EscapeQueryParamValue(url_to_report, true);
 
 #if defined(OS_WIN)
@@ -512,10 +515,13 @@ GURL GeneratePhishingReportUrl(const std::string& report_page,
 #else
   std::string client_name("googlechrome");
 #endif
+  if (is_client_side_detection)
+    client_name.append("_csd");
 
-  GURL report_url(report_page +
-      StringPrintf(kReportParams, client_name.c_str(), continue_esc.c_str(),
-                   current_esc.c_str()));
+  GURL report_url(report_page + base::StringPrintf(kReportParams,
+                                                   client_name.c_str(),
+                                                   continue_esc.c_str(),
+                                                   current_esc.c_str()));
   return google_util::AppendGoogleLocaleParam(report_url);
 }
 

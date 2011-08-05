@@ -38,14 +38,15 @@ bool DatabaseConnections::IsOriginUsed(
   return (connections_.find(origin_identifier) != connections_.end());
 }
 
-void DatabaseConnections::AddConnection(const string16& origin_identifier,
+bool DatabaseConnections::AddConnection(const string16& origin_identifier,
                                         const string16& database_name) {
-  connections_[origin_identifier][database_name]++;
+  int& count = connections_[origin_identifier][database_name].first;
+  return ++count == 1;
 }
 
-void DatabaseConnections::RemoveConnection(const string16& origin_identifier,
+bool DatabaseConnections::RemoveConnection(const string16& origin_identifier,
                                            const string16& database_name) {
-  RemoveConnectionsHelper(origin_identifier, database_name, 1);
+  return RemoveConnectionsHelper(origin_identifier, database_name, 1);
 }
 
 void DatabaseConnections::RemoveAllConnections() {
@@ -62,14 +63,43 @@ void DatabaseConnections::RemoveConnections(
     const DBConnections& db_connections = origin_it->second;
     for (DBConnections::const_iterator db_it = db_connections.begin();
          db_it != db_connections.end(); db_it++) {
-      RemoveConnectionsHelper(origin_it->first, db_it->first, db_it->second);
-      if (!IsDatabaseOpened(origin_it->first, db_it->first))
+      if (RemoveConnectionsHelper(origin_it->first, db_it->first,
+                                  db_it->second.first))
         closed_dbs->push_back(std::make_pair(origin_it->first, db_it->first));
     }
   }
 }
 
-void DatabaseConnections::RemoveConnectionsHelper(
+int64 DatabaseConnections::GetOpenDatabaseSize(
+    const string16& origin_identifier,
+    const string16& database_name) const {
+  DCHECK(IsDatabaseOpened(origin_identifier, database_name));
+  return connections_[origin_identifier][database_name].second;
+}
+
+void DatabaseConnections::SetOpenDatabaseSize(
+    const string16& origin_identifier,
+    const string16& database_name,
+    int64 size) {
+  DCHECK(IsDatabaseOpened(origin_identifier, database_name));
+  connections_[origin_identifier][database_name].second = size;
+}
+
+void DatabaseConnections::ListConnections(
+    std::vector<std::pair<string16, string16> > *list) const {
+  for (OriginConnections::const_iterator origin_it =
+           connections_.begin();
+       origin_it != connections_.end();
+       origin_it++) {
+    const DBConnections& db_connections = origin_it->second;
+    for (DBConnections::const_iterator db_it = db_connections.begin();
+         db_it != db_connections.end(); db_it++) {
+      list->push_back(std::make_pair(origin_it->first, db_it->first));
+    }
+  }
+}
+
+bool DatabaseConnections::RemoveConnectionsHelper(
     const string16& origin_identifier,
     const string16& database_name,
     int num_connections) {
@@ -77,14 +107,15 @@ void DatabaseConnections::RemoveConnectionsHelper(
       connections_.find(origin_identifier);
   DCHECK(origin_iterator != connections_.end());
   DBConnections& db_connections = origin_iterator->second;
-  int& count = db_connections[database_name];
+  int& count = db_connections[database_name].first;
   DCHECK(count >= num_connections);
   count -= num_connections;
-  if (!count) {
-    db_connections.erase(database_name);
-    if (db_connections.empty())
-      connections_.erase(origin_iterator);
-  }
+  if (count)
+    return false;
+  db_connections.erase(database_name);
+  if (db_connections.empty())
+    connections_.erase(origin_iterator);
+  return true;
 }
 
 DatabaseConnectionsWrapper::DatabaseConnectionsWrapper()

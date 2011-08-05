@@ -14,7 +14,7 @@
 #include "base/memory/singleton.h"
 #include "base/timer.h"
 #include "base/values.h"
-#include "chrome/common/net/url_fetcher.h"
+#include "content/common/url_fetcher.h"
 #include "googleurl/src/gurl.h"
 
 class DictionaryValue;
@@ -33,13 +33,13 @@ class SystemAccess;
 // Base class for OEM customization document classes.
 class CustomizationDocument {
  public:
-  virtual ~CustomizationDocument() {}
+  virtual ~CustomizationDocument();
 
   // Return true if the document was successfully fetched and parsed.
   bool IsReady() const { return root_.get(); }
 
  protected:
-  CustomizationDocument() {}
+  CustomizationDocument();
 
   virtual bool LoadManifestFromFile(const FilePath& manifest_path);
   virtual bool LoadManifestFromString(const std::string& manifest);
@@ -83,6 +83,8 @@ class StartupCustomizationDocument : public CustomizationDocument {
   StartupCustomizationDocument(SystemAccess* system_access,
                                const std::string& manifest);
 
+  virtual ~StartupCustomizationDocument();
+
   void Init(SystemAccess* system_access);
 
   // If |attr| exists in machine stat, assign it to |value|.
@@ -105,8 +107,10 @@ class ServicesCustomizationDocument : public CustomizationDocument,
                                       private URLFetcher::Delegate {
  public:
   // OEM specific carrier deal.
-  struct CarrierDeal {
+  class CarrierDeal {
+   public:
     explicit CarrierDeal(DictionaryValue* deal_dict);
+    ~CarrierDeal();
 
     // Returns string with the specified |locale| and |id|.
     // If there's no version for |locale|, default one is returned.
@@ -114,11 +118,21 @@ class ServicesCustomizationDocument : public CustomizationDocument,
     std::string GetLocalizedString(const std::string& locale,
                                    const std::string& id) const;
 
-    std::string deal_locale;
-    std::string top_up_url;
-    int notification_count;
-    base::Time expire_date;
-    DictionaryValue* localized_strings;
+    const std::string& deal_locale() const { return deal_locale_; }
+    const std::string& info_url() const { return info_url_; }
+    const std::string& top_up_url() const { return top_up_url_; }
+    int notification_count() const { return notification_count_; }
+    base::Time expire_date() const { return expire_date_; }
+
+   private:
+    std::string deal_locale_;
+    std::string info_url_;
+    std::string top_up_url_;
+    int notification_count_;
+    base::Time expire_date_;
+    DictionaryValue* localized_strings_;
+
+    DISALLOW_COPY_AND_ASSIGN(CarrierDeal);
   };
 
   // Carrier ID (ex. "Verizon (us)") mapping to carrier deals.
@@ -167,6 +181,8 @@ class ServicesCustomizationDocument : public CustomizationDocument,
   ServicesCustomizationDocument(const std::string& manifest,
                                 const std::string& initial_locale);
 
+  virtual ~ServicesCustomizationDocument();
+
   // Save applied state in machine settings.
   static void SetApplied(bool val);
 
@@ -175,7 +191,7 @@ class ServicesCustomizationDocument : public CustomizationDocument,
                                   const GURL& url,
                                   const net::URLRequestStatus& status,
                                   int response_code,
-                                  const ResponseCookies& cookies,
+                                  const net::ResponseCookies& cookies,
                                   const std::string& data);
 
   // Initiate file fetching.

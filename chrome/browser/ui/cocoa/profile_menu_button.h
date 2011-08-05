@@ -9,9 +9,14 @@
 #import <Cocoa/Cocoa.h>
 
 #include "base/memory/scoped_nsobject.h"
+#include "base/memory/scoped_ptr.h"
+#import "chrome/browser/ui/cocoa/menu_button.h"
+#import "chrome/browser/ui/cocoa/menu_controller.h"
+
+class ProfileMenuModel;
 
 // PopUp button that shows the multiprofile menu.
-@interface ProfileMenuButton : NSPopUpButton {
+@interface ProfileMenuButton : MenuButton {
  @private
   BOOL shouldShowProfileDisplayName_;
   scoped_nsobject<NSTextFieldCell> textFieldCell_;
@@ -20,6 +25,10 @@
   // Cache the various button states when creating |cachedTabImage_|. If
   // any of these states change then the cached image is invalidated.
   BOOL cachedTabImageIsPressed_;
+
+  // The popup menu and its model.
+  scoped_nsobject<MenuController> menu_;
+  scoped_ptr<ProfileMenuModel> profile_menu_model_;
 }
 
 @property(assign,nonatomic) BOOL shouldShowProfileDisplayName;
@@ -29,10 +38,6 @@
 - (NSSize)desiredControlSize;
 // Gets the minimum size that the control should be resized to.
 - (NSSize)minControlSize;
-
-// Public for testing.
-- (void)   mouseDown:(NSEvent*)event
-  withShowMenuTarget:(id)target;
 
 @end
 

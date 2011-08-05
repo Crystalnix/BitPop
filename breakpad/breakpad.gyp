@@ -25,7 +25,7 @@
       'targets': [
         {
           'target_name': 'breakpad_utilities',
-          'type': '<(library)',
+          'type': 'static_library',
           'sources': [
             'src/common/convert_UTF.c',
             'src/client/mac/handler/breakpad_nlist_64.cc',
@@ -174,7 +174,7 @@
         },
         {
           'target_name': 'breakpad',
-          'type': '<(library)',
+          'type': 'static_library',
           'dependencies': [
             'breakpad_utilities',
             'crash_inspector',
@@ -211,6 +211,7 @@
                               '-mfpmath=sse'],
                   'ldflags!': ['-m32'],
                   'cflags': ['-O2'],
+                  'include_dirs!': ['/usr/include32'],
                 }],
               ],
 
@@ -282,7 +283,7 @@
       'targets': [
         {
           'target_name': 'breakpad_client',
-          'type': '<(library)',
+          'type': 'static_library',
 
           'sources': [
             'src/client/linux/crash_generation/crash_generation_client.cc',
@@ -308,10 +309,15 @@
             'src/common/linux/libcurl_wrapper.cc',
             'src/common/linux/libcurl_wrapper.h',
             'src/common/linux/linux_libc_support.h',
-            'src/common/linux/linux_syscall_support.h',
             'src/common/memory.h',
             'src/common/string_conversion.cc',
             'src/common/string_conversion.h',
+          ],
+
+          'conditions': [
+            ['target_arch=="arm"', {
+              'cflags': ['-Wa,-mimplicit-it=always'],
+            }],
           ],
 
           'link_settings': {
@@ -331,7 +337,7 @@
         {
           # Breakpad r693 uses some files from src/processor in unit tests.
           'target_name': 'breakpad_processor_support',
-          'type': '<(library)',
+          'type': 'static_library',
 
           'sources': [
             'src/processor/basic_code_modules.cc',
@@ -339,7 +345,6 @@
             'src/processor/logging.cc',
             'src/processor/logging.h',
             'src/processor/minidump.cc',
-            'src/processor/minidump.h',
             'src/processor/pathname_stripper.cc',
             'src/processor/pathname_stripper.h',
           ],

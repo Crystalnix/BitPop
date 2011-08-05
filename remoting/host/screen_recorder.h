@@ -11,7 +11,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/scoped_ptr.h"
 #include "base/time.h"
 #include "base/timer.h"
 #include "remoting/base/encoder.h"
@@ -104,6 +103,9 @@ class ScreenRecorder : public base::RefCountedThreadSafe<ScreenRecorder> {
   // Remove all connections.
   void RemoveAllConnections();
 
+  // Update the sequence number for tracing performance.
+  void UpdateSequenceNumber(int64 sequence_number);
+
  private:
   // Getters for capturer and encoder.
   Capturer* capturer();
@@ -113,7 +115,6 @@ class ScreenRecorder : public base::RefCountedThreadSafe<ScreenRecorder> {
 
   void DoStart();
   void DoStop(Task* done_task);
-  void DoCompleteStop(Task* done_task);
 
   void DoSetMaxRate(double max_rate);
 
@@ -201,6 +202,9 @@ class ScreenRecorder : public base::RefCountedThreadSafe<ScreenRecorder> {
 
   // Time when encode is started.
   base::Time encode_start_time_;
+
+  // This is a number updated by client to trace performance.
+  int64 sequence_number_;
 
   DISALLOW_COPY_AND_ASSIGN(ScreenRecorder);
 };

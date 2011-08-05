@@ -1,28 +1,13 @@
-/*
- * TODO(xiyuan): Remove the section overrides when options_page.css uses the
- * new style.
- */
 #inetTitle {
   border: none;
 }
 
-#internetPage > section > h3 {
-  font-size: 100%;
-  width: auto;
-}
-
-#internetPage > section[hidden] {
-  display: none;
-}
-
-#internetPage > section > div:only-of-type > div.checkbox {
-  margin: 10px 0;
-  -webkit-margin-start: 10px;
+#network-general-div {
+  -webkit-margin-start: 15px;
 }
 
 #networking-controls {
   display: -webkit-box;
-  -webkit-margin-start: 10px;
 }
 
 .networks {
@@ -48,7 +33,7 @@
   height: 35px;
 }
 
-.network-item[connectable]:hover {
+.network-item:not([connecting]):hover {
   border-color: hsl(214, 91%, 85%);
   background-color: hsl(214, 91%, 97%);
 }
@@ -68,14 +53,6 @@
 .network-item[connecting] {
   background-color: hsl(214, 91%, 97%);
   border-color: hsl(214, 91%, 85%);
-  padding-top: 5px;
-  height: 60px;
-  -webkit-box-align: start;
-  display: block;
-}
-
-.network-item[connecting][other] {
-  height: 105px;
 }
 
 .network-item-text {
@@ -93,7 +70,6 @@
 html[dir='rtl'] .network-item-text {
   background: right center no-repeat;
 }
-
 
 .network-item[connected] > * > .network-name-label {
   font-weight: bold;
@@ -114,10 +90,6 @@ html[dir='rtl'] .network-item-text {
   visibility: visible;
 }
 
-.network-item[connecting] > * > button {
-  visibility: hidden;
-}
-
 .network-item-box-spacer {
   -webkit-box-flex: 1;
 }
@@ -126,10 +98,6 @@ html[dir='rtl'] .network-item-text {
   min-width: 400px;
   min-height: 420px;
   position: relative;
-}
-
-.details-button {
-  float: right;
 }
 
 #details-plan-table {
@@ -145,10 +113,6 @@ html[dir='rtl'] .network-item-text {
   width: 350px;
   padding-top: 5px;
   font-weight: bold;
-}
-
-html[dir='rtl'] .details-button {
-  float: left;
 }
 
 #locked-network-banner {
@@ -175,43 +139,18 @@ html[dir='rtl'] .details-button {
 }
 
 #internet-owner-only-warning {
-  margin-bottom: 10px;
-  margin-top: 10px;
+  margin: 10px 0;
   padding-bottom: 1px;
-  -webkit-margin-start: 10px;
   -webkit-padding-start: 20px;
   background-repeat: no-repeat;
   background-image: url('warning.png');
 }
 
-#internetPage:not([accesslocked]) #locked-network-banner,
-#internetPage[accesslocked] #wireless-buttons,
-#internetPage[accesslocked] #wired-section,
-#internetPage[accesslocked] #wireless-section,
-#internetPage[accesslocked] #remembered-section,
-#internetPage[accesslocked] #detailsInternetPage {
-  display: none;
+#ipConfigList .name {
+  width: 40%;
 }
 
-#detailsInternetPage:not([connected]) > #advancedSection,
-#detailsInternetPage:not([wireless]) > * > #detailsInternetOk,
-#detailsInternetPage[ethernet] .wifi-details,
-#detailsInternetPage[ethernet] .cellular-details,
-#detailsInternetPage[cellular] .wifi-details,
-#detailsInternetPage[wireless] .cellular-details,
-#detailsInternetPage[cellplanloading] .no-plan-info,
-#detailsInternetPage[cellplanloading] .plan-details-info,
-#detailsInternetPage[cellplanloading] #planList,
-#detailsInternetPage[hascellplan] .plan-loading-info,
-#detailsInternetPage[hascellplan] .no-plan-info,
-#detailsInternetPage[nocellplan] .plan-loading-info,
-#detailsInternetPage[nocellplan] .plan-details-info,
-#detailsInternetPage:not([gsm]) .gsm-only,
-#detailsInternetPage[gsm] .cdma-only,
-#detailsInternetPage:not([password]) .password-details {
-  display: none;
-}
-
-#wireless-buttons > * > button {
-  margin-left: 5px;
+#ipConfigList .value {
+  -webkit-box-flex: 1;
+  color: #666;
 }

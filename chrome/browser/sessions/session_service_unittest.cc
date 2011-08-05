@@ -5,8 +5,8 @@
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/path_service.h"
+#include "base/scoped_temp_dir.h"
 #include "base/stl_util-inl.h"
 #include "base/string_number_conversions.h"
 #include "base/time.h"
@@ -18,7 +18,6 @@
 #include "chrome/browser/sessions/session_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/browser_with_test_window_test.h"
-#include "chrome/test/file_test_utils.h"
 #include "chrome/test/testing_profile.h"
 #include "content/browser/tab_contents/navigation_entry.h"
 #include "content/common/notification_observer.h"
@@ -39,14 +38,13 @@ class SessionServiceTest : public BrowserWithTestWindowTest,
 
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     path_ = temp_dir_.path().Append(FILE_PATH_LITERAL("SessionTestDirs"));
-    file_util::CreateDirectory(path_);
-    path_deleter_.reset(new FileAutoDeleter(path_));
+    ASSERT_TRUE(file_util::CreateDirectory(path_));
     path_ = path_.AppendASCII(b);
 
     SessionService* session_service = new SessionService(path_);
     helper_.set_service(session_service);
 
-    service()->SetWindowType(window_id, Browser::TYPE_NORMAL);
+    service()->SetWindowType(window_id, Browser::TYPE_TABBED);
     service()->SetWindowBounds(window_id, window_bounds, false);
   }
 
@@ -60,7 +58,6 @@ class SessionServiceTest : public BrowserWithTestWindowTest,
 
   virtual void TearDown() {
     helper_.set_service(NULL);
-    path_deleter_.reset();
   }
 
   void UpdateNavigation(const SessionID& window_id,
@@ -136,7 +133,6 @@ class SessionServiceTest : public BrowserWithTestWindowTest,
   // Path used in testing.
   ScopedTempDir temp_dir_;
   FilePath path_;
-  scoped_ptr<FileAutoDeleter> path_deleter_;
 
   SessionServiceTestHelper helper_;
 };
@@ -161,7 +157,7 @@ TEST_F(SessionServiceTest, Basic) {
   ASSERT_EQ(0, windows[0]->selected_tab_index);
   ASSERT_EQ(window_id.id(), windows[0]->window_id.id());
   ASSERT_EQ(1U, windows[0]->tabs.size());
-  ASSERT_EQ(Browser::TYPE_NORMAL, windows[0]->type);
+  ASSERT_EQ(Browser::TYPE_TABBED, windows[0]->type);
 
   SessionTab* tab = windows[0]->tabs[0];
   helper_.AssertTabEquals(window_id, tab_id, 0, 0, 1, *tab);
@@ -271,7 +267,7 @@ TEST_F(SessionServiceTest, TwoWindows) {
   UpdateNavigation(window_id, tab1_id, nav1, 0, true);
 
   const gfx::Rect window2_bounds(3, 4, 5, 6);
-  service()->SetWindowType(window2_id, Browser::TYPE_NORMAL);
+  service()->SetWindowType(window2_id, Browser::TYPE_TABBED);
   service()->SetWindowBounds(window2_id, window2_bounds, true);
   helper_.PrepareTabInWindow(window2_id, tab2_id, 0, true);
   UpdateNavigation(window2_id, tab2_id, nav2, 0, true);
@@ -323,7 +319,7 @@ TEST_F(SessionServiceTest, WindowWithNoTabsGetsPruned) {
   UpdateNavigation(window_id, tab1_id, nav1, 0, true);
 
   const gfx::Rect window2_bounds(3, 4, 5, 6);
-  service()->SetWindowType(window2_id, Browser::TYPE_NORMAL);
+  service()->SetWindowType(window2_id, Browser::TYPE_TABBED);
   service()->SetWindowBounds(window2_id, window2_bounds, false);
   helper_.PrepareTabInWindow(window2_id, tab2_id, 0, true);
 
@@ -383,7 +379,7 @@ TEST_F(SessionServiceTest, WindowCloseCommittedAfterNavigate) {
   SessionID tab2_id;
   ASSERT_NE(window2_id.id(), window_id.id());
 
-  service()->SetWindowType(window2_id, Browser::TYPE_NORMAL);
+  service()->SetWindowType(window2_id, Browser::TYPE_TABBED);
   service()->SetWindowBounds(window2_id, window_bounds, false);
 
   TabNavigation nav1(0, GURL("http://google.com"), GURL(),
@@ -485,14 +481,14 @@ TEST_F(SessionServiceTest, RestorePopup) {
   ReadWindows(&(windows.get()));
 
   ASSERT_EQ(2U, windows->size());
-  int normal_index = windows[0]->type == Browser::TYPE_NORMAL ?
+  int tabbed_index = windows[0]->type == Browser::TYPE_TABBED ?
       0 : 1;
-  int popup_index = normal_index == 0 ? 1 : 0;
-  ASSERT_EQ(0, windows[normal_index]->selected_tab_index);
-  ASSERT_EQ(window_id.id(), windows[normal_index]->window_id.id());
-  ASSERT_EQ(1U, windows[normal_index]->tabs.size());
+  int popup_index = tabbed_index == 0 ? 1 : 0;
+  ASSERT_EQ(0, windows[tabbed_index]->selected_tab_index);
+  ASSERT_EQ(window_id.id(), windows[tabbed_index]->window_id.id());
+  ASSERT_EQ(1U, windows[tabbed_index]->tabs.size());
 
-  SessionTab* tab = windows[normal_index]->tabs[0];
+  SessionTab* tab = windows[tabbed_index]->tabs[0];
   helper_.AssertTabEquals(window_id, tab_id, 0, 0, 1, *tab);
   helper_.AssertNavigationEquals(nav1, tab->navigations[0]);
 

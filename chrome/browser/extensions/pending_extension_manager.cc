@@ -11,11 +11,6 @@
 
 namespace {
 
-// Install predicate used by AddFromDefaultAppList().
-bool IsApp(const Extension& extension) {
-  return extension.is_app();
-}
-
 // Install predicate used by AddFromExternalUpdateUrl().
 bool AlwaysInstall(const Extension& extension) {
   return true;
@@ -55,12 +50,10 @@ bool PendingExtensionManager::AddFromSync(
     const std::string& id,
     const GURL& update_url,
     PendingExtensionInfo::ShouldAllowInstallPredicate should_allow_install,
-    bool install_silently,
-    bool enable_on_install,
-    bool enable_incognito_on_install) {
+    bool install_silently) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  if (service_.GetExtensionById(id, true)) {
+  if (service_.GetInstalledExtension(id)) {
     LOG(ERROR) << "Trying to add pending extension " << id
                << " which already exists";
     return false;
@@ -70,10 +63,7 @@ bool PendingExtensionManager::AddFromSync(
   const Extension::Location kSyncLocation = Extension::INTERNAL;
 
   return AddExtensionImpl(id, update_url, should_allow_install,
-                          kIsFromSync, install_silently,
-                          enable_on_install,
-                          enable_incognito_on_install,
-                          kSyncLocation);
+                          kIsFromSync, install_silently, kSyncLocation);
 }
 
 void PendingExtensionManager::AddFromExternalUpdateUrl(
@@ -83,13 +73,11 @@ void PendingExtensionManager::AddFromExternalUpdateUrl(
 
   const bool kIsFromSync = false;
   const bool kInstallSilently = true;
-  const bool kEnableOnInstall = true;
-  const bool kEnableIncognitoOnInstall = false;
 
   if (service_.IsExternalExtensionUninstalled(id))
     return;
 
-  if (service_.GetExtensionById(id, true)) {
+  if (service_.GetInstalledExtension(id)) {
     LOG(DFATAL) << "Trying to add extension " << id
                 << " by external update, but it is already installed.";
     return;
@@ -97,32 +85,9 @@ void PendingExtensionManager::AddFromExternalUpdateUrl(
 
   AddExtensionImpl(id, update_url, &AlwaysInstall,
                    kIsFromSync, kInstallSilently,
-                   kEnableOnInstall, kEnableIncognitoOnInstall,
                    location);
 }
 
-
-// TODO(akalin): Change DefaultAppList to DefaultExtensionList and
-// remove the IsApp() check.
-void PendingExtensionManager::AddFromDefaultAppList(
-    const std::string& id) {
-  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  const bool kIsFromSync = false;
-  const bool kInstallSilently = true;
-  const bool kEnableOnInstall = true;
-  const bool kEnableIncognitoOnInstall = true;
-
-  // This can legitimately happen if the user manually installed one of the
-  // default apps before this code ran.
-  if (service_.GetExtensionById(id, true))
-    return;
-
-  AddExtensionImpl(id, GURL(), &IsApp,
-                   kIsFromSync, kInstallSilently,
-                   kEnableOnInstall, kEnableIncognitoOnInstall,
-                   Extension::INTERNAL);
-}
 
 void PendingExtensionManager::AddFromExternalFile(
     const std::string& id,
@@ -131,16 +96,12 @@ void PendingExtensionManager::AddFromExternalFile(
   GURL kUpdateUrl = GURL();
   bool kIsFromSync = false;
   bool kInstallSilently = true;
-  bool kEnableOnInstall = true;
-  bool kEnableIncognitoOnInstall = false;
 
   pending_extension_map_[id] =
       PendingExtensionInfo(kUpdateUrl,
                            &AlwaysInstall,
                            kIsFromSync,
                            kInstallSilently,
-                           kEnableOnInstall,
-                           kEnableIncognitoOnInstall,
                            location);
 }
 
@@ -148,7 +109,6 @@ bool PendingExtensionManager::AddExtensionImpl(
     const std::string& id, const GURL& update_url,
     PendingExtensionInfo::ShouldAllowInstallPredicate should_allow_install,
     bool is_from_sync, bool install_silently,
-    bool enable_on_install, bool enable_incognito_on_install,
     Extension::Location install_source) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -185,8 +145,6 @@ bool PendingExtensionManager::AddExtensionImpl(
         should_allow_install,
         is_from_sync,
         install_silently,
-        enable_on_install,
-        enable_incognito_on_install,
         install_source);
     return true;
   }

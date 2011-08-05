@@ -35,7 +35,6 @@
 #include "chrome/browser/chromeos/system_key_event_listener.h"
 #include "chrome/browser/chromeos/view_ids.h"
 #include "chrome/browser/chromeos/wm_ipc.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -44,6 +43,7 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/browser/browser_thread.h"
+#include "content/browser/user_metrics.h"
 #include "content/common/notification_service.h"
 #include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
@@ -53,8 +53,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/x/x11_util.h"
 #include "views/screen.h"
-#include "views/widget/root_view.h"
-#include "views/widget/widget_gtk.h"
+#include "views/widget/native_widget_gtk.h"
 
 namespace {
 
@@ -82,7 +81,7 @@ class ScreenLockObserver : public chromeos::ScreenLockLibrary::Observer,
   // NotificationObserver overrides:
   virtual void Observe(NotificationType type,
                        const NotificationSource& source,
-                       const NotificationDetails& details) {
+                       const NotificationDetails& details) OVERRIDE {
     if (type == NotificationType::LOGIN_USER_CHANGED) {
       // Register Screen Lock after login screen to make sure
       // we don't show the screen lock on top of the login screen by accident.
@@ -91,18 +90,18 @@ class ScreenLockObserver : public chromeos::ScreenLockLibrary::Observer,
     }
   }
 
-  virtual void LockScreen(chromeos::ScreenLockLibrary* obj) {
+  virtual void LockScreen(chromeos::ScreenLockLibrary* obj) OVERRIDE {
     VLOG(1) << "In: ScreenLockObserver::LockScreen";
     SetupInputMethodsForScreenLocker();
     chromeos::ScreenLocker::Show();
   }
 
-  virtual void UnlockScreen(chromeos::ScreenLockLibrary* obj) {
+  virtual void UnlockScreen(chromeos::ScreenLockLibrary* obj) OVERRIDE {
     RestoreInputMethods();
     chromeos::ScreenLocker::Hide();
   }
 
-  virtual void UnlockScreenFailed(chromeos::ScreenLockLibrary* obj) {
+  virtual void UnlockScreenFailed(chromeos::ScreenLockLibrary* obj) OVERRIDE {
     chromeos::ScreenLocker::UnlockScreenFailed();
   }
 
@@ -196,27 +195,34 @@ static base::LazyInstance<ScreenLockObserver> g_screen_lock_observer(
 
 // A ScreenLock window that covers entire screen to keep the keyboard
 // focus/events inside the grab widget.
-class LockWindow : public views::WidgetGtk {
+class LockWindow : public views::NativeWidgetGtk {
  public:
   LockWindow()
-      : views::WidgetGtk(views::WidgetGtk::TYPE_WINDOW),
+      : views::NativeWidgetGtk(new views::Widget),
         toplevel_focus_widget_(NULL) {
     EnableDoubleBuffer(true);
   }
 
   // GTK propagates key events from parents to children.
   // Make sure LockWindow will never handle key events.
-  virtual gboolean OnKeyEvent(GtkWidget* widget, GdkEventKey* event) {
+  virtual gboolean OnEventKey(GtkWidget* widget, GdkEventKey* event) OVERRIDE {
     // Don't handle key event in the lock window.
     return false;
   }
 
-  virtual void OnDestroy(GtkWidget* object) {
-    VLOG(1) << "OnDestroy: LockWindow destroyed";
-    views::WidgetGtk::OnDestroy(object);
+  virtual gboolean OnButtonPress(GtkWidget* widget,
+                                 GdkEventButton* event) OVERRIDE {
+    // Don't handle mouse event in the lock wnidow and
+    // nor propagate to child.
+    return true;
   }
 
-  virtual void ClearNativeFocus() {
+  virtual void OnDestroy(GtkWidget* object) OVERRIDE {
+    VLOG(1) << "OnDestroy: LockWindow destroyed";
+    views::NativeWidgetGtk::OnDestroy(object);
+  }
+
+  virtual void ClearNativeFocus() OVERRIDE {
     DCHECK(toplevel_focus_widget_);
     gtk_widget_grab_focus(toplevel_focus_widget_);
   }
@@ -254,14 +260,14 @@ class GrabWidgetRootView
   }
 
   // views::View implementation.
-  virtual void Layout() {
+  virtual void Layout() OVERRIDE {
     gfx::Size size = screen_lock_view_->GetPreferredSize();
     screen_lock_view_->SetBounds(0, 0, size.width(), size.height());
     shutdown_button_->LayoutIn(this);
   }
 
   // ScreenLocker::ScreenLockViewContainer implementation:
-  void SetScreenLockView(views::View* screen_lock_view) {
+  void SetScreenLockView(views::View* screen_lock_view) OVERRIDE {
     if (screen_lock_view_) {
       RemoveChildView(screen_lock_view_);
     }
@@ -281,10 +287,10 @@ class GrabWidgetRootView
 };
 
 // A child widget that grabs both keyboard and pointer input.
-class GrabWidget : public views::WidgetGtk {
+class GrabWidget : public views::NativeWidgetGtk {
  public:
   explicit GrabWidget(chromeos::ScreenLocker* screen_locker)
-      : views::WidgetGtk(views::WidgetGtk::TYPE_CHILD),
+      : views::NativeWidgetGtk(new views::Widget),
         screen_locker_(screen_locker),
         ALLOW_THIS_IN_INITIALIZER_LIST(task_factory_(this)),
         grab_failure_count_(0),
@@ -294,8 +300,8 @@ class GrabWidget : public views::WidgetGtk {
         shutdown_(NULL) {
   }
 
-  virtual void Show() {
-    views::WidgetGtk::Show();
+  virtual void Show() OVERRIDE {
+    views::NativeWidgetGtk::Show();
     signout_link_ =
         screen_locker_->GetViewByID(VIEW_ID_SCREEN_LOCKER_SIGNOUT_LINK);
     shutdown_ = screen_locker_->GetViewByID(VIEW_ID_SCREEN_LOCKER_SHUTDOWN);
@@ -317,11 +323,11 @@ class GrabWidget : public views::WidgetGtk {
       gtk_grab_remove(current_grab_window);
   }
 
-  virtual gboolean OnKeyEvent(GtkWidget* widget, GdkEventKey* event) {
+  virtual gboolean OnEventKey(GtkWidget* widget, GdkEventKey* event) OVERRIDE {
     views::KeyEvent key_event(reinterpret_cast<GdkEvent*>(event));
     // This is a hack to workaround the issue crosbug.com/10655 due to
     // the limitation that a focus manager cannot handle views in
-    // TYPE_CHILD WidgetGtk correctly.
+    // TYPE_CHILD NativeWidgetGtk correctly.
     if (signout_link_ &&
         event->type == GDK_KEY_PRESS &&
         (event->keyval == GDK_Tab ||
@@ -338,11 +344,12 @@ class GrabWidget : public views::WidgetGtk {
         return true;
       }
     }
-    return views::WidgetGtk::OnKeyEvent(widget, event);
+    return views::NativeWidgetGtk::OnEventKey(widget, event);
   }
 
-  virtual gboolean OnButtonPress(GtkWidget* widget, GdkEventButton* event) {
-    WidgetGtk::OnButtonPress(widget, event);
+  virtual gboolean OnButtonPress(GtkWidget* widget,
+                                 GdkEventButton* event) OVERRIDE {
+    NativeWidgetGtk::OnButtonPress(widget, event);
     // Never propagate event to parent.
     return true;
   }
@@ -357,7 +364,7 @@ class GrabWidget : public views::WidgetGtk {
   void TryUngrabOtherClients();
 
  private:
-  virtual void HandleGtkGrabBroke() {
+  virtual void HandleGtkGrabBroke() OVERRIDE {
     // Input should never be stolen from ScreenLocker once it's
     // grabbed.  If this happens, it's a bug and has to be fixed. We
     // let chrome crash to get a crash report and dump, and
@@ -514,17 +521,17 @@ class ScreenLockerBackgroundView
     : public chromeos::BackgroundView,
       public chromeos::ScreenLocker::ScreenLockViewContainer {
  public:
-  ScreenLockerBackgroundView(views::WidgetGtk* lock_widget,
+  ScreenLockerBackgroundView(views::Widget* lock_widget,
                              views::View* screen_lock_view)
       : lock_widget_(lock_widget),
         screen_lock_view_(screen_lock_view) {
   }
 
-  virtual ScreenMode GetScreenMode() const {
+  virtual ScreenMode GetScreenMode() const OVERRIDE {
     return kScreenLockerMode;
   }
 
-  virtual void Layout() {
+  virtual void Layout() OVERRIDE {
     chromeos::BackgroundView::Layout();
     gfx::Rect screen = bounds();
     if (screen_lock_view_) {
@@ -541,13 +548,13 @@ class ScreenLockerBackgroundView
   }
 
   // ScreenLocker::ScreenLockViewContainer implementation:
-  void SetScreenLockView(views::View* screen_lock_view) {
+  virtual void SetScreenLockView(views::View* screen_lock_view) OVERRIDE {
     screen_lock_view_ =  screen_lock_view;
     Layout();
   }
 
  private:
-  views::WidgetGtk* lock_widget_;
+  views::Widget* lock_widget_;
 
   views::View* screen_lock_view_;
 
@@ -573,9 +580,9 @@ class MouseEventRelay : public MessageLoopForUI::Observer {
     DCHECK(dest_);
   }
 
-  virtual void WillProcessEvent(GdkEvent* event) {}
+  virtual void WillProcessEvent(GdkEvent* event) OVERRIDE {}
 
-  virtual void DidProcessEvent(GdkEvent* event) {
+  virtual void DidProcessEvent(GdkEvent* event) OVERRIDE {
     if (event->any.window != src_)
       return;
     if (!initialized_) {
@@ -632,7 +639,7 @@ class InputEventObserver : public MessageLoopForUI::Observer {
         activated_(false) {
   }
 
-  virtual void WillProcessEvent(GdkEvent* event) {
+  virtual void WillProcessEvent(GdkEvent* event) OVERRIDE {
     if ((event->type == GDK_KEY_PRESS ||
          event->type == GDK_BUTTON_PRESS ||
          event->type == GDK_MOTION_NOTIFY) &&
@@ -647,7 +654,7 @@ class InputEventObserver : public MessageLoopForUI::Observer {
     }
   }
 
-  virtual void DidProcessEvent(GdkEvent* event) {
+  virtual void DidProcessEvent(GdkEvent* event) OVERRIDE {
   }
 
  private:
@@ -670,7 +677,7 @@ class LockerInputEventObserver : public MessageLoopForUI::Observer {
                    &LockerInputEventObserver::StartScreenSaver)) {
   }
 
-  virtual void WillProcessEvent(GdkEvent* event) {
+  virtual void WillProcessEvent(GdkEvent* event) OVERRIDE {
     if ((event->type == GDK_KEY_PRESS ||
          event->type == GDK_BUTTON_PRESS ||
          event->type == GDK_MOTION_NOTIFY)) {
@@ -679,7 +686,7 @@ class LockerInputEventObserver : public MessageLoopForUI::Observer {
     }
   }
 
-  virtual void DidProcessEvent(GdkEvent* event) {
+  virtual void DidProcessEvent(GdkEvent* event) OVERRIDE {
   }
 
  private:
@@ -711,7 +718,8 @@ ScreenLocker::ScreenLocker(const UserManager::User& user)
       // http://crosbug.com/1881
       unlock_on_input_(user_.email().empty()),
       locked_(false),
-      start_time_(base::Time::Now()) {
+      start_time_(base::Time::Now()),
+      login_status_consumer_(NULL) {
   DCHECK(!screen_locker_);
   screen_locker_ = this;
 }
@@ -725,8 +733,11 @@ void ScreenLocker::Init() {
   gfx::Rect init_bounds(views::Screen::GetMonitorAreaNearestPoint(left_top));
 
   LockWindow* lock_window = new LockWindow();
-  lock_window_ = lock_window;
-  lock_window_->Init(NULL, init_bounds);
+  lock_window_ = lock_window->GetWidget();
+  views::Widget::InitParams params(views::Widget::InitParams::TYPE_WINDOW);
+  params.bounds = init_bounds;
+  params.native_widget = lock_window;
+  lock_window_->Init(params);
   gtk_widget_modify_bg(
       lock_window_->GetNativeView(), GTK_STATE_NORMAL, &kGdkBlack);
 
@@ -748,10 +759,14 @@ void ScreenLocker::Init() {
   // TryGrabAllInputs() method later.  (Nobody else needs to use it, so moving
   // its declaration to the header instead of keeping it in an anonymous
   // namespace feels a bit ugly.)
-  GrabWidget* cast_lock_widget = new GrabWidget(this);
-  lock_widget_ = cast_lock_widget;
-  lock_widget_->MakeTransparent();
-  lock_widget_->InitWithWidget(lock_window_, gfx::Rect());
+  GrabWidget* grab_widget = new GrabWidget(this);
+  lock_widget_ = grab_widget->GetWidget();
+  views::Widget::InitParams lock_params(
+      views::Widget::InitParams::TYPE_CONTROL);
+  lock_params.transparent = true;
+  lock_params.parent_widget = lock_window_;
+  lock_params.native_widget = grab_widget;
+  lock_widget_->Init(lock_params);
   if (screen_lock_view_) {
     GrabWidgetRootView* root_view = new GrabWidgetRootView(screen_lock_view_);
     grab_container_ = root_view;
@@ -780,11 +795,11 @@ void ScreenLocker::Init() {
   lock_window_->SetContentsView(background_view_);
   lock_window_->Show();
 
-  cast_lock_widget->ClearGtkGrab();
+  grab_widget->ClearGtkGrab();
 
   // Call this after lock_window_->Show(); otherwise the 1st invocation
   // of gdk_xxx_grab() will always fail.
-  cast_lock_widget->TryGrabAllInputs();
+  grab_widget->TryGrabAllInputs();
 
   // Add the window to its own group so that its grab won't be stolen if
   // gtk_grab_add() gets called on behalf on a non-screen-locker widget (e.g.
@@ -796,7 +811,9 @@ void ScreenLocker::Init() {
                               GTK_WINDOW(lock_window_->GetNativeView()));
   g_object_unref(window_group);
 
-  lock_window->set_toplevel_focus_widget(lock_widget_->window_contents());
+  lock_window->set_toplevel_focus_widget(
+      static_cast<views::NativeWidgetGtk*>(lock_widget_->native_widget())->
+          window_contents());
 
   // Create the SystemKeyEventListener so it can listen for system keyboard
   // messages regardless of focus while screen locked.
@@ -830,6 +847,9 @@ void ScreenLocker::OnLoginFailure(const LoginFailure& error) {
         l10n_util::GetStringUTF16(IDS_LOGIN_ERROR_KEYBOARD_SWITCH_HINT);
 
   ShowErrorBubble(UTF16ToWide(msg), BubbleBorder::BOTTOM_LEFT);
+
+  if (login_status_consumer_)
+    login_status_consumer_->OnLoginFailure(error);
 }
 
 void ScreenLocker::OnLoginSuccess(
@@ -858,6 +878,10 @@ void ScreenLocker::OnLoginSuccess(
 
   if (CrosLibrary::Get()->EnsureLoaded())
     CrosLibrary::Get()->GetScreenLockLibrary()->NotifyScreenUnlockRequested();
+
+  if (login_status_consumer_)
+    login_status_consumer_->OnLoginSuccess(username, password,
+                                           unused, pending_requests);
 }
 
 void ScreenLocker::BubbleClosing(Bubble* bubble, bool closed_by_escape) {
@@ -867,6 +891,17 @@ void ScreenLocker::BubbleClosing(Bubble* bubble, bool closed_by_escape) {
     MessageLoopForUI::current()->RemoveObserver(mouse_event_relay_.get());
     mouse_event_relay_.reset();
   }
+}
+
+bool ScreenLocker::CloseOnEscape() {
+  return true;
+}
+
+bool ScreenLocker::FadeInOnShow() {
+  return false;
+}
+
+void ScreenLocker::OnLinkActivated(size_t index) {
 }
 
 void ScreenLocker::OnCaptchaEntered(const std::string& captcha) {
@@ -893,9 +928,6 @@ void ScreenLocker::OnCaptchaEntered(const std::string& captcha) {
 }
 
 void ScreenLocker::Authenticate(const string16& password) {
-  if (password.empty())
-    return;
-
   authentication_start_time_ = base::Time::Now();
   screen_lock_view_->SetEnabled(false);
   screen_lock_view_->SetSignoutEnabled(false);
@@ -988,6 +1020,11 @@ void ScreenLocker::OnGrabInputs() {
 
 views::View* ScreenLocker::GetViewByID(int id) {
   return lock_widget_->GetRootView()->GetViewByID(id);
+}
+
+void ScreenLocker::SetLoginStatusConsumer(
+    chromeos::LoginStatusConsumer* consumer) {
+  login_status_consumer_ = consumer;
 }
 
 // static

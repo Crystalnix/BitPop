@@ -13,6 +13,7 @@
 #import "chrome/browser/ui/cocoa/tab_contents/tab_contents_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_controller_target.h"
 #import "chrome/browser/ui/cocoa/url_drop_target.h"
+#include "chrome/browser/ui/tabs/hover_tab_selector.h"
 #import "third_party/GTM/AppKit/GTMWindowSheetController.h"
 
 @class CrTrackingArea;
@@ -41,13 +42,14 @@ class NotificationBridge;
 @protocol TabStripControllerDelegate
 
 // Stripped down version of TabStripModelObserverBridge:selectTabWithContents.
-- (void)onSelectTabWithContents:(TabContents*)contents;
+- (void)onActivateTabWithContents:(TabContents*)contents;
 
 // Stripped down version of TabStripModelObserverBridge:tabReplacedWithContents.
 - (void)onReplaceTabWithContents:(TabContents*)contents;
 
 // Stripped down version of TabStripModelObserverBridge:tabChangedWithContents.
-- (void)onSelectedTabChange:(TabStripModelObserver::TabChangeType)change;
+- (void)onTabChanged:(TabStripModelObserver::TabChangeType)change
+        withContents:(TabContents*)contents;
 
 // Stripped down version of TabStripModelObserverBridge:tabDetachedWithContents.
 - (void)onTabDetachedWithContents:(TabContents*)contents;
@@ -154,6 +156,9 @@ class NotificationBridge;
   // Used for monitoring the profile name pref.
   scoped_ptr<TabStripControllerInternal::NotificationBridge>
       notificationBridge_;
+
+  // Helper for performing tab selection as a result of dragging over a tab.
+  scoped_ptr<HoverTabSelector> hoverTabSelector_;
 }
 
 @property(nonatomic) CGFloat indentForControls;
@@ -170,11 +175,11 @@ class NotificationBridge;
            browser:(Browser*)browser
           delegate:(id<TabStripControllerDelegate>)delegate;
 
-// Return the view for the currently selected tab.
-- (NSView*)selectedTabView;
+// Return the view for the currently active tab.
+- (NSView*)activeTabView;
 
-// Set the frame of the selected tab, also updates the internal frame dict.
-- (void)setFrameOfSelectedTab:(NSRect)frame;
+// Set the frame of the active tab, also updates the internal frame dict.
+- (void)setFrameOfActiveTab:(NSRect)frame;
 
 // Move the given tab at index |from| in this window to the location of the
 // current placeholder.

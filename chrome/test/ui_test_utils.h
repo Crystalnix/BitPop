@@ -12,8 +12,8 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/message_loop.h"
+#include "base/scoped_temp_dir.h"
 #include "base/string16.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/test/automation/dom_element_proxy.h"
@@ -191,9 +191,8 @@ FilePath GetTestFilePath(const FilePath& dir, const FilePath& file);
 // The returned path is GURL format.
 GURL GetTestUrl(const FilePath& dir, const FilePath& file);
 
-// Creates an observer that waits for |download_manager| to report that it
-// has a total of |count| downloads that have been handles
-void WaitForDownloadCount(DownloadManager* download_manager, size_t count);
+// Generate a URL for a file path including a query string.
+GURL GetFileUrlWithQuery(const FilePath& path, const std::string& query_string);
 
 // Blocks until an application modal dialog is showns and returns it.
 AppModalDialog* WaitForAppModalDialog();

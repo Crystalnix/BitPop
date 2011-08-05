@@ -7,16 +7,6 @@
 // require: cr/ui/tree.js
 
 cr.define('chrome.sync', function() {
-  // Allow platform specific CSS rules.
-  //
-  // TODO(akalin): BMM and options page does something similar, too.
-  // Move this to util.js.
-  if (cr.isWindows)
-    document.documentElement.setAttribute('os', 'win');
-
-  // TODO(akalin): Create SyncNodeTree/SyncNodeTreeItem classes that
-  // hide all these details.
-
   /**
    * Gets all children of the given node and passes it to the given
    * callback.
@@ -26,16 +16,19 @@ cr.define('chrome.sync', function() {
    *     children.
    */
   function getSyncNodeChildren(nodeInfo, callback) {
-    var children = [];
-    function processChildInfo(childNodeInfo) {
-      if (!childNodeInfo) {
+    var timer = chrome.sync.makeTimer();
+    chrome.sync.getChildNodeIds(nodeInfo.id, function(childNodeIds) {
+      console.debug('getChildNodeIds took ' +
+                    timer.elapsedSeconds + 's to retrieve ' +
+                    childNodeIds.length + ' ids');
+      timer = chrome.sync.makeTimer();
+      chrome.sync.getNodesById(childNodeIds, function(children) {
+        console.debug('getNodesById took ' +
+                      timer.elapsedSeconds + 's to retrieve ' +
+                      children.length + ' nodes');
         callback(children);
-        return;
-      }
-      children.push(childNodeInfo);
-      chrome.sync.getNodeById(childNodeInfo.successorId, processChildInfo);
-    };
-    chrome.sync.getNodeById(nodeInfo.firstChildId, processChildInfo);
+      });
+    });
   }
 
   /**
@@ -59,10 +52,13 @@ cr.define('chrome.sync', function() {
       treeItem.addEventListener('expand', function(event) {
         if (!treeItem.triggeredLoad_) {
           getSyncNodeChildren(nodeInfo, function(children) {
+            var timer = chrome.sync.makeTimer();
             for (var i = 0; i < children.length; ++i) {
               var childTreeItem = makeNodeTreeItem(children[i]);
               treeItem.add(childTreeItem);
             }
+            console.debug('adding ' + children.length + ' children took ' +
+                          timer.elapsedSeconds + 's');
           });
           treeItem.triggeredLoad_ = true;
         }

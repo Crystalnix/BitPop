@@ -13,7 +13,7 @@
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_extent.h"
+#include "chrome/common/extensions/url_pattern_set.h"
 #include "googleurl/src/gurl.h"
 
 class Extension;
@@ -45,6 +45,9 @@ class ExtensionInfoMap : public base::RefCountedThreadSafe<ExtensionInfoMap> {
   // Gets the path to the directory for the specified disabled extension.
   FilePath GetPathForDisabledExtension(const std::string& id) const;
 
+  std::string GetContentSecurityPolicyForExtension(
+      const std::string& id) const;
+
   // Returns true if the specified extension exists and has a non-empty web
   // extent.
   bool ExtensionHasWebExtent(const std::string& id) const;
@@ -58,7 +61,7 @@ class ExtensionInfoMap : public base::RefCountedThreadSafe<ExtensionInfoMap> {
   std::string GetDefaultLocaleForExtension(const std::string& id) const;
 
   // Gets the effective host permissions for the extension with |id|.
-  ExtensionExtent
+  URLPatternSet
       GetEffectiveHostPermissionsForExtension(const std::string& id) const;
 
   // Determine whether a URL has access to the specified extension permission.

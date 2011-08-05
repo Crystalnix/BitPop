@@ -149,14 +149,12 @@ class ProfileSyncServicePasswordTest : public AbstractProfileSyncServiceTest {
     return service_->GetUserShare();
   }
  protected:
-  ProfileSyncServicePasswordTest()
-      : db_thread_(BrowserThread::DB) {
-  }
+  ProfileSyncServicePasswordTest() {}
 
   virtual void SetUp() {
+    AbstractProfileSyncServiceTest::SetUp();
     profile_.CreateRequestContext();
     password_store_ = new MockPasswordStore();
-    db_thread_.Start();
 
     notification_service_ = new ThreadNotificationService(&db_thread_);
     notification_service_->Init();
@@ -169,16 +167,11 @@ class ProfileSyncServicePasswordTest : public AbstractProfileSyncServiceTest {
   }
 
   virtual void TearDown() {
+    password_store_->Shutdown();
     service_.reset();
     notification_service_->TearDown();
-    db_thread_.Stop();
-    {
-      // The request context gets deleted on the I/O thread. To prevent a leak
-      // supply one here.
-      BrowserThread io_thread(BrowserThread::IO, MessageLoop::current());
-      profile_.ResetRequestContext();
-    }
-    MessageLoop::current()->RunAllPending();
+    profile_.ResetRequestContext();
+    AbstractProfileSyncServiceTest::TearDown();
   }
 
   static void SignalEvent(base::WaitableEvent* done) {
@@ -200,10 +193,11 @@ class ProfileSyncServicePasswordTest : public AbstractProfileSyncServiceTest {
           &factory_, &profile_, "test_user", false, root_task, node_task));
       service_->RegisterPreferences();
       profile_.GetPrefs()->SetBoolean(prefs::kSyncPasswords, true);
+      EXPECT_CALL(profile_, GetProfileSyncService()).WillRepeatedly(
+          Return(service_.get()));
       PasswordDataTypeController* data_type_controller =
           new PasswordDataTypeController(&factory_,
-                                         &profile_,
-                                         service_.get());
+                                         &profile_);
 
       EXPECT_CALL(factory_, CreatePasswordSyncComponents(_, _, _)).
           Times(AtLeast(1)).  // Can be more if we hit NEEDS_CRYPTO.
@@ -301,7 +295,6 @@ class ProfileSyncServicePasswordTest : public AbstractProfileSyncServiceTest {
 
   friend class AddPasswordEntriesTask;
 
-  BrowserThread db_thread_;
   scoped_refptr<ThreadNotificationService> notification_service_;
   NotificationObserverMock observer_;
   ProfileMock profile_;

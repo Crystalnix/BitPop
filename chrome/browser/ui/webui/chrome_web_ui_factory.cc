@@ -9,6 +9,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
 #include "chrome/browser/extensions/extensions_ui.h"
+#include "chrome/browser/history/history_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/bookmarks_ui.h"
 #include "chrome/browser/ui/webui/bug_report_ui.h"
@@ -17,17 +18,18 @@
 #include "chrome/browser/ui/webui/devtools_ui.h"
 #include "chrome/browser/ui/webui/downloads_ui.h"
 #include "chrome/browser/ui/webui/flags_ui.h"
+#include "chrome/browser/ui/webui/flash_ui.h"
 #include "chrome/browser/ui/webui/gpu_internals_ui.h"
 #include "chrome/browser/ui/webui/history2_ui.h"
 #include "chrome/browser/ui/webui/history_ui.h"
 #include "chrome/browser/ui/webui/html_dialog_ui.h"
 #include "chrome/browser/ui/webui/net_internals_ui.h"
-#include "chrome/browser/ui/webui/new_tab_ui.h"
+#include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
 #include "chrome/browser/ui/webui/plugins_ui.h"
 #include "chrome/browser/ui/webui/print_preview_ui.h"
-#include "chrome/browser/ui/webui/remoting_ui.h"
 #include "chrome/browser/ui/webui/sync_internals_ui.h"
+#include "chrome/browser/ui/webui/test_chrome_web_ui_factory.h"
 #include "chrome/browser/ui/webui/textfields_ui.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
@@ -41,13 +43,13 @@
 #include "chrome/browser/ui/webui/chromeos/enterprise_enrollment_ui.h"
 #include "chrome/browser/ui/webui/chromeos/imageburner_ui.h"
 #include "chrome/browser/ui/webui/chromeos/keyboard_overlay_ui.h"
+#include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/browser/ui/webui/chromeos/mobile_setup_ui.h"
 #include "chrome/browser/ui/webui/chromeos/proxy_settings_ui.h"
 #include "chrome/browser/ui/webui/chromeos/register_page_ui.h"
 #include "chrome/browser/ui/webui/chromeos/sim_unlock_ui.h"
 #include "chrome/browser/ui/webui/chromeos/system_info_ui.h"
 #include "chrome/browser/ui/webui/active_downloads_ui.h"
-#include "chrome/browser/ui/webui/mediaplayer_ui.h"
 #endif
 
 #if defined(TOUCH_UI)
@@ -115,7 +117,6 @@ static WebUIFactoryFunction GetWebUIFactoryFunction(Profile* profile,
     return NULL;
 
   if (url.host() == chrome::kChromeUISyncResourcesHost ||
-      url.host() == chrome::kChromeUIRemotingResourcesHost ||
       url.host() == chrome::kCloudPrintSetupHost)
     return &NewWebUI<HtmlDialogUI>;
 
@@ -157,6 +158,8 @@ static WebUIFactoryFunction GetWebUIFactoryFunction(Profile* profile,
     return &NewWebUI<HistoryUI2>;
   if (url.host() == chrome::kChromeUIFlagsHost)
     return &NewWebUI<FlagsUI>;
+  if (url.host() == chrome::kChromeUIFlashHost)
+    return &NewWebUI<FlashUI>;
 #if defined(TOUCH_UI)
   if (url.host() == chrome::kChromeUIKeyboardHost)
     return &NewWebUI<KeyboardUI>;
@@ -169,14 +172,6 @@ static WebUIFactoryFunction GetWebUIFactoryFunction(Profile* profile,
     return &NewWebUI<PluginsUI>;
   if (url.host() == chrome::kChromeUISyncInternalsHost)
     return &NewWebUI<SyncInternalsUI>;
-#if defined(ENABLE_REMOTING)
-  if (url.host() == chrome::kChromeUIRemotingHost) {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kEnableRemoting)) {
-      return &NewWebUI<RemotingUI>;
-    }
-  }
-#endif
 
 #if defined(OS_CHROMEOS)
   if (url.host() == chrome::kChromeUIChooseMobileNetworkHost)
@@ -191,10 +186,10 @@ static WebUIFactoryFunction GetWebUIFactoryFunction(Profile* profile,
     return &NewWebUI<ImageBurnUI>;
   if (url.host() == chrome::kChromeUIKeyboardOverlayHost)
     return &NewWebUI<KeyboardOverlayUI>;
-  if (url.host() == chrome::kChromeUIMediaplayerHost)
-    return &NewWebUI<MediaplayerUI>;
   if (url.host() == chrome::kChromeUIMobileSetupHost)
     return &NewWebUI<MobileSetupUI>;
+  if (url.host() == chrome::kChromeUIOobeHost)
+      return &NewWebUI<chromeos::OobeUI>;
   if (url.host() == chrome::kChromeUIProxySettingsHost)
     return &NewWebUI<chromeos::ProxySettingsUI>;
   if (url.host() == chrome::kChromeUIRegisterPageHost)
@@ -210,11 +205,9 @@ static WebUIFactoryFunction GetWebUIFactoryFunction(Profile* profile,
 #else
   if (url.host() == chrome::kChromeUISettingsHost)
     return &NewWebUI<OptionsUI>;
-  if (url.host() == chrome::kChromeUIPrintHost) {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kEnablePrintPreview)) {
-      return &NewWebUI<PrintPreviewUI>;
-    }
+  if (url.host() == chrome::kChromeUIPrintHost &&
+      switches::IsPrintPreviewEnabled()) {
+    return &NewWebUI<PrintPreviewUI>;
   }
 #endif  // defined(OS_CHROMEOS)
 
@@ -228,6 +221,20 @@ static WebUIFactoryFunction GetWebUIFactoryFunction(Profile* profile,
 
   return NULL;
 }
+
+// When the test-type switch is set, return a TestType object, which should be a
+// subclass of Type. The logic is provided here in the traits class, rather than
+// in GetInstance() so that the choice is made only once, when the Singleton is
+// first instantiated, rather than every time GetInstance() is called.
+template<typename Type, typename TestType>
+struct PossibleTestSingletonTraits : public DefaultSingletonTraits<Type> {
+  static Type* New() {
+    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kTestType))
+      return DefaultSingletonTraits<TestType>::New();
+    else
+      return DefaultSingletonTraits<Type>::New();
+  }
+};
 
 }  // namespace
 
@@ -290,6 +297,7 @@ void ChromeWebUIFactory::GetFaviconForURL(
         GetFaviconResourceBytes(page_url));
     favicon.known_icon = favicon.image_data.get() != NULL &&
                              favicon.image_data->size() > 0;
+    favicon.icon_type = history::FAVICON;
     request->ForwardResultAsync(
         FaviconService::FaviconDataCallback::TupleType(request->handle(),
                                                        favicon));
@@ -298,7 +306,8 @@ void ChromeWebUIFactory::GetFaviconForURL(
 
 // static
 ChromeWebUIFactory* ChromeWebUIFactory::GetInstance() {
-  return Singleton<ChromeWebUIFactory>::get();
+  return Singleton< ChromeWebUIFactory, PossibleTestSingletonTraits<
+      ChromeWebUIFactory, TestChromeWebUIFactory> >::get();
 }
 
 ChromeWebUIFactory::ChromeWebUIFactory() {
@@ -346,16 +355,14 @@ RefCountedMemory* ChromeWebUIFactory::GetFaviconResourceBytes(
   if (page_url.host() == chrome::kChromeUIFlagsHost)
     return FlagsUI::GetFaviconResourceBytes();
 
+  if (page_url.host() == chrome::kChromeUIFlashHost)
+    return FlashUI::GetFaviconResourceBytes();
+
   if (page_url.host() == chrome::kChromeUISettingsHost)
     return OptionsUI::GetFaviconResourceBytes();
 
   if (page_url.host() == chrome::kChromeUIPluginsHost)
     return PluginsUI::GetFaviconResourceBytes();
-
-#if defined(ENABLE_REMOTING)
-  if (page_url.host() == chrome::kChromeUIRemotingHost)
-    return RemotingUI::GetFaviconResourceBytes();
-#endif
 
   return NULL;
 }

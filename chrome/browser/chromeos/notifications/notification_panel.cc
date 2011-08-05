@@ -20,10 +20,11 @@
 #include "views/background.h"
 #include "views/controls/native/native_view_host.h"
 #include "views/controls/scroll_view.h"
-#include "views/widget/root_view.h"
-#include "views/widget/widget_gtk.h"
+#include "views/widget/native_widget_gtk.h"
 
 #define SET_STATE(state) SetState(state, __PRETTY_FUNCTION__)
+
+using views::Widget;
 
 namespace {
 // Minimum and maximum size of balloon content.
@@ -66,60 +67,67 @@ chromeos::BalloonViewImpl* GetBalloonViewOf(const Balloon* balloon) {
   return static_cast<chromeos::BalloonViewImpl*>(balloon->view());
 }
 
-// A WidgetGtk that covers entire ScrollView's viewport. Without this,
-// all renderer's native gtk widgets are moved one by one via
-// View::VisibleBoundsInRootChanged() notification, which makes
-// scrolling not smooth.
-class ViewportWidget : public views::WidgetGtk {
+// A Widget that covers entire ScrollView's viewport. Without this, all
+// renderer's native gtk widgets are moved one by one via
+// View::VisibleBoundsInRootChanged() notification, which makes scrolling not
+// smooth.
+class ViewportWidget : public views::Widget {
  public:
   explicit ViewportWidget(chromeos::NotificationPanel* panel)
-      : WidgetGtk(views::WidgetGtk::TYPE_CHILD),
-        panel_(panel) {
+      : panel_(panel),
+        pointer_inside_panel_(false) {
   }
 
   void UpdateControl() {
-    if (last_point_.get())
-      panel_->OnMouseMotion(*last_point_.get());
+    if (pointer_inside_panel_)
+      panel_->OnMouseMotion(last_point_);
   }
 
-  // views::WidgetGtk overrides.
-  virtual gboolean OnMotionNotify(GtkWidget* widget, GdkEventMotion* event) {
-    gboolean result = WidgetGtk::OnMotionNotify(widget, event);
-    gdouble x = event->x;
-    gdouble y = event->y;
-
-    // The window_contents_' allocation has been moved off the top left
-    // corner, so we need to adjust it.
-    GtkAllocation alloc = widget->allocation;
-    x -= alloc.x;
-    y -= alloc.y;
-
-    if (!last_point_.get()) {
-      last_point_.reset(new gfx::Point(x, y));
-    } else {
-      last_point_->set_x(x);
-      last_point_->set_y(y);
-    }
-    panel_->OnMouseMotion(*last_point_.get());
-    return result;
-  }
-
-  virtual gboolean OnLeaveNotify(GtkWidget* widget, GdkEventCrossing* event) {
-    gboolean result = views::WidgetGtk::OnLeaveNotify(widget, event);
-    // Leave notify can happen if the mouse moves into the child gdk window.
-    // Make sure the mouse is outside of the panel.
-    gfx::Point p(event->x_root, event->y_root);
-    gfx::Rect bounds = GetWindowScreenBounds();
-    if (!bounds.Contains(p)) {
-      panel_->OnMouseLeave();
-      last_point_.reset();
+  // views::Widget overrides:
+  virtual bool OnMouseEvent(const views::MouseEvent& event) OVERRIDE {
+    bool result = Widget::OnMouseEvent(event);
+    switch (event.type()) {
+      case ui::ET_MOUSE_MOVED:
+        OnMouseMoved(event);
+        break;
+      case ui::ET_MOUSE_EXITED:
+        OnMouseExited(event);
+        break;
+      default:
+        break;
     }
     return result;
   }
 
  private:
+  void OnMouseMoved(const views::MouseEvent& event) {
+    // Convert the point to the panel's coordinate system.
+    Widget* top_level_widget = GetTopLevelWidget();
+    // TODO: remove cast when this extends Widget.
+    DCHECK(top_level_widget != static_cast<Widget*>(this));
+    gfx::Rect panel_rect(event.location(), gfx::Size());
+    Widget::ConvertRect(this, top_level_widget, &panel_rect);
+    last_point_ = panel_rect.origin();
+    pointer_inside_panel_ = true;
+    panel_->OnMouseMotion(last_point_);
+  }
+
+  void OnMouseExited(const views::MouseEvent& event) {
+    // Leave notify can happen if the mouse moves into the child gdk window.
+    // Make sure the mouse is outside of the panel.
+    gfx::Rect bounds = GetWindowScreenBounds();
+    if (!bounds.Contains(event.location().x() + bounds.x(),
+                         event.location().y() + bounds.y())) {
+      panel_->OnMouseLeave();
+      pointer_inside_panel_ = false;
+    }
+  }
+
+ private:
   chromeos::NotificationPanel* panel_;
-  scoped_ptr<gfx::Point> last_point_;
+  gfx::Point last_point_;
+  bool pointer_inside_panel_;
+
   DISALLOW_COPY_AND_ASSIGN(ViewportWidget);
 };
 
@@ -415,18 +423,18 @@ NotificationPanel::~NotificationPanel() {
 
 void NotificationPanel::Show() {
   if (!panel_widget_) {
+    panel_widget_ = new views::Widget;
     // TODO(oshima): Using window because Popup widget behaves weird
     // when resizing. This needs to be investigated.
-    views::WidgetGtk* widget_gtk =
-        new views::WidgetGtk(views::WidgetGtk::TYPE_WINDOW);
+    Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
     // Enable double buffering because the panel has both pure views
     // control and native controls (scroll bar).
-    widget_gtk->EnableDoubleBuffer(true);
-    panel_widget_ = widget_gtk;
+    params.double_buffer = true;
 
     gfx::Rect bounds = GetPreferredBounds();
     bounds = bounds.Union(min_bounds_);
-    panel_widget_->Init(NULL, bounds);
+    params.bounds = bounds;
+    panel_widget_->Init(params);
     // Set minimum bounds so that it can grow freely.
     gtk_widget_set_size_request(GTK_WIDGET(panel_widget_->GetNativeView()),
                                 min_bounds_.width(), min_bounds_.height());
@@ -437,14 +445,15 @@ void NotificationPanel::Show() {
     panel_widget_->SetContentsView(scroll_view_.get());
 
     // Add the view port after scroll_view is attached to the panel widget.
-    ViewportWidget* widget = new ViewportWidget(this);
-    container_host_ = widget;
-    container_host_->Init(NULL, gfx::Rect());
+    ViewportWidget* viewport_widget = new ViewportWidget(this);
+    container_host_ = viewport_widget;
+    container_host_->Init(
+        views::Widget::InitParams(views::Widget::InitParams::TYPE_CONTROL));
     container_host_->SetContentsView(balloon_container_.get());
-    // The window_contents_ is onwed by the WidgetGtk. Increase ref count
+    // The window_contents_ is onwed by the Widget. Increase ref count
     // so that window_contents does not get deleted when detached.
-    g_object_ref(widget->window_contents());
-    native->Attach(widget->window_contents());
+    g_object_ref(viewport_widget->GetNativeView());
+    native->Attach(viewport_widget->GetNativeView());
 
     UnregisterNotification();
     panel_controller_.reset(
@@ -476,7 +485,7 @@ void NotificationPanel::Hide() {
     MessageLoop::current()->DeleteSoon(FROM_HERE, panel_controller_.release());
     // We need to remove & detach the scroll view from hierarchy to
     // avoid GTK deleting child.
-    // TODO(oshima): handle this details in WidgetGtk.
+    // TODO(oshima): handle this details in NativeWidgetGtk.
     panel_widget_->GetRootView()->RemoveChildView(scroll_view_.get());
     panel_widget_->Close();
     panel_widget_ = NULL;

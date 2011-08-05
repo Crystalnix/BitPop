@@ -12,9 +12,9 @@
 #include "views/view.h"
 
 #if defined(OS_WIN)
-#include "views/widget/widget_win.h"
-#elif defined(OS_LINUX)
-#include "views/widget/widget_gtk.h"
+#include "views/widget/native_widget_win.h"
+#elif defined(TOOLKIT_USES_GTK)
+#include "views/widget/native_widget_gtk.h"
 #endif
 
 // Bubble is used to display an arbitrary view above all other windows.
@@ -71,9 +71,9 @@ class BubbleDelegate {
 // That way Bubble has no (or very few) ifdefs.
 class Bubble
 #if defined(OS_WIN)
-    : public views::WidgetWin,
-#elif defined(OS_LINUX)
-    : public views::WidgetGtk,
+    : public views::NativeWidgetWin,
+#elif defined(TOOLKIT_USES_GTK)
+    : public views::NativeWidgetGtk,
 #endif
       public views::AcceleratorTarget,
       public ui::AnimationDelegate {
@@ -123,19 +123,24 @@ class Bubble
     fade_away_on_close_ = fade_away_on_close;
   }
 
-  // Overridden from WidgetWin:
+  // Overridden from NativeWidgetWin:
   virtual void Close();
 
   // Overridden from ui::AnimationDelegate:
   virtual void AnimationEnded(const ui::Animation* animation);
   virtual void AnimationProgressed(const ui::Animation* animation);
 
+#ifdef UNIT_TEST
+  views::View* contents() const { return contents_; }
+#endif
+
   static const SkColor kBackgroundColor;
 
  protected:
   Bubble();
 #if defined(OS_CHROMEOS)
-  Bubble(views::WidgetGtk::Type type, bool show_while_screen_is_locked);
+  Bubble(views::Widget::InitParams::Type type,
+         bool show_while_screen_is_locked);
 #endif
   virtual ~Bubble();
 
@@ -151,17 +156,17 @@ class Bubble
   virtual BorderContents* CreateBorderContents();
 
 #if defined(OS_WIN)
-  // Overridden from WidgetWin:
+  // Overridden from NativeWidgetWin:
   virtual void OnActivate(UINT action, BOOL minimized, HWND window);
-#elif defined(OS_LINUX)
-  // Overridden from WidgetGtk:
+#elif defined(TOOLKIT_USES_GTK)
+  // Overridden from NativeWidgetGtk:
   virtual void IsActiveChanged();
 #endif
 
 #if defined(OS_WIN)
   // The window used to render the padding, border and arrow.
   BorderWidgetWin* border_;
-#elif defined(OS_LINUX)
+#elif defined(TOOLKIT_USES_GTK)
   // The view displaying the border.
   BorderContents* border_contents_;
 #endif
@@ -200,6 +205,10 @@ class Bubble
   // Whether to fade away when the bubble closes.
   bool fade_away_on_close_;
 
+#if defined(OS_LINUX)
+  // Some callers want the bubble to be a child control instead of a window.
+  views::Widget::InitParams::Type type_;
+#endif
 #if defined(OS_CHROMEOS)
   // Should we set a property telling the window manager to show this window
   // onscreen even when the screen is locked?

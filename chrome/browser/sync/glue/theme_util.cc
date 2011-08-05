@@ -8,12 +8,8 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_updater.h"
-#if defined(TOOLKIT_USES_GTK)
-#include "chrome/browser/ui/gtk/gtk_theme_service.h"
-#endif
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/protocol/theme_specifics.pb.h"
 #include "chrome/browser/themes/theme_service.h"
@@ -28,17 +24,10 @@ const char kCurrentThemeClientTag[] = "current_theme";
 
 namespace {
 
+// TODO(akalin): Remove this.
 bool IsSystemThemeDistinctFromDefaultTheme() {
 #if defined(TOOLKIT_USES_GTK)
   return true;
-#else
-  return false;
-#endif
-}
-
-bool UseSystemTheme(Profile* profile) {
-#if defined(TOOLKIT_USES_GTK)
-  return GtkThemeService::GetFrom(profile)->UseGtkTheme();
 #else
   return false;
 #endif
@@ -106,37 +95,20 @@ void SetCurrentThemeFromThemeSpecifics(
         VLOG(1) << "Theme " << id << " is not enabled; aborting";
         return;
       }
-      // Get previous theme info before we set the new theme.
-      std::string previous_theme_id;
-      {
-        const Extension* current_theme =
-            ThemeServiceFactory::GetThemeForProfile(profile);
-        if (current_theme) {
-          DCHECK(current_theme->is_theme());
-          previous_theme_id = current_theme->id();
-        }
-      }
-      bool previous_use_system_theme = UseSystemTheme(profile);
       // An enabled theme extension with the given id was found, so
       // just set the current theme to it.
       ThemeServiceFactory::GetForProfile(profile)->SetTheme(extension);
-      // Pretend the theme was just installed.
-      ExtensionInstallUI::ShowThemeInfoBar(
-          previous_theme_id, previous_use_system_theme,
-          extension, profile);
     } else {
       // No extension with this id exists -- we must install it; we do
       // so by adding it as a pending extension and then triggering an
       // auto-update cycle.
-      // Themes don't need to install silently as they just pop up an
-      // informational dialog after installation instead of a
-      // confirmation dialog.
-      const bool kInstallSilently = false;
-      const bool kEnableOnInstall = true;
-      const bool kEnableIncognitoOnInstall = false;
-      extensions_service->pending_extension_manager()->AddFromSync(
-          id, update_url, &IsTheme,
-          kInstallSilently, kEnableOnInstall, kEnableIncognitoOnInstall);
+      const bool kInstallSilently = true;
+      if (!extensions_service->pending_extension_manager()->AddFromSync(
+              id, update_url, &IsTheme,
+              kInstallSilently)) {
+        LOG(WARNING) << "Could not add pending extension for " << id;
+        return;
+      }
       extensions_service->CheckForUpdatesSoon();
     }
   } else if (theme_specifics.use_system_theme_by_default()) {
@@ -150,7 +122,7 @@ bool UpdateThemeSpecificsOrSetCurrentThemeIfNecessary(
     Profile* profile, sync_pb::ThemeSpecifics* theme_specifics) {
   if (!theme_specifics->use_custom_theme() &&
       (ThemeServiceFactory::GetThemeForProfile(profile) ||
-       (UseSystemTheme(profile) &&
+       (ThemeServiceFactory::GetForProfile(profile)->UsingNativeTheme() &&
         IsSystemThemeDistinctFromDefaultTheme()))) {
     GetThemeSpecificsFromCurrentTheme(profile, theme_specifics);
     return true;
@@ -172,7 +144,7 @@ void GetThemeSpecificsFromCurrentTheme(
   GetThemeSpecificsFromCurrentThemeHelper(
       current_theme,
       IsSystemThemeDistinctFromDefaultTheme(),
-      UseSystemTheme(profile),
+      ThemeServiceFactory::GetForProfile(profile)->UsingNativeTheme(),
       theme_specifics);
 }
 
@@ -186,8 +158,6 @@ void GetThemeSpecificsFromCurrentThemeHelper(
   if (is_system_theme_distinct_from_default_theme) {
     theme_specifics->set_use_system_theme_by_default(
         use_system_theme_by_default);
-  } else {
-    DCHECK(!use_system_theme_by_default);
   }
   if (use_custom_theme) {
     DCHECK(current_theme);

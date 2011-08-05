@@ -12,12 +12,12 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_model.h"
-#include "chrome/common/net/test_url_fetcher_factory.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/testing_browser_process.h"
 #include "chrome/test/testing_browser_process_test.h"
 #include "chrome/test/testing_profile.h"
 #include "content/browser/browser_thread.h"
+#include "content/common/test_url_fetcher_factory.h"
 #include "net/url_request/url_request_status.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -212,8 +212,8 @@ void SearchProviderTest::FinishDefaultSuggestQuery() {
 
   // Tell the SearchProvider the default suggest query is done.
   default_fetcher->delegate()->OnURLFetchComplete(
-      default_fetcher, GURL(), net::URLRequestStatus(), 200, ResponseCookies(),
-      std::string());
+      default_fetcher, GURL(), net::URLRequestStatus(), 200,
+      net::ResponseCookies(), std::string());
 }
 
 // Tests -----------------------------------------------------------------------
@@ -221,7 +221,7 @@ void SearchProviderTest::FinishDefaultSuggestQuery() {
 // Make sure we query history for the default provider and a URLFetcher is
 // created for the default provider suggest results.
 TEST_F(SearchProviderTest, QueryDefaultProvider) {
-  string16 term = term1_.substr(0, term1_.size() - 1);
+  string16 term = term1_.substr(0, term1_.length() - 1);
   QueryForInput(term, false, false);
 
   // Make sure the default providers suggest service was queried.
@@ -236,7 +236,7 @@ TEST_F(SearchProviderTest, QueryDefaultProvider) {
 
   // Tell the SearchProvider the suggest query is done.
   fetcher->delegate()->OnURLFetchComplete(
-      fetcher, GURL(), net::URLRequestStatus(), 200, ResponseCookies(),
+      fetcher, GURL(), net::URLRequestStatus(), 200, net::ResponseCookies(),
       std::string());
   fetcher = NULL;
 
@@ -262,7 +262,7 @@ TEST_F(SearchProviderTest, QueryDefaultProvider) {
 }
 
 TEST_F(SearchProviderTest, HonorPreventInlineAutocomplete) {
-  string16 term = term1_.substr(0, term1_.size() - 1);
+  string16 term = term1_.substr(0, term1_.length() - 1);
   QueryForInput(term, true, false);
 
   ASSERT_FALSE(provider_->matches().empty());
@@ -273,7 +273,7 @@ TEST_F(SearchProviderTest, HonorPreventInlineAutocomplete) {
 // Issues a query that matches the registered keyword and makes sure history
 // is queried as well as URLFetchers getting created.
 TEST_F(SearchProviderTest, QueryKeywordProvider) {
-  string16 term = keyword_term_.substr(0, keyword_term_.size() - 1);
+  string16 term = keyword_term_.substr(0, keyword_term_.length() - 1);
   QueryForInput(keyword_t_url_->keyword() + UTF8ToUTF16(" ") + term, false,
                 false);
 
@@ -284,8 +284,8 @@ TEST_F(SearchProviderTest, QueryKeywordProvider) {
 
   // Tell the SearchProvider the default suggest query is done.
   default_fetcher->delegate()->OnURLFetchComplete(
-      default_fetcher, GURL(), net::URLRequestStatus(), 200, ResponseCookies(),
-      std::string());
+      default_fetcher, GURL(), net::URLRequestStatus(), 200,
+      net::ResponseCookies(), std::string());
   default_fetcher = NULL;
 
   // Make sure the keyword providers suggest service was queried.
@@ -300,8 +300,8 @@ TEST_F(SearchProviderTest, QueryKeywordProvider) {
 
   // Tell the SearchProvider the keyword suggest query is done.
   keyword_fetcher->delegate()->OnURLFetchComplete(
-      keyword_fetcher, GURL(), net::URLRequestStatus(), 200, ResponseCookies(),
-      std::string());
+      keyword_fetcher, GURL(), net::URLRequestStatus(), 200,
+      net::ResponseCookies(), std::string());
   keyword_fetcher = NULL;
 
   // Run till the history results complete.
@@ -442,14 +442,13 @@ TEST_F(SearchProviderTest, DifferingText) {
   // Finalize the instant query immediately.
   provider_->FinalizeInstantQuery(ASCIIToUTF16("foo"), ASCIIToUTF16("bar"));
 
-  // Query with input that ends up getting trimmed to be the same as was
-  // originally supplied.
-  QueryForInput(ASCIIToUTF16("foo "), false, true);
+  // Query with the same input text, but trailing whitespace.
+  QueryForInput(ASCIIToUTF16("foo "), false, false);
 
   // There should only one match, for what you typed.
   EXPECT_EQ(1u, provider_->matches().size());
   GURL instant_url = GURL(default_t_url_->url()->ReplaceSearchTerms(
-      *default_t_url_, ASCIIToUTF16("foo"), 0, string16()));
+      *default_t_url_, ASCIIToUTF16("foo "), 0, string16()));
   AutocompleteMatch instant_match = FindMatchWithDestination(instant_url);
   EXPECT_FALSE(instant_match.destination_url.is_empty());
 }
@@ -491,4 +490,44 @@ TEST_F(SearchProviderTest, DontAutocompleteURLLikeTerms) {
   AutocompleteMatch what_you_typed_match =
       FindMatchWithDestination(what_you_typed_url);
   EXPECT_GT(what_you_typed_match.relevance, term_match.relevance);
+}
+
+// Verifies autocomplete of previously typed words works on word boundaries.
+TEST_F(SearchProviderTest, AutocompletePreviousSearchOnSpace) {
+  // Add an entry that corresponds to a search with two words.
+  string16 term(ASCIIToUTF16("two words"));
+  HistoryService* history =
+      profile_.GetHistoryService(Profile::EXPLICIT_ACCESS);
+  GURL term_url(default_t_url_->url()->ReplaceSearchTerms(
+      *default_t_url_, term, 0, string16()));
+  history->AddPageWithDetails(term_url, string16(), 1, 1,
+                              base::Time::Now(), false,
+                              history::SOURCE_BROWSED);
+  history->SetKeywordSearchTermsForURL(term_url, default_t_url_->id(), term);
+
+  profile_.BlockUntilHistoryProcessesPendingRequests();
+
+  QueryForInput(ASCIIToUTF16("two "), false, false);
+
+  // Wait until history and the suggest query complete.
+  profile_.BlockUntilHistoryProcessesPendingRequests();
+  ASSERT_NO_FATAL_FAILURE(FinishDefaultSuggestQuery());
+
+  // Provider should be done.
+  EXPECT_TRUE(provider_->done());
+
+  // There should be two matches, one for what you typed, the other for
+  // 'two words'.
+  ASSERT_EQ(2u, provider_->matches().size());
+  AutocompleteMatch term_match = FindMatchWithDestination(term_url);
+  EXPECT_FALSE(term_match.destination_url.is_empty());
+  GURL what_you_typed_url = GURL(default_t_url_->url()->ReplaceSearchTerms(
+      *default_t_url_, ASCIIToUTF16("two "), 0, string16()));
+  AutocompleteMatch what_you_typed_match =
+      FindMatchWithDestination(what_you_typed_url);
+  EXPECT_FALSE(what_you_typed_match.destination_url.is_empty());
+  // term_match should be autocompleted.
+  EXPECT_GT(term_match.relevance, what_you_typed_match.relevance);
+  // And the offset should be at 4.
+  EXPECT_EQ(4u, term_match.inline_autocomplete_offset);
 }

@@ -14,6 +14,7 @@
 #include <X11/Xutil.h>
 #endif
 
+#include "base/command_line.h"
 #include "base/basictypes.h"
 #include "base/i18n/char_iterator.h"
 #include "base/logging.h"
@@ -30,6 +31,9 @@
 #endif
 
 namespace {
+
+// A global flag to switch the InputMethod implementation to InputMethodIBus
+bool inputmethod_ibus_enabled = false;
 
 // Converts ibus key state flags to Views event flags.
 int ViewsFlagsFromIBusState(guint32 state) {
@@ -125,6 +129,9 @@ void ExtractCompositionTextFromIBusPreedit(IBusText* text,
         0, length, SK_ColorBLACK, false /* thick */));
   }
 }
+
+// A switch to enable InputMethodIBus
+const char kEnableInputMethodIBusSwitch[] = "enable-inputmethod-ibus";
 
 }  // namespace
 
@@ -260,8 +267,7 @@ InputMethodIBus::InputMethodIBus(internal::InputMethodDelegate* delegate)
       context_focused_(false),
       composing_text_(false),
       composition_changed_(false),
-      suppress_next_result_(false),
-      enabled_(false) {
+      suppress_next_result_(false) {
   set_delegate(delegate);
 }
 
@@ -407,7 +413,23 @@ base::i18n::TextDirection InputMethodIBus::GetInputTextDirection() {
 }
 
 bool InputMethodIBus::IsActive() {
-  return enabled_;
+  return context_ != NULL;
+}
+
+// static
+bool InputMethodIBus::IsInputMethodIBusEnabled() {
+#if defined(TOUCH_UI)
+  return true;
+#else
+  return inputmethod_ibus_enabled ||
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          kEnableInputMethodIBusSwitch);
+#endif
+}
+
+// static
+void InputMethodIBus::SetEnableInputMethodIBus(bool enabled) {
+  inputmethod_ibus_enabled = enabled;
 }
 
 void InputMethodIBus::FocusedViewWillChange() {
@@ -478,10 +500,6 @@ void InputMethodIBus::SetContext(IBusInputContext* ic, bool fake) {
                    G_CALLBACK(OnShowPreeditTextThunk), this);
   g_signal_connect(ic, "hide-preedit-text",
                    G_CALLBACK(OnHidePreeditTextThunk), this);
-  g_signal_connect(ic, "enabled",
-                   G_CALLBACK(OnEnableThunk), this);
-  g_signal_connect(ic, "disabled",
-                   G_CALLBACK(OnDisableThunk), this);
   g_signal_connect(ic, "destroy",
                    G_CALLBACK(OnDestroyThunk), this);
 
@@ -489,9 +507,6 @@ void InputMethodIBus::SetContext(IBusInputContext* ic, bool fake) {
   guint32 caps = IBUS_CAP_PREEDIT_TEXT | IBUS_CAP_FOCUS;
   ibus_input_context_set_capabilities(ic, caps);
 
-  // Sadly, we will not receive "enabled" signal at all. So just assume the
-  // input context is enabled by default.
-  enabled_ = true;
   UpdateContextFocusState();
   OnInputMethodChanged();
 }
@@ -900,18 +915,6 @@ void InputMethodIBus::OnHidePreeditText(IBusInputContext* context) {
   }
 }
 
-void InputMethodIBus::OnEnable(IBusInputContext* context) {
-  DCHECK_EQ(context_, context);
-  enabled_ = true;
-  OnInputMethodChanged();
-}
-
-void InputMethodIBus::OnDisable(IBusInputContext* context) {
-  DCHECK_EQ(context_, context);
-  enabled_ = false;
-  OnInputMethodChanged();
-}
-
 void InputMethodIBus::OnDestroy(IBusInputContext* context) {
   DCHECK_EQ(context_, context);
   g_object_unref(context_);
@@ -923,7 +926,6 @@ void InputMethodIBus::OnDestroy(IBusInputContext* context) {
   // We are dead, so we need to ask the client to stop relying on us.
   // We cannot do it in DestroyContext(), because OnDestroy() may be called
   // automatically.
-  enabled_ = false;
   OnInputMethodChanged();
 }
 

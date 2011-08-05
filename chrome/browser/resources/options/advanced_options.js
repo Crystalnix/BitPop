@@ -113,6 +113,12 @@ var OptionsPage = options.OptionsPage;
         chrome.send('useTLS1CheckboxAction',
             [String($('sslUseTLS1').checked)]);
       };
+      if ($('backgroundModeCheckbox')) {
+        $('backgroundModeCheckbox').onclick = function(event) {
+          chrome.send('backgroundModeAction',
+              [String($('backgroundModeCheckbox').checked)]);
+        };
+      }
 
       // 'cloudPrintProxyEnabled' is true for Chrome branded builds on
       // certain platforms, or could be enabled by a lab.
@@ -128,19 +134,11 @@ var OptionsPage = options.OptionsPage;
             chrome.send('disableCloudPrintProxy');
           }
         };
-        $('cloudPrintProxyManageButton').onclick = function(event) {
-          chrome.send('showCloudPrintManagePage');
-        };
       }
+      $('cloudPrintProxyManageButton').onclick = function(event) {
+        chrome.send('showCloudPrintManagePage');
+      };
 
-      if ($('remotingSetupButton')) {
-          $('remotingSetupButton').onclick = function(event) {
-              chrome.send('showRemotingSetupDialog');
-          }
-          $('remotingStopButton').onclick = function(event) {
-              chrome.send('disableRemoting');
-          }
-      }
   }
   };
 
@@ -244,6 +242,11 @@ var OptionsPage = options.OptionsPage;
     $('sslUseTLS1').disabled = disabled;
   };
 
+  // Set the checked state for the backgroundModeCheckbox element.
+  AdvancedOptions.SetBackgroundModeCheckboxState = function(checked) {
+    $('backgroundModeCheckbox').checked = checked;
+  };
+
   // Set the Cloud Print proxy UI to enabled, disabled, or processing.
   AdvancedOptions.SetupCloudPrintProxySection = function(
         disabled, label, allowed) {
@@ -268,23 +271,6 @@ var OptionsPage = options.OptionsPage;
       if (proxySectionElm)
         proxySectionElm.parentNode.removeChild(proxySectionElm);
     }
-  };
-
-  AdvancedOptions.SetRemotingStatus = function(enabled, status) {
-    if (enabled) {
-      $('remotingSetupButton').style.display = 'none';
-      $('remotingStopButton').style.display = 'inline';
-    } else {
-      $('remotingSetupButton').style.display = 'inline';
-      $('remotingStopButton').style.display = 'none';
-    }
-    $('remotingStatus').textContent = status;
-  };
-
-  AdvancedOptions.RemoveRemotingSection = function() {
-    var proxySectionElm = $('remoting-section');
-    if (proxySectionElm)
-      proxySectionElm.parentNode.removeChild(proxySectionElm);
   };
 
   // Export

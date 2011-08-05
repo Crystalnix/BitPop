@@ -34,22 +34,8 @@ class ExternalProcessImporterClient : public ProfileImportProcessClient {
   ExternalProcessImporterClient(ExternalProcessImporterHost* importer_host,
                                 const importer::SourceProfile& source_profile,
                                 uint16 items,
-                                InProcessImporterBridge* bridge,
-                                bool import_to_bookmark_bar);
+                                InProcessImporterBridge* bridge);
   virtual ~ExternalProcessImporterClient();
-
-  // Launches the task to start the external process.
-  void Start();
-
-  // Called by the ExternalProcessImporterHost on import cancel.
-  void Cancel();
-
-  // Notifies the ImporterHost that import has finished, and calls Release().
-  void Cleanup();
-
- private:
-  // Creates a new ProfileImportProcessHost, which launches the import process.
-  void StartImportProcessOnIOThread(BrowserThread::ID thread_id);
 
   // Cancel import process on IO thread.
   void CancelImportProcessOnIOThread();
@@ -57,7 +43,19 @@ class ExternalProcessImporterClient : public ProfileImportProcessClient {
   // Report item completely downloaded on IO thread.
   void NotifyItemFinishedOnIOThread(importer::ImportItem import_item);
 
-  // Begin ProfileImportProcessClient implementation.
+  // Notifies the importerhost that import has finished, and calls Release().
+  void Cleanup();
+
+  // Launches the task to start the external process.
+  virtual void Start();
+
+  // Creates a new ProfileImportProcessHost, which launches the import process.
+  virtual void StartProcessOnIOThread(BrowserThread::ID thread_id);
+
+  // Called by the ExternalProcessImporterHost on import cancel.
+  virtual void Cancel();
+
+  // Begin ProfileImportProcessHost::ImportProcessClient implementation.
   virtual void OnProcessCrashed(int exit_status) OVERRIDE;
   virtual void OnImportStart() OVERRIDE;
   virtual void OnImportFinished(bool succeeded,
@@ -79,10 +77,8 @@ class ExternalProcessImporterClient : public ProfileImportProcessClient {
 
   // First message received when importing bookmarks.
   // |first_folder_name| can be NULL.
-  // |options| is described in ProfileWriter::BookmarkOptions.
   // |total_bookmarks_count| is the total number of bookmarks to be imported.
   virtual void OnBookmarksImportStart(const string16& first_folder_name,
-                                      int options,
                                       size_t total_bookmarks_count) OVERRIDE;
 
   // Called when a group of bookmarks has been received.
@@ -111,6 +107,7 @@ class ExternalProcessImporterClient : public ProfileImportProcessClient {
 
   // End ProfileImportProcessClient implementation.
 
+ private:
   // These variables store data being collected from the importer until the
   // entire group has been collected and is ready to be written to the profile.
   std::vector<history::URLRow> history_rows_;
@@ -120,9 +117,6 @@ class ExternalProcessImporterClient : public ProfileImportProcessClient {
   // Usually some variation on IDS_BOOKMARK_GROUP_...; the name of the folder
   // under which imported bookmarks will be placed.
   string16 bookmarks_first_folder_name_;
-
-  // Determines how bookmarks should be added (ProfileWriter::BookmarkOptions).
-  int bookmarks_options_;
 
   // Total number of bookmarks to import.
   size_t total_bookmarks_count_;
@@ -146,7 +140,6 @@ class ExternalProcessImporterClient : public ProfileImportProcessClient {
   // Data to be passed from the importer host to the external importer.
   const importer::SourceProfile& source_profile_;
   uint16 items_;
-  bool import_to_bookmark_bar_;
 
   // Takes import data coming over IPC and delivers it to be written by the
   // ProfileWriter.  Released by ExternalProcessImporterClient in its

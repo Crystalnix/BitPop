@@ -15,6 +15,7 @@
 #include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/external_ipc_fuzzer.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_set.h"
@@ -45,6 +46,7 @@
 #include "chrome/renderer/net/renderer_net_predictor.h"
 #include "chrome/renderer/page_click_tracker.h"
 #include "chrome/renderer/page_load_histograms.h"
+#include "chrome/renderer/prerender/prerender_helper.h"
 #include "chrome/renderer/print_web_view_helper.h"
 #include "chrome/renderer/renderer_histogram_snapshots.h"
 #include "chrome/renderer/safe_browsing/malware_dom_details.h"
@@ -54,6 +56,7 @@
 #include "chrome/renderer/searchbox_extension.h"
 #include "chrome/renderer/spellchecker/spellcheck.h"
 #include "chrome/renderer/spellchecker/spellcheck_provider.h"
+#include "chrome/renderer/text_input_client_observer.h"
 #include "chrome/renderer/translate_helper.h"
 #include "chrome/renderer/visitedlink_slave.h"
 #include "content/common/view_messages.h"
@@ -137,7 +140,7 @@ void ChromeContentRendererClient::RenderThreadStarted() {
   net_predictor_.reset(new RendererNetPredictor());
   spellcheck_.reset(new SpellCheck());
   visited_link_slave_.reset(new VisitedLinkSlave());
-  phishing_classifier_.reset(new safe_browsing::PhishingClassifierFilter);
+  phishing_classifier_.reset(safe_browsing::PhishingClassifierFilter::Create());
 
   RenderThread* thread = RenderThread::current();
   thread->AddFilter(new DevToolsAgentFilter());
@@ -162,11 +165,22 @@ void ChromeContentRendererClient::RenderThreadStarted() {
     thread->RegisterExtension(DomAutomationV8Extension::Get());
   }
 
-  // chrome: pages should not be accessible by normal content, and should
-  // also be unable to script anything but themselves (to help limit the damage
-  // that a corrupt chrome: page could cause).
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableIPCFuzzing)) {
+    thread->channel()->set_outgoing_message_filter(LoadExternalIPCFuzzer());
+  }
+  // chrome:, chrome-devtools:, and chrome-internal: pages should not be
+  // accessible by normal content, and should also be unable to script
+  // anything but themselves (to help limit the damage that a corrupt
+  // page could cause).
   WebString chrome_ui_scheme(ASCIIToUTF16(chrome::kChromeUIScheme));
   WebSecurityPolicy::registerURLSchemeAsDisplayIsolated(chrome_ui_scheme);
+
+  WebString dev_tools_scheme(ASCIIToUTF16(chrome::kChromeDevToolsScheme));
+  WebSecurityPolicy::registerURLSchemeAsDisplayIsolated(dev_tools_scheme);
+
+  WebString internal_scheme(ASCIIToUTF16(chrome::kChromeInternalScheme));
+  WebSecurityPolicy::registerURLSchemeAsDisplayIsolated(internal_scheme);
 
   // chrome-extension: resources shouldn't trigger insecure content warnings.
   WebString extension_scheme(ASCIIToUTF16(chrome::kExtensionScheme));
@@ -179,18 +193,23 @@ void ChromeContentRendererClient::RenderViewCreated(RenderView* render_view) {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableClientSidePhishingDetection)) {
     phishing_classifier =
-        new safe_browsing::PhishingClassifierDelegate(render_view, NULL);
+        safe_browsing::PhishingClassifierDelegate::Create(render_view, NULL);
   }
 #endif
 
-  new ContentSettingsObserver(render_view);
+  ContentSettingsObserver* content_settings =
+      new ContentSettingsObserver(render_view);
   new DevToolsAgent(render_view);
   new ExtensionHelper(render_view, extension_dispatcher_.get());
   new PageLoadHistograms(render_view, histogram_snapshots_.get());
   new PrintWebViewHelper(render_view);
   new SearchBox(render_view);
   new SpellCheckProvider(render_view, spellcheck_.get());
-  new safe_browsing::MalwareDOMDetails(render_view);
+  safe_browsing::MalwareDOMDetails::Create(render_view);
+
+#if defined(OS_MACOSX)
+  new TextInputClientObserver(render_view);
+#endif  // defined(OS_MACOSX)
 
   PasswordAutofillManager* password_autofill_manager =
       new PasswordAutofillManager(render_view);
@@ -204,7 +223,9 @@ void ChromeContentRendererClient::RenderViewCreated(RenderView* render_view) {
   page_click_tracker->AddListener(autofill_agent);
 
   TranslateHelper* translate = new TranslateHelper(render_view, autofill_agent);
-  new ChromeRenderViewObserver(render_view, translate, phishing_classifier);
+  new ChromeRenderViewObserver(
+      render_view, content_settings, extension_dispatcher_.get(),
+      translate, phishing_classifier);
 
   // Used only for testing/automation.
   if (CommandLine::ForCurrentProcess()->HasSwitch(
@@ -230,21 +251,28 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
       WebFrame* frame,
       const WebPluginParams& original_params) {
   bool found = false;
-  int plugin_setting = CONTENT_SETTING_DEFAULT;
   CommandLine* cmd = CommandLine::ForCurrentProcess();
   webkit::npapi::WebPluginInfo info;
   GURL url(original_params.url);
   std::string actual_mime_type;
   render_view->Send(new ViewHostMsg_GetPluginInfo(
       render_view->routing_id(), url, frame->top()->url(),
-      original_params.mimeType.utf8(), &found, &info, &plugin_setting,
-      &actual_mime_type));
+      original_params.mimeType.utf8(), &found, &info, &actual_mime_type));
 
   if (!found)
     return NULL;
-  DCHECK(plugin_setting != CONTENT_SETTING_DEFAULT);
   if (!webkit::npapi::IsPluginEnabled(info))
     return NULL;
+
+  const webkit::npapi::PluginGroup* group =
+      webkit::npapi::PluginList::Singleton()->GetPluginGroup(info);
+  DCHECK(group != NULL);
+
+  ContentSetting plugin_setting = CONTENT_SETTING_DEFAULT;
+  std::string resource = group->identifier();
+  render_view->Send(new ViewHostMsg_GetPluginContentSetting(
+      frame->top()->url(), resource, &plugin_setting));
+  DCHECK(plugin_setting != CONTENT_SETTING_DEFAULT);
 
   WebPluginParams params(original_params);
   for (size_t i = 0; i < info.mime_types.size(); ++i) {
@@ -257,30 +285,28 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
     }
   }
 
-  const webkit::npapi::PluginGroup* group =
-      webkit::npapi::PluginList::Singleton()->GetPluginGroup(info);
-  DCHECK(group != NULL);
+  ContentSetting outdated_policy = CONTENT_SETTING_ASK;
+  ContentSetting authorize_policy = CONTENT_SETTING_ASK;
+  if (group->IsVulnerable() || group->RequiresAuthorization()) {
+    // These policies are dynamic and can changed at runtime, so they aren't
+    // cached here.
+    render_view->Send(new ViewHostMsg_GetPluginPolicies(
+        &outdated_policy, &authorize_policy));
+  }
 
   if (group->IsVulnerable()) {
-    // The outdated plugins policy isn't cached here because
-    // it's a dynamic policy that can be modified at runtime.
-    ContentSetting outdated_plugins_policy;
-    render_view->Send(new ViewHostMsg_GetOutdatedPluginsPolicy(
-        render_view->routing_id(), &outdated_plugins_policy));
-
-    if (outdated_plugins_policy == CONTENT_SETTING_ASK ||
-        outdated_plugins_policy == CONTENT_SETTING_BLOCK) {
-      if (outdated_plugins_policy == CONTENT_SETTING_ASK) {
+    if (outdated_policy == CONTENT_SETTING_ASK ||
+        outdated_policy == CONTENT_SETTING_BLOCK) {
+      if (outdated_policy == CONTENT_SETTING_ASK) {
         render_view->Send(new ViewHostMsg_BlockedOutdatedPlugin(
             render_view->routing_id(), group->GetGroupName(),
             GURL(group->GetUpdateURL())));
       }
       return CreatePluginPlaceholder(
           render_view, frame, params, *group, IDR_BLOCKED_PLUGIN_HTML,
-          IDS_PLUGIN_OUTDATED, false,
-          outdated_plugins_policy == CONTENT_SETTING_ASK);
+          IDS_PLUGIN_OUTDATED, false, outdated_policy == CONTENT_SETTING_ASK);
     } else {
-      DCHECK(outdated_plugins_policy == CONTENT_SETTING_ALLOW);
+      DCHECK(outdated_policy == CONTENT_SETTING_ALLOW);
     }
   }
 
@@ -289,7 +315,7 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
       observer->GetContentSetting(CONTENT_SETTINGS_TYPE_PLUGINS);
 
   if (group->RequiresAuthorization() &&
-      !cmd->HasSwitch(switches::kAlwaysAuthorizePlugins) &&
+      authorize_policy == CONTENT_SETTING_ASK &&
       (plugin_setting == CONTENT_SETTING_ALLOW ||
        plugin_setting == CONTENT_SETTING_ASK) &&
       host_setting == CONTENT_SETTING_DEFAULT) {
@@ -304,7 +330,7 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
       plugin_setting == CONTENT_SETTING_ALLOW ||
       host_setting == CONTENT_SETTING_ALLOW) {
     // Delay loading plugins if prerendering.
-    if (render_view->is_prerendering()) {
+    if (prerender::PrerenderHelper::IsPrerendering(render_view)) {
       return CreatePluginPlaceholder(
           render_view, frame, params, *group, IDR_CLICK_TO_PLAY_PLUGIN_HTML,
           IDS_PLUGIN_LOAD, true, true);
@@ -326,10 +352,9 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
         frame, params, info.path, actual_mime_type);
   }
 
-  std::string resource;
-  if (cmd->HasSwitch(switches::kEnableResourceContentSettings))
-    resource = group->identifier();
-  observer->DidBlockContentType(CONTENT_SETTINGS_TYPE_PLUGINS, resource);
+  observer->DidBlockContentType(CONTENT_SETTINGS_TYPE_PLUGINS,
+      cmd->HasSwitch(switches::kEnableResourceContentSettings) ?
+          resource : std::string());
   if (plugin_setting == CONTENT_SETTING_ASK) {
     return CreatePluginPlaceholder(
         render_view, frame, params, *group, IDR_CLICK_TO_PLAY_PLUGIN_HTML,
@@ -445,9 +470,6 @@ bool ChromeContentRendererClient::ShouldFork(WebFrame* frame,
   // TODO(erikkay) This is happening inside of a check to is_content_initiated
   // which means that things like the back button won't trigger it.  Is that
   // OK?
-  // TODO(creis): For hosted apps, we currently only swap processes to enter
-  // the app and not exit it, since we currently lose context (e.g.,
-  // window.opener) if the window navigates back.  See crbug.com/65953.
   if (!CrossesExtensionExtents(frame, url))
     return false;
 
@@ -529,6 +551,16 @@ void ChromeContentRendererClient::PrefetchHostName(const char* hostname,
   net_predictor_->Resolve(hostname, length);
 }
 
+bool ChromeContentRendererClient::ShouldOverridePageVisibilityState(
+    const RenderView* render_view,
+    WebKit::WebPageVisibilityState* override_state) const {
+  if (!prerender::PrerenderHelper::IsPrerendering(render_view))
+    return false;
+
+  *override_state = WebKit::WebPageVisibilityStatePrerender;
+  return true;
+}
+
 void ChromeContentRendererClient::SetExtensionDispatcher(
     ExtensionDispatcher* extension_dispatcher) {
   extension_dispatcher_.reset(extension_dispatcher);
@@ -543,10 +575,17 @@ bool ChromeContentRendererClient::CrossesExtensionExtents(WebFrame* frame,
   if (old_url.is_empty() && frame->opener())
     old_url = frame->opener()->url();
 
-  bool old_url_is_hosted_app = extensions->GetByURL(old_url) &&
-      !extensions->GetByURL(old_url)->web_extent().is_empty();
-  return !extensions->InSameExtent(old_url, new_url) &&
-         !old_url_is_hosted_app;
+  // If this is a reload, check whether it has the wrong process type.  We
+  // should send it to the browser if it's an extension URL (e.g., hosted app)
+  // in a normal process, or if it's a process for an extension that has been
+  // uninstalled.
+  if (old_url == new_url) {
+    bool is_extension_url = !!extensions->GetByURL(new_url);
+    if (is_extension_url != extension_dispatcher_->is_extension_process())
+      return true;
+  }
+
+  return !extensions->InSameExtent(old_url, new_url);
 }
 
 }  // namespace chrome

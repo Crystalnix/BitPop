@@ -5,12 +5,12 @@
 // Data structures for communication between the history service on the main
 // thread and the backend on the history thread.
 
-#ifndef CHROME_BROWSER_HISTORY_HISTORY_MARSHALING_H__
-#define CHROME_BROWSER_HISTORY_HISTORY_MARSHALING_H__
+#ifndef CHROME_BROWSER_HISTORY_HISTORY_MARSHALING_H_
+#define CHROME_BROWSER_HISTORY_HISTORY_MARSHALING_H_
 #pragma once
 
 #include "base/memory/scoped_vector.h"
-#include "chrome/browser/favicon_service.h"
+#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/history/history.h"
 #include "chrome/browser/history/page_usage_data.h"
 #include "content/browser/cancelable_request.h"
@@ -31,8 +31,8 @@ typedef CancelableRequest1<HistoryService::QueryRedirectsCallback,
                            history::RedirectList>
     QueryRedirectsRequest;
 
-typedef CancelableRequest<HistoryService::GetVisitCountToHostCallback>
-    GetVisitCountToHostRequest;
+typedef CancelableRequest<HistoryService::GetVisibleVisitCountToHostCallback>
+    GetVisibleVisitCountToHostRequest;
 
 typedef CancelableRequest1<HistoryService::QueryTopURLsAndRedirectsCallback,
                            Tuple2<std::vector<GURL>,
@@ -56,7 +56,7 @@ typedef CancelableRequest<FaviconService::FaviconDataCallback>
 // Downloads ------------------------------------------------------------------
 
 typedef CancelableRequest1<HistoryService::DownloadQueryCallback,
-                           std::vector<DownloadCreateInfo> >
+                           std::vector<DownloadHistoryInfo> >
     DownloadQueryRequest;
 
 typedef CancelableRequest<HistoryService::DownloadCreateCallback>
@@ -91,4 +91,4 @@ typedef CancelableRequest1<HistoryService::HistoryDBTaskCallback,
 
 }  // namespace history
 
-#endif  // CHROME_BROWSER_HISTORY_HISTORY_MARSHALING_H__
+#endif  // CHROME_BROWSER_HISTORY_HISTORY_MARSHALING_H_

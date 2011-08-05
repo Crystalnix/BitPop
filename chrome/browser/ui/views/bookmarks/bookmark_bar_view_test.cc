@@ -101,6 +101,10 @@ class ViewsDelegateImpl : public views::ViewsDelegate {
     MessageLoopForUI::current()->Quit();
   }
 
+  virtual int GetDispositionForEvent(int event_flags) OVERRIDE {
+    return 0;
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(ViewsDelegateImpl);
 };
@@ -405,6 +409,7 @@ class BookmarkBarViewTest3 : public BookmarkBarViewEventTestBase {
   void Step3() {
     // Make sure sub menu is showing.
     views::MenuItemView* menu = bb_view_->GetMenu();
+    ASSERT_TRUE(menu);
     views::MenuItemView* child_menu =
         menu->GetSubmenu()->GetMenuItemAt(1);
     ASSERT_TRUE(child_menu->GetSubmenu() != NULL);
@@ -1361,7 +1366,7 @@ class BookmarkBarViewTest16 : public BookmarkBarViewEventTestBase {
     ASSERT_TRUE(button->state() == views::CustomButton::BS_PUSHED);
 
     // Close the window.
-    window_->CloseWindow();
+    window_->Close();
     window_ = NULL;
   }
 };

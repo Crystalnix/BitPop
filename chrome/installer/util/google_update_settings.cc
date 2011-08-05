@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/command_line.h"
+#include "base/path_service.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "base/threading/thread_restrictions.h"
@@ -24,6 +25,17 @@ using base::win::RegKey;
 using installer::InstallerState;
 
 namespace {
+
+const wchar_t kGoogleUpdatePoliciesKey[] =
+    L"SOFTWARE\\Policies\\Google\\Update";
+const wchar_t kGoogleUpdateUpdatePolicyValue[] = L"UpdateDefault";
+const wchar_t kGoogleUpdateUpdateOverrideValuePrefix[] = L"Update";
+const GoogleUpdateSettings::UpdatePolicy kGoogleUpdateDefaultUpdatePolicy =
+#if defined(GOOGLE_CHROME_BUILD)
+    GoogleUpdateSettings::AUTOMATIC_UPDATES;
+#else
+    GoogleUpdateSettings::UPDATES_DISABLED;
+#endif
 
 // An list of search results in increasing order of desirability.
 enum EulaSearchResult {
@@ -109,33 +121,143 @@ EulaSearchResult HasEULASetting(HKEY root, const std::wstring& state_key,
       FOUND_SAME_SETTING : FOUND_OPPOSITE_SETTING;
 }
 
-}  // namespace.
-
-bool GoogleUpdateSettings::GetCollectStatsConsent() {
+bool GetChromeChannelInternal(bool system_install,
+                              bool add_multi_modifier,
+                              std::wstring* channel) {
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
-  std::wstring reg_path = dist->GetStateKey();
-  RegKey key(HKEY_CURRENT_USER, reg_path.c_str(), KEY_READ);
-  DWORD value = 0;
-  if (key.ReadValueDW(google_update::kRegUsageStatsField, &value) !=
-      ERROR_SUCCESS) {
-    key.Open(HKEY_LOCAL_MACHINE, reg_path.c_str(), KEY_READ);
-    key.ReadValueDW(google_update::kRegUsageStatsField, &value);
+  if (dist->GetChromeChannel(channel)) {
+    return true;
   }
-  return (1 == value);
+
+  HKEY root_key = system_install ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
+  std::wstring reg_path = dist->GetStateKey();
+  RegKey key(root_key, reg_path.c_str(), KEY_READ);
+
+  installer::ChannelInfo channel_info;
+  if (!channel_info.Initialize(key)) {
+    channel->assign(L"unknown");
+    return false;
+  }
+
+  if (!channel_info.GetChannelName(channel)) {
+    channel->assign(L"unknown");
+  }
+
+  // Tag the channel name if this is a multi-install.
+  if (add_multi_modifier && channel_info.IsMultiInstall()) {
+    if (!channel->empty()) {
+      channel->append(1, L'-');
+    }
+    channel->append(1, L'm');
+  }
+
+  return true;
+}
+
+// Populates |update_policy| with the UpdatePolicy enum value corresponding to a
+// DWORD read from the registry and returns true if |value| is within range.
+// If |value| is out of range, returns false without modifying |update_policy|.
+bool GetUpdatePolicyFromDword(
+    const DWORD value,
+    GoogleUpdateSettings::UpdatePolicy* update_policy) {
+  switch (value) {
+    case GoogleUpdateSettings::UPDATES_DISABLED:
+    case GoogleUpdateSettings::AUTOMATIC_UPDATES:
+    case GoogleUpdateSettings::MANUAL_UPDATES_ONLY:
+      *update_policy = static_cast<GoogleUpdateSettings::UpdatePolicy>(value);
+      return true;
+    default:
+      LOG(WARNING) << "Unexpected update policy override value: " << value;
+  }
+  return false;
+}
+
+}  // namespace
+
+// Older versions of Chrome unconditionally read from HKCU\...\ClientState\...
+// and then HKLM\...\ClientState\....  This means that system-level Chrome
+// never checked ClientStateMedium (which has priority according to Google
+// Update) and gave preference to a value in HKCU (which was never checked by
+// Google Update).  From now on, Chrome follows Google Update's policy.
+bool GoogleUpdateSettings::GetCollectStatsConsent() {
+  // Determine whether this is a system-level or a user-level install.
+  bool system_install = false;
+  FilePath module_dir;
+  if (!PathService::Get(base::DIR_MODULE, &module_dir)) {
+    LOG(WARNING)
+        << "Failed to get directory of module; assuming per-user install.";
+  } else {
+    system_install = !InstallUtil::IsPerUserInstall(module_dir.value().c_str());
+  }
+  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
+
+  // Consent applies to all products in a multi-install package.
+  if (InstallUtil::IsMultiInstall(dist, system_install)) {
+    dist = BrowserDistribution::GetSpecificDistribution(
+        BrowserDistribution::CHROME_BINARIES);
+  }
+
+  RegKey key;
+  DWORD value = 0;
+  bool have_value = false;
+
+  // For system-level installs, try ClientStateMedium first.
+  have_value =
+      system_install &&
+      key.Open(HKEY_LOCAL_MACHINE, dist->GetStateMediumKey().c_str(),
+               KEY_QUERY_VALUE) == ERROR_SUCCESS &&
+      key.ReadValueDW(google_update::kRegUsageStatsField,
+                      &value) == ERROR_SUCCESS;
+
+  // Otherwise, try ClientState.
+  have_value =
+      !have_value &&
+      key.Open(system_install ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER,
+               dist->GetStateKey().c_str(), KEY_QUERY_VALUE) == ERROR_SUCCESS &&
+      key.ReadValueDW(google_update::kRegUsageStatsField,
+                      &value) == ERROR_SUCCESS;
+
+  // Google Update specifically checks that the value is 1, so we do the same.
+  return have_value && value == 1;
 }
 
 bool GoogleUpdateSettings::SetCollectStatsConsent(bool consented) {
-  DWORD value = consented? 1 : 0;
-  // Writing to HKLM is only a best effort deal.
+  // Google Update writes and expects 1 for true, 0 for false.
+  DWORD value = consented ? 1 : 0;
+
+  // Determine whether this is a system-level or a user-level install.
+  bool system_install = false;
+  FilePath module_dir;
+  if (!PathService::Get(base::DIR_MODULE, &module_dir)) {
+    LOG(WARNING)
+        << "Failed to get directory of module; assuming per-user install.";
+  } else {
+    system_install = !InstallUtil::IsPerUserInstall(module_dir.value().c_str());
+  }
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
-  std::wstring reg_path = dist->GetStateMediumKey();
-  RegKey key(HKEY_LOCAL_MACHINE, reg_path.c_str(), KEY_READ | KEY_WRITE);
-  key.WriteValue(google_update::kRegUsageStatsField, value);
-  // Writing to HKCU is used both by chrome and by the crash reporter.
-  reg_path = dist->GetStateKey();
-  key.Create(HKEY_CURRENT_USER, reg_path.c_str(), KEY_READ | KEY_WRITE);
-  return (key.WriteValue(google_update::kRegUsageStatsField, value) ==
-      ERROR_SUCCESS);
+
+  // Consent applies to all products in a multi-install package.
+  if (InstallUtil::IsMultiInstall(dist, system_install)) {
+    dist = BrowserDistribution::GetSpecificDistribution(
+        BrowserDistribution::CHROME_BINARIES);
+  }
+
+  // Write to ClientStateMedium for system-level; ClientState otherwise.
+  HKEY root_key = system_install ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
+  std::wstring reg_path =
+      system_install ? dist->GetStateMediumKey() : dist->GetStateKey();
+  RegKey key;
+  LONG result = key.Create(root_key, reg_path.c_str(), KEY_SET_VALUE);
+  if (result != ERROR_SUCCESS) {
+    LOG(ERROR) << "Failed opening key " << reg_path << " to set "
+               << google_update::kRegUsageStatsField << "; result: " << result;
+  } else {
+    result = key.WriteValue(google_update::kRegUsageStatsField, value);
+    LOG_IF(ERROR, result != ERROR_SUCCESS) << "Failed setting "
+        << google_update::kRegUsageStatsField << " in key " << reg_path
+        << "; result: " << result;
+  }
+  return (result == ERROR_SUCCESS);
 }
 
 bool GoogleUpdateSettings::GetMetricsId(std::wstring* metrics_id) {
@@ -248,32 +370,15 @@ bool GoogleUpdateSettings::UpdateDidRunState(bool did_run,
                                              system_level);
 }
 
-bool GoogleUpdateSettings::GetChromeChannel(bool system_install,
-    std::wstring* channel) {
-  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
-  if (dist->GetChromeChannel(channel))
-    return true;
+std::wstring GoogleUpdateSettings::GetChromeChannel(bool system_install) {
+  std::wstring channel;
+  GetChromeChannelInternal(system_install, false, &channel);
+  return channel;
+}
 
-  HKEY root_key = system_install ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
-  std::wstring reg_path = dist->GetStateKey();
-  RegKey key(root_key, reg_path.c_str(), KEY_READ);
-  installer::ChannelInfo channel_info;
-  if (!channel_info.Initialize(key)) {
-    *channel = L"unknown";
-    return false;
-  }
-
-  if (!channel_info.GetChannelName(channel))
-    *channel = L"unknown";
-
-  // Tag the channel name if this is a multi-install product.
-  if (channel_info.IsMultiInstall()) {
-    if (!channel->empty())
-      channel->append(1, L'-');
-    channel->append(1, L'm');
-  }
-
-  return true;
+bool GoogleUpdateSettings::GetChromeChannelAndModifiers(bool system_install,
+                                                        std::wstring* channel) {
+  return GetChromeChannelInternal(system_install, true, channel);
 }
 
 void GoogleUpdateSettings::UpdateInstallStatus(bool system_install,
@@ -409,4 +514,45 @@ bool GoogleUpdateSettings::IsOrganicFirstRun(const std::wstring& brand) {
     return true;
 
   return (StartsWith(brand, L"GG", true) || StartsWith(brand, L"EU", true));
+}
+
+GoogleUpdateSettings::UpdatePolicy GoogleUpdateSettings::GetAppUpdatePolicy(
+    const std::wstring& app_guid,
+    bool* is_overridden) {
+  bool found_override = false;
+  UpdatePolicy update_policy = kGoogleUpdateDefaultUpdatePolicy;
+
+#if defined(GOOGLE_CHROME_BUILD)
+  DCHECK(!app_guid.empty());
+  RegKey policy_key;
+
+  // Google Update Group Policy settings are always in HKLM.
+  if (policy_key.Open(HKEY_LOCAL_MACHINE, kGoogleUpdatePoliciesKey,
+                      KEY_QUERY_VALUE) == ERROR_SUCCESS) {
+    static const size_t kPrefixLen =
+        arraysize(kGoogleUpdateUpdateOverrideValuePrefix) - 1;
+    DWORD value;
+    std::wstring app_update_override;
+    app_update_override.reserve(kPrefixLen + app_guid.size());
+    app_update_override.append(kGoogleUpdateUpdateOverrideValuePrefix,
+                               kPrefixLen);
+    app_update_override.append(app_guid);
+    // First try to read and comprehend the app-specific override.
+    found_override = (policy_key.ReadValueDW(app_update_override.c_str(),
+                                             &value) == ERROR_SUCCESS &&
+                      GetUpdatePolicyFromDword(value, &update_policy));
+
+    // Failing that, try to read and comprehend the default override.
+    if (!found_override &&
+        policy_key.ReadValueDW(kGoogleUpdateUpdatePolicyValue,
+                               &value) == ERROR_SUCCESS) {
+      GetUpdatePolicyFromDword(value, &update_policy);
+    }
+  }
+#endif  // defined(GOOGLE_CHROME_BUILD)
+
+  if (is_overridden != NULL)
+    *is_overridden = found_override;
+
+  return update_policy;
 }

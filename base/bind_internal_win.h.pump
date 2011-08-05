@@ -18,6 +18,11 @@ $var MAX_ARITY = 6
 #define BASE_BIND_INTERNAL_WIN_H_
 #pragma once
 
+// In the x64 architecture in Windows, __fastcall, __stdcall, etc, are all
+// the same as __cdecl which would turn the following specializations into
+// multiple definitions.
+#if !defined(ARCH_CPU_X86_64)
+
 namespace base {
 namespace internal {
 
@@ -34,6 +39,8 @@ $if ARITY > 0[[, ]] $for ARG , [[typename X$(ARG)]]>
 struct FunctionTraits<R(__stdcall *)($for ARG , [[X$(ARG)]])> {
   typedef R (*NormalizedSig)($for ARG , [[X$(ARG)]]);
   typedef false_type IsMethod;
+
+  typedef R Return;
 
 $if ARITY > 0 [[
 
@@ -53,6 +60,8 @@ struct FunctionTraits<R(__fastcall *)($for ARG , [[X$(ARG)]])> {
   typedef R (*NormalizedSig)($for ARG , [[X$(ARG)]]);
   typedef false_type IsMethod;
 
+  typedef R Return;
+
 $if ARITY > 0 [[
 
   // Target type for each bound parameter.
@@ -68,5 +77,7 @@ $for ARG [[
 
 }  // namespace internal
 }  // namespace base
+
+#endif  // !defined(ARCH_CPU_X86_64)
 
 #endif  // BASE_BIND_INTERNAL_WIN_H_

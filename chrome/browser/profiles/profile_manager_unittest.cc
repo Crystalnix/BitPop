@@ -5,22 +5,24 @@
 #include <string>
 
 #include "base/command_line.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
+#include "base/scoped_temp_dir.h"
+#include "base/system_monitor/system_monitor.h"
+#include "base/values.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/test/testing_browser_process.h"
+#include "chrome/common/pref_names.h"
+#include "chrome/test/testing_browser_process_test.h"
 #include "chrome/test/testing_pref_service.h"
 #include "content/browser/browser_thread.h"
 #include "content/common/notification_service.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/base/system_monitor/system_monitor.h"
 
 namespace {
 // This global variable is used to check that value returned to different
@@ -29,34 +31,25 @@ Profile* g_created_profile;
 
 }  // namespace
 
-class ProfileManagerTest : public testing::Test {
+class ProfileManagerTest : public TestingBrowserProcessTest {
  protected:
   ProfileManagerTest()
       : ui_thread_(BrowserThread::UI, &message_loop_),
         file_thread_(BrowserThread::FILE, &message_loop_),
-        profile_manager_(new ProfileManagerWithoutInit) {
+        profile_manager_(new ProfileManagerWithoutInit),
+        local_state_(testing_browser_process_.get()) {
   }
 
   virtual void SetUp() {
     // Create a new temporary directory, and store the path
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-
-    // Create a local_state PrefService.
-    browser::RegisterLocalState(&test_local_state_);
-    TestingBrowserProcess* testing_browser_process =
-        static_cast<TestingBrowserProcess*>(g_browser_process);
-    testing_browser_process->SetPrefService(&test_local_state_);
   }
 
   virtual void TearDown() {
     profile_manager_.reset();
-
-    TestingBrowserProcess* testing_browser_process =
-        static_cast<TestingBrowserProcess*>(g_browser_process);
-    testing_browser_process->SetPrefService(NULL);
   }
 
-  class MockObserver : public ProfileManager::Observer {
+  class MockObserver : public ProfileManagerObserver {
    public:
     MOCK_METHOD1(OnProfileCreated, void(Profile* profile));
   };
@@ -68,12 +61,12 @@ class ProfileManagerTest : public testing::Test {
   BrowserThread ui_thread_;
   BrowserThread file_thread_;
 
-  ui::SystemMonitor system_monitor_dummy_;
+  base::SystemMonitor system_monitor_dummy_;
 
   // Also will test profile deletion.
   scoped_ptr<ProfileManager> profile_manager_;
 
-  TestingPrefService test_local_state_;
+  ScopedTestingLocalState local_state_;
 };
 
 TEST_F(ProfileManagerTest, GetProfile) {
@@ -127,6 +120,29 @@ TEST_F(ProfileManagerTest, LoggedInProfileDir) {
 }
 
 #endif
+
+TEST_F(ProfileManagerTest, RegisterProfileName) {
+  // Create a test profile.
+  FilePath dest_path1 = temp_dir_.path();
+  std::string dir_base("New Profile 1");
+  dest_path1 = dest_path1.Append(FILE_PATH_LITERAL("New Profile 1"));
+  Profile* profile1;
+  profile1 = profile_manager_->GetProfile(dest_path1);
+  ASSERT_TRUE(profile1);
+
+  // Simulate registration of the profile name (normally triggered by the
+  // change of the kGoogleServicesUsername preference):
+  std::string testname("testname");
+  profile1->GetPrefs()->SetString(prefs::kGoogleServicesUsername, testname);
+  profile_manager_->RegisterProfileName(profile1);
+
+  // Profile name should be associated with the directory in Local State.
+  std::string stored_profile_name;
+  const DictionaryValue* path_map = static_cast<const DictionaryValue*>(
+      local_state_.Get()->GetUserPref(prefs::kProfileDirectoryMap));
+  path_map->GetString(dir_base, &stored_profile_name);
+  ASSERT_STREQ(testname.c_str(), stored_profile_name.c_str());
+}
 
 TEST_F(ProfileManagerTest, CreateAndUseTwoProfiles) {
   FilePath dest_path1 = temp_dir_.path();

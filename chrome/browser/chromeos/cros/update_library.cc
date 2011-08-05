@@ -8,8 +8,6 @@
 #include "base/string_util.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "content/browser/browser_thread.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_type.h"
 
 namespace chromeos {
 
@@ -22,7 +20,7 @@ class UpdateLibraryImpl : public UpdateLibrary {
     }
   }
 
-  ~UpdateLibraryImpl() {
+  virtual ~UpdateLibraryImpl() {
     if (status_connection_) {
       DisconnectUpdateProgress(status_connection_);
     }
@@ -76,6 +74,8 @@ class UpdateLibraryImpl : public UpdateLibrary {
 
   void Init() {
     status_connection_ = MonitorUpdateStatus(&ChangedHandler, this);
+    // Asynchronously load the initial state.
+    RequestUpdateStatus(&ChangedHandler, this);
   }
 
   void UpdateStatus(const Status& status) {
@@ -89,15 +89,6 @@ class UpdateLibraryImpl : public UpdateLibrary {
 
     status_ = status;
     FOR_EACH_OBSERVER(Observer, observers_, UpdateStatusChanged(this));
-
-    // If the update is ready to install, send a notification so that Chrome
-    // can update the UI.
-    if (status_.status == UPDATE_STATUS_UPDATED_NEED_REBOOT) {
-      NotificationService::current()->Notify(
-          NotificationType::UPGRADE_RECOMMENDED,
-          Source<UpdateLibrary>(this),
-          NotificationService::NoDetails());
-    }
   }
 
   ObserverList<Observer> observers_;
@@ -115,7 +106,7 @@ class UpdateLibraryImpl : public UpdateLibrary {
 class UpdateLibraryStubImpl : public UpdateLibrary {
  public:
   UpdateLibraryStubImpl() {}
-  ~UpdateLibraryStubImpl() {}
+  virtual ~UpdateLibraryStubImpl() {}
   void AddObserver(Observer* observer) {}
   void RemoveObserver(Observer* observer) {}
   bool HasObserver(Observer* observer) { return false; }

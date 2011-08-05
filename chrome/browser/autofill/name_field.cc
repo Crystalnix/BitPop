@@ -8,60 +8,116 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/autofill/autofill_ecml.h"
+#include "chrome/browser/autofill/autofill_scanner.h"
 #include "chrome/browser/autofill/autofill_type.h"
 #include "grit/autofill_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
-NameField* NameField::Parse(std::vector<AutofillField*>::const_iterator* iter,
-                            bool is_ecml) {
+using autofill::GetEcmlPattern;
+
+namespace {
+
+// A form field that can parse a full name field.
+class FullNameField : public NameField {
+ public:
+  static FullNameField* Parse(AutofillScanner* scanner);
+
+ protected:
+  // FormField:
+  virtual bool ClassifyField(FieldTypeMap* map) const OVERRIDE;
+
+ private:
+  explicit FullNameField(const AutofillField* field);
+
+  const AutofillField* field_;
+
+  DISALLOW_COPY_AND_ASSIGN(FullNameField);
+};
+
+// A form field that can parse a first and last name field.
+class FirstLastNameField : public NameField {
+ public:
+  static FirstLastNameField* ParseSpecificName(AutofillScanner* scanner);
+  static FirstLastNameField* ParseComponentNames(AutofillScanner* scanner);
+  static FirstLastNameField* ParseEcmlName(AutofillScanner* scanner);
+  static FirstLastNameField* Parse(AutofillScanner* scanner, bool is_ecml);
+
+ protected:
+  // FormField:
+  virtual bool ClassifyField(FieldTypeMap* map) const OVERRIDE;
+
+ private:
+  FirstLastNameField();
+
+  const AutofillField* first_name_;
+  const AutofillField* middle_name_;  // Optional.
+  const AutofillField* last_name_;
+  bool middle_initial_;  // True if middle_name_ is a middle initial.
+
+  DISALLOW_COPY_AND_ASSIGN(FirstLastNameField);
+};
+
+}  // namespace
+
+FormField* NameField::Parse(AutofillScanner* scanner, bool is_ecml) {
+  if (scanner->IsEnd())
+    return NULL;
+
   // Try FirstLastNameField first since it's more specific.
-  NameField* field = FirstLastNameField::Parse(iter, is_ecml);
-  if (field == NULL && !is_ecml)
-    field = FullNameField::Parse(iter);
+  NameField* field = FirstLastNameField::Parse(scanner, is_ecml);
+  if (!field && !is_ecml)
+    field = FullNameField::Parse(scanner);
   return field;
 }
 
-bool FullNameField::GetFieldInfo(FieldTypeMap* field_type_map) const {
-  bool ok = Add(field_type_map, field_, AutofillType(NAME_FULL));
-  DCHECK(ok);
-  return true;
+// This is overriden in concrete subclasses.
+bool NameField::ClassifyField(FieldTypeMap* map) const {
+  return false;
 }
 
-FullNameField* FullNameField::Parse(
-    std::vector<AutofillField*>::const_iterator* iter) {
+FullNameField* FullNameField::Parse(AutofillScanner* scanner) {
   // Exclude labels containing the string "username", which typically
   // denotes a login ID rather than the user's actual name.
-  AutofillField* field = **iter;
-  if (Match(field, l10n_util::GetStringUTF16(IDS_AUTOFILL_USERNAME_RE), false))
+  scanner->SaveCursor();
+  bool is_username = ParseField(
+      scanner, l10n_util::GetStringUTF16(IDS_AUTOFILL_USERNAME_RE), NULL);
+  scanner->Rewind();
+  if (is_username)
     return NULL;
 
   // Searching for any label containing the word "name" is too general;
   // for example, Travelocity_Edit travel profile.html contains a field
   // "Travel Profile Name".
-  const string16 name_match = l10n_util::GetStringUTF16(IDS_AUTOFILL_NAME_RE);
-  if (ParseText(iter, name_match, &field))
+  const AutofillField* field = NULL;
+  if (ParseField(scanner, l10n_util::GetStringUTF16(IDS_AUTOFILL_NAME_RE),
+                 &field))
     return new FullNameField(field);
 
   return NULL;
 }
 
-FullNameField::FullNameField(AutofillField* field)
+bool FullNameField::ClassifyField(FieldTypeMap* map) const {
+  return AddClassification(field_, NAME_FULL, map);
+}
+
+FullNameField::FullNameField(const AutofillField* field)
     : field_(field) {
 }
 
-FirstLastNameField* FirstLastNameField::Parse1(
-    std::vector<AutofillField*>::const_iterator* iter) {
+FirstLastNameField* FirstLastNameField::ParseSpecificName(
+    AutofillScanner* scanner) {
   // Some pages (e.g. Overstock_comBilling.html, SmithsonianCheckout.html)
   // have the label "Name" followed by two or three text fields.
   scoped_ptr<FirstLastNameField> v(new FirstLastNameField);
-  std::vector<AutofillField*>::const_iterator q = *iter;
+  scanner->SaveCursor();
 
-  AutofillField* next;
-  if (ParseText(&q,
-                l10n_util::GetStringUTF16(IDS_AUTOFILL_NAME_SPECIFIC_RE),
-                &v->first_name_) &&
-      ParseEmptyText(&q, &next)) {
-    if (ParseEmptyText(&q, &v->last_name_)) {
+  const AutofillField* next;
+  if (ParseField(scanner,
+                 l10n_util::GetStringUTF16(IDS_AUTOFILL_NAME_SPECIFIC_RE),
+                 &v->first_name_) &&
+      ParseEmptyLabel(scanner, &next)) {
+    if (ParseEmptyLabel(scanner, &v->last_name_)) {
       // There are three name fields; assume that the middle one is a
       // middle initial (it is, at least, on SmithsonianCheckout.html).
       v->middle_name_ = next;
@@ -70,17 +126,17 @@ FirstLastNameField* FirstLastNameField::Parse1(
       v->last_name_ = next;
     }
 
-    *iter = q;
     return v.release();
   }
 
+  scanner->Rewind();
   return NULL;
 }
 
-FirstLastNameField* FirstLastNameField::Parse2(
-    std::vector<AutofillField*>::const_iterator* iter) {
+FirstLastNameField* FirstLastNameField::ParseComponentNames(
+    AutofillScanner* scanner) {
   scoped_ptr<FirstLastNameField> v(new FirstLastNameField);
-  std::vector<AutofillField*>::const_iterator q = *iter;
+  scanner->SaveCursor();
 
   // A fair number of pages use the names "fname" and "lname" for naming
   // first and last name fields (examples from the test suite:
@@ -90,79 +146,86 @@ FirstLastNameField* FirstLastNameField::Parse2(
   // so we match "initials" here (and just fill in a first name there,
   // American-style).
   // The ".*first$" matches fields ending in "first" (example in sample8.html).
-  string16 match = l10n_util::GetStringUTF16(IDS_AUTOFILL_FIRST_NAME_RE);
-  if (!ParseText(&q, match, &v->first_name_))
-    return NULL;
-
-  // We check for a middle initial before checking for a middle name
-  // because at least one page (PC Connection.html) has a field marked
-  // as both (the label text is "MI" and the element name is
-  // "txtmiddlename"); such a field probably actually represents a
-  // middle initial.
-  match = l10n_util::GetStringUTF16(IDS_AUTOFILL_MIDDLE_INITIAL_RE);
-  if (ParseText(&q, match, &v->middle_name_)) {
-    v->middle_initial_ = true;
-  } else {
-    match = l10n_util::GetStringUTF16(IDS_AUTOFILL_MIDDLE_NAME_RE);
-    ParseText(&q, match, &v->middle_name_);
-  }
-
   // The ".*last$" matches fields ending in "last" (example in sample8.html).
-  match = l10n_util::GetStringUTF16(IDS_AUTOFILL_LAST_NAME_RE);
-  if (!ParseText(&q, match, &v->last_name_))
-    return NULL;
 
-  *iter = q;
-  return v.release();
-}
+  // Allow name fields to appear in any order.
+  while (!scanner->IsEnd()) {
+    if (!v->first_name_ &&
+        ParseField(scanner,
+                   l10n_util::GetStringUTF16(IDS_AUTOFILL_FIRST_NAME_RE),
+                   &v->first_name_)) {
+      continue;
+    }
 
-FirstLastNameField* FirstLastNameField::ParseEcmlName(
-    std::vector<AutofillField*>::const_iterator* iter) {
-  scoped_ptr<FirstLastNameField> field(new FirstLastNameField);
-  std::vector<AutofillField*>::const_iterator q = *iter;
+    if (!v->last_name_ &&
+        ParseField(scanner,
+                   l10n_util::GetStringUTF16(IDS_AUTOFILL_LAST_NAME_RE),
+                   &v->last_name_)) {
+      continue;
+    }
 
-  string16 pattern = GetEcmlPattern(kEcmlShipToFirstName,
-                                    kEcmlBillToFirstName, '|');
-  if (!ParseText(&q, pattern, &field->first_name_))
-    return NULL;
+    // We check for a middle initial before checking for a middle name
+    // because at least one page (PC Connection.html) has a field marked
+    // as both (the label text is "MI" and the element name is
+    // "txtmiddlename"); such a field probably actually represents a
+    // middle initial.
+    if (!v->middle_name_ &&
+        ParseField(scanner,
+                   l10n_util::GetStringUTF16(IDS_AUTOFILL_MIDDLE_INITIAL_RE),
+                   &v->middle_name_)) {
+      v->middle_initial_ = true;
+      continue;
+    }
 
-  pattern = GetEcmlPattern(kEcmlShipToMiddleName, kEcmlBillToMiddleName, '|');
-  ParseText(&q, pattern, &field->middle_name_);
+    if (!v->middle_name_ &&
+        ParseField(scanner,
+                   l10n_util::GetStringUTF16(IDS_AUTOFILL_MIDDLE_NAME_RE),
+                   &v->middle_name_)) {
+      continue;
+    }
 
-  pattern = GetEcmlPattern(kEcmlShipToLastName, kEcmlBillToLastName, '|');
-  if (ParseText(&q, pattern, &field->last_name_)) {
-    *iter = q;
-    return field.release();
+    break;
   }
 
+  // Consider the match to be successful if we detected both first and last name
+  // fields.
+  if (v->first_name_ && v->last_name_)
+    return v.release();
+
+  scanner->Rewind();
   return NULL;
 }
 
-FirstLastNameField* FirstLastNameField::Parse(
-    std::vector<AutofillField*>::const_iterator* iter,
-    bool is_ecml) {
-  if (is_ecml) {
-    return ParseEcmlName(iter);
-  } else {
-    FirstLastNameField* v = Parse1(iter);
-    if (v != NULL)
-      return v;
+FirstLastNameField* FirstLastNameField::ParseEcmlName(
+    AutofillScanner* scanner) {
+  scoped_ptr<FirstLastNameField> field(new FirstLastNameField);
+  scanner->SaveCursor();
 
-    return Parse2(iter);
-  }
+  string16 pattern = GetEcmlPattern(kEcmlShipToFirstName,
+                                    kEcmlBillToFirstName, '|');
+  if (!ParseField(scanner, pattern, &field->first_name_))
+    return NULL;
+
+  pattern = GetEcmlPattern(kEcmlShipToMiddleName, kEcmlBillToMiddleName, '|');
+  ParseField(scanner, pattern, &field->middle_name_);
+
+  pattern = GetEcmlPattern(kEcmlShipToLastName, kEcmlBillToLastName, '|');
+  if (ParseField(scanner, pattern, &field->last_name_))
+    return field.release();
+
+  scanner->Rewind();
+  return NULL;
 }
 
-bool FirstLastNameField::GetFieldInfo(FieldTypeMap* field_type_map) const {
-  bool ok = Add(field_type_map, first_name_, AutofillType(NAME_FIRST));
-  DCHECK(ok);
-  ok = ok && Add(field_type_map, last_name_, AutofillType(NAME_LAST));
-  DCHECK(ok);
-  AutofillType type = middle_initial_ ?
-      AutofillType(NAME_MIDDLE_INITIAL) : AutofillType(NAME_MIDDLE);
-  ok = ok && Add(field_type_map, middle_name_, type);
-  DCHECK(ok);
+FirstLastNameField* FirstLastNameField::Parse(AutofillScanner* scanner,
+                                              bool is_ecml) {
+  if (is_ecml)
+    return ParseEcmlName(scanner);
 
-  return ok;
+  FirstLastNameField* field = ParseSpecificName(scanner);
+  if (!field)
+    field = ParseComponentNames(scanner);
+  return field;
 }
 
 FirstLastNameField::FirstLastNameField()
@@ -172,3 +235,10 @@ FirstLastNameField::FirstLastNameField()
       middle_initial_(false) {
 }
 
+bool FirstLastNameField::ClassifyField(FieldTypeMap* map) const {
+  bool ok = AddClassification(first_name_, NAME_FIRST, map);
+  ok = ok && AddClassification(last_name_, NAME_LAST, map);
+  AutofillFieldType type = middle_initial_ ? NAME_MIDDLE_INITIAL : NAME_MIDDLE;
+  ok = ok && AddClassification(middle_name_, type, map);
+  return ok;
+}

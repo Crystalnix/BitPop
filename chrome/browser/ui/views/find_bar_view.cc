@@ -21,6 +21,7 @@
 #include "content/browser/tab_contents/tab_contents.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -58,26 +59,6 @@ static const SkColor kBackgroundColorMatch = SK_ColorWHITE;
 // The background color of the match count label when no results are found.
 static const SkColor kBackgroundColorNoMatch = SkColorSetRGB(255, 102, 102);
 
-// The background images for the dialog. They are split into a left, a middle
-// and a right part. The middle part determines the height of the dialog. The
-// middle part is stretched to fill any remaining part between the left and the
-// right image, after sizing the dialog to kWindowWidth.
-static const SkBitmap* kDialog_left = NULL;
-static const SkBitmap* kDialog_middle = NULL;
-static const SkBitmap* kDialog_right = NULL;
-
-// When we are animating, we draw only the top part of the left and right
-// edges to give the illusion that the find dialog is attached to the
-// window during this animation; this is the height of the items we draw.
-static const int kAnimatingEdgeHeight = 5;
-
-// The background image for the Find text box, which we draw behind the Find box
-// to provide the Chrome look to the edge of the text box.
-static const SkBitmap* kBackground = NULL;
-
-// The rounded edge on the left side of the Find text box.
-static const SkBitmap* kBackground_left = NULL;
-
 // The default number of average characters that the text box will be. This
 // number brings the width on a "regular fonts" system to about 300px.
 static const int kDefaultCharWidth = 43;
@@ -92,7 +73,9 @@ FindBarView::FindBarView(FindBarHost* host)
       focus_forwarder_view_(NULL),
       find_previous_button_(NULL),
       find_next_button_(NULL),
-      close_button_(NULL) {
+      close_button_(NULL),
+      background_(NULL),
+      background_left_(NULL) {
   SetID(VIEW_ID_FIND_IN_PAGE);
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
 
@@ -159,16 +142,13 @@ FindBarView::FindBarView(FindBarHost* host)
       l10n_util::GetStringUTF16(IDS_ACCNAME_CLOSE));
   AddChildView(close_button_);
 
-  if (kDialog_left == NULL) {
-    // Background images for the dialog.
-    kDialog_left = rb.GetBitmapNamed(IDR_FIND_DIALOG_LEFT);
-    kDialog_middle = rb.GetBitmapNamed(IDR_FIND_DIALOG_MIDDLE);
-    kDialog_right = rb.GetBitmapNamed(IDR_FIND_DIALOG_RIGHT);
+  SetDialogBorderBitmaps(rb.GetBitmapNamed(IDR_FIND_DIALOG_LEFT),
+                         rb.GetBitmapNamed(IDR_FIND_DIALOG_MIDDLE),
+                         rb.GetBitmapNamed(IDR_FIND_DIALOG_RIGHT));
 
-    // Background images for the Find edit box.
-    kBackground = rb.GetBitmapNamed(IDR_FIND_BOX_BACKGROUND);
-    kBackground_left = rb.GetBitmapNamed(IDR_FIND_BOX_BACKGROUND_LEFT);
-  }
+  // Background images for the Find edit box.
+  background_ = rb.GetBitmapNamed(IDR_FIND_BOX_BACKGROUND);
+  background_left_ = rb.GetBitmapNamed(IDR_FIND_BOX_BACKGROUND_LEFT);
 }
 
 FindBarView::~FindBarView() {
@@ -245,25 +225,7 @@ void FindBarView::SetFocusAndSelection(bool select_all) {
 void FindBarView::OnPaint(gfx::Canvas* canvas) {
   SkPaint paint;
 
-  // Determine the find bar size as well as the offset from which to tile the
-  // toolbar background image.  First, get the widget bounds.
-  gfx::Rect bounds = GetWidget()->GetWindowScreenBounds();
-  // Now convert from screen to parent coordinates.
-  gfx::Point origin(bounds.origin());
-  BrowserView* browser_view = host()->browser_view();
-  ConvertPointToView(NULL, browser_view, &origin);
-  bounds.set_origin(origin);
-  // Finally, calculate the background image tiling offset.
-  origin = browser_view->OffsetPointForToolbarBackgroundImage(origin);
-
-  // First, we draw the background image for the whole dialog (3 images: left,
-  // middle and right). Note, that the window region has been set by the
-  // controller, so the whitespace in the left and right background images is
-  // actually outside the window region and is therefore not drawn. See
-  // FindInPageWidgetWin::CreateRoundedWindowEdges() for details.
-  ui::ThemeProvider* tp = GetThemeProvider();
-  canvas->TileImageInt(*tp->GetBitmapNamed(IDR_THEME_TOOLBAR), origin.x(),
-                       origin.y(), 0, 0, bounds.width(), bounds.height());
+  gfx::Rect bounds = PaintOffsetToolbarBackground(canvas);
 
   // Now flip the canvas for the rest of the graphics if in RTL mode.
   canvas->Save();
@@ -272,16 +234,7 @@ void FindBarView::OnPaint(gfx::Canvas* canvas) {
     canvas->ScaleInt(-1, 1);
   }
 
-  canvas->DrawBitmapInt(*kDialog_left, 0, 0);
-
-  // Stretch the middle background to cover all of the area between the two
-  // other images.
-  canvas->TileImageInt(*kDialog_middle, kDialog_left->width(), 0,
-      bounds.width() - kDialog_left->width() - kDialog_right->width(),
-      kDialog_middle->height());
-
-  canvas->DrawBitmapInt(*kDialog_right, bounds.width() - kDialog_right->width(),
-                        0);
+  PaintDialogBorder(canvas, bounds);
 
   // Then we draw the background image for the Find Textfield. We start by
   // calculating the position of background images for the Find text box.
@@ -289,25 +242,17 @@ void FindBarView::OnPaint(gfx::Canvas* canvas) {
   gfx::Point back_button_origin = find_previous_button_->bounds().origin();
 
   // Draw the image to the left that creates a curved left edge for the box.
-  canvas->TileImageInt(*kBackground_left,
-      find_text_x - kBackground_left->width(), back_button_origin.y(),
-      kBackground_left->width(), kBackground_left->height());
+  canvas->TileImageInt(*background_left_,
+      find_text_x - background_left_->width(), back_button_origin.y(),
+      background_left_->width(), background_left_->height());
 
   // Draw the top and bottom border for whole text box (encompasses both the
   // find_text_ edit box and the match_count_text_ label).
-  canvas->TileImageInt(*kBackground, find_text_x, back_button_origin.y(),
+  canvas->TileImageInt(*background_, find_text_x, back_button_origin.y(),
                        back_button_origin.x() - find_text_x,
-                       kBackground->height());
+                       background_->height());
 
-  if (animation_offset() > 0) {
-    // While animating we draw the curved edges at the point where the
-    // controller told us the top of the window is: |animation_offset()|.
-    canvas->TileImageInt(*kDialog_left, bounds.x(), animation_offset(),
-                         kDialog_left->width(), kAnimatingEdgeHeight);
-    canvas->TileImageInt(*kDialog_right,
-        bounds.width() - kDialog_right->width(), animation_offset(),
-        kDialog_right->width(), kAnimatingEdgeHeight);
-  }
+  PaintAnimatingEdges(canvas, bounds);
 
   canvas->Restore();
 }
@@ -392,7 +337,7 @@ void FindBarView::ViewHierarchyChanged(bool is_add, View* parent, View* child) {
 
 gfx::Size FindBarView::GetPreferredSize() {
   gfx::Size prefsize = find_text_->GetPreferredSize();
-  prefsize.set_height(kDialog_middle->height());
+  prefsize.set_height(dialog_middle_->height());
 
   // Add up all the preferred sizes and margins of the rest of the controls.
   prefsize.Enlarge(kMarginLeftOfCloseButton + kMarginRightOfCloseButton +
@@ -527,6 +472,8 @@ FindBarView::SearchTextfieldView::~SearchTextfieldView() {
 }
 
 void FindBarView::SearchTextfieldView::RequestFocus() {
+  if (HasFocus())
+    return;
   views::View::RequestFocus();
   SelectAll();
 }

@@ -10,7 +10,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -24,41 +24,36 @@ AutofillCCInfoBarDelegate::AutofillCCInfoBarDelegate(
       personal_data_(personal_data),
       metric_logger_(metric_logger),
       had_user_interaction_(false) {
-  metric_logger_->Log(AutofillMetrics::CREDIT_CARD_INFOBAR_SHOWN);
+  metric_logger_->LogCreditCardInfoBarMetric(AutofillMetrics::INFOBAR_SHOWN);
 }
 
 AutofillCCInfoBarDelegate::~AutofillCCInfoBarDelegate() {
+  if (!had_user_interaction_)
+    LogUserAction(AutofillMetrics::INFOBAR_IGNORED);
 }
 
 void AutofillCCInfoBarDelegate::LogUserAction(
-    AutofillMetrics::CreditCardInfoBarMetric user_action) {
+    AutofillMetrics::InfoBarMetric user_action) {
   DCHECK(!had_user_interaction_);
 
-  metric_logger_->Log(user_action);
+  metric_logger_->LogCreditCardInfoBarMetric(user_action);
   had_user_interaction_ = true;
 }
 
 bool AutofillCCInfoBarDelegate::ShouldExpire(
-    const NavigationController::LoadCommittedDetails& details) const {
+    const content::LoadCommittedDetails& details) const {
   // The user has submitted a form, causing the page to navigate elsewhere. We
   // don't want the infobar to be expired at this point, because the user won't
   // get a chance to answer the question.
   return false;
 }
 
-void AutofillCCInfoBarDelegate::InfoBarClosed() {
-  if (!had_user_interaction_)
-    LogUserAction(AutofillMetrics::CREDIT_CARD_INFOBAR_IGNORED);
-
-  delete this;
-}
-
 void AutofillCCInfoBarDelegate::InfoBarDismissed() {
-  LogUserAction(AutofillMetrics::CREDIT_CARD_INFOBAR_DENIED);
+  LogUserAction(AutofillMetrics::INFOBAR_DENIED);
 }
 
-SkBitmap* AutofillCCInfoBarDelegate::GetIcon() const {
-  return ResourceBundle::GetSharedInstance().GetBitmapNamed(
+gfx::Image* AutofillCCInfoBarDelegate::GetIcon() const {
+  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
       IDR_INFOBAR_AUTOFILL);
 }
 
@@ -77,12 +72,12 @@ string16 AutofillCCInfoBarDelegate::GetButtonLabel(InfoBarButton button) const {
 
 bool AutofillCCInfoBarDelegate::Accept() {
   personal_data_->SaveImportedCreditCard(*credit_card_);
-  LogUserAction(AutofillMetrics::CREDIT_CARD_INFOBAR_ACCEPTED);
+  LogUserAction(AutofillMetrics::INFOBAR_ACCEPTED);
   return true;
 }
 
 bool AutofillCCInfoBarDelegate::Cancel() {
-  LogUserAction(AutofillMetrics::CREDIT_CARD_INFOBAR_DENIED);
+  LogUserAction(AutofillMetrics::INFOBAR_DENIED);
   return true;
 }
 

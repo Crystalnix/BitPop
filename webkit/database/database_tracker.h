@@ -20,12 +20,17 @@
 #include "net/base/completion_callback.h"
 #include "webkit/database/database_connections.h"
 
+namespace base {
+class MessageLoopProxy;
+}
+
 namespace sql {
 class Connection;
 class MetaTable;
 }
 
 namespace quota {
+class QuotaManagerProxy;
 class SpecialStoragePolicy;
 }
 
@@ -35,17 +40,16 @@ extern const FilePath::CharType kDatabaseDirectoryName[];
 extern const FilePath::CharType kTrackerDatabaseFileName[];
 
 class DatabasesTable;
-class QuotaTable;
 
 // This class is used to store information about all databases in an origin.
 class OriginInfo {
  public:
+  OriginInfo();
   OriginInfo(const OriginInfo& origin_info);
   ~OriginInfo();
 
   const string16& GetOrigin() const { return origin_; }
   int64 TotalSize() const { return total_size_; }
-  int64 Quota() const { return quota_; }
   void GetAllDatabaseNames(std::vector<string16>* databases) const;
   int64 GetDatabaseSize(const string16& database_name) const;
   string16 GetDatabaseDescription(const string16& database_name) const;
@@ -53,20 +57,18 @@ class OriginInfo {
  protected:
   typedef std::map<string16, std::pair<int64, string16> > DatabaseInfoMap;
 
-  OriginInfo(const string16& origin, int64 total_size, int64 quota);
+  OriginInfo(const string16& origin, int64 total_size);
 
   string16 origin_;
   int64 total_size_;
-  int64 quota_;
   DatabaseInfoMap database_info_;
 };
 
-// This class manages the main database, and keeps track of per origin quotas.
+// This class manages the main database and keeps track of open databases.
 //
 // The data in this class is not thread-safe, so all methods of this class
-// should be called on the same thread. The only exception is
-// database_directory() which returns a constant that is initialized when
-// the DatabaseTracker instance is created.
+// should be called on the same thread. The only exceptions are the ctor(),
+// the dtor() and the database_directory() and quota_manager_proxy() getters.
 //
 // Furthermore, some methods of this class have to read/write data from/to
 // the disk. Therefore, in a multi-threaded application, all methods of this
@@ -79,8 +81,7 @@ class DatabaseTracker
    public:
     virtual void OnDatabaseSizeChanged(const string16& origin_identifier,
                                        const string16& database_name,
-                                       int64 database_size,
-                                       int64 space_available) = 0;
+                                       int64 database_size) = 0;
     virtual void OnDatabaseScheduledForDeletion(
         const string16& origin_identifier,
         const string16& database_name) = 0;
@@ -88,14 +89,15 @@ class DatabaseTracker
   };
 
   DatabaseTracker(const FilePath& profile_path, bool is_incognito,
-                  quota::SpecialStoragePolicy* special_storage_policy);
+                  quota::SpecialStoragePolicy* special_storage_policy,
+                  quota::QuotaManagerProxy* quota_manager_proxy,
+                  base::MessageLoopProxy* db_tracker_thread);
 
   void DatabaseOpened(const string16& origin_identifier,
                       const string16& database_name,
                       const string16& database_details,
                       int64 estimated_size,
-                      int64* database_size,
-                      int64* space_available);
+                      int64* database_size);
   void DatabaseModified(const string16& origin_identifier,
                         const string16& database_name);
   void DatabaseClosed(const string16& origin_identifier,
@@ -111,12 +113,15 @@ class DatabaseTracker
   FilePath GetFullDBFilePath(const string16& origin_identifier,
                              const string16& database_name);
 
-  bool GetAllOriginsInfo(std::vector<OriginInfo>* origins_info);
-  void SetOriginQuota(const string16& origin_identifier, int64 new_quota);
+  // virtual for unittesting only
+  virtual bool GetOriginInfo(const string16& origin_id, OriginInfo* info);
+  virtual bool GetAllOriginIdentifiers(std::vector<string16>* origin_ids);
+  virtual bool GetAllOriginsInfo(std::vector<OriginInfo>* origins_info);
 
-  int64 GetDefaultQuota() { return default_quota_; }
-  // Sets the default quota for all origins. Should be used in tests only.
-  void SetDefaultQuota(int64 quota);
+  // Safe to call on any thread.
+  quota::QuotaManagerProxy* quota_manager_proxy() const {
+    return quota_manager_proxy_.get();
+  }
 
   bool IsDatabaseScheduledForDeletion(const string16& origin_identifier,
                                       const string16& database_name);
@@ -140,8 +145,9 @@ class DatabaseTracker
   // Delete all databases that belong to the given origin. Returns net::OK on
   // success, net::FAILED if not all databases could be deleted, and
   // net::ERR_IO_PENDING and |callback| is invoked upon completion, if non-NULL.
-  int DeleteDataForOrigin(const string16& origin_identifier,
-                          net::CompletionCallback* callback);
+  // virtual for unit testing only
+  virtual int DeleteDataForOrigin(const string16& origin_identifier,
+                                  net::CompletionCallback* callback);
 
   bool IsIncognitoProfile() const { return is_incognito_; }
 
@@ -158,8 +164,8 @@ class DatabaseTracker
   static void ClearLocalState(const FilePath& profile_path);
 
  private:
-  // Need this here to allow RefCountedThreadSafe to call ~DatabaseTracker().
   friend class base::RefCountedThreadSafe<DatabaseTracker>;
+  friend class MockDatabaseTracker;  // for testing
 
   typedef std::map<string16, std::set<string16> > DatabaseSet;
   typedef std::map<net::CompletionCallback*, DatabaseSet> PendingCompletionMap;
@@ -168,9 +174,8 @@ class DatabaseTracker
 
   class CachedOriginInfo : public OriginInfo {
    public:
-    CachedOriginInfo() : OriginInfo(string16(), 0, 0) {}
+    CachedOriginInfo() : OriginInfo(string16(), 0) {}
     void SetOrigin(const string16& origin) { origin_ = origin; }
-    void SetQuota(int64 new_quota) { quota_ = new_quota; }
     void SetDatabaseSize(const string16& database_name, int64 new_size) {
       int64 old_size = 0;
       if (database_info_.find(database_name) != database_info_.end())
@@ -185,7 +190,8 @@ class DatabaseTracker
     }
   };
 
-  ~DatabaseTracker();
+  // virtual for unittesting only
+  virtual ~DatabaseTracker();
 
   bool DeleteClosedDatabase(const string16& origin_identifier,
                             const string16& database_name);
@@ -205,11 +211,11 @@ class DatabaseTracker
 
   int64 GetDBFileSize(const string16& origin_identifier,
                       const string16& database_name);
+  int64 SeedOpenDatabaseSize(const string16& origin_identifier,
+                             const string16& database_name);
+  int64 UpdateOpenDatabaseSizeAndNotify(const string16& origin_identifier,
+                                        const string16& database_name);
 
-  int64 GetOriginSpaceAvailable(const string16& origin_identifier);
-
-  int64 UpdateCachedDatabaseFileSize(const string16& origin_identifier,
-                                     const string16& database_name);
   void ScheduleDatabaseForDeletion(const string16& origin_identifier,
                                    const string16& database_name);
   // Schedule a set of open databases for deletion. If non-null, callback is
@@ -227,7 +233,6 @@ class DatabaseTracker
   const FilePath db_dir_;
   scoped_ptr<sql::Connection> db_;
   scoped_ptr<DatabasesTable> databases_table_;
-  scoped_ptr<QuotaTable> quota_table_;
   scoped_ptr<sql::MetaTable> meta_table_;
   ObserverList<Observer, true> observers_;
   std::map<string16, CachedOriginInfo> origins_info_map_;
@@ -237,11 +242,10 @@ class DatabaseTracker
   DatabaseSet dbs_to_be_deleted_;
   PendingCompletionMap deletion_callbacks_;
 
-  // Default quota for all origins; changed only by tests
-  int64 default_quota_;
-
   // Apps and Extensions can have special rights.
   scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy_;
+
+  scoped_refptr<quota::QuotaManagerProxy> quota_manager_proxy_;
 
   // When in incognito mode, store a DELETE_ON_CLOSE handle to each
   // main DB and journal file that was accessed. When the incognito profile

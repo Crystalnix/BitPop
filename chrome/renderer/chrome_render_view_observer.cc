@@ -7,14 +7,18 @@
 #include "base/command_line.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/icon_messages.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/thumbnail_score.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/renderer/about_handler.h"
+#include "chrome/renderer/content_settings_observer.h"
 #include "chrome/renderer/automation/dom_automation_controller.h"
+#include "chrome/renderer/extensions/extension_dispatcher.h"
 #include "chrome/renderer/external_host_bindings.h"
+#include "chrome/renderer/prerender/prerender_helper.h"
 #include "chrome/renderer/safe_browsing/phishing_classifier_delegate.h"
 #include "chrome/renderer/translate_helper.h"
 #include "content/common/bindings_policy.h"
@@ -22,7 +26,6 @@
 #include "content/renderer/content_renderer_client.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/data_url.h"
-#include "skia/ext/bitmap_platform_device.h"
 #include "skia/ext/image_operations.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCString.h"
@@ -47,9 +50,11 @@
 using WebKit::WebCString;
 using WebKit::WebDataSource;
 using WebKit::WebFrame;
+using WebKit::WebIconURL;
 using WebKit::WebPageSerializer;
 using WebKit::WebPageSerializerClient;
 using WebKit::WebRect;
+using WebKit::WebSecurityOrigin;
 using WebKit::WebSize;
 using WebKit::WebString;
 using WebKit::WebURL;
@@ -109,11 +114,29 @@ static double CalculateBoringScore(SkBitmap* bitmap) {
   return static_cast<double>(color_count) / pixel_count;
 }
 
+static FaviconURL::IconType ToFaviconType(WebIconURL::Type type) {
+  switch (type) {
+    case WebIconURL::TypeFavicon:
+      return FaviconURL::FAVICON;
+    case WebIconURL::TypeTouch:
+      return FaviconURL::TOUCH_ICON;
+    case WebIconURL::TypeTouchPrecomposed:
+      return FaviconURL::TOUCH_PRECOMPOSED_ICON;
+    case WebIconURL::TypeInvalid:
+      return FaviconURL::INVALID_ICON;
+  }
+  return FaviconURL::INVALID_ICON;
+}
+
 ChromeRenderViewObserver::ChromeRenderViewObserver(
     RenderView* render_view,
+    ContentSettingsObserver* content_settings,
+    ExtensionDispatcher* extension_dispatcher,
     TranslateHelper* translate_helper,
     safe_browsing::PhishingClassifierDelegate* phishing_classifier)
     : RenderViewObserver(render_view),
+      content_settings_(content_settings),
+      extension_dispatcher_(extension_dispatcher),
       translate_helper_(translate_helper),
       phishing_classifier_(phishing_classifier),
       last_indexed_page_id_(-1),
@@ -124,6 +147,7 @@ ChromeRenderViewObserver::ChromeRenderViewObserver(
     render_view->set_enabled_bindings(
         old_bindings |= BindingsPolicy::DOM_AUTOMATION);
   }
+  render_view->webview()->setPermissionClient(this);
 }
 
 ChromeRenderViewObserver::~ChromeRenderViewObserver() {
@@ -150,6 +174,7 @@ bool ChromeRenderViewObserver::OnMessageReceived(const IPC::Message& message) {
   // Filter only.
   IPC_BEGIN_MESSAGE_MAP(ChromeRenderViewObserver, message)
     IPC_MESSAGE_HANDLER(ViewMsg_Navigate, OnNavigate)
+    IPC_MESSAGE_HANDLER(ViewMsg_SetIsPrerendering, OnSetIsPrerendering);
   IPC_END_MESSAGE_MAP()
 
   return handled;
@@ -282,9 +307,86 @@ void ChromeRenderViewObserver::didSerializeDataForFrame(
     static_cast<int32>(status)));
 }
 
+bool ChromeRenderViewObserver::allowDatabase(
+    WebFrame* frame,
+    const WebString& name,
+    const WebString& display_name,
+    unsigned long estimated_size) {
+  return content_settings_->AllowDatabase(
+      frame, name, display_name, estimated_size);
+}
+
+bool ChromeRenderViewObserver::allowFileSystem(WebFrame* frame) {
+  return content_settings_->AllowFileSystem(frame);
+}
+
+bool ChromeRenderViewObserver::allowImages(WebFrame* frame,
+                                          bool enabled_per_settings) {
+  return content_settings_->AllowImages(frame, enabled_per_settings);
+}
+
+bool ChromeRenderViewObserver::allowIndexedDB(WebFrame* frame,
+                                              const WebString& name,
+                                              const WebSecurityOrigin& origin) {
+  return content_settings_->AllowIndexedDB(frame, name, origin);
+}
+
+bool ChromeRenderViewObserver::allowPlugins(WebFrame* frame,
+                                           bool enabled_per_settings) {
+  return content_settings_->AllowPlugins(frame, enabled_per_settings);
+}
+
+bool ChromeRenderViewObserver::allowScript(WebFrame* frame,
+                                          bool enabled_per_settings) {
+  return content_settings_->AllowScript(frame, enabled_per_settings);
+}
+
+bool ChromeRenderViewObserver::allowScriptExtension(
+    WebFrame* frame, const WebString& extension_name, int extension_group) {
+  return extension_dispatcher_->AllowScriptExtension(
+      frame, extension_name.utf8(), extension_group);
+}
+
+bool ChromeRenderViewObserver::allowStorage(WebFrame* frame, bool local) {
+  return content_settings_->AllowStorage(frame, local);
+}
+
+bool ChromeRenderViewObserver::allowReadFromClipboard(WebFrame* frame,
+                                                     bool default_value) {
+  bool allowed = false;
+  Send(new ViewHostMsg_CanTriggerClipboardRead(
+      routing_id(), frame->url(), &allowed));
+  return allowed;
+}
+
+bool ChromeRenderViewObserver::allowWriteToClipboard(WebFrame* frame,
+                                                    bool default_value) {
+  bool allowed = false;
+  Send(new ViewHostMsg_CanTriggerClipboardWrite(
+      routing_id(), frame->url(), &allowed));
+  return allowed;
+}
+
+void ChromeRenderViewObserver::didNotAllowPlugins(WebFrame* frame) {
+  content_settings_->DidNotAllowPlugins(frame);
+}
+
+void ChromeRenderViewObserver::didNotAllowScript(WebFrame* frame) {
+  content_settings_->DidNotAllowScript(frame);
+}
+
 void ChromeRenderViewObserver::OnNavigate(
     const ViewMsg_Navigate_Params& params) {
   AboutHandler::MaybeHandle(params.url);
+}
+
+void ChromeRenderViewObserver::OnSetIsPrerendering(bool is_prerendering) {
+  if (is_prerendering) {
+    DCHECK(!prerender::PrerenderHelper::Get(render_view()));
+    // The PrerenderHelper will destroy itself either after recording histograms
+    // or on destruction of the RenderView.
+    new prerender::PrerenderHelper(render_view());
+  }
 }
 
 void ChromeRenderViewObserver::DidStopLoading() {
@@ -303,22 +405,39 @@ void ChromeRenderViewObserver::DidStopLoading() {
         search_provider::AUTODETECTED_PROVIDER));
   }
 
-  // TODO : Get both favicon and touch icon url, and send them to the browser.
-  GURL favicon_url(render_view()->webview()->mainFrame()->favIconURL());
-  if (!favicon_url.is_empty()) {
-    std::vector<FaviconURL> urls;
-    urls.push_back(FaviconURL(favicon_url, FaviconURL::FAVICON));
+  int icon_types = WebIconURL::TypeFavicon;
+  if (chrome::kEnableTouchIcon)
+    icon_types |= WebIconURL::TypeTouchPrecomposed | WebIconURL::TypeTouch;
+
+  WebVector<WebIconURL> icon_urls =
+      render_view()->webview()->mainFrame()->iconURLs(icon_types);
+  std::vector<FaviconURL> urls;
+  for (size_t i = 0; i < icon_urls.size(); i++) {
+    WebURL url = icon_urls[i].iconURL();
+    if (!url.isEmpty())
+      urls.push_back(FaviconURL(url, ToFaviconType(icon_urls[i].iconType())));
+  }
+  if (!urls.empty()) {
     Send(new IconHostMsg_UpdateFaviconURL(
         routing_id(), render_view()->page_id(), urls));
   }
 }
 
-void ChromeRenderViewObserver::DidChangeIcons(WebFrame* frame) {
+void ChromeRenderViewObserver::DidChangeIcon(WebFrame* frame,
+                                             WebIconURL::Type icon_type) {
   if (frame->parent())
     return;
 
+  if (!chrome::kEnableTouchIcon &&
+      icon_type != WebIconURL::TypeFavicon)
+    return;
+
+  WebVector<WebIconURL> icon_urls = frame->iconURLs(icon_type);
   std::vector<FaviconURL> urls;
-  urls.push_back(FaviconURL(frame->favIconURL(), FaviconURL::FAVICON));
+  for (size_t i = 0; i < icon_urls.size(); i++) {
+    urls.push_back(FaviconURL(icon_urls[i].iconURL(),
+                              ToFaviconType(icon_urls[i].iconType())));
+  }
   Send(new IconHostMsg_UpdateFaviconURL(
       routing_id(), render_view()->page_id(), urls));
 }
@@ -397,8 +516,7 @@ void ChromeRenderViewObserver::CapturePageInfo(int load_id,
   // Generate the thumbnail here if the in-browser thumbnailing isn't
   // enabled. TODO(satorux): Remove this and related code once
   // crbug.com/65936 is complete.
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableInBrowserThumbnailing)) {
+  if (!switches::IsInBrowserThumbnailingEnabled()) {
     CaptureThumbnail();
   }
 
@@ -475,10 +593,9 @@ bool ChromeRenderViewObserver::CaptureFrameThumbnail(WebView* view,
   if (!PaintViewIntoCanvas(view, canvas))
     return false;
 
-  skia::BitmapPlatformDevice& device =
-      static_cast<skia::BitmapPlatformDevice&>(canvas.getTopPlatformDevice());
+  SkDevice* device = skia::GetTopDevice(canvas);
 
-  const SkBitmap& src_bmp = device.accessBitmap(false);
+  const SkBitmap& src_bmp = device->accessBitmap(false);
 
   SkRect dest_rect = { 0, 0, SkIntToScalar(w), SkIntToScalar(h) };
   float dest_aspect = dest_rect.width() / dest_rect.height();
@@ -513,7 +630,7 @@ bool ChromeRenderViewObserver::CaptureFrameThumbnail(WebView* view,
   score->at_top = (view->mainFrame()->scrollOffset().height == 0);
 
   SkBitmap subset;
-  device.accessBitmap(false).extractSubset(&subset, src_rect);
+  device->accessBitmap(false).extractSubset(&subset, src_rect);
 
   // First do a fast downsample by powers of two to get close to the final size.
   SkBitmap downsampled_subset =
@@ -539,10 +656,9 @@ bool ChromeRenderViewObserver::CaptureSnapshot(WebView* view,
   if (!PaintViewIntoCanvas(view, canvas))
     return false;
 
-  skia::BitmapPlatformDevice& device =
-      static_cast<skia::BitmapPlatformDevice&>(canvas.getTopPlatformDevice());
+  SkDevice* device = skia::GetTopDevice(canvas);
 
-  const SkBitmap& bitmap = device.accessBitmap(false);
+  const SkBitmap& bitmap = device->accessBitmap(false);
   if (!bitmap.copyTo(snapshot, SkBitmap::kARGB_8888_Config))
     return false;
 

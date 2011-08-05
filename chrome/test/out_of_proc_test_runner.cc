@@ -13,8 +13,8 @@
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/process_util.h"
+#include "base/scoped_temp_dir.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "base/test/test_suite.h"
@@ -30,7 +30,7 @@
 #if defined(OS_WIN)
 #include "base/base_switches.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/sandbox_policy.h"
+#include "content/common/sandbox_policy.h"
 #include "sandbox/src/dep.h"
 #include "sandbox/src/sandbox_factory.h"
 #include "sandbox/src/sandbox_types.h"
@@ -621,6 +621,8 @@ int main(int argc, char** argv) {
       "--single_process (to run all tests in one launcher/browser process) or\n"
       "--single-process (to do the above, and also run Chrome in single-\n"
       "process mode).\n");
+
+  testing::InitGoogleTest(&argc, argv);
 
   // Make sure the entire browser code is loaded into memory. Reading it
   // from disk may be slow on a busy bot, and can easily exceed the default

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -171,6 +171,23 @@ function appendHostLinks(hostlist) {
   }
 }
 
+function openSession(hostname, hostjid, method) {
+  var proxy = document.getElementById('oauth2_proxy').value;
+  var token_type = 'oauth2';
+  if (document.getElementById('use_clientlogin').checked) {
+    proxy = document.getElementById('clientlogin_proxy').value;
+    token_type = 'clientlogin';
+  }
+
+  var url = 'session?hostname=' + encodeURIComponent(hostname)
+      + '&hostjid=' + encodeURIComponent(hostjid)
+      + '&http_xmpp_proxy=' + encodeURIComponent(proxy)
+      + '&token_type=' + encodeURIComponent(token_type) +
+        '&connect_method=' + encodeURIComponent(method);
+
+  window.open(url);
+}
+
 // Create a single host description element.
 function addHostInfo(host) {
   var hostEntry = document.createElement('div');
@@ -189,18 +206,17 @@ function addHostInfo(host) {
 
     connect.setAttribute('type', 'button');
     connect.setAttribute('value', 'Connect');
-    connect.setAttribute('onclick', "window.open('session?hostname=" +
-        encodeURIComponent(host.hostName) + "&hostjid=" +
-        encodeURIComponent(host.jabberId) + "');");
+    connect.setAttribute('onclick',
+        "openSession('" + host.hostName + "', "
+        + "'" + host.jabberId + "', 'direct');");
     span.appendChild(connect);
 
     var connectSandboxed = document.createElement('input');
     connectSandboxed.setAttribute('type', 'button');
     connectSandboxed.setAttribute('value', 'Connect Sandboxed');
     connectSandboxed.setAttribute('onclick',
-        "window.open('session?hostname=" + encodeURIComponent(host.hostName) +
-        "&hostjid=" + encodeURIComponent(host.jabberId) +
-        "&connect_method=sandboxed');");
+        "openSession('" + host.hostName + "', "
+        + "'" + host.jabberId + "', 'sandboxed');");
     span.appendChild(connectSandboxed);
 
     hostEntry.appendChild(span);
@@ -227,3 +243,39 @@ function addHostInfo(host) {
 
   return hostEntry;
 }
+
+function updateAuthStatus_() {
+  var oauth2_status = document.getElementById('oauth2_status');
+  if (chromoting.oauth2.isAuthenticated()) {
+    oauth2_status.innerText = 'Tokens Good';
+    oauth2_status.style.color = 'green';
+    document.getElementById('oauth2_authorize_button').style.display = 'none';
+    document.getElementById('oauth2_clear_button').style.display = 'inline';
+    populateHostList();
+  } else {
+    oauth2_status.innerText = 'No Tokens';
+    oauth2_status.style.color = 'red';
+    document.getElementById('oauth2_authorize_button').style.display = 'inline';
+    document.getElementById('oauth2_clear_button').style.display = 'none';
+  }
+}
+
+function clearOAuth2() {
+  chromoting.oauth2.clear();
+  updateAuthStatus_();
+}
+
+function authorizeOAuth2() {
+  var oauth_code_url = 'https://accounts.google.com/o/oauth2/auth?'
+      + 'client_id=' + encodeURIComponent(
+          '440925447803-d9u05st5jjm3gbe865l0jeaujqfrufrn.' +
+          'apps.googleusercontent.com')
+      + '&redirect_uri=' + window.location.origin + '/auth/oauth2_return'
+      + '&scope=' + encodeURIComponent(
+          'https://www.googleapis.com/auth/chromoting ' +
+          'https://www.googleapis.com/auth/googletalk')
+      + '&state=' + encodeURIComponent(window.location.href)
+      + '&response_type=code';
+  window.location.replace(oauth_code_url);
+}
+

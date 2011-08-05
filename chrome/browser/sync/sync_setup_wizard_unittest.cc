@@ -11,6 +11,7 @@
 #include "base/stl_util-inl.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/sync/engine/syncapi.h"
 #include "chrome/browser/sync/profile_sync_factory_mock.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/sync_setup_flow.h"
@@ -78,8 +79,8 @@ class ProfileSyncServiceForWizardTest : public ProfileSyncService {
     last_auth_error_ = error;
   }
 
-  void set_passphrase_required(bool required) {
-    observed_passphrase_required_ = required;
+  void SetPassphraseRequiredReason(sync_api::PassphraseRequiredReason reason) {
+    passphrase_required_reason_ = reason;
   }
 
   void ResetTestStats() {
@@ -172,7 +173,7 @@ class SyncSetupWizardTest : public BrowserWithTestWindowTest {
     profile()->CreateBookmarkModel(false);
     // Wait for the bookmarks model to load.
     profile()->BlockUntilBookmarkModelLoaded();
-    set_browser(new Browser(Browser::TYPE_NORMAL, profile()));
+    set_browser(new Browser(Browser::TYPE_TABBED, profile()));
     test_window_ = new TestBrowserWindowForWizardTest(browser());
     set_window(test_window_);
     browser()->set_window(window());
@@ -337,7 +338,7 @@ TEST_F(SyncSetupWizardTest, DISABLED_EnterPassphraseRequired) {
   wizard_->Step(SyncSetupWizard::GAIA_SUCCESS);
   wizard_->Step(SyncSetupWizard::CONFIGURE);
   wizard_->Step(SyncSetupWizard::SETTING_UP);
-  service_->set_passphrase_required(true);
+  service_->SetPassphraseRequiredReason(sync_api::REASON_ENCRYPTION);
   wizard_->Step(SyncSetupWizard::ENTER_PASSPHRASE);
   EXPECT_EQ(SyncSetupWizard::ENTER_PASSPHRASE,
             test_window_->flow()->current_state_);
@@ -347,24 +348,6 @@ TEST_F(SyncSetupWizardTest, DISABLED_EnterPassphraseRequired) {
                                 "\"mode\":\"gaia\"}"));
   test_window_->flow()->flow_handler_->HandlePassphraseEntry(&value);
   EXPECT_EQ("myPassphrase", service_->passphrase_);
-#endif
-}
-
-TEST_F(SyncSetupWizardTest, DISABLED_PassphraseMigration) {
-  SKIP_TEST_ON_MACOSX();
-  wizard_->Step(SyncSetupWizard::PASSPHRASE_MIGRATION);
-#if 0
-  ListValue value;
-  value.Append(new StringValue("{\"option\":\"explicit\","
-                               "\"passphrase\":\"myPassphrase\"}"));
-  test_window_->flow()->flow_handler_->HandleFirstPassphrase(&value);
-  EXPECT_EQ("myPassphrase", service_->passphrase_);
-
-  ListValue value2;
-  value2.Append(new StringValue("{\"option\":\"nothanks\","
-                                "\"passphrase\":\"myPassphrase\"}"));
-  test_window_->flow()->flow_handler_->HandleFirstPassphrase(&value2);
-  EXPECT_EQ(service_->chosen_data_types_.count(syncable::PASSWORDS), 0U);
 #endif
 }
 
@@ -401,15 +384,9 @@ TEST_F(SyncSetupWizardTest, DISABLED_InvalidTransitions) {
   EXPECT_FALSE(wizard_->IsVisible());
   EXPECT_FALSE(test_window_->TestAndResetWasShowHTMLDialogCalled());
 
-  wizard_->Step(SyncSetupWizard::DONE_FIRST_TIME);
-  EXPECT_FALSE(wizard_->IsVisible());
-  EXPECT_FALSE(test_window_->TestAndResetWasShowHTMLDialogCalled());
-
   wizard_->Step(SyncSetupWizard::GAIA_LOGIN);
 
   wizard_->Step(SyncSetupWizard::DONE);
-  EXPECT_EQ(SyncSetupWizard::GAIA_LOGIN, test_window_->flow()->current_state_);
-  wizard_->Step(SyncSetupWizard::DONE_FIRST_TIME);
   EXPECT_EQ(SyncSetupWizard::GAIA_LOGIN, test_window_->flow()->current_state_);
 
   wizard_->Step(SyncSetupWizard::SETUP_ABORTED_BY_PENDING_CLEAR);
@@ -430,18 +407,6 @@ TEST_F(SyncSetupWizardTest, DISABLED_FullSuccessfulRunSetsPref) {
   wizard_->Step(SyncSetupWizard::GAIA_SUCCESS);
   wizard_->Step(SyncSetupWizard::SETTING_UP);
   wizard_->Step(SyncSetupWizard::DONE);
-  test_window_->CloseDialog();
-  EXPECT_FALSE(wizard_->IsVisible());
-  EXPECT_TRUE(service_->profile()->GetPrefs()->GetBoolean(
-      prefs::kSyncHasSetupCompleted));
-}
-
-TEST_F(SyncSetupWizardTest, DISABLED_FirstFullSuccessfulRunSetsPref) {
-  SKIP_TEST_ON_MACOSX();
-  wizard_->Step(SyncSetupWizard::GAIA_LOGIN);
-  wizard_->Step(SyncSetupWizard::GAIA_SUCCESS);
-  wizard_->Step(SyncSetupWizard::SETTING_UP);
-  wizard_->Step(SyncSetupWizard::DONE_FIRST_TIME);
   test_window_->CloseDialog();
   EXPECT_FALSE(wizard_->IsVisible());
   EXPECT_TRUE(service_->profile()->GetPrefs()->GetBoolean(

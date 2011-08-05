@@ -11,14 +11,15 @@
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_stdint.h"
 
-#define PPB_AUDIO_INTERFACE "PPB_Audio;0.6"
+#define PPB_AUDIO_INTERFACE_0_6 "PPB_Audio;0.6"
+#define PPB_AUDIO_INTERFACE PPB_AUDIO_INTERFACE_0_6
 
 /**
  * @file
  * This file defines the PPB_Audio interface, which provides realtime stereo
  * audio streaming capabilities. Please refer to the
- * <a href="/chrome/nativeclient/docs/audio.html">Pepper Audio API Code
- * Walkthrough</a> for information on using this interface.
+ * <a href="http://code.google.com/chrome/nativeclient/docs/audio.html">Pepper
+ * Audio API Code Walkthrough</a> for information on using this interface.
  */
 
 /**

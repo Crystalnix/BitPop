@@ -95,6 +95,11 @@ struct HistoryURLProviderParams {
   // live beyond the original query while it runs on the history thread.
   AutocompleteInput input;
 
+  // Should inline autocompletion be disabled? This is initalized from
+  // |input.prevent_inline_autocomplete()|, but set to false is the input
+  // contains trailing white space.
+  bool prevent_inline_autocomplete;
+
   // Set when "http://" should be trimmed from the beginning of the URLs.
   bool trim_http;
 
@@ -219,7 +224,7 @@ class HistoryURLProvider : public HistoryProvider {
   // |promote| is false, existing matches are left in place, and newly added
   // matches are placed at the back.
   static void EnsureMatchPresent(const history::URLRow& info,
-                                 string16::size_type input_location,
+                                 size_t input_location,
                                  bool match_in_scheme,
                                  history::HistoryMatches* matches,
                                  bool promote);

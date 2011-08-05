@@ -204,7 +204,8 @@ std::string GetVersionStringModifier() {
     bool is_system_install =
         !InstallUtil::IsPerUserInstall(module.value().c_str());
 
-    GoogleUpdateSettings::GetChromeChannel(is_system_install, &channel);
+    GoogleUpdateSettings::GetChromeChannelAndModifiers(is_system_install,
+                                                       &channel);
   }
   return UTF16ToASCII(channel);
 #else
@@ -212,8 +213,37 @@ std::string GetVersionStringModifier() {
 #endif
 }
 
+Channel GetChannel() {
+#if defined(GOOGLE_CHROME_BUILD)
+  std::wstring channel(L"unknown");
+
+  FilePath module;
+  if (PathService::Get(base::FILE_MODULE, &module)) {
+    bool is_system_install =
+        !InstallUtil::IsPerUserInstall(module.value().c_str());
+    channel = GoogleUpdateSettings::GetChromeChannel(is_system_install);
+  }
+
+  if (channel.empty()) {
+    return CHANNEL_STABLE;
+  } else if (channel == L"beta") {
+    return CHANNEL_BETA;
+  } else if (channel == L"dev") {
+    return CHANNEL_DEV;
+  } else if (channel == L"canary") {
+    return CHANNEL_CANARY;
+  }
+#endif
+
+  return CHANNEL_UNKNOWN;
+}
+
 bool CanSetAsDefaultBrowser() {
   return BrowserDistribution::GetDistribution()->CanSetAsDefault();
+}
+
+bool CanSetAsDefaultProtocolClient(const std::string& protocol) {
+  return CanSetAsDefaultBrowser();
 }
 
 }  // namespace platform_util

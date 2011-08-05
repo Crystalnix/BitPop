@@ -18,6 +18,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_model.h"
+#include "chrome/browser/ui/blocked_content/blocked_content_tab_helper.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -57,10 +58,18 @@ InstantController::~InstantController() {
 
 // static
 void InstantController::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kInstantConfirmDialogShown, false);
-  prefs->RegisterBooleanPref(prefs::kInstantEnabled, false);
-  prefs->RegisterBooleanPref(prefs::kInstantEnabledOnce, false);
-  prefs->RegisterInt64Pref(prefs::kInstantEnabledTime, false);
+  prefs->RegisterBooleanPref(prefs::kInstantConfirmDialogShown,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kInstantEnabled,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kInstantEnabledOnce,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterInt64Pref(prefs::kInstantEnabledTime,
+                           false,
+                           PrefService::UNSYNCABLE_PREF);
   PromoCounter::RegisterUserPrefs(prefs, prefs::kInstantPromo);
 }
 
@@ -260,7 +269,7 @@ void InstantController::CommitCurrentPreview(InstantCommitType type) {
   tab->controller().CopyStateFromAndPrune(
       &tab_contents_->controller(), showing_instant);
   delegate_->CommitInstant(tab);
-  CompleteRelease(tab->tab_contents());
+  CompleteRelease(tab);
 }
 
 void InstantController::SetCommitOnMouseUp() {
@@ -347,6 +356,33 @@ void InstantController::OnAutocompleteLostFocus(
 }
 #endif
 
+void InstantController::OnAutocompleteGotFocus(
+    TabContentsWrapper* tab_contents) {
+  CommandLine* cl = CommandLine::ForCurrentProcess();
+  if (!cl->HasSwitch(switches::kPreloadInstantSearch))
+    return;
+
+  if (is_active_)
+    return;
+
+  TemplateURLModel* model = tab_contents->profile()->GetTemplateURLModel();
+  if (!model)
+    return;
+
+  const TemplateURL* template_url = model->GetDefaultSearchProvider();
+  if (!template_url || !template_url->instant_url())
+    return;
+
+  if (tab_contents != tab_contents_)
+    DestroyPreviewContents();
+  tab_contents_ = tab_contents;
+
+  if (!loader_manager_.get())
+    loader_manager_.reset(new InstantLoaderManager(this));
+  loader_manager_->GetInstantLoader(template_url->id())
+                 ->MaybeLoadInstantURL(tab_contents, template_url);
+}
+
 TabContentsWrapper* InstantController::ReleasePreviewContents(
     InstantCommitType type) {
   if (!loader_manager_.get())
@@ -382,8 +418,8 @@ TabContentsWrapper* InstantController::ReleasePreviewContents(
   return tab;
 }
 
-void InstantController::CompleteRelease(TabContents* tab) {
-  tab->SetAllContentsBlocked(false);
+void InstantController::CompleteRelease(TabContentsWrapper* tab) {
+  tab->blocked_content_tab_helper()->SetAllContentsBlocked(false);
 }
 
 TabContentsWrapper* InstantController::GetPreviewContents() {
@@ -491,6 +527,11 @@ void InstantController::AddToBlacklist(InstantLoader* loader, const GURL& url) {
   UpdateDisplayableLoader();
 }
 
+void InstantController::SwappedTabContents(InstantLoader* loader) {
+  if (displayable_loader_ == loader)
+    delegate_->ShowInstant(displayable_loader_->preview_contents());
+}
+
 void InstantController::UpdateDisplayableLoader() {
   InstantLoader* loader = NULL;
   // As soon as the pending loader is displayable it becomes the current loader,
@@ -535,14 +576,14 @@ bool InstantController::ShouldUpdateNow(TemplateURLID instant_id,
   if (url.SchemeIsFile())
     return true;  // File urls should load quickly, so don't delay loading them.
 
-  if (loader_manager_->WillUpateChangeActiveLoader(instant_id)) {
+  if (loader_manager_->WillUpdateChangeActiveLoader(instant_id)) {
     // If Update would change loaders, update now. This indicates transitioning
     // from an instant to non-instant loader.
     return true;
   }
 
   InstantLoader* active_loader = loader_manager_->active_loader();
-  // WillUpateChangeActiveLoader should return true if no active loader, so
+  // WillUpdateChangeActiveLoader should return true if no active loader, so
   // we know there will be an active loader if we get here.
   DCHECK(active_loader);
   // Immediately update if the url is the same (which should result in nothing
@@ -643,6 +684,15 @@ bool InstantController::ShouldShowPreviewFor(const AutocompleteMatch& match,
   // Was the host blacklisted?
   if (host_blacklist_ && host_blacklist_->count(match.destination_url.host()))
     return false;
+
+  const CommandLine* cl = CommandLine::ForCurrentProcess();
+  if (cl->HasSwitch(switches::kRestrictInstantToSearch) &&
+      match.type != AutocompleteMatch::SEARCH_WHAT_YOU_TYPED &&
+      match.type != AutocompleteMatch::SEARCH_HISTORY &&
+      match.type != AutocompleteMatch::SEARCH_SUGGEST &&
+      match.type != AutocompleteMatch::SEARCH_OTHER_ENGINE) {
+    return false;
+  }
 
   return true;
 }

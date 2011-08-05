@@ -13,9 +13,13 @@
 #include "webkit/fileapi/file_system_file_util_proxy.h"
 #include "webkit/fileapi/file_system_operation_context.h"
 #include "webkit/fileapi/file_system_path_manager.h"
+#include "webkit/fileapi/file_system_quota_util.h"
+#include "webkit/fileapi/file_system_types.h"
 #include "webkit/fileapi/file_system_util.h"
 #include "webkit/fileapi/file_writer_delegate.h"
 #include "webkit/fileapi/local_file_system_file_util.h"
+#include "webkit/fileapi/quota_file_util.h"
+#include "webkit/quota/quota_types.h"
 
 namespace fileapi {
 
@@ -26,9 +30,8 @@ FileSystemOperation::FileSystemOperation(
     FileSystemFileUtil* file_system_file_util)
     : proxy_(proxy),
       dispatcher_(dispatcher),
-      file_system_operation_context_(file_system_context,
-          file_system_file_util ? file_system_file_util :
-              LocalFileSystemFileUtil::GetInstance()),
+      file_system_operation_context_(
+          file_system_context, file_system_file_util),
       callback_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
   DCHECK(dispatcher);
 #ifndef NDEBUG
@@ -74,13 +77,18 @@ void FileSystemOperation::CreateFile(const GURL& path,
   FilePath virtual_path;
   GURL origin_url;
   FileSystemType type;
+  FileSystemFileUtil* file_system_file_util;
   if (!VerifyFileSystemPathForWrite(
-      path, true /* create */, &origin_url, &type, &virtual_path)) {
+      path, true /* create */, &origin_url, &type, &virtual_path,
+      &file_system_file_util)) {
     delete this;
     return;
   }
   file_system_operation_context_.set_src_origin_url(origin_url);
   file_system_operation_context_.set_src_type(type);
+  if (!file_system_operation_context_.src_file_system_file_util())
+    file_system_operation_context_.set_src_file_system_file_util(
+        file_system_file_util);
   FileSystemFileUtilProxy::EnsureFileExists(
       file_system_operation_context_,
       proxy_, virtual_path, callback_factory_.NewCallback(
@@ -98,14 +106,19 @@ void FileSystemOperation::CreateDirectory(const GURL& path,
   FilePath virtual_path;
   GURL origin_url;
   FileSystemType type;
+  FileSystemFileUtil* file_system_file_util;
 
   if (!VerifyFileSystemPathForWrite(
-      path, true /* create */, &origin_url, &type, &virtual_path)) {
+      path, true /* create */, &origin_url, &type, &virtual_path,
+      &file_system_file_util)) {
     delete this;
     return;
   }
   file_system_operation_context_.set_src_origin_url(origin_url);
   file_system_operation_context_.set_src_type(type);
+  if (!file_system_operation_context_.src_file_system_file_util())
+    file_system_operation_context_.set_src_file_system_file_util(
+        file_system_file_util);
   FileSystemFileUtilProxy::CreateDirectory(
       file_system_operation_context_,
       proxy_, virtual_path, exclusive, recursive, callback_factory_.NewCallback(
@@ -124,19 +137,14 @@ void FileSystemOperation::Copy(const GURL& src_path,
   GURL dest_origin_url;
   FileSystemType src_type;
   FileSystemType dest_type;
+  FileSystemFileUtil* src_file_system_file_util;
+  FileSystemFileUtil* dest_file_system_file_util;
 
   if (!VerifyFileSystemPathForRead(src_path, &src_origin_url, &src_type,
-        &virtual_path_0) ||
+        &virtual_path_0, &src_file_system_file_util) ||
       !VerifyFileSystemPathForWrite(dest_path, true /* create */,
-          &dest_origin_url, &dest_type, &virtual_path_1)) {
-    delete this;
-    return;
-  }
-  if (src_origin_url.GetOrigin() != dest_origin_url.GetOrigin()) {
-    // TODO(ericu): We don't yet support copying across filesystem types, from
-    // extension to sandbox, etc.  From temporary to persistent works, though.
-    // Since the sandbox code isn't in yet, I'm not sure exactly what check
-    // belongs here, but there's also no danger yet.
+          &dest_origin_url, &dest_type, &virtual_path_1,
+          &dest_file_system_file_util)) {
     delete this;
     return;
   }
@@ -144,9 +152,34 @@ void FileSystemOperation::Copy(const GURL& src_path,
   file_system_operation_context_.set_dest_origin_url(dest_origin_url);
   file_system_operation_context_.set_src_type(src_type);
   file_system_operation_context_.set_dest_type(dest_type);
+  file_system_operation_context_.set_src_virtual_path(virtual_path_0);
+  file_system_operation_context_.set_dest_virtual_path(virtual_path_1);
+  if (!file_system_operation_context_.src_file_system_file_util())
+    file_system_operation_context_.set_src_file_system_file_util(
+        src_file_system_file_util);
+  if (!file_system_operation_context_.dest_file_system_file_util())
+    file_system_operation_context_.set_dest_file_system_file_util(
+        dest_file_system_file_util);
+
+  GetUsageAndQuotaThenCallback(dest_origin_url, callback_factory_.NewCallback(
+      &FileSystemOperation::DelayedCopyForQuota));
+}
+
+void FileSystemOperation::DelayedCopyForQuota(quota::QuotaStatusCode status,
+                                              int64 usage, int64 quota) {
+  if (file_system_context()->IsStorageUnlimited(
+          file_system_operation_context()->dest_origin_url()) ||
+      quota == QuotaFileUtil::kNoLimit) {
+    file_system_operation_context_.set_allowed_bytes_growth(
+        QuotaFileUtil::kNoLimit);
+  } else {
+    file_system_operation_context_.set_allowed_bytes_growth(quota - usage);
+  }
   FileSystemFileUtilProxy::Copy(
       file_system_operation_context_,
-      proxy_, virtual_path_0, virtual_path_1,
+      proxy_,
+      file_system_operation_context_.src_virtual_path(),
+      file_system_operation_context_.dest_virtual_path(),
       callback_factory_.NewCallback(
         &FileSystemOperation::DidFinishFileOperation));
 }
@@ -163,19 +196,14 @@ void FileSystemOperation::Move(const GURL& src_path,
   GURL dest_origin_url;
   FileSystemType src_type;
   FileSystemType dest_type;
+  FileSystemFileUtil* src_file_system_file_util;
+  FileSystemFileUtil* dest_file_system_file_util;
 
-  //TODO(ericu): Move alters the source path as well, so we should be checking
-  //both for write!
-  if (!VerifyFileSystemPathForRead(src_path, &src_origin_url, &src_type,
-        &virtual_path_0) ||
+  if (!VerifyFileSystemPathForWrite(src_path, false, &src_origin_url, &src_type,
+        &virtual_path_0, &src_file_system_file_util) ||
       !VerifyFileSystemPathForWrite(dest_path, true /* create */,
-          &dest_origin_url, &dest_type, &virtual_path_1)) {
-    delete this;
-    return;
-  }
-  if (src_origin_url.GetOrigin() != dest_origin_url.GetOrigin()) {
-    // TODO(ericu): We don't yet support moving across filesystem types, from
-    // extension to sandbox, etc.  From temporary to persistent works, though.
+          &dest_origin_url, &dest_type, &virtual_path_1,
+          &dest_file_system_file_util)) {
     delete this;
     return;
   }
@@ -183,9 +211,34 @@ void FileSystemOperation::Move(const GURL& src_path,
   file_system_operation_context_.set_dest_origin_url(dest_origin_url);
   file_system_operation_context_.set_src_type(src_type);
   file_system_operation_context_.set_dest_type(dest_type);
+  file_system_operation_context_.set_src_virtual_path(virtual_path_0);
+  file_system_operation_context_.set_dest_virtual_path(virtual_path_1);
+  if (!file_system_operation_context_.src_file_system_file_util())
+    file_system_operation_context_.set_src_file_system_file_util(
+        src_file_system_file_util);
+  if (!file_system_operation_context_.dest_file_system_file_util())
+    file_system_operation_context_.set_dest_file_system_file_util(
+        dest_file_system_file_util);
+
+  GetUsageAndQuotaThenCallback(dest_origin_url, callback_factory_.NewCallback(
+      &FileSystemOperation::DelayedMoveForQuota));
+}
+
+void FileSystemOperation::DelayedMoveForQuota(quota::QuotaStatusCode status,
+                                              int64 usage, int64 quota) {
+  if (file_system_context()->IsStorageUnlimited(
+          file_system_operation_context()->dest_origin_url()) ||
+      quota == QuotaFileUtil::kNoLimit) {
+    file_system_operation_context_.set_allowed_bytes_growth(
+        QuotaFileUtil::kNoLimit);
+  } else {
+    file_system_operation_context_.set_allowed_bytes_growth(quota - usage);
+  }
   FileSystemFileUtilProxy::Move(
       file_system_operation_context_,
-      proxy_, virtual_path_0, virtual_path_1,
+      proxy_,
+      file_system_operation_context_.src_virtual_path(),
+      file_system_operation_context_.dest_virtual_path(),
       callback_factory_.NewCallback(
         &FileSystemOperation::DidFinishFileOperation));
 }
@@ -199,12 +252,17 @@ void FileSystemOperation::DirectoryExists(const GURL& path) {
   FilePath virtual_path;
   GURL origin_url;
   FileSystemType type;
-  if (!VerifyFileSystemPathForRead(path, &origin_url, &type, &virtual_path)) {
+  FileSystemFileUtil* file_system_file_util;
+  if (!VerifyFileSystemPathForRead(path, &origin_url, &type, &virtual_path,
+      &file_system_file_util)) {
     delete this;
     return;
   }
   file_system_operation_context_.set_src_origin_url(origin_url);
   file_system_operation_context_.set_src_type(type);
+  if (!file_system_operation_context_.src_file_system_file_util())
+    file_system_operation_context_.set_src_file_system_file_util(
+        file_system_file_util);
   FileSystemFileUtilProxy::GetFileInfo(
       file_system_operation_context_,
       proxy_, virtual_path, callback_factory_.NewCallback(
@@ -220,37 +278,21 @@ void FileSystemOperation::FileExists(const GURL& path) {
   FilePath virtual_path;
   GURL origin_url;
   FileSystemType type;
-  if (!VerifyFileSystemPathForRead(path, &origin_url, &type, &virtual_path)) {
+  FileSystemFileUtil* file_system_file_util;
+  if (!VerifyFileSystemPathForRead(path, &origin_url, &type, &virtual_path,
+      &file_system_file_util)) {
     delete this;
     return;
   }
   file_system_operation_context_.set_src_origin_url(origin_url);
   file_system_operation_context_.set_src_type(type);
+  if (!file_system_operation_context_.src_file_system_file_util())
+    file_system_operation_context_.set_src_file_system_file_util(
+        file_system_file_util);
   FileSystemFileUtilProxy::GetFileInfo(
       file_system_operation_context_,
       proxy_, virtual_path, callback_factory_.NewCallback(
           &FileSystemOperation::DidFileExists));
-}
-
-void FileSystemOperation::GetLocalPath(const GURL& path) {
-#ifndef NDEBUG
-  DCHECK(kOperationNone == pending_operation_);
-  pending_operation_ = kOperationGetLocalPath;
-#endif
-
-  FilePath virtual_path;
-  GURL origin_url;
-  FileSystemType type;
-  if (!VerifyFileSystemPathForRead(path, &origin_url, &type, &virtual_path)) {
-    delete this;
-    return;
-  }
-  file_system_operation_context_.set_src_origin_url(origin_url);
-  file_system_operation_context_.set_src_type(type);
-  FileSystemFileUtilProxy::GetLocalPath(
-      file_system_operation_context_,
-      proxy_, virtual_path, callback_factory_.NewCallback(
-          &FileSystemOperation::DidGetLocalPath));
 }
 
 void FileSystemOperation::GetMetadata(const GURL& path) {
@@ -262,12 +304,17 @@ void FileSystemOperation::GetMetadata(const GURL& path) {
   FilePath virtual_path;
   GURL origin_url;
   FileSystemType type;
-  if (!VerifyFileSystemPathForRead(path, &origin_url, &type, &virtual_path)) {
+  FileSystemFileUtil* file_system_file_util;
+  if (!VerifyFileSystemPathForRead(path, &origin_url, &type, &virtual_path,
+      &file_system_file_util)) {
     delete this;
     return;
   }
   file_system_operation_context_.set_src_origin_url(origin_url);
   file_system_operation_context_.set_src_type(type);
+  if (!file_system_operation_context_.src_file_system_file_util())
+    file_system_operation_context_.set_src_file_system_file_util(
+        file_system_file_util);
   FileSystemFileUtilProxy::GetFileInfo(
       file_system_operation_context_,
       proxy_, virtual_path, callback_factory_.NewCallback(
@@ -283,12 +330,17 @@ void FileSystemOperation::ReadDirectory(const GURL& path) {
   FilePath virtual_path;
   GURL origin_url;
   FileSystemType type;
-  if (!VerifyFileSystemPathForRead(path, &origin_url, &type, &virtual_path)) {
+  FileSystemFileUtil* file_system_file_util;
+  if (!VerifyFileSystemPathForRead(path, &origin_url, &type, &virtual_path,
+      &file_system_file_util)) {
     delete this;
     return;
   }
   file_system_operation_context_.set_src_origin_url(origin_url);
   file_system_operation_context_.set_src_type(type);
+  if (!file_system_operation_context_.src_file_system_file_util())
+    file_system_operation_context_.set_src_file_system_file_util(
+        file_system_file_util);
   FileSystemFileUtilProxy::ReadDirectory(
       file_system_operation_context_,
       proxy_, virtual_path, callback_factory_.NewCallback(
@@ -304,13 +356,17 @@ void FileSystemOperation::Remove(const GURL& path, bool recursive) {
   FilePath virtual_path;
   GURL origin_url;
   FileSystemType type;
+  FileSystemFileUtil* file_system_file_util;
   if (!VerifyFileSystemPathForWrite(path, false /* create */, &origin_url,
-      &type, &virtual_path)) {
+      &type, &virtual_path, &file_system_file_util)) {
     delete this;
     return;
   }
   file_system_operation_context_.set_src_origin_url(origin_url);
   file_system_operation_context_.set_src_type(type);
+  if (!file_system_operation_context_.src_file_system_file_util())
+    file_system_operation_context_.set_src_file_system_file_util(
+        file_system_file_util);
   FileSystemFileUtilProxy::Delete(
       file_system_operation_context_,
       proxy_, virtual_path, recursive, callback_factory_.NewCallback(
@@ -329,22 +385,42 @@ void FileSystemOperation::Write(
   FilePath virtual_path;
   GURL origin_url;
   FileSystemType type;
+  FileSystemFileUtil* file_system_file_util;
   if (!VerifyFileSystemPathForWrite(path, true /* create */, &origin_url,
-      &type, &virtual_path)) {
+      &type, &virtual_path, &file_system_file_util)) {
     delete this;
     return;
   }
   file_system_operation_context_.set_src_origin_url(origin_url);
   file_system_operation_context_.set_src_type(type);
+  file_system_operation_context_.set_src_virtual_path(virtual_path);
+  if (!file_system_operation_context_.src_file_system_file_util())
+    file_system_operation_context_.set_src_file_system_file_util(
+        file_system_file_util);
   DCHECK(blob_url.is_valid());
-  file_writer_delegate_.reset(new FileWriterDelegate(this, offset));
+  file_writer_delegate_.reset(new FileWriterDelegate(this, offset, proxy_));
   blob_request_.reset(
       new net::URLRequest(blob_url, file_writer_delegate_.get()));
   blob_request_->set_context(url_request_context);
+
+  GetUsageAndQuotaThenCallback(origin_url, callback_factory_.NewCallback(
+      &FileSystemOperation::DelayedWriteForQuota));
+}
+
+void FileSystemOperation::DelayedWriteForQuota(quota::QuotaStatusCode status,
+                                               int64 usage, int64 quota) {
+  if (file_system_context()->IsStorageUnlimited(
+          file_system_operation_context()->dest_origin_url()) ||
+      quota == QuotaFileUtil::kNoLimit) {
+    file_system_operation_context_.set_allowed_bytes_growth(
+        QuotaFileUtil::kNoLimit);
+  } else {
+    file_system_operation_context_.set_allowed_bytes_growth(quota - usage);
+  }
   FileSystemFileUtilProxy::CreateOrOpen(
       file_system_operation_context_,
       proxy_,
-      virtual_path,
+      file_system_operation_context_.src_virtual_path(),
       base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_WRITE |
           base::PLATFORM_FILE_ASYNC,
       callback_factory_.NewCallback(
@@ -359,16 +435,39 @@ void FileSystemOperation::Truncate(const GURL& path, int64 length) {
   FilePath virtual_path;
   GURL origin_url;
   FileSystemType type;
+  FileSystemFileUtil* file_system_file_util;
   if (!VerifyFileSystemPathForWrite(path, false /* create */, &origin_url,
-      &type, &virtual_path)) {
+      &type, &virtual_path, &file_system_file_util)) {
     delete this;
     return;
   }
   file_system_operation_context_.set_src_origin_url(origin_url);
   file_system_operation_context_.set_src_type(type);
+  file_system_operation_context_.set_src_virtual_path(virtual_path);
+  if (!file_system_operation_context_.src_file_system_file_util())
+    file_system_operation_context_.set_src_file_system_file_util(
+        file_system_file_util);
+  length_ = length;
+
+  GetUsageAndQuotaThenCallback(origin_url, callback_factory_.NewCallback(
+      &FileSystemOperation::DelayedTruncateForQuota));
+}
+
+void FileSystemOperation::DelayedTruncateForQuota(quota::QuotaStatusCode status,
+                                                  int64 usage, int64 quota) {
+  if (file_system_context()->IsStorageUnlimited(
+          file_system_operation_context()->dest_origin_url()) ||
+      quota == QuotaFileUtil::kNoLimit) {
+    file_system_operation_context_.set_allowed_bytes_growth(
+        QuotaFileUtil::kNoLimit);
+  } else {
+    file_system_operation_context_.set_allowed_bytes_growth(quota - usage);
+  }
   FileSystemFileUtilProxy::Truncate(
       file_system_operation_context_,
-      proxy_, virtual_path, length, callback_factory_.NewCallback(
+      proxy_,
+      file_system_operation_context_.src_virtual_path(),
+      length_, callback_factory_.NewCallback(
           &FileSystemOperation::DidFinishFileOperation));
 }
 
@@ -383,13 +482,17 @@ void FileSystemOperation::TouchFile(const GURL& path,
   FilePath virtual_path;
   GURL origin_url;
   FileSystemType type;
+  FileSystemFileUtil* file_system_file_util;
   if (!VerifyFileSystemPathForWrite(path, true /* create */, &origin_url,
-      &type, &virtual_path)) {
+      &type, &virtual_path, &file_system_file_util)) {
     delete this;
     return;
   }
   file_system_operation_context_.set_src_origin_url(origin_url);
   file_system_operation_context_.set_src_type(type);
+  if (!file_system_operation_context_.src_file_system_file_util())
+    file_system_operation_context_.set_src_file_system_file_util(
+        file_system_file_util);
   FileSystemFileUtilProxy::Touch(
       file_system_operation_context_,
       proxy_, virtual_path, last_access_time, last_modified_time,
@@ -408,6 +511,7 @@ void FileSystemOperation::OpenFile(const GURL& path,
   FilePath virtual_path;
   GURL origin_url;
   FileSystemType type;
+  FileSystemFileUtil* file_system_file_util;
   if (file_flags & (
       (base::PLATFORM_FILE_ENUMERATE | base::PLATFORM_FILE_TEMPORARY |
        base::PLATFORM_FILE_HIDDEN))) {
@@ -416,23 +520,27 @@ void FileSystemOperation::OpenFile(const GURL& path,
   }
   if (file_flags &
       (base::PLATFORM_FILE_CREATE | base::PLATFORM_FILE_OPEN_ALWAYS |
-       base::PLATFORM_FILE_CREATE_ALWAYS |
+       base::PLATFORM_FILE_CREATE_ALWAYS | base::PLATFORM_FILE_OPEN_TRUNCATED |
        base::PLATFORM_FILE_WRITE | base::PLATFORM_FILE_EXCLUSIVE_WRITE |
-       base::PLATFORM_FILE_DELETE_ON_CLOSE | base::PLATFORM_FILE_TRUNCATE |
+       base::PLATFORM_FILE_DELETE_ON_CLOSE |
        base::PLATFORM_FILE_WRITE_ATTRIBUTES)) {
     if (!VerifyFileSystemPathForWrite(path, true /* create */, &origin_url,
-        &type, &virtual_path)) {
+        &type, &virtual_path, &file_system_file_util)) {
       delete this;
       return;
     }
   } else {
-    if (!VerifyFileSystemPathForRead(path, &origin_url, &type, &virtual_path)) {
+    if (!VerifyFileSystemPathForRead(path, &origin_url, &type, &virtual_path,
+        &file_system_file_util)) {
       delete this;
       return;
     }
   }
   file_system_operation_context_.set_src_origin_url(origin_url);
   file_system_operation_context_.set_src_type(type);
+  if (!file_system_operation_context_.src_file_system_file_util())
+    file_system_operation_context_.set_src_file_system_file_util(
+        file_system_file_util);
   FileSystemFileUtilProxy::CreateOrOpen(
       file_system_operation_context_,
       proxy_,
@@ -475,6 +583,32 @@ void FileSystemOperation::Cancel(FileSystemOperation* cancel_operation_ptr) {
   }
 }
 
+// TODO(ericu): Obfuscation integration.
+bool FileSystemOperation::GetUsageAndQuotaThenCallback(
+    const GURL& origin_url,
+    quota::QuotaManager::GetUsageAndQuotaCallback* callback) {
+  quota::QuotaManagerProxy* quota_manager_proxy =
+      file_system_context()->quota_manager_proxy();
+  if (quota_manager_proxy && quota_manager_proxy->quota_manager() &&
+      file_system_operation_context_.src_type() != kFileSystemTypeExternal) {
+    quota_manager_proxy->quota_manager()->GetUsageAndQuota(
+        file_system_operation_context_.src_origin_url(),
+        FileSystemTypeToQuotaStorageType(
+            file_system_operation_context_.src_type()),
+        callback);
+  } else {
+    if (file_system_context()->IsStorageUnlimited(origin_url)) {
+      callback->Run(quota::kQuotaStatusOk, 0, QuotaFileUtil::kNoLimit);
+      delete callback;
+    } else {
+      dispatcher_->DidFail(base::PLATFORM_FILE_ERROR_NO_SPACE);
+      delete callback;
+      return false;
+    }
+  }
+  return true;
+}
+
 void FileSystemOperation::DidGetRootPath(
     bool success,
     const FilePath& path, const std::string& name) {
@@ -496,8 +630,9 @@ void FileSystemOperation::DidEnsureFileExistsExclusive(
   if (rv == base::PLATFORM_FILE_OK && !created) {
     dispatcher_->DidFail(base::PLATFORM_FILE_ERROR_EXISTS);
     delete this;
-  } else
+  } else {
     DidFinishFileOperation(rv);
+  }
 }
 
 void FileSystemOperation::DidEnsureFileExistsNonExclusive(
@@ -549,16 +684,6 @@ void FileSystemOperation::DidFileExists(
   } else {
     dispatcher_->DidFail(rv);
   }
-  delete this;
-}
-
-void FileSystemOperation::DidGetLocalPath(
-    base::PlatformFileError rv,
-    const FilePath& local_path) {
-  if (rv == base::PLATFORM_FILE_OK)
-    dispatcher_->DidGetLocalPath(local_path);
-  else
-    dispatcher_->DidFail(rv);
   delete this;
 }
 
@@ -629,7 +754,7 @@ void FileSystemOperation::OnFileOpenedForWrite(
 
 bool FileSystemOperation::VerifyFileSystemPathForRead(
     const GURL& path, GURL* origin_url, FileSystemType* type,
-    FilePath* virtual_path) {
+    FilePath* virtual_path, FileSystemFileUtil** file_system_file_util) {
 
   // If we have no context, we just allow any operations, for testing.
   // TODO(ericu): Revisit this hack for security.
@@ -648,6 +773,7 @@ bool FileSystemOperation::VerifyFileSystemPathForRead(
 #endif
     *type = file_system_operation_context_.src_type();
     *origin_url = file_system_operation_context_.src_origin_url();
+    *file_system_file_util = NULL;
     return true;
   }
 
@@ -662,13 +788,29 @@ bool FileSystemOperation::VerifyFileSystemPathForRead(
     dispatcher_->DidFail(base::PLATFORM_FILE_ERROR_SECURITY);
     return false;
   }
+  DCHECK(file_system_file_util);
+  *file_system_file_util =
+      file_system_context()->path_manager()->GetFileSystemFileUtil(*type);
+  DCHECK(*file_system_file_util);
+
+  // We notify this read access whether the read access succeeds or not.
+  // This must be ok since this is used to let the QM's eviction logic know
+  // someone is interested in reading the origin data and therefore to indicate
+  // that evicting this origin may not be a good idea.
+  FileSystemQuotaUtil* quota_util = file_system_context()->GetQuotaUtil(*type);
+  if (quota_util) {
+    quota_util->NotifyOriginWasAccessedOnIOThread(
+        file_system_context()->quota_manager_proxy(),
+        *origin_url,
+        *type);
+  }
 
   return true;
 }
 
 bool FileSystemOperation::VerifyFileSystemPathForWrite(
     const GURL& path, bool create, GURL* origin_url, FileSystemType* type,
-    FilePath* virtual_path) {
+    FilePath* virtual_path, FileSystemFileUtil** file_system_file_util) {
 
   // If we have no context, we just allow any operations, for testing.
   // TODO(ericu): Revisit this hack for security.
@@ -687,6 +829,7 @@ bool FileSystemOperation::VerifyFileSystemPathForWrite(
 #endif
     *type = file_system_operation_context_.dest_type();
     *origin_url = file_system_operation_context_.dest_origin_url();
+    *file_system_file_util = NULL;
     return true;
   }
 
@@ -710,11 +853,11 @@ bool FileSystemOperation::VerifyFileSystemPathForWrite(
     dispatcher_->DidFail(base::PLATFORM_FILE_ERROR_SECURITY);
     return false;
   }
-  // TODO(kinuko): the check must be moved to QuotaFileSystemFileUtil.
-  if (!file_system_context()->IsStorageUnlimited(*origin_url)) {
-    dispatcher_->DidFail(base::PLATFORM_FILE_ERROR_NO_SPACE);
-    return false;
-  }
+  DCHECK(file_system_file_util);
+  *file_system_file_util =
+      file_system_context()->path_manager()->GetFileSystemFileUtil(*type);
+  DCHECK(*file_system_file_util);
+
   return true;
 }
 

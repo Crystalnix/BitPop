@@ -75,7 +75,7 @@ class PersonalDataManagerMock : public PersonalDataManager {
 
   // PersonalDataManager:
   virtual void SaveImportedProfile(const AutofillProfile& profile) OVERRIDE;
-  virtual const std::vector<AutofillProfile*>& web_profiles() OVERRIDE;
+  virtual const std::vector<AutofillProfile*>& web_profiles() const OVERRIDE;
 
  private:
   ScopedVector<AutofillProfile> profiles_;
@@ -100,7 +100,8 @@ void PersonalDataManagerMock::SaveImportedProfile(
     profiles_.push_back(new AutofillProfile(profile));
 }
 
-const std::vector<AutofillProfile*>& PersonalDataManagerMock::web_profiles() {
+const std::vector<AutofillProfile*>& PersonalDataManagerMock::web_profiles()
+    const {
   return profiles_.get();
 }
 
@@ -199,11 +200,10 @@ void AutofillMergeTest::MergeProfiles(const std::string& profiles,
             AutofillType::StringToFieldType(UTF16ToUTF8(field->name));
         field->set_heuristic_type(type);
       }
-      std::vector<const FormStructure*> form_structures(1, &form_structure);
 
       // Import the profile.
       const CreditCard* imported_credit_card;
-      personal_data_->ImportFormData(form_structures, &imported_credit_card);
+      personal_data_->ImportFormData(form_structure, &imported_credit_card);
       EXPECT_FALSE(imported_credit_card);
 
       // Clear the |form| to start a new profile.

@@ -17,7 +17,7 @@
 #include "build/build_config.h"
 #include "content/common/child_thread.h"
 #include "content/common/css_colors.h"
-#include "content/common/gpu_process_launch_causes.h"
+#include "content/common/gpu/gpu_process_launch_causes.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ui/gfx/native_widget_types.h"
 
@@ -213,19 +213,6 @@ class RenderThread : public RenderThreadBase,
   // on the renderer's main thread.
   scoped_refptr<base::MessageLoopProxy> GetFileThreadMessageLoopProxy();
 
-  // This function is called for every registered V8 extension each time a new
-  // script context is created. Returns true if the given V8 extension is
-  // allowed to run on the given URL and extension group.
-  bool AllowScriptExtension(const std::string& v8_extension_name,
-                            const GURL& url,
-                            int extension_group);
-
-  // Hack for http://crbug.com/71735.
-  // TODO(jamesr): remove once http://crbug.com/72007 is fixed.
-  RendererWebKitClientImpl* GetWebKitClientImpl() const {
-    return webkit_client_.get();
-  }
-
   // Schedule a call to IdleHandler with the given initial delay.
   void ScheduleIdleHandler(double initial_delay_s);
 
@@ -234,6 +221,9 @@ class RenderThread : public RenderThreadBase,
 
   // Registers the given V8 extension with WebKit.
   void RegisterExtension(v8::Extension* extension);
+
+  // Returns true iff the extension is registered.
+  bool IsRegisteredExtension(const std::string& v8_extension_name) const;
 
  private:
   virtual bool OnControlMessageReceived(const IPC::Message& msg);

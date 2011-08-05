@@ -32,6 +32,16 @@ bool TabMenuModel::AreVerticalTabsEnabled() {
 #endif
 }
 
+bool TabMenuModel::IsCompactNavigationModeEnabled() {
+#if defined(TOOLKIT_VIEWS)
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableCompactNavigation);
+#else
+  return false;
+#endif
+}
+
+
 void TabMenuModel::Build(bool is_pinned) {
   AddItemWithStringId(TabStripModel::CommandNewTab, IDS_TAB_CXMENU_NEWTAB);
   AddSeparator();
@@ -52,15 +62,21 @@ void TabMenuModel::Build(bool is_pinned) {
   AddItemWithStringId(TabStripModel::CommandRestoreTab, IDS_RESTORE_TAB);
   AddItemWithStringId(TabStripModel::CommandBookmarkAllTabs,
                       IDS_TAB_CXMENU_BOOKMARK_ALL_TABS);
-  if (AreVerticalTabsEnabled()) {
+  if (AreVerticalTabsEnabled() || IsCompactNavigationModeEnabled()) {
     AddSeparator();
-    AddCheckItemWithStringId(TabStripModel::CommandUseVerticalTabs,
-                             IDS_TAB_CXMENU_USE_VERTICAL_TABS);
+    if (AreVerticalTabsEnabled()) {
+      AddCheckItemWithStringId(TabStripModel::CommandUseVerticalTabs,
+                               IDS_TAB_CXMENU_USE_VERTICAL_TABS);
+    }
+    if (IsCompactNavigationModeEnabled()) {
+      AddCheckItemWithStringId(TabStripModel::CommandUseCompactNavigationBar,
+                               IDS_TAB_CXMENU_USE_COMPACT_NAVIGATION_BAR);
+    }
   }
 }
 
 void TabMenuModel::Build(TabStripModel* tab_strip, int index) {
-  bool effects_multiple_tabs =
+  bool affects_multiple_tabs =
       (tab_strip->IsTabSelected(index) &&
        tab_strip->selection_model().selected_indices().size() > 1);
   AddItemWithStringId(TabStripModel::CommandNewTab, IDS_TAB_CXMENU_NEWTAB);
@@ -69,7 +85,7 @@ void TabMenuModel::Build(TabStripModel* tab_strip, int index) {
   AddItemWithStringId(TabStripModel::CommandDuplicate,
                       IDS_TAB_CXMENU_DUPLICATE);
   bool will_pin = tab_strip->WillContextMenuPin(index);
-  if (effects_multiple_tabs) {
+  if (affects_multiple_tabs) {
     AddItemWithStringId(
         TabStripModel::CommandTogglePinned,
         will_pin ? IDS_TAB_CXMENU_PIN_TABS : IDS_TAB_CXMENU_UNPIN_TABS);
@@ -79,7 +95,7 @@ void TabMenuModel::Build(TabStripModel* tab_strip, int index) {
         will_pin ? IDS_TAB_CXMENU_PIN_TAB : IDS_TAB_CXMENU_UNPIN_TAB);
   }
   AddSeparator();
-  if (effects_multiple_tabs) {
+  if (affects_multiple_tabs) {
     AddItemWithStringId(TabStripModel::CommandCloseTab,
                         IDS_TAB_CXMENU_CLOSETABS);
   } else {
@@ -94,10 +110,16 @@ void TabMenuModel::Build(TabStripModel* tab_strip, int index) {
   AddItemWithStringId(TabStripModel::CommandRestoreTab, IDS_RESTORE_TAB);
   AddItemWithStringId(TabStripModel::CommandBookmarkAllTabs,
                       IDS_TAB_CXMENU_BOOKMARK_ALL_TABS);
-  if (AreVerticalTabsEnabled()) {
+  if (AreVerticalTabsEnabled() || IsCompactNavigationModeEnabled()) {
     AddSeparator();
-    AddCheckItemWithStringId(TabStripModel::CommandUseVerticalTabs,
-                             IDS_TAB_CXMENU_USE_VERTICAL_TABS);
+    if (AreVerticalTabsEnabled()) {
+      AddCheckItemWithStringId(TabStripModel::CommandUseVerticalTabs,
+        IDS_TAB_CXMENU_USE_VERTICAL_TABS);
+    }
+    if (IsCompactNavigationModeEnabled()) {
+      AddCheckItemWithStringId(TabStripModel::CommandUseCompactNavigationBar,
+        IDS_TAB_CXMENU_USE_COMPACT_NAVIGATION_BAR);
+    }
   }
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableTabGroupsContextMenu)) {

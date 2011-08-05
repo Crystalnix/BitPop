@@ -8,14 +8,27 @@
 
 #include "base/process_util.h"
 #include "base/rand_util.h"
+#include "base/stringprintf.h"
 #include "content/common/child_process.h"
 #include "content/ppapi_plugin/broker_process_dispatcher.h"
 #include "content/ppapi_plugin/plugin_process_dispatcher.h"
+#include "content/ppapi_plugin/ppapi_webkit_thread.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_sync_channel.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppp.h"
 #include "ppapi/proxy/ppapi_messages.h"
+#include "webkit/plugins/ppapi/webkit_forwarding_impl.h"
+
+#if defined(OS_WIN)
+#include "sandbox/src/sandbox.h"
+#endif
+
+#if defined(OS_WIN)
+extern sandbox::TargetServices* g_target_services;
+#else
+extern void* g_target_services;
+#endif
 
 typedef int32_t (*InitializeBrokerFunc)
     (PP_ConnectInstance_Func* connect_instance_func);
@@ -58,8 +71,8 @@ bool PpapiThread::OnMessageReceived(const IPC::Message& msg) {
   return true;
 }
 
-MessageLoop* PpapiThread::GetIPCMessageLoop() {
-  return ChildProcess::current()->io_message_loop();
+base::MessageLoopProxy* PpapiThread::GetIPCMessageLoop() {
+  return ChildProcess::current()->io_message_loop_proxy();
 }
 
 base::WaitableEvent* PpapiThread::GetShutdownEvent() {
@@ -70,10 +83,38 @@ std::set<PP_Instance>* PpapiThread::GetGloballySeenInstanceIDSet() {
   return &globally_seen_instance_ids_;
 }
 
+ppapi::WebKitForwarding* PpapiThread::GetWebKitForwarding() {
+  if (!webkit_forwarding_.get())
+    webkit_forwarding_.reset(new webkit::ppapi::WebKitForwardingImpl);
+  return webkit_forwarding_.get();
+}
+
+void PpapiThread::PostToWebKitThread(const tracked_objects::Location& from_here,
+                                     const base::Closure& task) {
+  if (!webkit_thread_.get())
+    webkit_thread_.reset(new PpapiWebKitThread);
+  webkit_thread_->PostTask(from_here, task);
+}
+
+bool PpapiThread::SendToBrowser(IPC::Message* msg) {
+  return Send(msg);
+}
+
 void PpapiThread::OnMsgLoadPlugin(const FilePath& path) {
   base::ScopedNativeLibrary library(base::LoadNativeLibrary(path, NULL));
-  if (!library.is_valid())
+
+#if defined(OS_WIN)
+  // Once we lower the token the sandbox is locked down and no new modules
+  // can be loaded. TODO(cpu): consider changing to the loading style of
+  // regular plugins.
+  if (g_target_services)
+    g_target_services->LowerToken();
+#endif
+
+  if (!library.is_valid()) {
+    LOG(ERROR) << "Failed to load pepper module";
     return;
+  }
 
   if (is_broker_) {
     // Get the InitializeBroker function (required).
@@ -150,11 +191,12 @@ bool PpapiThread::SetupRendererChannel(base::ProcessHandle host_process_handle,
   bool init_result = false;
   if (is_broker_) {
     BrokerProcessDispatcher* broker_dispatcher =
-      new BrokerProcessDispatcher(host_process_handle, connect_instance_func_);
-      init_result = broker_dispatcher->InitBrokerWithChannel(this,
-                                                             plugin_handle,
-                                                             false);
-      dispatcher = broker_dispatcher;
+        new BrokerProcessDispatcher(host_process_handle,
+                                    connect_instance_func_);
+    init_result = broker_dispatcher->InitBrokerWithChannel(this,
+                                                           plugin_handle,
+                                                           false);
+    dispatcher = broker_dispatcher;
   } else {
     PluginProcessDispatcher* plugin_dispatcher =
         new PluginProcessDispatcher(host_process_handle, get_plugin_interface_);

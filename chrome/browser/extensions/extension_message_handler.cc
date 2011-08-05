@@ -25,10 +25,16 @@ bool ExtensionMessageHandler::OnMessageReceived(
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ExtensionMessageHandler, message)
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_PostMessage, OnPostMessage)
-    IPC_MESSAGE_HANDLER(ExtensionHostMsg_Request, OnRequest)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
+}
+
+void ExtensionMessageHandler::RenderViewHostInitialized() {
+  Send(new ExtensionMsg_NotifyRenderViewType(
+      routing_id(), render_view_host()->delegate()->GetRenderViewType()));
+  Send(new ExtensionMsg_UpdateBrowserWindowId(
+      routing_id(), render_view_host()->delegate()->GetBrowserWindowID()));
 }
 
 void ExtensionMessageHandler::OnPostMessage(int port_id,
@@ -38,19 +44,4 @@ void ExtensionMessageHandler::OnPostMessage(int port_id,
     profile->GetExtensionMessageService()->PostMessageFromRenderer(
         port_id, message);
   }
-}
-
-void ExtensionMessageHandler::OnRequest(
-    const ExtensionHostMsg_DomMessage_Params& params) {
-  if (!ChildProcessSecurityPolicy::GetInstance()->
-          HasExtensionBindings(render_view_host()->process()->id())) {
-    // This can happen if someone uses window.open() to open an extension URL
-    // from a non-extension context.
-    Send(new ExtensionMsg_Response(
-        routing_id(), params.request_id, false, std::string(),
-        "Access to extension API denied."));
-    return;
-  }
-
-  render_view_host()->delegate()->ProcessWebUIMessage(params);
 }

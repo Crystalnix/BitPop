@@ -9,6 +9,7 @@
 #include "chrome/common/content_settings_types.h"
 #include "content/browser/tab_contents/navigation_entry.h"
 #include "ui/gfx/native_widget_types.h"
+#include "webkit/glue/window_open_disposition.h"
 
 class Browser;
 class BrowserWindowTesting;
@@ -298,6 +299,9 @@ class BrowserWindow {
   virtual void ShowCreateChromeAppShortcutsDialog(Profile* profile,
                                                   const Extension* app) = 0;
 
+  // Toggles compact navigation bar.
+  virtual void ToggleUseCompactNavigationBar() = 0;
+
   // Clipboard commands applied to the whole browser window.
   virtual void Cut() = 0;
   virtual void Copy() = 0;
@@ -325,6 +329,10 @@ class BrowserWindow {
   // instant isn't currently visible this returns the bounds instant would be
   // placed at.
   virtual gfx::Rect GetInstantBounds() = 0;
+
+  // Return the correct disposition for a popup window based on |bounds|.
+  virtual WindowOpenDisposition GetDispositionForPopupBounds(
+      const gfx::Rect& bounds) = 0;
 
 #if defined(OS_CHROMEOS)
   // Shows the keyboard overlay dialog box.

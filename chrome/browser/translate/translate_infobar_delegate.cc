@@ -14,9 +14,9 @@
 #include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/chrome_constants.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/browser/tab_contents/navigation_details.h"
 #include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -111,7 +111,8 @@ void TranslateInfoBarDelegate::Translate() {
 
 void TranslateInfoBarDelegate::RevertTranslation() {
   TranslateManager::GetInstance()->RevertTranslation(tab_contents_);
-  tab_contents_->RemoveInfoBar(this);
+  TabContentsWrapper::GetCurrentWrapperForContents(tab_contents_)->
+      RemoveInfoBar(this);
 }
 
 void TranslateInfoBarDelegate::ReportLanguageDetectionError() {
@@ -145,7 +146,8 @@ void TranslateInfoBarDelegate::ToggleLanguageBlacklist() {
     prefs_.RemoveLanguageFromBlacklist(original_lang);
   } else {
     prefs_.BlacklistLanguage(original_lang);
-    tab_contents_->RemoveInfoBar(this);
+    TabContentsWrapper::GetCurrentWrapperForContents(tab_contents_)->
+        RemoveInfoBar(this);
   }
 }
 
@@ -163,7 +165,8 @@ void TranslateInfoBarDelegate::ToggleSiteBlacklist() {
     prefs_.RemoveSiteFromBlacklist(host);
   } else {
     prefs_.BlacklistSite(host);
-    tab_contents_->RemoveInfoBar(this);
+    TabContentsWrapper::GetCurrentWrapperForContents(tab_contents_)->
+        RemoveInfoBar(this);
   }
 }
 
@@ -193,7 +196,8 @@ void TranslateInfoBarDelegate::NeverTranslatePageLanguage() {
   std::string original_lang = GetOriginalLanguageCode();
   DCHECK(!prefs_.IsLanguageBlacklisted(original_lang));
   prefs_.BlacklistLanguage(original_lang);
-  tab_contents_->RemoveInfoBar(this);
+  TabContentsWrapper::GetCurrentWrapperForContents(tab_contents_)->
+      RemoveInfoBar(this);
 }
 
 string16 TranslateInfoBarDelegate::GetMessageInfoBarText() {
@@ -350,6 +354,16 @@ TranslateInfoBarDelegate::TranslateInfoBarDelegate(
   }
 }
 
+bool TranslateInfoBarDelegate::ShouldExpire(
+    const content::LoadCommittedDetails& details) const {
+  // Note: we allow closing this infobar even if the main frame navigation
+  // was programmatic and not initiated by the user - crbug.com/70261 .
+  if (!details.is_user_initiated_main_frame_load() && !details.is_main_frame)
+    return false;
+
+  return InfoBarDelegate::ShouldExpireInternal(details);
+}
+
 void TranslateInfoBarDelegate::InfoBarDismissed() {
   if (type_ != BEFORE_TRANSLATE)
     return;
@@ -359,12 +373,8 @@ void TranslateInfoBarDelegate::InfoBarDismissed() {
   UMA_HISTOGRAM_COUNTS("Translate.DeclineTranslateCloseInfobar", 1);
 }
 
-void TranslateInfoBarDelegate::InfoBarClosed() {
-  delete this;
-}
-
-SkBitmap* TranslateInfoBarDelegate::GetIcon() const {
-  return ResourceBundle::GetSharedInstance().GetBitmapNamed(
+gfx::Image* TranslateInfoBarDelegate::GetIcon() const {
+  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
       IDR_INFOBAR_TRANSLATE);
 }
 

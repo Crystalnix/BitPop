@@ -78,19 +78,19 @@ bool FrontendDataTypeController::Associate() {
   DCHECK_EQ(state_, ASSOCIATING);
   CreateSyncComponents();
 
-  if (!model_associator_->CryptoReadyIfNecessary()) {
+  if (!model_associator()->CryptoReadyIfNecessary()) {
     StartFailed(NEEDS_CRYPTO, FROM_HERE);
     return false;
   }
 
   bool sync_has_nodes = false;
-  if (!model_associator_->SyncModelHasUserCreatedNodes(&sync_has_nodes)) {
+  if (!model_associator()->SyncModelHasUserCreatedNodes(&sync_has_nodes)) {
     StartFailed(UNRECOVERABLE_ERROR, FROM_HERE);
     return false;
   }
 
   base::TimeTicks start_time = base::TimeTicks::Now();
-  bool merge_success = model_associator_->AssociateModels();
+  bool merge_success = model_associator()->AssociateModels();
   RecordAssociationTime(base::TimeTicks::Now() - start_time);
   if (!merge_success) {
     StartFailed(ASSOCIATION_FAILED, FROM_HERE);
@@ -103,29 +103,60 @@ bool FrontendDataTypeController::Associate() {
   return true;
 }
 
+void FrontendDataTypeController::StartFailed(StartResult result,
+    const tracked_objects::Location& location) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  CleanUpState();
+  set_model_associator(NULL);
+  change_processor_.reset();
+  state_ = NOT_RUNNING;
+  RecordStartFailure(result);
+
+  // We have to release the callback before we call it, since it's possible
+  // invoking the callback will trigger a call to STOP(), which will get
+  // confused by the non-NULL start_callback_.
+  scoped_ptr<StartCallback> callback(start_callback_.release());
+  callback->Run(result, location);
+}
+
+void FrontendDataTypeController::FinishStart(StartResult result,
+    const tracked_objects::Location& location) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  // We have to release the callback before we call it, since it's possible
+  // invoking the callback will trigger a call to STOP(), which will get
+  // confused by the non-NULL start_callback_.
+  scoped_ptr<StartCallback> callback(start_callback_.release());
+  callback->Run(result, location);
+}
+
 void FrontendDataTypeController::Stop() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   // If Stop() is called while Start() is waiting for the datatype model to
   // load, abort the start.
-  if (state_ == MODEL_STARTING)
-    FinishStart(ABORTED, FROM_HERE);
+  if (state_ == MODEL_STARTING) {
+    StartFailed(ABORTED, FROM_HERE);
+    // We can just return here since we haven't performed association if we're
+    // still in MODEL_STARTING.
+    return;
+  }
   DCHECK(!start_callback_.get());
 
-  CleanupState();
+  CleanUpState();
 
-  if (change_processor_ != NULL)
+  if (change_processor_.get())
     sync_service_->DeactivateDataType(this, change_processor_.get());
 
-  if (model_associator_ != NULL)
-    model_associator_->DisassociateModels();
+  if (model_associator())
+    model_associator()->DisassociateModels();
 
+  set_model_associator(NULL);
   change_processor_.reset();
-  model_associator_.reset();
 
   state_ = NOT_RUNNING;
 }
 
-void FrontendDataTypeController::CleanupState() {
+void FrontendDataTypeController::CleanUpState() {
   // Do nothing by default.
 }
 
@@ -150,23 +181,22 @@ void FrontendDataTypeController::OnUnrecoverableError(
   sync_service_->OnUnrecoverableError(from_here, message);
 }
 
-void FrontendDataTypeController::FinishStart(StartResult result,
-    const tracked_objects::Location& location) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  start_callback_->Run(result, location);
-  start_callback_.reset();
+AssociatorInterface* FrontendDataTypeController::model_associator() const {
+  return model_associator_.get();
 }
 
-void FrontendDataTypeController::StartFailed(StartResult result,
-    const tracked_objects::Location& location) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  CleanupState();
-  model_associator_.reset();
-  change_processor_.reset();
-  state_ = NOT_RUNNING;
-  start_callback_->Run(result, location);
-  start_callback_.reset();
-  RecordStartFailure(result);
+void FrontendDataTypeController::set_model_associator(
+    AssociatorInterface* model_associator) {
+  model_associator_.reset(model_associator);
+}
+
+ChangeProcessor* FrontendDataTypeController::change_processor() const {
+  return change_processor_.get();
+}
+
+void FrontendDataTypeController::set_change_processor(
+    ChangeProcessor* change_processor) {
+  change_processor_.reset(change_processor);
 }
 
 }  // namespace browser_sync

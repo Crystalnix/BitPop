@@ -17,6 +17,8 @@
 #include "chrome/browser/chromeos/status/status_area_button.h"
 #include "ui/base/animation/throb_animation.h"
 
+class PrefService;
+
 namespace gfx {
 class Canvas;
 }
@@ -60,6 +62,8 @@ class NetworkMenuButton : public StatusAreaButton,
   explicit NetworkMenuButton(StatusAreaHost* host);
   virtual ~NetworkMenuButton();
 
+  static void RegisterPrefs(PrefService* local_state);
+
   // ui::AnimationDelegate implementation.
   virtual void AnimationProgressed(const ui::Animation* animation);
 
@@ -78,6 +82,7 @@ class NetworkMenuButton : public StatusAreaButton,
 
  protected:
   // NetworkMenu implementation:
+  virtual views::MenuButton* GetMenuButton();
   virtual gfx::NativeWindow GetNativeWindow() const;
   virtual void OpenButtonOptions();
   virtual bool ShouldOpenButtonOptions() const;
@@ -86,12 +91,10 @@ class NetworkMenuButton : public StatusAreaButton,
   virtual void OnLocaleChanged() OVERRIDE;
 
   // MessageBubbleDelegate implementation:
-  virtual void BubbleClosing(Bubble* bubble, bool closed_by_escape) {
-    mobile_data_bubble_ = NULL;
-  }
-  virtual bool CloseOnEscape() { return true; }
-  virtual bool FadeInOnShow() { return false; }
-  virtual void OnHelpLinkActivated();
+  virtual void BubbleClosing(Bubble* bubble, bool closed_by_escape);
+  virtual bool CloseOnEscape();
+  virtual bool FadeInOnShow();
+  virtual void OnLinkActivated(size_t index);
 
  private:
   // Returns carrier deal if it's specified and should be shown,
@@ -102,11 +105,14 @@ class NetworkMenuButton : public StatusAreaButton,
   // Sets the icon and the badges (badges are at the bottom of the icon).
   void SetIconAndBadges(const SkBitmap* icon,
                         const SkBitmap* right_badge,
+                        const SkBitmap* top_left_badge,
                         const SkBitmap* left_badge);
   // Sets the icon only. Keep the previous badge.
   void SetIconOnly(const SkBitmap* icon);
   // Sets the badges only. Keep the previous icon.
-  void SetBadgesOnly(const SkBitmap* right_badge, const SkBitmap* left_badge);
+  void SetBadgesOnly(const SkBitmap* right_badge,
+                     const SkBitmap* top_left_badge,
+                     const SkBitmap* left_badge);
   // Set the network icon based on the status of the |network|
   void SetNetworkIcon(NetworkLibrary* cros, const Network* network);
 
@@ -129,6 +135,8 @@ class NetworkMenuButton : public StatusAreaButton,
   const SkBitmap* icon_;
   // A badge icon displayed on top of icon, in bottom-right corner.
   const SkBitmap* right_badge_;
+  // A badge icon displayed on top of icon, in top-left corner.
+  const SkBitmap* top_left_badge_;
   // A  badge icon displayed on top of icon, in bottom-left corner.
   const SkBitmap* left_badge_;
 
@@ -152,11 +160,17 @@ class NetworkMenuButton : public StatusAreaButton,
   // whose status is displayed in the network menu button.
   std::string active_network_;
 
-  // Current carrier deal URL.
-  std::string deal_url_;
+  // Current carrier deal info URL.
+  std::string deal_info_url_;
+
+  // Current carrier deal top-up URL.
+  std::string deal_topup_url_;
 
   // Factory for delaying showing promo notification.
   ScopedRunnableMethodFactory<NetworkMenuButton> method_factory_;
+
+  // The last network we connected to (or tried to).
+  ConnectionType last_network_type_;
 
   DISALLOW_COPY_AND_ASSIGN(NetworkMenuButton);
 };

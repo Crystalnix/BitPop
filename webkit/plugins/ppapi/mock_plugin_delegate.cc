@@ -6,6 +6,7 @@
 
 #include "base/message_loop_proxy.h"
 #include "ppapi/c/pp_errors.h"
+#include "ppapi/shared_impl/ppapi_preferences.h"
 
 namespace webkit {
 namespace ppapi {
@@ -14,6 +15,9 @@ MockPluginDelegate::MockPluginDelegate() {
 }
 
 MockPluginDelegate::~MockPluginDelegate() {
+}
+
+void MockPluginDelegate::PluginFocusChanged(bool focused) {
 }
 
 void MockPluginDelegate::PluginCrashed(PluginInstance* instance) {
@@ -41,7 +45,7 @@ MockPluginDelegate::PlatformContext3D* MockPluginDelegate::CreateContext3D() {
 
 MockPluginDelegate::PlatformVideoDecoder*
 MockPluginDelegate::CreateVideoDecoder(
-    PP_VideoDecoderConfig_Dev* decoder_config) {
+    media::VideoDecodeAccelerator::Client* client) {
   return NULL;
 }
 
@@ -237,6 +241,19 @@ webkit_glue::P2PTransport* MockPluginDelegate::CreateP2PTransport() {
 
 double MockPluginDelegate::GetLocalTimeZoneOffset(base::Time t) {
   return 0.0;
+}
+
+std::string MockPluginDelegate::GetFlashCommandLineArgs() {
+  return std::string();
+}
+
+base::SharedMemory* MockPluginDelegate::CreateAnonymousSharedMemory(
+    uint32_t size) {
+  return NULL;
+}
+
+::ppapi::Preferences MockPluginDelegate::GetPreferences() {
+  return ::ppapi::Preferences();
 }
 
 }  // namespace ppapi

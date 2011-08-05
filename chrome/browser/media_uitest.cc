@@ -4,6 +4,7 @@
 
 #include "base/basictypes.h"
 #include "base/file_path.h"
+#include "base/stringprintf.h"
 #include "base/string_util.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/platform_thread.h"
@@ -35,10 +36,8 @@ class MediaTest : public UITest {
     test_file = test_file.AppendASCII("media/player.html");
 
     GURL player_gurl = net::FilePathToFileURL(test_file);
-    std::string url = StringPrintf("%s?%s=%s",
-                                   player_gurl.spec().c_str(),
-                                   tag,
-                                   media_file);
+    std::string url = base::StringPrintf(
+        "%s?%s=%s", player_gurl.spec().c_str(), tag, media_file);
 
     NavigateToURL(GURL(url));
 
@@ -66,7 +65,19 @@ class MediaTest : public UITest {
   }
 };
 
-TEST_F(MediaTest, VideoBearTheora) {
+#if defined(OS_MACOSX)
+// http://crbug.com/84170 - VideoBearTheora, VideoBearWav and VideoBearWebm
+// are flaky on Mac.
+#define MAYBE_VideoBearTheora FLAKY_VideoBearTheora
+#define MAYBE_VideoBearWav FLAKY_VideoBearWav
+#define MAYBE_VideoBearWebm FLAKY_VideoBearWebm
+#else
+#define MAYBE_VideoBearTheora VideoBearTheora
+#define MAYBE_VideoBearWav  VideoBearWav
+#define MAYBE_VideoBearWebm VideoBearWebm
+#endif
+
+TEST_F(MediaTest, MAYBE_VideoBearTheora) {
   PlayVideo("bear.ogv");
 }
 
@@ -74,7 +85,7 @@ TEST_F(MediaTest, VideoBearSilentTheora) {
   PlayVideo("bear_silent.ogv");
 }
 
-TEST_F(MediaTest, VideoBearWebm) {
+TEST_F(MediaTest, MAYBE_VideoBearWebm) {
   PlayVideo("bear.webm");
 }
 
@@ -92,11 +103,18 @@ TEST_F(MediaTest, VideoBearSilentMp4) {
 }
 #endif
 
-TEST_F(MediaTest, VideoBearWav) {
+TEST_F(MediaTest, MAYBE_VideoBearWav) {
   PlayVideo("bear.wav");
 }
 
-TEST_F(UILayoutTest, MediaUILayoutTest) {
+#if defined(OS_MACOSX)
+// http://crbug.com/84463 - MediaUILayoutTest is flaky on Mac.
+#define MAYBE_MediaUILayoutTest FLAKY_MediaUILayoutTest
+#else
+#define MAYBE_MediaUILayoutTest MediaUILayoutTest
+#endif
+
+TEST_F(UILayoutTest, MAYBE_MediaUILayoutTest) {
   static const char* kResources[] = {
     "content",
     "media-file.js",

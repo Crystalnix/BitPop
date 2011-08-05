@@ -64,7 +64,8 @@ ExistingUserController* ExistingUserController::current_controller_ = NULL;
 // ExistingUserController, public:
 
 ExistingUserController::ExistingUserController(LoginDisplayHost* host)
-    : host_(host),
+    : login_status_consumer_(NULL),
+      host_(host),
       num_login_attempts_(0),
       user_settings_(new UserCrosSettingsProvider),
       method_factory_(this) {
@@ -99,11 +100,9 @@ void ExistingUserController::Init(const UserVector& users) {
   login_display_->Init(filtered_users, show_guest, show_new_user);
 
   LoginUtils::Get()->PrewarmAuthentication();
-  if (CrosLibrary::Get()->EnsureLoaded()) {
+  if (CrosLibrary::Get()->EnsureLoaded())
     CrosLibrary::Get()->GetLoginLibrary()->EmitLoginPromptReady();
-    CrosLibrary::Get()->GetCryptohomeLibrary()->
-        AsyncDoAutomaticFreeDiskSpaceControl(NULL);
-  }
+  StartAutomaticFreeDiskSpaceControl();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -258,6 +257,8 @@ void ExistingUserController::OnLoginFailure(const LoginFailure& failure) {
     else
       ShowError(IDS_LOGIN_ERROR_OFFLINE_FAILED_NETWORK_NOT_CONNECTED, error);
   } else {
+    // Network is connected.
+    const Network* active_network = network->active_network();
     if (failure.reason() == LoginFailure::NETWORK_AUTH_FAILED &&
         failure.error().state() == GoogleServiceAuthError::CAPTCHA_REQUIRED) {
       if (!failure.error().captcha().image_url.is_empty()) {
@@ -267,7 +268,7 @@ void ExistingUserController::OnLoginFailure(const LoginFailure& failure) {
         view->set_delegate(this);
         views::Window* window = browser::CreateViewsWindow(
             GetNativeWindow(), gfx::Rect(), view);
-        window->SetIsAlwaysOnTop(true);
+        window->SetAlwaysOnTop(true);
         window->Show();
       } else {
         LOG(WARNING) << "No captcha image url was found?";
@@ -277,9 +278,11 @@ void ExistingUserController::OnLoginFailure(const LoginFailure& failure) {
                failure.error().state() ==
                    GoogleServiceAuthError::HOSTED_NOT_ALLOWED) {
       ShowError(IDS_LOGIN_ERROR_AUTHENTICATING_HOSTED, error);
-    } else if (failure.reason() == LoginFailure::NETWORK_AUTH_FAILED &&
-               failure.error().state() ==
-                   GoogleServiceAuthError::SERVICE_UNAVAILABLE) {
+    } else if ((active_network && active_network->restricted_pool()) ||
+               (failure.reason() == LoginFailure::NETWORK_AUTH_FAILED &&
+                failure.error().state() ==
+                    GoogleServiceAuthError::SERVICE_UNAVAILABLE)) {
+      // Use explicit captive portal state (restricted_pool()) or implicit one.
       // SERVICE_UNAVAILABLE is generated in 2 cases:
       // 1. ClientLogin returns ServiceUnavailable code.
       // 2. Internet connectivity may be behind the captive portal.
@@ -299,6 +302,9 @@ void ExistingUserController::OnLoginFailure(const LoginFailure& failure) {
   // Reenable clicking on other windows and status area.
   login_display_->SetUIEnabled(true);
   SetStatusAreaEnabled(true);
+
+  if (login_status_consumer_)
+    login_status_consumer_->OnLoginFailure(failure);
 }
 
 void ExistingUserController::OnLoginSuccess(
@@ -330,6 +336,10 @@ void ExistingUserController::OnLoginSuccess(
                                     pending_requests,
                                     this);
 
+
+  if (login_status_consumer_)
+    login_status_consumer_->OnLoginSuccess(username, password,
+                                           credentials, pending_requests);
 }
 
 void ExistingUserController::OnProfilePrepared(Profile* profile) {
@@ -365,9 +375,8 @@ void ExistingUserController::OnProfilePrepared(Profile* profile) {
         WizardController::kUserImageScreenName :
         WizardController::kRegistrationScreenName);
   } else {
-    LoginUtils::DoBrowserLaunch(profile);
-    // Delay deletion as we're on the stack.
-    host_->OnSessionStart();
+    LoginUtils::DoBrowserLaunch(profile, host_);
+    host_ = NULL;
   }
   login_display_->OnFadeOut();
 }
@@ -379,6 +388,9 @@ void ExistingUserController::OnOffTheRecordLoginSuccess() {
     // Postpone CompleteOffTheRecordLogin until registration completion.
     ActivateWizard(WizardController::kRegistrationScreenName);
   }
+
+  if (login_status_consumer_)
+    login_status_consumer_->OnOffTheRecordLoginSuccess();
 }
 
 void ExistingUserController::OnPasswordChangeDetected(
@@ -393,17 +405,21 @@ void ExistingUserController::OnPasswordChangeDetected(
     // Another attempt will be invoked after verification completion.
     return;
   }
-  // TODO(altimofeev): remove this constrain when full sync for the owner will
-  // be correctly handled.
-  bool full_sync_disabled = (UserCrosSettingsProvider::cached_owner() ==
-      last_login_attempt_username_);
 
-  PasswordChangedView* view = new PasswordChangedView(this, full_sync_disabled);
+  // Passing 'false' here enables "full sync" mode in the dialog,
+  // which disables the requirement for the old owner password,
+  // allowing us to recover from a lost owner password/homedir.
+  // TODO(gspencer): We shouldn't have to erase stateful data when
+  // doing this.  See http://crosbug.com/9115 http://crosbug.com/7792
+  PasswordChangedView* view = new PasswordChangedView(this, false);
   views::Window* window = browser::CreateViewsWindow(GetNativeWindow(),
                                                      gfx::Rect(),
                                                      view);
-  window->SetIsAlwaysOnTop(true);
+  window->SetAlwaysOnTop(true);
   window->Show();
+
+  if (login_status_consumer_)
+    login_status_consumer_->OnPasswordChangeDetected(credentials);
 }
 
 void ExistingUserController::WhiteListCheckFailed(const std::string& email) {
@@ -483,6 +499,23 @@ void ExistingUserController::ShowError(int error_id,
   }
 
   login_display_->ShowError(error_id, num_login_attempts_, help_topic_id);
+}
+
+void ExistingUserController::StartAutomaticFreeDiskSpaceControl() {
+  bool trusted_owner_available = user_settings_->RequestTrustedOwner(
+      method_factory_.NewRunnableMethod(
+          &ExistingUserController::StartAutomaticFreeDiskSpaceControl));
+  if (!trusted_owner_available) {
+    // Value of owner email is still not verified.
+    // Another attempt will be invoked after verification completion.
+    return;
+  }
+  if (CrosLibrary::Get()->EnsureLoaded()) {
+    CryptohomeLibrary* cryptohomed = CrosLibrary::Get()->GetCryptohomeLibrary();
+    cryptohomed->AsyncSetOwnerUser(
+        UserCrosSettingsProvider::cached_owner(), NULL);
+    cryptohomed->AsyncDoAutomaticFreeDiskSpaceControl(NULL);
+  }
 }
 
 }  // namespace chromeos

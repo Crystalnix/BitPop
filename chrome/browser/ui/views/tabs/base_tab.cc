@@ -17,6 +17,7 @@
 #include "grit/app_resources.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/animation/animation_container.h"
 #include "ui/base/animation/slide_animation.h"
@@ -299,6 +300,8 @@ bool BaseTab::OnMousePressed(const views::MouseEvent& event) {
       }
     } else if (!IsSelected()) {
       controller()->SelectTab(this);
+    } else if (IsActive()) {
+      controller()->ClickActiveTab(this);
     }
     controller()->MaybeStartDrag(this, event);
   }

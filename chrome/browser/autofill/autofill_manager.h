@@ -20,7 +20,6 @@
 #include "chrome/browser/autofill/autofill_download.h"
 #include "chrome/browser/autofill/field_types.h"
 #include "chrome/browser/autofill/form_structure.h"
-#include "content/browser/tab_contents/navigation_controller.h"
 #include "content/browser/tab_contents/tab_contents_observer.h"
 
 class AutofillField;
@@ -30,7 +29,7 @@ class CreditCard;
 class PersonalDataManager;
 class PrefService;
 class RenderViewHost;
-class TabContents;
+class TabContentsWrapper;
 
 struct ViewHostMsg_FrameNavigate_Params;
 
@@ -48,7 +47,7 @@ struct FormField;
 class AutofillManager : public TabContentsObserver,
                         public AutofillDownloadManager::Observer {
  public:
-  explicit AutofillManager(TabContents* tab_contents);
+  explicit AutofillManager(TabContentsWrapper* tab_contents);
   virtual ~AutofillManager();
 
   // Registers our browser prefs.
@@ -59,7 +58,7 @@ class AutofillManager : public TabContentsObserver,
 
   // TabContentsObserver implementation.
   virtual void DidNavigateMainFramePostCommit(
-      const NavigationController::LoadCommittedDetails& details,
+      const content::LoadCommittedDetails& details,
       const ViewHostMsg_FrameNavigate_Params& params);
   virtual bool OnMessageReceived(const IPC::Message& message);
 
@@ -91,7 +90,7 @@ class AutofillManager : public TabContentsObserver,
   // (where applicable).
   typedef std::pair<std::string, size_t> GUIDPair;
 
-  AutofillManager(TabContents* tab_contents,
+  AutofillManager(TabContentsWrapper* tab_contents,
                   PersonalDataManager* personal_data);
 
   void set_personal_data_manager(PersonalDataManager* personal_data) {
@@ -196,13 +195,16 @@ class AutofillManager : public TabContentsObserver,
   // |submitted_form|.
   void DeterminePossibleFieldTypesForUpload(FormStructure* submitted_form);
 
+  // The owning TabContentsWrapper.
+  TabContentsWrapper* tab_contents_wrapper_;
+
   // The personal data manager, used to save and load personal data to/from the
   // web database.  This is overridden by the AutofillManagerTest.
   // Weak reference.
   // May be NULL.  NULL indicates OTR.
   PersonalDataManager* personal_data_;
 
-  std::list<std::string> autofilled_forms_signatures_;
+  std::list<std::string> autofilled_form_signatures_;
   // Handles queries and uploads to Autofill servers.
   AutofillDownloadManager download_manager_;
 
@@ -246,6 +248,8 @@ class AutofillManager : public TabContentsObserver,
   FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest, FormChangesAddField);
   FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest, FormSubmitted);
   FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest, FormSubmittedServerTypes);
+  FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest,
+                           DeterminePossibleFieldTypesForUpload);
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, AddressSuggestionsCount);
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, AutofillIsEnabledAtPageLoad);
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest,

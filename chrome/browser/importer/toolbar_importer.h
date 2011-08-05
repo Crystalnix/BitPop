@@ -18,7 +18,7 @@
 #include "base/string16.h"
 #include "chrome/browser/importer/importer.h"
 #include "chrome/browser/importer/profile_writer.h"
-#include "chrome/common/net/url_fetcher.h"
+#include "content/common/url_fetcher.h"
 
 class ImporterBridge;
 class XmlReader;
@@ -33,27 +33,25 @@ class Toolbar5Importer : public URLFetcher::Delegate, public Importer {
  public:
   Toolbar5Importer();
 
-  // Begin Importer implementation:
-
-  // This method is called to begin the import process. |items| should only
-  // either be NONE or FAVORITES, since as of right now these are the only
+  // Importer:
+  // The importer view calls this method to begin the process. |items| should
+  // only either be NONE or FAVORITES, since as of right now these are the only
   // items this importer supports.
   virtual void StartImport(const importer::SourceProfile& source_profile,
                            uint16 items,
                            ImporterBridge* bridge) OVERRIDE;
 
-  // This method is called when the user clicks the cancel button on the UI
-  // dialog. We need to post a message to our loop to cancel network retrieval.
-  virtual void Cancel() OVERRIDE;
-
-  // End Importer implementation.
+  // Importer view call this method when the user clicks the cancel button
+  // in the tabbed options UI.  We need to post a message to our loop
+  // to cancel network retrieval.
+  virtual void Cancel();
 
   // URLFetcher::Delegate method called back from the URLFetcher object.
   virtual void OnURLFetchComplete(const URLFetcher* source,
                                   const GURL& url,
                                   const net::URLRequestStatus& status,
                                   int response_code,
-                                  const ResponseCookies& cookies,
+                                  const net::ResponseCookies& cookies,
                                   const std::string& data);
 
  private:

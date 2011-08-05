@@ -12,11 +12,11 @@
 #include "base/message_loop.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/metrics/user_metrics.h"
-#include "content/common/content_switches.h"
+#include "chrome/browser/extensions/extension_info_map.h"
 #include "content/browser/appcache/appcache_dispatcher_host.h"
 #include "content/browser/browser_thread.h"
 #include "content/browser/child_process_security_policy.h"
+#include "content/browser/content_browser_client.h"
 #include "content/browser/file_system/file_system_dispatcher_host.h"
 #include "content/browser/mime_registry_message_filter.h"
 #include "content/browser/renderer_host/blob_message_filter.h"
@@ -24,12 +24,13 @@
 #include "content/browser/renderer_host/file_utilities_message_filter.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
-#include "content/browser/renderer_host/render_view_host_notification_task.h"
 #include "content/browser/renderer_host/socket_stream_dispatcher_host.h"
 #include "content/browser/resource_context.h"
+#include "content/browser/user_metrics.h"
 #include "content/browser/worker_host/message_port_service.h"
 #include "content/browser/worker_host/worker_message_filter.h"
 #include "content/browser/worker_host/worker_service.h"
+#include "content/common/content_switches.h"
 #include "content/common/debug_flags.h"
 #include "content/common/result_codes.h"
 #include "content/common/view_messages.h"
@@ -37,6 +38,7 @@
 #include "net/base/mime_util.h"
 #include "ipc/ipc_switches.h"
 #include "net/base/registry_controlled_domain.h"
+#include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_path_manager.h"
 #include "webkit/fileapi/sandbox_mount_point_provider.h"
 #include "webkit/glue/resource_type.h"
@@ -122,7 +124,6 @@ bool WorkerProcessHost::Init(int render_process_id) {
   CommandLine* cmd_line = new CommandLine(exe_path);
   cmd_line->AppendSwitchASCII(switches::kProcessType, switches::kWorkerProcess);
   cmd_line->AppendSwitchASCII(switches::kProcessChannelID, channel_id());
-  SetCrashReporterCommandLine(cmd_line);
 
   static const char* const kSwitchNames[] = {
     switches::kWebWorkerShareProcesses,
@@ -179,27 +180,45 @@ bool WorkerProcessHost::Init(int render_process_id) {
       id(), render_process_id);
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableFileSystem)) {
-      // Grant most file permissions to this worker.
-      // PLATFORM_FILE_TEMPORARY, PLATFORM_FILE_HIDDEN and
-      // PLATFORM_FILE_DELETE_ON_CLOSE are not granted, because no existing API
-      // requests them.
-      ChildProcessSecurityPolicy::GetInstance()->GrantPermissionsForFile(
-          id(),
-          GetChromeURLRequestContext()->file_system_context()->
-              path_manager()->sandbox_provider()->base_path(),
-          base::PLATFORM_FILE_OPEN |
-          base::PLATFORM_FILE_CREATE |
-          base::PLATFORM_FILE_OPEN_ALWAYS |
-          base::PLATFORM_FILE_CREATE_ALWAYS |
-          base::PLATFORM_FILE_READ |
-          base::PLATFORM_FILE_WRITE |
-          base::PLATFORM_FILE_EXCLUSIVE_READ |
-          base::PLATFORM_FILE_EXCLUSIVE_WRITE |
-          base::PLATFORM_FILE_ASYNC |
-          base::PLATFORM_FILE_TRUNCATE |
-          base::PLATFORM_FILE_WRITE_ATTRIBUTES);
+    // Grant most file permissions to this worker.
+    // PLATFORM_FILE_TEMPORARY, PLATFORM_FILE_HIDDEN and
+    // PLATFORM_FILE_DELETE_ON_CLOSE are not granted, because no existing API
+    // requests them.
+    // This is for the filesystem sandbox.
+    ChildProcessSecurityPolicy::GetInstance()->GrantPermissionsForFile(
+        id(), resource_context_->file_system_context()->
+          path_manager()->sandbox_provider()->new_base_path(),
+        base::PLATFORM_FILE_OPEN |
+        base::PLATFORM_FILE_CREATE |
+        base::PLATFORM_FILE_OPEN_ALWAYS |
+        base::PLATFORM_FILE_CREATE_ALWAYS |
+        base::PLATFORM_FILE_OPEN_TRUNCATED |
+        base::PLATFORM_FILE_READ |
+        base::PLATFORM_FILE_WRITE |
+        base::PLATFORM_FILE_EXCLUSIVE_READ |
+        base::PLATFORM_FILE_EXCLUSIVE_WRITE |
+        base::PLATFORM_FILE_ASYNC |
+        base::PLATFORM_FILE_WRITE_ATTRIBUTES |
+        base::PLATFORM_FILE_ENUMERATE);
+    // This is so that we can read and move stuff out of the old filesystem
+    // sandbox.
+    ChildProcessSecurityPolicy::GetInstance()->GrantPermissionsForFile(
+        id(), resource_context_->file_system_context()->
+          path_manager()->sandbox_provider()->old_base_path(),
+        base::PLATFORM_FILE_READ | base::PLATFORM_FILE_WRITE |
+            base::PLATFORM_FILE_WRITE_ATTRIBUTES |
+            base::PLATFORM_FILE_ENUMERATE);
+    // This is so that we can rename the old sandbox out of the way so that
+    // we know we've taken care of it.
+    ChildProcessSecurityPolicy::GetInstance()->GrantPermissionsForFile(
+        id(), resource_context_->file_system_context()->
+          path_manager()->sandbox_provider()->renamed_old_base_path(),
+        base::PLATFORM_FILE_CREATE | base::PLATFORM_FILE_CREATE_ALWAYS |
+            base::PLATFORM_FILE_WRITE);
   }
 
+  // Call the embedder first so that their IPC filters have priority.
+  content::GetContentClient()->browser()->WorkerProcessHostCreated(this);
   CreateMessageFilters(render_process_id);
 
   return true;
@@ -207,11 +226,12 @@ bool WorkerProcessHost::Init(int render_process_id) {
 
 void WorkerProcessHost::CreateMessageFilters(int render_process_id) {
   DCHECK(resource_context_);
-  ChromeURLRequestContext* chrome_url_context = GetChromeURLRequestContext();
+  net::URLRequestContext* request_context =
+      resource_context_->request_context();
 
   ResourceMessageFilter* resource_message_filter = new ResourceMessageFilter(
       id(), WORKER_PROCESS, resource_context_,
-      new URLRequestContextSelector(chrome_url_context),
+      new URLRequestContextSelector(request_context),
       resource_dispatcher_host_);
   AddFilter(resource_message_filter);
 
@@ -224,18 +244,17 @@ void WorkerProcessHost::CreateMessageFilters(int render_process_id) {
   AddFilter(worker_message_filter_);
   AddFilter(new AppCacheDispatcherHost(resource_context_, id()));
   AddFilter(new FileSystemDispatcherHost(
-      chrome_url_context, resource_context_->file_system_context()));
+      request_context, resource_context_->file_system_context()));
   AddFilter(new FileUtilitiesMessageFilter(id()));
   AddFilter(
       new BlobMessageFilter(id(), resource_context_->blob_storage_context()));
   AddFilter(new MimeRegistryMessageFilter());
   AddFilter(new DatabaseMessageFilter(
-      resource_context_->database_tracker(),
-      chrome_url_context->host_content_settings_map()));
+      resource_context_->database_tracker()));
 
   SocketStreamDispatcherHost* socket_stream_dispatcher_host =
       new SocketStreamDispatcherHost(
-          new URLRequestContextSelector(chrome_url_context));
+          new URLRequestContextSelector(request_context), resource_context_);
   AddFilter(socket_stream_dispatcher_host);
 }
 
@@ -289,6 +308,7 @@ bool WorkerProcessHost::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(WorkerHostMsg_WorkerContextClosed,
                         OnWorkerContextClosed)
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowDatabase, OnAllowDatabase)
+    IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowFileSystem, OnAllowFileSystem)
     IPC_MESSAGE_UNHANDLED(handled = false)
     IPC_END_MESSAGE_MAP_EX()
 
@@ -340,27 +360,13 @@ void WorkerProcessHost::OnAllowDatabase(int worker_route_id,
                                         const string16& display_name,
                                         unsigned long estimated_size,
                                         bool* result) {
-  ContentSetting content_setting = GetChromeURLRequestContext()->
-      host_content_settings_map()->GetContentSetting(
-          url, CONTENT_SETTINGS_TYPE_COOKIES, "");
+  *result = true;
+}
 
-  *result = content_setting != CONTENT_SETTING_BLOCK;
-
-  // Find the worker instance and forward the message to all attached documents.
-  for (Instances::iterator i = instances_.begin(); i != instances_.end(); ++i) {
-    if (i->worker_route_id() != worker_route_id)
-      continue;
-    const WorkerDocumentSet::DocumentInfoSet& documents =
-        i->worker_document_set()->documents();
-    for (WorkerDocumentSet::DocumentInfoSet::const_iterator doc =
-         documents.begin(); doc != documents.end(); ++doc) {
-      CallRenderViewHostContentSettingsDelegate(
-          doc->render_process_id(), doc->render_view_id(),
-          &RenderViewHostDelegate::ContentSettings::OnWebDatabaseAccessed,
-          url, name, display_name, estimated_size, !*result);
-    }
-    break;
-  }
+void WorkerProcessHost::OnAllowFileSystem(int worker_route_id,
+                                          const GURL& url,
+                                          bool* result) {
+  *result = true;
 }
 
 void WorkerProcessHost::RelayMessage(
@@ -459,7 +465,7 @@ void WorkerProcessHost::UpdateTitle() {
 
     // Check if it's an extension-created worker, in which case we want to use
     // the name of the extension.
-    std::string extension_name = GetChromeURLRequestContext()->
+    std::string extension_name = resource_context_->
         extension_info_map()->GetNameForExtension(title);
     if (!extension_name.empty()) {
       titles.insert(extension_name);
@@ -481,11 +487,6 @@ void WorkerProcessHost::UpdateTitle() {
   }
 
   set_name(ASCIIToWide(display_title));
-}
-
-ChromeURLRequestContext* WorkerProcessHost::GetChromeURLRequestContext() {
-  return static_cast<ChromeURLRequestContext*>(
-      resource_context_->request_context());
 }
 
 void WorkerProcessHost::DocumentDetached(WorkerMessageFilter* filter,
@@ -510,16 +511,14 @@ void WorkerProcessHost::DocumentDetached(WorkerMessageFilter* filter,
 WorkerProcessHost::WorkerInstance::WorkerInstance(
     const GURL& url,
     bool shared,
-    bool incognito,
     const string16& name,
     int worker_route_id,
     int parent_process_id,
     int parent_appcache_host_id,
     int64 main_resource_appcache_id,
-    const content::ResourceContext& resource_context)
+    const content::ResourceContext* resource_context)
     : url_(url),
       shared_(shared),
-      incognito_(incognito),
       closed_(false),
       name_(name),
       worker_route_id_(worker_route_id),
@@ -527,18 +526,17 @@ WorkerProcessHost::WorkerInstance::WorkerInstance(
       parent_appcache_host_id_(parent_appcache_host_id),
       main_resource_appcache_id_(main_resource_appcache_id),
       worker_document_set_(new WorkerDocumentSet()),
-      resource_context_(&resource_context) {
+      resource_context_(resource_context) {
   DCHECK(resource_context_);
 }
 
 WorkerProcessHost::WorkerInstance::WorkerInstance(
     const GURL& url,
     bool shared,
-    bool incognito,
-    const string16& name)
+    const string16& name,
+    const content::ResourceContext* resource_context)
     : url_(url),
       shared_(shared),
-      incognito_(incognito),
       closed_(false),
       name_(name),
       worker_route_id_(MSG_ROUTING_NONE),
@@ -546,7 +544,8 @@ WorkerProcessHost::WorkerInstance::WorkerInstance(
       parent_appcache_host_id_(0),
       main_resource_appcache_id_(0),
       worker_document_set_(new WorkerDocumentSet()),
-      resource_context_(NULL) {
+      resource_context_(resource_context) {
+  DCHECK(resource_context_);
 }
 
 WorkerProcessHost::WorkerInstance::~WorkerInstance() {
@@ -558,14 +557,15 @@ WorkerProcessHost::WorkerInstance::~WorkerInstance() {
 // -or-
 // b) the names are both empty, and the urls are equal
 bool WorkerProcessHost::WorkerInstance::Matches(
-    const GURL& match_url, const string16& match_name,
-    bool incognito) const {
+    const GURL& match_url,
+    const string16& match_name,
+    const content::ResourceContext* resource_context) const {
   // Only match open shared workers.
   if (!shared_ || closed_)
     return false;
 
-  // Incognito workers don't match non-incognito workers.
-  if (incognito_ != incognito)
+  // Have to match the same ResourceContext.
+  if (resource_context_ != resource_context)
     return false;
 
   if (url_.GetOrigin() != match_url.GetOrigin())

@@ -27,13 +27,15 @@ cr.define('options', function() {
   const SUBPAGE_SHEET_COUNT = 2;
 
   /**
-   * Main level option pages.
+   * Main level option pages. Maps lower-case page names to the respective page
+   * object.
    * @protected
    */
   OptionsPage.registeredPages = {};
 
   /**
-   * Pages which are meant to behave like modal dialogs.
+   * Pages which are meant to behave like modal dialogs. Maps lower-case overlay
+   * names to the respective overlay object.
    * @protected
    */
   OptionsPage.registeredOverlayPages = {};
@@ -86,7 +88,7 @@ cr.define('options', function() {
     }
 
     // Find the target page.
-    var targetPage = this.registeredPages[pageName];
+    var targetPage = this.registeredPages[pageName.toLowerCase()];
     if (!targetPage || !targetPage.canShowPage()) {
       // If it's not a page, try it as an overlay.
       if (!targetPage && this.showOverlay_(pageName, rootPage)) {
@@ -98,7 +100,7 @@ cr.define('options', function() {
       }
     }
 
-    pageName = targetPage.name;
+    pageName = targetPage.name.toLowerCase();
 
     // Determine if the root page is 'sticky', meaning that it
     // shouldn't change when showing a sub-page.  This can happen for special
@@ -173,7 +175,7 @@ cr.define('options', function() {
     var page = this.getTopmostVisiblePage();
     var path = location.pathname;
     if (path)
-      path = path.slice(1);
+      path = path.slice(1).replace(/\/$/, '');  // Remove trailing slash.
     // The page is already in history (the user may have clicked the same link
     // twice). Do nothing.
     if (path == page.name)
@@ -198,7 +200,7 @@ cr.define('options', function() {
    * @return {boolean} whether we showed an overlay.
    */
   OptionsPage.showOverlay_ = function(overlayName, rootPage) {
-    var overlay = this.registeredOverlayPages[overlayName];
+    var overlay = this.registeredOverlayPages[overlayName.toLowerCase()];
     if (!overlay || !overlay.canShowPage())
       return false;
 
@@ -356,7 +358,7 @@ cr.define('options', function() {
    * @param {OptionsPage} page Page to register.
    */
   OptionsPage.register = function(page) {
-    this.registeredPages[page.name] = page;
+    this.registeredPages[page.name.toLowerCase()] = page;
     // Create and add new page <li> element to navbar.
     var pageNav = document.createElement('li');
     pageNav.id = page.name + 'PageNav';
@@ -404,7 +406,7 @@ cr.define('options', function() {
   OptionsPage.registerSubPage = function(subPage,
                                          parentPage,
                                          associatedControls) {
-    this.registeredPages[subPage.name] = subPage;
+    this.registeredPages[subPage.name.toLowerCase()] = subPage;
     subPage.parentPage = parentPage;
     if (associatedControls) {
       subPage.associatedControls = associatedControls;
@@ -427,7 +429,7 @@ cr.define('options', function() {
   OptionsPage.registerOverlay = function(overlay,
                                          parentPage,
                                          associatedControls) {
-    this.registeredOverlayPages[overlay.name] = overlay;
+    this.registeredOverlayPages[overlay.name.toLowerCase()] = overlay;
     overlay.parentPage = parentPage;
     if (associatedControls) {
       overlay.associatedControls = associatedControls;
@@ -449,7 +451,7 @@ cr.define('options', function() {
     if (data && data.pageName) {
       // It's possible an overlay may be the last top-level page shown.
       if (this.isOverlayVisible_() &&
-          this.registeredOverlayPages[data.pageName] == undefined) {
+          !this.registeredOverlayPages[data.pageName.toLowerCase()]) {
         this.hideOverlay_();
       }
 
@@ -686,10 +688,9 @@ cr.define('options', function() {
       return;
 
     // Do nothing if the client coordinates are not within the source element.
-    // This situation is indicative of a Webkit bug where clicking on a
-    // radio/checkbox label span will generate an event with client coordinates
-    // of (-scrollX, -scrollY).
-    // See https://bugs.webkit.org/show_bug.cgi?id=56606
+    // This occurs if the user toggles a checkbox by pressing spacebar.
+    // This is a workaround to prevent keyboard events from closing the window.
+    // See: crosbug.com/15678
     if (event.clientX == -document.body.scrollLeft &&
         event.clientY == -document.body.scrollTop) {
       return;
@@ -833,9 +834,7 @@ cr.define('options', function() {
      * Gets page visibility state.
      */
     get visible() {
-      var page = $(this.pageDivName);
-      return page && page.ownerDocument.defaultView.getComputedStyle(
-          page).display == 'block';
+      return !this.pageDiv.hidden;
     },
 
     /**
@@ -847,12 +846,12 @@ cr.define('options', function() {
 
       this.setContainerVisibility_(visible);
       if (visible) {
-        this.pageDiv.classList.remove('hidden');
+        this.pageDiv.hidden = false;
 
         if (this.tab)
           this.tab.classList.add('navbar-item-selected');
       } else {
-        this.pageDiv.classList.add('hidden');
+        this.pageDiv.hidden = true;
 
         if (this.tab)
           this.tab.classList.remove('navbar-item-selected');

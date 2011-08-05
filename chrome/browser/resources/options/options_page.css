@@ -376,7 +376,8 @@ section > h3 {
   font-weight: bold;
   margin: 0;
   vertical-align: middle;
-  width: 140px;
+  width: 130px;
+  -webkit-padding-end: 10px;
 }
 
 section > div:only-of-type {
@@ -393,7 +394,6 @@ div.radio {
 }
 
 /* [hidden] does display:none, but its priority is too low in some cases. */
-.hidden,
 [hidden] {
   display: none !important;
 }

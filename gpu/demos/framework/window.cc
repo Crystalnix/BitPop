@@ -60,7 +60,7 @@ bool Window::CreateRenderContext(gfx::PluginWindowHandle hwnd) {
   }
 
   GpuScheduler* gpu_scheduler(
-      new GpuScheduler(command_buffer.get(), NULL));
+      new GpuScheduler(command_buffer.get(), NULL, NULL));
   if (!gpu_scheduler->Initialize(hwnd, gfx::Size(),
                                  gpu::gles2::DisallowedExtensions(),
                                  NULL, std::vector<int32>(),
@@ -69,7 +69,7 @@ bool Window::CreateRenderContext(gfx::PluginWindowHandle hwnd) {
   }
 
   command_buffer->SetPutOffsetChangeCallback(
-      NewCallback(gpu_scheduler, &GpuScheduler::ProcessCommands));
+      NewCallback(gpu_scheduler, &GpuScheduler::PutChanged));
 
   GLES2CmdHelper* helper = new GLES2CmdHelper(command_buffer.get());
   if (!helper->Initialize(kCommandBufferSize)) {

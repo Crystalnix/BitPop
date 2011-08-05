@@ -130,6 +130,7 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
   }
 
   virtual void SetUp() {
+    AbstractProfileSyncServiceTest::SetUp();
     profile_.CreateRequestContext();
     history_backend_ = new HistoryBackendMock();
     history_service_ = new HistoryServiceMock();
@@ -149,13 +150,8 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
     service_.reset();
     notification_service_->TearDown();
     history_thread_.Stop();
-    {
-      // The request context gets deleted on the I/O thread. To prevent a leak
-      // supply one here.
-      BrowserThread io_thread(BrowserThread::IO, MessageLoop::current());
-      profile_.ResetRequestContext();
-    }
-    MessageLoop::current()->RunAllPending();
+    profile_.ResetRequestContext();
+    AbstractProfileSyncServiceTest::TearDown();
   }
 
   void StartSyncService(Task* task) {
@@ -163,10 +159,11 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
       service_.reset(
           new TestProfileSyncService(&factory_, &profile_, "test", false,
                                      task));
+      EXPECT_CALL(profile_, GetProfileSyncService()).WillRepeatedly(
+          Return(service_.get()));
       TypedUrlDataTypeController* data_type_controller =
           new TypedUrlDataTypeController(&factory_,
-                                         &profile_,
-                                         service_.get());
+                                         &profile_);
 
       EXPECT_CALL(factory_, CreateTypedUrlSyncComponents(_, _, _)).
           WillOnce(MakeTypedUrlSyncComponents(service_.get(),
@@ -230,7 +227,7 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
       new_url.set_title(UTF8ToUTF16(typed_url.title()));
       new_url.set_typed_count(typed_url.typed_count());
       DCHECK(typed_url.visit_size());
-      new_url.set_visit_count(typed_url.visit_size());
+      new_url.set_visit_count(typed_url.visited_count());
       new_url.set_last_visit(base::Time::FromInternalValue(
           typed_url.visit(typed_url.visit_size() - 1)));
       new_url.set_hidden(typed_url.hidden());

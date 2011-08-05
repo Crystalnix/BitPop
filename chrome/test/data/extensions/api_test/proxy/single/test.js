@@ -6,6 +6,11 @@
 // browser_tests.exe --gtest_filter=ProxySettingsApiTest.ProxyFixedSingle
 
 chrome.test.runTests([
+  // Verify that execution has started to make sure flaky timeouts are not
+  // caused by us.
+  function verifyTestsHaveStarted() {
+    chrome.test.succeed();
+  },
   function setSingleProxy() {
     var oneProxy = {
       host: "127.0.0.1",
@@ -17,7 +22,7 @@ chrome.test.runTests([
     };
 
     var config = { rules: rules, mode: "fixed_servers" };
-    chrome.experimental.proxy.settings.set(
+    chrome.proxy.settings.set(
         {'value': config},
         chrome.test.callbackPass());
   }

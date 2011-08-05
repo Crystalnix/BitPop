@@ -5,6 +5,7 @@
 #include "chrome/browser/download/download_prefs.h"
 
 #include "base/file_util.h"
+#include "base/logging.h"
 #include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/sys_string_conversions.h"
@@ -34,7 +35,8 @@ DownloadPrefs::DownloadPrefs(PrefService* prefs) : prefs_(prefs) {
 #elif defined(OS_WIN)
     FilePath path(UTF8ToWide(extensions[i]));
 #endif
-    if (!extensions[i].empty() && download_util::IsFileSafe(path))
+    if (!extensions[i].empty() &&
+        download_util::GetFileDangerLevel(path) == download_util::NotDangerous)
       auto_open_.insert(path.value());
   }
 }
@@ -45,17 +47,25 @@ DownloadPrefs::~DownloadPrefs() {
 
 // static
 void DownloadPrefs::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kPromptForDownload, false);
-  prefs->RegisterStringPref(prefs::kDownloadExtensionsToOpen, "");
-  prefs->RegisterBooleanPref(prefs::kDownloadDirUpgraded, false);
+  prefs->RegisterBooleanPref(prefs::kPromptForDownload,
+                             false,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kDownloadExtensionsToOpen,
+                            "",
+                            PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kDownloadDirUpgraded,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
   prefs->RegisterIntegerPref(prefs::kSaveFileType,
-                             SavePackage::SAVE_AS_COMPLETE_HTML);
+                             SavePackage::SAVE_AS_COMPLETE_HTML,
+                             PrefService::UNSYNCABLE_PREF);
 
   // The default download path is userprofile\download.
   const FilePath& default_download_path =
       download_util::GetDefaultDownloadDirectory();
   prefs->RegisterFilePathPref(prefs::kDownloadDefaultDirectory,
-                              default_download_path);
+                              default_download_path,
+                              PrefService::UNSYNCABLE_PREF);
 
 #if defined(OS_CHROMEOS)
   // Ensure that the download directory specified in the preferences exists.
@@ -79,7 +89,10 @@ void DownloadPrefs::RegisterUserPrefs(PrefService* prefs) {
 }
 
 bool DownloadPrefs::PromptForDownload() const {
-  return *prompt_for_download_ && !download_path_.IsManaged();
+  // If the DownloadDirectory policy is set, then |prompt_for_download_| should
+  // always be false.
+  DCHECK(!download_path_.IsManaged() || !prompt_for_download_.GetValue());
+  return *prompt_for_download_;
 }
 
 bool DownloadPrefs::IsDownloadPathManaged() const {
@@ -115,11 +128,6 @@ void DownloadPrefs::DisableAutoOpenBasedOnExtension(const FilePath& file_name) {
   extension.erase(0, 1);
   auto_open_.erase(extension);
   SaveAutoOpenState();
-}
-
-void DownloadPrefs::ResetToDefaults() {
-  // TODO(phajdan.jr): Should we reset rest of prefs here?
-  ResetAutoOpen();
 }
 
 void DownloadPrefs::ResetAutoOpen() {

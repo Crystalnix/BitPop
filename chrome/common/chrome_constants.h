@@ -31,6 +31,7 @@ extern const wchar_t kMessageWindowClass[];
 extern const wchar_t kCrashReportLog[];
 extern const wchar_t kTestingInterfaceDLL[];
 extern const char    kNotSignedInProfile[];
+extern const char    kMultiProfileDirPrefix[];
 extern const char    kStatsFilename[];
 extern const wchar_t kBrowserResourcesDll[];
 extern const wchar_t kNaClAppName[];
@@ -92,6 +93,9 @@ extern const char* const kUnknownLanguageCode;
 // dismissed, display an option to suppress future message boxes from this
 // contents.
 extern const int kJavascriptMessageExpectedDelay;
+
+// Are touch icons enabled? False by default.
+extern const bool kEnableTouchIcon;
 
 }  // namespace chrome
 

@@ -20,7 +20,6 @@
 #include "base/string16.h"
 #include "base/timer.h"
 #include "chrome/browser/renderer_host/web_cache_manager.h"
-#include "net/url_request/url_request_job_tracker.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCache.h"
 
 class Extension;
@@ -30,6 +29,9 @@ class TaskManagerModel;
 
 namespace base {
 class ProcessMetrics;
+}
+namespace net {
+class URLRequest;
 }
 
 // This class is a singleton.
@@ -61,11 +63,15 @@ class TaskManager {
     virtual SkBitmap GetIcon() const = 0;
     virtual base::ProcessHandle GetProcess() const = 0;
     virtual Type GetType() const = 0;
+    virtual int GetRoutingId() const { return 0; }
 
     virtual bool ReportsCacheStats() const { return false; }
     virtual WebKit::WebCache::ResourceTypeStats GetWebCoreCacheStats() const {
       return WebKit::WebCache::ResourceTypeStats();
     }
+
+    virtual bool ReportsFPS() const { return false; }
+    virtual float GetFPS() const { return 0.0f; }
 
     virtual bool ReportsSqliteMemoryUsed() const { return false; }
     virtual size_t SqliteMemoryUsedBytes() const { return 0; }
@@ -99,6 +105,7 @@ class TaskManager {
 
     virtual void NotifyResourceTypeStats(
         const WebKit::WebCache::ResourceTypeStats& stats) {}
+    virtual void NotifyFPS(float fps) {}
     virtual void NotifyV8HeapStats(size_t v8_memory_allocated,
                                    size_t v8_memory_used) {}
 
@@ -169,6 +176,11 @@ class TaskManager {
 
   void OpenAboutMemory();
 
+  // Returns the number of background pages that will be displayed in the
+  // TaskManager. Used by the wrench menu code to display a count of background
+  // pages in the "View Background Pages" menu item.
+  static int GetBackgroundPageCount();
+
  private:
   FRIEND_TEST_ALL_PREFIXES(TaskManagerTest, Basic);
   FRIEND_TEST_ALL_PREFIXES(TaskManagerTest, Resources);
@@ -209,8 +221,7 @@ class TaskManagerModelObserver {
 };
 
 // The model that the TaskManager is using.
-class TaskManagerModel : public net::URLRequestJobTracker::JobObserver,
-                         public base::RefCountedThreadSafe<TaskManagerModel> {
+class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
  public:
   explicit TaskManagerModel(TaskManager* task_manager);
 
@@ -236,6 +247,7 @@ class TaskManagerModel : public net::URLRequestJobTracker::JobObserver,
   string16 GetResourceWebCoreImageCacheSize(int index) const;
   string16 GetResourceWebCoreScriptsCacheSize(int index) const;
   string16 GetResourceWebCoreCSSCacheSize(int index) const;
+  string16 GetResourceFPS(int index) const;
   string16 GetResourceSqliteMemoryUsed(int index) const;
   string16 GetResourceGoatsTeleported(int index) const;
   string16 GetResourceV8MemoryAllocatedSize(int index) const;
@@ -292,18 +304,6 @@ class TaskManagerModel : public net::URLRequestJobTracker::JobObserver,
   // Returns Extension of given resource or NULL if not applicable.
   const Extension* GetResourceExtension(int index) const;
 
-  // JobObserver methods:
-  virtual void OnJobAdded(net::URLRequestJob* job);
-  virtual void OnJobRemoved(net::URLRequestJob* job);
-  virtual void OnJobDone(net::URLRequestJob* job,
-                         const net::URLRequestStatus& status);
-  virtual void OnJobRedirect(net::URLRequestJob* job,
-                             const GURL& location,
-                             int status_code);
-  virtual void OnBytesRead(net::URLRequestJob* job,
-                           const char* buf,
-                           int byte_count);
-
   void AddResource(TaskManager::Resource* resource);
   void RemoveResource(TaskManager::Resource* resource);
 
@@ -320,9 +320,15 @@ class TaskManagerModel : public net::URLRequestJobTracker::JobObserver,
         base::ProcessId renderer_id,
         const WebKit::WebCache::ResourceTypeStats& stats);
 
+  void NotifyFPS(base::ProcessId renderer_id,
+                 int routing_id,
+                 float fps);
+
   void NotifyV8HeapStats(base::ProcessId renderer_id,
                          size_t v8_memory_allocated,
                          size_t v8_memory_used);
+
+  void NotifyBytesRead(const net::URLRequest& request, int bytes_read);
 
  private:
   friend class base::RefCountedThreadSafe<TaskManagerModel>;
@@ -373,10 +379,6 @@ class TaskManagerModel : public net::URLRequestJobTracker::JobObserver,
 
   void AddItem(TaskManager::Resource* resource, bool notify_table);
   void RemoveItem(TaskManager::Resource* resource);
-
-  // Register for network usage updates
-  void RegisterForJobDoneNotifications();
-  void UnregisterForJobDoneNotifications();
 
   // Returns the network usage (in bytes per seconds) for the specified
   // resource. That's the value retrieved at the last timer's tick.

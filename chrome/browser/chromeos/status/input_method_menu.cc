@@ -15,9 +15,9 @@
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/language_preferences.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/pref_names.h"
+#include "content/browser/user_metrics.h"
 #include "content/common/notification_service.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -87,12 +87,15 @@ const struct {
   { "xkb:us:intl:eng", "INTL" },
   { "xkb:us:colemak:eng", "CO" },
   { "xkb:de:neo:ger", "NEO" },
+  // To distinguish from "xkb:es::spa"
+  { "xkb:es:cat:cat", "CAS" },
   // To distinguish from "xkb:gb::eng"
   { "xkb:gb:dvorak:eng", "DV" },
   // To distinguish from "xkb:jp::jpn"
   { "mozc", "\xe3\x81\x82" },  // U+3042, Japanese Hiragana letter A in UTF-8.
   { "mozc-dv", "\xe3\x81\x82" },
   { "mozc-jp", "\xe3\x81\x82" },
+  { "ibus-zinnia-japanese", "\xe6\x89\x8b" },  // U+624B, "hand"
   // For simplified Chinese input methods
   { "pinyin", "\xe6\x8b\xbc" },  // U+62FC
   // For traditional Chinese input methods
@@ -641,7 +644,13 @@ std::wstring InputMethodMenu::GetTextForMenu(
 }
 
 void InputMethodMenu::RegisterPrefs(PrefService* local_state) {
-  local_state->RegisterStringPref(language_prefs::kPreferredKeyboardLayout, "");
+  // We use an empty string here rather than a hardware keyboard layout name
+  // since input_method::GetHardwareInputMethodId() might return a fallback
+  // layout name if local_state->RegisterStringPref(kHardwareKeyboardLayout)
+  // is not called yet.
+  local_state->RegisterStringPref(language_prefs::kPreferredKeyboardLayout,
+                                  "",
+                                  PrefService::UNSYNCABLE_PREF);
 }
 
 void InputMethodMenu::Observe(NotificationType type,

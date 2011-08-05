@@ -2,16 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "content/common/gpu/gpu_channel.h"
-#include "content/common/gpu/gpu_video_decoder.h"
 #include "content/common/gpu/gpu_video_service.h"
-#include "content/common/gpu_messages.h"
 
-struct GpuVideoService::GpuVideoDecoderInfo {
-  scoped_refptr<GpuVideoDecoder> decoder;
-  GpuChannel* channel;
-};
+#include "content/common/gpu/gpu_channel.h"
+#include "content/common/gpu/gpu_messages.h"
+#include "content/common/gpu/gpu_video_decode_accelerator.h"
 
+#if defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL)
+#include "content/common/gpu/omx_video_decode_accelerator.h"
+#endif  // defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL)
 
 GpuVideoService::GpuVideoService() {
   // TODO(jiesun): move this time consuming stuff out of here.
@@ -58,19 +57,28 @@ bool GpuVideoService::CreateVideoDecoder(
     MessageRouter* router,
     int32 decoder_host_id,
     int32 decoder_id,
-    gpu::gles2::GLES2Decoder* gles2_decoder) {
-  GpuVideoDecoderInfo decoder_info;
-  decoder_info.decoder = new GpuVideoDecoder(MessageLoop::current(),
-                                             decoder_host_id,
-                                             channel,
-                                             channel->renderer_process(),
-                                             gles2_decoder);
-  decoder_info.channel = channel;
-  decoder_map_[decoder_id] = decoder_info;
-  router->AddRoute(decoder_id, decoder_info.decoder);
+    const std::vector<uint32>& configs) {
+  // Create GpuVideoDecodeAccelerator and add to map.
+  scoped_refptr<GpuVideoDecodeAccelerator> decoder =
+      new GpuVideoDecodeAccelerator(channel, decoder_host_id);
+#if defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL)
+  decoder->set_video_decode_accelerator(
+      new OmxVideoDecodeAccelerator(decoder, MessageLoop::current()));
+#endif  // defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL)
 
-  channel->Send(new GpuVideoDecoderHostMsg_CreateVideoDecoderDone(
-      decoder_host_id, decoder_id));
+  bool result = decoder_map_.insert(std::make_pair(decoder_id, decoder)).second;
+
+  // Decoder ID is a unique ID determined by GpuVideoServiceHost.
+  // We should always be adding entries here.
+  DCHECK(result);
+
+  router->AddRoute(decoder_id, decoder);
+
+  // Tell client that initialization is complete.
+  channel->Send(
+      new AcceleratedVideoDecoderHostMsg_CreateDone(
+          decoder_host_id, decoder_id));
+
   return true;
 }
 

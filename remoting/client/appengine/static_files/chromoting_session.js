@@ -6,9 +6,21 @@
 // Only the most recent <n> lines are displayed.
 var MAX_DEBUG_LOG_SIZE = 1000;
 
+// Chromoting session API version (for this javascript).
+// This is compared with the plugin API version to verify that they are
+// compatible.
+chromoting.apiVersion = 1;
+
+// The oldest API version that we support.
+// This will differ from the |apiVersion| if we decide to maintain backward
+// compatibility with older API versions.
+chromoting.apiMinVersion = 1;
+
 // Message id so that we can identify (and ignore) message fade operations for
 // old messages.  This starts at 1 and is incremented for each new message.
 chromoting.messageId = 1;
+
+chromoting.scaleToFit = false;
 
 // Default to trying to sandboxed connections.
 chromoting.connectMethod = 'sandboxed';
@@ -17,17 +29,22 @@ chromoting.connectMethod = 'sandboxed';
 // to the plugin.
 function feedIq() {
   var xhr = new XMLHttpRequest();
+  addToDebugLog("xmpp proxy: " + chromoting.httpXmppProxy);
   xhr.open("GET", chromoting.httpXmppProxy + '/readIq?host_jid=' +
            encodeURIComponent(document.hostjid), true);
   xhr.withCredentials = true;
   xhr.onreadystatechange = function() {
     if (xhr.readyState == 4) {
-      if (xhr.status == 200 || xhr.status == 204) {
+      if (xhr.status == 200) {
         addToDebugLog('Receiving Iq: --' + xhr.responseText + '--');
         chromoting.plugin.onIq(xhr.responseText);
+      }
+      if (xhr.status == 200 || xhr.status == 204) {
         window.setTimeout(feedIq, 0);
       } else {
         addToDebugLog("HttpXmpp gateway returned code: " + xhr.status);
+        chromoting.plugin.disconnect();
+        setClientStateMessage("Failed");
       }
     }
   }
@@ -36,6 +53,7 @@ function feedIq() {
 
 function registerConnection() {
   var xhr = new XMLHttpRequest();
+  addToDebugLog("xmpp proxy: " + chromoting.httpXmppProxy);
   xhr.open("POST", chromoting.httpXmppProxy + '/newConnection', true);
   xhr.withCredentials = true;
   xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
@@ -46,17 +64,20 @@ function registerConnection() {
         var clientjid = xhr.responseText;
 
         chromoting.plugin.sendIq = sendIq;
-        chromoting.plugin.connectSandboxed(clientjid, chromoting.hostjid);
+        chromoting.plugin.connect(chromoting.hostjid, clientjid);
         // TODO(ajwong): This should just be feedIq();
         window.setTimeout(feedIq, 1000);
       } else {
-        addToDebugLog('FailedToConnect: --' + xhr.responseText + '--');
+        addToDebugLog('FailedToConnect: --' + xhr.responseText +
+                      '-- (status=' + xhr.status + ')');
+        setClientStateMessage("Failed")
       }
     }
   }
   xhr.send('host_jid=' + encodeURIComponent(chromoting.hostjid) +
            '&username=' + encodeURIComponent(chromoting.username) +
-           '&password=' + encodeURIComponent(chromoting.xmppAuthToken));
+           '&password=' + encodeURIComponent(chromoting.talkToken));
+  setClientStateMessage("Connecting")
 }
 
 function sendIq(msg) {
@@ -82,6 +103,11 @@ function sendIq(msg) {
            "&host_jid=" + encodeURIComponent(chromoting.hostjid));
 }
 
+function checkVersion(plugin) {
+  return chromoting.apiVersion >= plugin.apiMinVersion &&
+      plugin.apiVersion >= chromoting.apiMinVersion;
+}
+
 function init() {
   // Kick off the connection.
   var plugin = document.getElementById('chromoting');
@@ -90,7 +116,7 @@ function init() {
   chromoting.username = document.username;
   chromoting.hostname = document.hostname;
   chromoting.hostjid = document.hostjid;
-  chromoting.xmppAuthToken = document.xmppAuthToken;
+  chromoting.talkToken = document.talkToken;
   chromoting.connectMethod = document.connectMethod;
 
   // Only allow https connections to the httpXmppProxy unless we're running in
@@ -112,24 +138,29 @@ function init() {
   plugin.desktopSizeUpdate = desktopSizeChanged;
   plugin.loginChallenge = loginChallengeCallback;
 
-  console.log('connect request received: ' + chromoting.hostname + ' by ' +
-              chromoting.username);
+  if (!checkVersion(plugin)) {
+    // TODO(garykac): We need better messaging here. Perhaps an install link.
+    setClientStateMessage("Out of date. Please re-install.");
+    return;
+  }
+
+  addToDebugLog('Connect to ' + chromoting.hostname + ' as user ' +
+                chromoting.username);
 
   // TODO(garykac): Clean exit if |connect| isn't a function.
   if (typeof plugin.connect === 'function') {
     if (chromoting.connectMethod == "sandboxed") {
       registerConnection();
     } else {
-      plugin.connect(chromoting.username, chromoting.hostjid,
-                     chromoting.xmppAuthToken);
+      plugin.connectUnsandboxed(chromoting.hostjid, chromoting.username,
+                                chromoting.talkToken);
     }
   } else {
-    console.log('ERROR: chromoting plugin not loaded');
+    addToDebugLog('ERROR: chromoting plugin not loaded');
+    setClientStateMessage('Plugin not loaded');
   }
 
   document.getElementById('title').innerText = chromoting.hostname;
-
-  window.setTimeout("updateStatusBarStats()", 1000);
 }
 
 function toggleDebugLog() {
@@ -143,6 +174,13 @@ function toggleDebugLog() {
     debugLog.style.display = "none";
     toggleButton.value = "Show Debug Log";
   }
+}
+
+function toggleScaleToFit() {
+  chromoting.scaleToFit = !chromoting.scaleToFit;
+  document.getElementById("scale_to_fit_toggle").value =
+      chromoting.scaleToFit ? "No scaling" : "Scale to fit";
+  chromoting.plugin.setScaleToFit(chromoting.scaleToFit);
 }
 
 function submitLogin() {
@@ -174,36 +212,9 @@ function desktopSizeChanged() {
   var width = chromoting.plugin.desktopWidth;
   var height = chromoting.plugin.desktopHeight;
 
-  console.log('desktop size changed: ' + width + 'x' + height);
+  addToDebugLog('desktop size changed: ' + width + 'x' + height);
   chromoting.plugin.style.width = width + "px";
   chromoting.plugin.style.height = height + "px";
-}
-
-/**
- * Show a client message on the screen.
- * If duration is specified, the message fades out after the duration expires.
- * Otherwise, the message stays until the state changes.
- *
- * @param {string} message The message to display.
- * @param {number} duration Milliseconds to show message before fading.
- */
-function showClientStateMessage(message, duration) {
-  // Increment message id to ignore any previous fadeout requests.
-  chromoting.messageId++;
-  console.log('setting message ' + chromoting.messageId + '!');
-
-  // Update the status message.
-  var msg = document.getElementById('status_msg');
-  msg.innerText = message;
-  msg.style.opacity = 1;
-  msg.style.display = '';
-
-  if (duration) {
-    // Set message duration.
-    window.setTimeout("fade('status_msg', " + chromoting.messageId + ", " +
-                            "100, 10, 200)",
-                      duration);
-  }
 }
 
 /**
@@ -225,6 +236,7 @@ function connectionInfoUpdateCallback() {
   } else if (status == chromoting.plugin.STATUS_CONNECTED) {
     desktopSizeChanged();
     setClientStateMessageFade('Connected to ' + chromoting.hostname, 1000);
+    window.setTimeout(updateStatusBarStats, 1000);
   } else if (status == chromoting.plugin.STATUS_CLOSED) {
     setClientStateMessage('Closed');
   } else if (status == chromoting.plugin.STATUS_FAILED) {
@@ -240,7 +252,6 @@ function connectionInfoUpdateCallback() {
 function setClientStateMessage(message) {
   // Increment message id to ignore any previous fadeout requests.
   chromoting.messageId++;
-  console.log('setting message ' + chromoting.messageId);
 
   // Update the status message.
   var msg = document.getElementById('status_msg');
@@ -307,7 +318,7 @@ function fade(name, id, val, delta, delay) {
  * is additional debug log info to display.
  */
 function debugInfoCallback(msg) {
-  addToDebugLog(msg);
+  addToDebugLog('plugin: ' + msg);
 }
 
 /**
@@ -316,8 +327,6 @@ function debugInfoCallback(msg) {
  * @param {string} message The debug info to add to the log.
  */
 function addToDebugLog(message) {
-  console.log('DebugLog: ' + message);
-
   var debugLog = document.getElementById('debug_log');
 
   // Remove lines from top if we've hit our max log size.
@@ -340,20 +349,20 @@ function addToDebugLog(message) {
  * @param {string} message The message to display.
  */
 function updateStatusBarStats() {
+  if (chromoting.plugin.status != chromoting.plugin.STATUS_CONNECTED)
+    return;
   var videoBandwidth = chromoting.plugin.videoBandwidth;
   var videoCaptureLatency = chromoting.plugin.videoCaptureLatency;
   var videoEncodeLatency = chromoting.plugin.videoEncodeLatency;
   var videoDecodeLatency = chromoting.plugin.videoDecodeLatency;
   var videoRenderLatency = chromoting.plugin.videoRenderLatency;
 
-  var status = document.getElementById('status_msg');
-  status.innerText = "Video stats: bandwidth: " + videoBandwidth +
-      ", Latency: capture: " + videoCaptureLatency +
-      ", encode: " + videoEncodeLatency +
-      ", decode: " + videoDecodeLatency +
-      ", render: " + videoRenderLatency;
-  status.style.opacity = 1;
-  status.style.display = '';
+  setClientStateMessage(
+      "Video stats: bandwidth: " + videoBandwidth.toFixed(2) + "Kbps" +
+      ", Latency: capture: " + videoCaptureLatency.toFixed(2) + "ms" +
+      ", encode: " + videoEncodeLatency.toFixed(2) + "ms" +
+      ", decode: " + videoDecodeLatency.toFixed(2) + "ms" +
+      ", render: " + videoRenderLatency.toFixed(2) + "ms");
 
   // Update the stats once per second.
   window.setTimeout("updateStatusBarStats()", 1000);

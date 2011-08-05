@@ -10,12 +10,15 @@
 #include <string>
 
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "ui/gfx/gl/gl_bindings.h"
+#include "ui/gfx/gl/gl_bindings_skia_in_process.h"
 #include "ui/gfx/gl/gl_context.h"
 #include "ui/gfx/gl/gl_implementation.h"
+#include "ui/gfx/gl/gl_surface.h"
 
 namespace webkit {
 namespace gpu {
@@ -88,6 +91,7 @@ WebGraphicsContext3DInProcessImpl::~WebGraphicsContext3DInProcessImpl() {
   glDeleteFramebuffersEXT(1, &fbo_);
 
   gl_context_->Destroy();
+  gl_surface_->Destroy();
 
   for (ShaderSourceMap::iterator ii = shader_source_map_.begin();
        ii != shader_source_map_.end(); ++ii) {
@@ -101,8 +105,9 @@ bool WebGraphicsContext3DInProcessImpl::initialize(
     WebGraphicsContext3D::Attributes attributes,
     WebView* webView,
     bool render_directly_to_web_view) {
-  if (!gfx::GLContext::InitializeOneOff())
+  if (!gfx::GLSurface::InitializeOneOff())
     return false;
+  gfx::BindSkiaToInProcessGL();
 
   render_directly_to_web_view_ = render_directly_to_web_view;
   gfx::GLContext* share_context = 0;
@@ -130,7 +135,27 @@ bool WebGraphicsContext3DInProcessImpl::initialize(
   // and from there to the window, and WebViewImpl::paint already
   // correctly handles the case where the compositor is active but
   // the output needs to go to a WebCanvas.
-  gl_context_.reset(gfx::GLContext::CreateOffscreenGLContext(share_context));
+  gl_surface_ = gfx::GLSurface::CreateOffscreenGLSurface(gfx::Size(1, 1));
+  if (!gl_surface_.get()) {
+    if (!is_gles2_)
+      return false;
+
+    // Embedded systems have smaller limit on number of GL contexts. Sometimes
+    // failure of GL context creation is because of existing GL contexts
+    // referenced by JavaScript garbages. Collect garbage and try again.
+    // TODO: Besides this solution, kbr@chromium.org suggested: upon receiving
+    // a page unload event, iterate down any live WebGraphicsContext3D instances
+    // and force them to drop their contexts, sending a context lost event if
+    // necessary.
+    webView->mainFrame()->collectGarbage();
+
+    gl_surface_ = gfx::GLSurface::CreateOffscreenGLSurface(gfx::Size(1, 1));
+    if (!gl_surface_.get())
+      return false;
+  }
+
+  gl_context_ = gfx::GLContext::CreateGLContext(share_context,
+                                                gl_surface_.get());
   if (!gl_context_.get()) {
     if (!is_gles2_)
       return false;
@@ -143,7 +168,9 @@ bool WebGraphicsContext3DInProcessImpl::initialize(
     // and force them to drop their contexts, sending a context lost event if
     // necessary.
     webView->mainFrame()->collectGarbage();
-    gl_context_.reset(gfx::GLContext::CreateOffscreenGLContext(share_context));
+
+    gl_context_ = gfx::GLContext::CreateGLContext(share_context,
+                                                  gl_surface_.get());
     if (!gl_context_.get())
       return false;
   }
@@ -161,8 +188,14 @@ bool WebGraphicsContext3DInProcessImpl::initialize(
   if (render_directly_to_web_view)
     attributes_.antialias = false;
 
+  if (!gl_context_->MakeCurrent(gl_surface_.get())) {
+    gl_context_ = NULL;
+    return false;
+  }
+
   const char* extensions =
       reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
+  DCHECK(extensions);
   have_ext_framebuffer_object_ =
       strstr(extensions, "GL_EXT_framebuffer_object") != NULL;
   have_ext_framebuffer_multisample_ =
@@ -250,7 +283,7 @@ void WebGraphicsContext3DInProcessImpl::ResolveMultisampledFramebuffer(
 }
 
 bool WebGraphicsContext3DInProcessImpl::makeContextCurrent() {
-  return gl_context_->MakeCurrent();
+  return gl_context_->MakeCurrent(gl_surface_.get());
 }
 
 int WebGraphicsContext3DInProcessImpl::width() {
@@ -1626,4 +1659,3 @@ bool WebGraphicsContext3DInProcessImpl::AngleValidateShaderSource(
 
 }  // namespace gpu
 }  // namespace webkit
-

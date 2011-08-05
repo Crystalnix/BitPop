@@ -8,7 +8,7 @@
 
 #include <vector>
 
-#include "base/callback.h"
+#include "base/callback_old.h"
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
 #include "base/threading/thread.h"
@@ -73,6 +73,9 @@ class PasswordStore
 
   // Reimplement this to add custom initialization. Always call this too.
   virtual bool Init();
+
+  // Invoked from the profiles destructor to shutdown the PasswordStore.
+  virtual void Shutdown();
 
   // Adds the given PasswordForm to the secure password store asynchronously.
   virtual void AddLogin(const webkit_glue::PasswordForm& form);

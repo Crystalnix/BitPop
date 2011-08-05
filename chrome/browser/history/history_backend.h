@@ -12,6 +12,7 @@
 #include "app/sql/init_status.h"
 #include "base/file_path.h"
 #include "base/gtest_prod_util.h"
+#include "base/memory/mru_cache.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/history/archived_database.h"
 #include "chrome/browser/history/expire_history_backend.h"
@@ -22,10 +23,9 @@
 #include "chrome/browser/history/thumbnail_database.h"
 #include "chrome/browser/history/visit_tracker.h"
 #include "chrome/browser/search_engines/template_url_id.h"
-#include "content/common/mru_cache.h"
 
 class BookmarkService;
-struct DownloadCreateInfo;
+struct DownloadHistoryInfo;
 class TestingProfile;
 struct ThumbnailScore;
 
@@ -148,8 +148,9 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   void QueryRedirectsTo(scoped_refptr<QueryRedirectsRequest> request,
                         const GURL& url);
 
-  void GetVisitCountToHost(scoped_refptr<GetVisitCountToHostRequest> request,
-                           const GURL& url);
+  void GetVisibleVisitCountToHost(
+      scoped_refptr<GetVisibleVisitCountToHostRequest> request,
+      const GURL& url);
 
   // TODO(Nik): remove. Use QueryMostVisitedURLs instead.
   void QueryTopURLsAndRedirects(
@@ -240,7 +241,8 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   void UpdateDownload(int64 received_bytes, int32 state, int64 db_handle);
   void UpdateDownloadPath(const FilePath& path, int64 db_handle);
   void CreateDownload(scoped_refptr<DownloadCreateRequest> request,
-                      const DownloadCreateInfo& info);
+                      int32 id,
+                      const DownloadHistoryInfo& info);
   void RemoveDownload(int64 db_handle);
   void RemoveDownloadsBetween(const base::Time remove_begin,
                               const base::Time remove_end);
@@ -555,7 +557,7 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   //
   // As with AddPage, the last item in the redirect chain will be the
   // destination of the redirect (i.e., the key into recent_redirects_);
-  typedef MRUCache<GURL, history::RedirectList> RedirectCache;
+  typedef base::MRUCache<GURL, history::RedirectList> RedirectCache;
   RedirectCache recent_redirects_;
 
   // Timestamp of the last page addition request. We use this to detect when

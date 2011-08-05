@@ -32,12 +32,14 @@
 #include "content/common/renderer_preferences.h"
 #include "googleurl/src/gurl.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/gfx/gtk_util.h"
+#include "ui/gfx/image.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/frame/browser_view.h"
@@ -63,6 +65,10 @@ static const char* kIconName = "chromium-browser";
 #endif
 
 const char kBoldLabelMarkup[] = "<span weight='bold'>%s</span>";
+
+// Max size of each component of the button tooltips.
+const size_t kMaxTooltipTitleLength = 100;
+const size_t kMaxTooltipURLLength = 400;
 
 // Callback used in RemoveAllChildren.
 void RemoveWidget(GtkWidget* widget, gpointer container) {
@@ -128,8 +134,10 @@ void OnLabelRealize(GtkWidget* label, gpointer pixel_width) {
 GList* GetIconList() {
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
   GList* icon_list = NULL;
-  icon_list = g_list_append(icon_list, rb.GetPixbufNamed(IDR_PRODUCT_ICON_32));
-  icon_list = g_list_append(icon_list, rb.GetPixbufNamed(IDR_PRODUCT_LOGO_16));
+  icon_list = g_list_append(icon_list,
+                            rb.GetNativeImageNamed(IDR_PRODUCT_ICON_32));
+  icon_list = g_list_append(icon_list,
+                            rb.GetNativeImageNamed(IDR_PRODUCT_LOGO_16));
   return icon_list;
 }
 
@@ -454,13 +462,13 @@ void RemoveAllChildren(GtkWidget* container) {
 }
 
 void ForceFontSizePixels(GtkWidget* widget, double size_pixels) {
-  GtkStyle* style = widget->style;
-  PangoFontDescription* font_desc = style->font_desc;
+  PangoFontDescription* font_desc = pango_font_description_new();
   // pango_font_description_set_absolute_size sets the font size in device
   // units, which for us is pixels.
   pango_font_description_set_absolute_size(font_desc,
                                            PANGO_SCALE * size_pixels);
   gtk_widget_modify_font(widget, font_desc);
+  pango_font_description_free(font_desc);
 }
 
 void UndoForceFontSize(GtkWidget* widget) {
@@ -769,6 +777,35 @@ GdkPoint MakeBidiGdkPoint(gint x, gint y, gint width, bool ltr) {
   return point;
 }
 
+std::string BuildTooltipTitleFor(string16 title, GURL url) {
+  const std::string& url_str = url.possibly_invalid_spec();
+  const std::string& title_str = UTF16ToUTF8(title);
+
+  std::string truncated_url = UTF16ToUTF8(l10n_util::TruncateString(
+      UTF8ToUTF16(url_str), kMaxTooltipURLLength));
+  gchar* escaped_url_cstr = g_markup_escape_text(truncated_url.c_str(),
+                                                 truncated_url.size());
+  std::string escaped_url(escaped_url_cstr);
+  g_free(escaped_url_cstr);
+
+  std::string tooltip;
+  if (url_str == title_str || title.empty()) {
+    return escaped_url;
+  } else {
+    std::string truncated_title = UTF16ToUTF8(l10n_util::TruncateString(
+        title, kMaxTooltipTitleLength));
+    gchar* escaped_title_cstr = g_markup_escape_text(truncated_title.c_str(),
+                                                     truncated_title.size());
+    std::string escaped_title(escaped_title_cstr);
+    g_free(escaped_title_cstr);
+
+    if (!escaped_url.empty())
+      return std::string("<b>") + escaped_title + "</b>\n" + escaped_url;
+    else
+      return std::string("<b>") + escaped_title + "</b>";
+  }
+}
+
 void DrawTextEntryBackground(GtkWidget* offscreen_entry,
                              GtkWidget* widget_to_draw_on,
                              GdkRectangle* dirty_rec,
@@ -952,7 +989,7 @@ bool URLFromPrimarySelection(Profile* profile, GURL* url) {
   // a search query if necessary.
   AutocompleteMatch match;
   profile->GetAutocompleteClassifier()->Classify(UTF8ToUTF16(selection_text),
-      string16(), false, &match, NULL);
+      string16(), false, false, &match, NULL);
   g_free(selection_text);
   if (!match.destination_url.is_valid())
     return false;
@@ -994,10 +1031,8 @@ void GetTextColors(GdkColor* normal_base,
 
 GtkWindow* GetLastActiveBrowserWindow() {
   if (Browser* b = BrowserList::GetLastActive()) {
-    if (b->type() != Browser::TYPE_NORMAL) {
-      b = BrowserList::FindBrowserWithType(b->profile(),
-                                           Browser::TYPE_NORMAL,
-                                           true);
+    if (!b->is_type_tabbed()) {
+      b = BrowserList::FindTabbedBrowser(b->profile(), true);
     }
 
     if (b)

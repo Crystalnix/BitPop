@@ -6,7 +6,7 @@
   'targets': [
     {
       'target_name': 'content_plugin',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '20A560A0-2CD0-4D9E-A58B-1F24B99C087A',
       'dependencies': [
         'content_common',
@@ -54,7 +54,7 @@
             '<(DEPTH)/third_party/wtl/include',
           ],
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
           ],

@@ -6,6 +6,7 @@
 
 #include <signal.h>
 #include <sys/types.h>
+
 #include <string>
 
 #include "base/basictypes.h"
@@ -16,16 +17,15 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/cryptohome_library.h"
-#include "chrome/browser/chromeos/customization_document.h"
 #include "chrome/browser/chromeos/login/background_view.h"
 #include "chrome/browser/chromeos/login/help_app_launcher.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
-#include "chrome/browser/chromeos/login/network_screen_delegate.h"
 #include "chrome/browser/chromeos/login/rounded_rect_painter.h"
-#include "chrome/browser/chromeos/login/wizard_controller.h"
+#include "chrome/browser/chromeos/login/views_eula_screen_actor.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/views/dom_view.h"
+#include "chrome/browser/ui/views/handle_web_keyboard_event_gtk.h"
 #include "chrome/browser/ui/views/window.h"
 #include "chrome/common/url_constants.h"
 #include "content/browser/site_instance.h"
@@ -40,16 +40,14 @@
 #include "views/controls/button/checkbox.h"
 #include "views/controls/button/native_button_gtk.h"
 #include "views/controls/label.h"
+#include "views/controls/link.h"
 #include "views/controls/throbber.h"
 #include "views/events/event.h"
 #include "views/layout/grid_layout.h"
 #include "views/layout/layout_constants.h"
 #include "views/layout/layout_manager.h"
-#include "views/widget/widget_gtk.h"
 #include "views/window/dialog_delegate.h"
 #include "views/window/window.h"
-
-using views::WidgetGtk;
 
 namespace {
 
@@ -59,10 +57,6 @@ const int kLastButtonHorizontalMargin = 10;
 const int kMargin = 20;
 const int kTextMargin = 10;
 const int kTpmCheckIntervalMs = 500;
-
-// TODO(glotov): this URL should be changed to actual Google ChromeOS EULA.
-// See crbug.com/4647
-const char kGoogleEulaUrl[] = "about:terms";
 
 enum kLayoutColumnsets {
   SINGLE_CONTROL_ROW,
@@ -219,6 +213,7 @@ void TpmInfoView::Init() {
   layout->AddView(busy_label_);
   layout->AddPaddingRow(0, views::kRelatedControlHorizontalSpacing);
 
+  // TODO(avayvod): Refactor this to be usable for WebUI.
   PullPassword();
 }
 
@@ -261,9 +256,27 @@ void TpmInfoView::PullPassword() {
 namespace chromeos {
 
 ////////////////////////////////////////////////////////////////////////////////
+// EULATabContentsDelegate, public:
+
+bool EULATabContentsDelegate::IsPopup(TabContents* source) {
+  return false;
+}
+
+bool EULATabContentsDelegate::ShouldAddNavigationToHistory(
+    const history::HistoryAddPageArgs& add_page_args,
+    NavigationType::Type navigation_type) {
+  return false;
+}
+
+bool EULATabContentsDelegate::HandleContextMenu(
+    const ContextMenuParams& params) {
+  return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // EulaView, public:
 
-EulaView::EulaView(chromeos::ScreenObserver* observer)
+EulaView::EulaView(ViewsEulaScreenActor* actor)
     : google_eula_label_(NULL),
       google_eula_view_(NULL),
       usage_statistics_checkbox_(NULL),
@@ -273,7 +286,7 @@ EulaView::EulaView(chromeos::ScreenObserver* observer)
       system_security_settings_link_(NULL),
       back_button_(NULL),
       continue_button_(NULL),
-      observer_(observer),
+      actor_(actor),
       bubble_(NULL) {
 }
 
@@ -316,34 +329,7 @@ static void SetUpGridLayout(views::GridLayout* layout) {
   column_set->AddPaddingColumn(0, kLastButtonHorizontalMargin + kBorderSize);
 }
 
-// Convenience function. Returns URL of the OEM EULA page that should be
-// displayed using current locale and manifest. Returns empty URL otherwise.
-static GURL GetOemEulaPagePath() {
-  const StartupCustomizationDocument* customization =
-      StartupCustomizationDocument::GetInstance();
-  if (customization->IsReady()) {
-    std::string locale = customization->initial_locale();
-    std::string eula_page = customization->GetEULAPage(locale);
-    if (!eula_page.empty())
-      return GURL(eula_page);
-
-    VLOG(1) << "No eula found for locale: " << locale;
-  } else {
-    LOG(ERROR) << "No manifest found.";
-  }
-  return GURL();
-}
-
 void EulaView::Init() {
-  // First, command to own the TPM.
-  if (chromeos::CrosLibrary::Get()->EnsureLoaded()) {
-    chromeos::CrosLibrary::Get()->
-        GetCryptohomeLibrary()->TpmCanAttemptOwnership();
-  } else {
-    LOG(ERROR) << "Cros library not loaded. "
-               << "We must have disabled the link that led here.";
-  }
-
   // Use rounded rect background.
   views::Painter* painter = CreateWizardPainter(
       &BorderDefinition::kScreenBorder);
@@ -380,12 +366,12 @@ void EulaView::Init() {
   usage_statistics_checkbox_ = new EULACheckbox();
   usage_statistics_checkbox_->SetMultiLine(true);
   usage_statistics_checkbox_->SetChecked(
-      observer_->usage_statistics_reporting());
+      actor_->screen()->IsUsageStatsEnabled());
   layout->AddView(usage_statistics_checkbox_);
 
   layout->StartRow(0, SINGLE_LINK_WITH_SHIFT_ROW);
   learn_more_link_ = new views::Link();
-  learn_more_link_->SetController(this);
+  learn_more_link_->set_listener(this);
   layout->AddView(learn_more_link_);
 
   layout->AddPaddingRow(0, views::kRelatedControlSmallVerticalSpacing);
@@ -394,7 +380,7 @@ void EulaView::Init() {
   layout->AddView(oem_eula_label_, 1, 1,
                   views::GridLayout::LEADING, views::GridLayout::FILL);
 
-  oem_eula_page_ = GetOemEulaPagePath();
+  oem_eula_page_ = actor_->screen()->GetOemEulaUrl();
   if (!oem_eula_page_.is_empty()) {
     layout->AddPaddingRow(0, views::kRelatedControlSmallVerticalSpacing);
     layout->StartRow(1, SINGLE_CONTROL_ROW);
@@ -410,11 +396,9 @@ void EulaView::Init() {
   layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
   layout->StartRow(0, LAST_ROW);
   system_security_settings_link_ = new views::Link();
-  system_security_settings_link_->SetController(this);
+  system_security_settings_link_->set_listener(this);
 
-  if (!chromeos::CrosLibrary::Get()->EnsureLoaded() ||
-      !chromeos::CrosLibrary::Get()->GetCryptohomeLibrary()->
-          TpmIsEnabled()) {
+  if (!actor_->screen()->IsTpmEnabled()) {
     system_security_settings_link_->SetEnabled(false);
   }
 
@@ -432,7 +416,9 @@ void EulaView::Init() {
 
 void EulaView::UpdateLocalizedStrings() {
   // Load Google EULA and its title.
-  LoadEulaView(google_eula_view_, google_eula_label_, GURL(kGoogleEulaUrl));
+  LoadEulaView(google_eula_view_,
+               google_eula_label_,
+               actor_->screen()->GetGoogleEulaUrl());
 
   // Load OEM EULA and its title.
   if (!oem_eula_page_.is_empty())
@@ -463,6 +449,10 @@ void EulaView::UpdateLocalizedStrings() {
       UTF16ToWide(l10n_util::GetStringUTF16(IDS_EULA_BACK_BUTTON)));
 }
 
+bool EulaView::IsUsageStatsChecked() const {
+  return usage_statistics_checkbox_ && usage_statistics_checkbox_->checked();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // EulaView, protected, views::View implementation:
 
@@ -475,21 +465,17 @@ void EulaView::OnLocaleChanged() {
 // views::ButtonListener implementation:
 
 void EulaView::ButtonPressed(views::Button* sender, const views::Event& event) {
-  if (usage_statistics_checkbox_) {
-    observer_->set_usage_statistics_reporting(
-        usage_statistics_checkbox_->checked());
-  }
   if (sender == continue_button_) {
-    observer_->OnExit(ScreenObserver::EULA_ACCEPTED);
+    actor_->screen()->OnExit(true);
   } else if (sender == back_button_) {
-    observer_->OnExit(ScreenObserver::EULA_BACK);
+    actor_->screen()->OnExit(false);
   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// views::LinkController implementation:
+// views::LinkListener implementation:
 
-void EulaView::LinkActivated(views::Link* source, int event_flags) {
+void EulaView::LinkClicked(views::Link* source, int event_flags) {
   gfx::NativeWindow parent_window =
       LoginUtils::Get()->GetBackgroundView()->GetNativeWindow();
   if (source == learn_more_link_) {
@@ -497,12 +483,13 @@ void EulaView::LinkActivated(views::Link* source, int event_flags) {
       help_app_ = new HelpAppLauncher(parent_window);
     help_app_->ShowHelpTopic(HelpAppLauncher::HELP_STATS_USAGE);
   } else if (source == system_security_settings_link_) {
-    TpmInfoView* view = new TpmInfoView(&tpm_password_);
+    TpmInfoView* view =
+        new TpmInfoView(actor_->screen()->GetTpmPasswordStorage());
     view->Init();
     views::Window* window = browser::CreateViewsWindow(parent_window,
                                                        gfx::Rect(),
                                                        view);
-    window->SetIsAlwaysOnTop(true);
+    window->SetAlwaysOnTop(true);
     window->Show();
   }
 }
@@ -533,11 +520,7 @@ void EulaView::NavigationStateChanged(const TabContents* contents,
 }
 
 void EulaView::HandleKeyboardEvent(const NativeWebKeyboardEvent& event) {
-  views::Widget* widget = GetWidget();
-  if (widget && event.os_event && !event.skip_in_browser) {
-    views::KeyEvent views_event(reinterpret_cast<GdkEvent*>(event.os_event));
-    static_cast<views::WidgetGtk*>(widget)->HandleKeyboardEvent(views_event);
-  }
+  HandleWebKeyboardEvent(GetWidget(), event);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -556,6 +539,10 @@ void EulaView::LoadEulaView(DOMView* eula_view,
 ////////////////////////////////////////////////////////////////////////////////
 // EulaView, private, views::View implementation:
 
+bool EulaView::SkipDefaultKeyEventProcessing(const views::KeyEvent& e) {
+  return true;
+}
+
 bool EulaView::OnKeyPressed(const views::KeyEvent&) {
   // Close message bubble if shown. bubble_ will be set to NULL in callback.
   if (bubble_) {
@@ -563,6 +550,24 @@ bool EulaView::OnKeyPressed(const views::KeyEvent&) {
     return true;
   }
   return false;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// EulaView, private, views::BubbleDelegate implementation:
+
+void EulaView::BubbleClosing(Bubble* bubble, bool closed_by_escape) {
+  bubble_ = NULL;
+}
+
+bool EulaView::CloseOnEscape() {
+  return true;
+}
+
+bool EulaView::FadeInOnShow() {
+  return false;
+}
+
+void EulaView::OnLinkActivated(size_t index) {
 }
 
 }  // namespace chromeos

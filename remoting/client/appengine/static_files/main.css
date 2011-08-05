@@ -135,7 +135,7 @@ a.hostentry {
   overflow: auto;
   font-family: monospace;
   font-weight: bold;
-  line-height: 0.5em;
+  font-size: small;
   border: 2px solid #ffffff;
   display: none;
   opacity: 0.9;
@@ -147,6 +147,11 @@ a.hostentry {
   line-height: 0.8em;
   float: right;
 }
+
+.scale_to_fit_toggle {
+  line-height: 0.8em;
+  float: right;
+ }
 
 .gaia_login_panel {
   -webkit-user-select: none;

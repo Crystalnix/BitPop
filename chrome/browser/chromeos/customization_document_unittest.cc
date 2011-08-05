@@ -120,7 +120,7 @@ TEST(StartupCustomizationDocumentTest, Basic) {
   EXPECT_CALL(mock_system_access, GetMachineStatistic(_, NotNull()))
       .WillRepeatedly(Return(false));
   EXPECT_CALL(mock_system_access,
-      GetMachineStatistic(std::string("hwid"), NotNull()))
+      GetMachineStatistic(std::string("hardware_class"), NotNull()))
           .WillOnce(DoAll(SetArgumentPointee<1>(std::string("Mario 12345")),
                           Return(true)));
   StartupCustomizationDocument customization(&mock_system_access,
@@ -148,7 +148,7 @@ TEST(StartupCustomizationDocumentTest, Basic) {
 TEST(StartupCustomizationDocumentTest, VPD) {
   MockSystemAccess mock_system_access;
   EXPECT_CALL(mock_system_access,
-      GetMachineStatistic(std::string("hwid"), NotNull()))
+      GetMachineStatistic(std::string("hardware_class"), NotNull()))
           .WillOnce(DoAll(SetArgumentPointee<1>(std::string("Mario 12345")),
                           Return(true)));
   EXPECT_CALL(mock_system_access,
@@ -195,9 +195,9 @@ TEST(ServicesCustomizationDocumentTest, Basic) {
   const ServicesCustomizationDocument::CarrierDeal* deal;
   deal = customization.GetCarrierDeal("Carrier (country)", true);
   EXPECT_TRUE(deal != NULL);
-  EXPECT_EQ("en-US", deal->deal_locale);
-  EXPECT_EQ("http://www.carrier.com/", deal->top_up_url);
-  EXPECT_EQ(1, deal->notification_count);
+  EXPECT_EQ("en-US", deal->deal_locale());
+  EXPECT_EQ("http://www.carrier.com/", deal->top_up_url());
+  EXPECT_EQ(1, deal->notification_count());
   EXPECT_EQ("3G connectivity : Carrier.",
             deal->GetLocalizedString("en-US", "notification_text"));
   EXPECT_EQ("default_text.",
@@ -205,7 +205,7 @@ TEST(ServicesCustomizationDocumentTest, Basic) {
 
   base::Time reference_time;
   base::Time::FromString(L"31/12/12 0:00", &reference_time);
-  EXPECT_EQ(reference_time, deal->expire_date);
+  EXPECT_EQ(reference_time, deal->expire_date());
 }
 
 TEST(ServicesCustomizationDocumentTest, OldDeal) {

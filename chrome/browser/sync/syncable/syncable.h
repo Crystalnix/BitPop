@@ -18,6 +18,7 @@
 #include "base/basictypes.h"
 #include "base/file_path.h"
 #include "base/gtest_prod_util.h"
+#include "base/observer_list.h"
 #include "base/synchronization/lock.h"
 #include "base/time.h"
 #include "chrome/browser/sync/protocol/sync.pb.h"
@@ -550,6 +551,9 @@ class LessEntryMetaHandles {
 };
 typedef std::set<EntryKernel, LessEntryMetaHandles> OriginalEntries;
 
+// Caller owns the return value.
+ListValue* OriginalEntriesToValue(const OriginalEntries& original_entries);
+
 // How syncable indices & Indexers work.
 //
 // The syncable Directory maintains several indices on the Entries it tracks.
@@ -632,6 +636,9 @@ enum WriterTag {
   PURGE_ENTRIES,
   SYNCAPI
 };
+
+// Make sure to update this if you update WriterTag.
+std::string WriterTagToString(WriterTag writer_tag);
 
 // The name Directory in this case means the entire directory
 // structure within a single user account.
@@ -763,6 +770,7 @@ class Directory {
   void GetDownloadProgressAsString(
       ModelType type,
       std::string* value_out) const;
+  size_t GetEntriesCount() const;
   void SetDownloadProgress(
       ModelType type,
       const sync_pb::DataTypeProgressMarker& value);
@@ -793,7 +801,8 @@ class Directory {
   // Unique to each account / client pair.
   std::string cache_guid() const;
 
-  void SetChangeListener(DirectoryChangeListener* listener);
+  void AddChangeListener(DirectoryChangeListener* listener);
+  void RemoveChangeListener(DirectoryChangeListener* listener);
 
  protected:  // for friends, mainly used by Entry constructors
   virtual EntryKernel* GetEntryByHandle(int64 handle);
@@ -973,6 +982,12 @@ class Directory {
     void AddRef();  // For convenience.
     void Release();
 
+    void AddChangeListener(DirectoryChangeListener* listener);
+    void RemoveChangeListener(DirectoryChangeListener* listener);
+
+    void CopyChangeListeners(
+        ObserverList<DirectoryChangeListener>* change_listeners);
+
     FilePath const db_path;
     // TODO(timsteele): audit use of the member and remove if possible
     volatile base::subtle::AtomicWord refcount;
@@ -1015,10 +1030,6 @@ class Directory {
     // TODO(ncarter): Figure out what the hell this is, and comment it.
     Channel* const channel;
 
-    // The listener for directory change events, triggered when the transaction
-    // is ending.
-    DirectoryChangeListener* change_listener_;
-
     KernelShareInfoStatus info_status;
 
     // These 3 members are backed in the share_info table, and
@@ -1042,6 +1053,12 @@ class Directory {
     // Keep a history of recently flushed metahandles for debugging
     // purposes.  Protected by the save_changes_mutex.
     DebugQueue<int64, 1000> flushed_metahandles;
+
+   private:
+    // The listeners for directory change events, triggered when the
+    // transaction is ending (and its lock).
+    base::Lock change_listeners_lock_;
+    ObserverList<DirectoryChangeListener> change_listeners_;
   };
 
   // Helper method used to do searches on |parent_id_child_index|.

@@ -10,9 +10,12 @@
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/input_method_library.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
+#include "chrome/browser/chromeos/input_method/xkeyboard.h"
+#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/common/jstemplate_builder.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/browser/browser_thread.h"
 #include "content/browser/tab_contents/tab_contents.h"
@@ -22,6 +25,31 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
+using chromeos::input_method::ModifierKey;
+
+namespace {
+
+struct ModifierToLabel {
+  const ModifierKey modifier;
+  const char* label;
+} kModifierToLabels[] = {
+  {chromeos::input_method::kSearchKey, "search"},
+  {chromeos::input_method::kLeftControlKey, "ctrl"},
+  {chromeos::input_method::kLeftAltKey, "alt"},
+  {chromeos::input_method::kVoidKey, "disabled"},
+  {chromeos::input_method::kCapsLockKey, "caps lock"},
+};
+
+std::string ModifierKeyToLabel(ModifierKey modifier) {
+  for (size_t i = 0; i < arraysize(kModifierToLabels); ++i) {
+    if (modifier == kModifierToLabels[i].modifier) {
+      return kModifierToLabels[i].label;
+    }
+  }
+  return "";
+}
+
+}  // namespace
 
 class KeyboardOverlayUIHTMLSource : public ChromeURLDataManager::DataSource {
  public:
@@ -48,7 +76,7 @@ class KeyboardOverlayHandler
     : public WebUIMessageHandler,
       public base::SupportsWeakPtr<KeyboardOverlayHandler> {
  public:
-  KeyboardOverlayHandler();
+  explicit KeyboardOverlayHandler(Profile* profile);
   virtual ~KeyboardOverlayHandler();
 
   // WebUIMessageHandler implementation.
@@ -59,6 +87,12 @@ class KeyboardOverlayHandler
   // Called when the page requires the keyboard overaly ID corresponding to the
   // current input method or keyboard layout during initialization.
   void GetKeyboardOverlayId(const ListValue* args);
+
+  // Called when the page requres the information of modifier key remapping
+  // during the initialization.
+  void GetLabelMap(const ListValue* args);
+
+  Profile* profile_;
 
   DISALLOW_COPY_AND_ASSIGN(KeyboardOverlayHandler);
 };
@@ -206,8 +240,6 @@ void KeyboardOverlayUIHTMLSource::StartDataRequest(const std::string& path,
       l10n_util::GetStringUTF16(IDS_KEYBOARD_OVERLAY_PAGE_DOWN));
   localized_strings.SetString("keyboardOverlayPreviousWindow",
       l10n_util::GetStringUTF16(IDS_KEYBOARD_OVERLAY_PREVIOUS_WINDOW));
-  localized_strings.SetString("keyboardOverlayUseExternalMonitor",
-      l10n_util::GetStringUTF16(IDS_KEYBOARD_OVERLAY_USE_EXTERNAL_MONITOR));
   localized_strings.SetString("keyboardOverlayReloadIgnoringCache",
       l10n_util::GetStringUTF16(IDS_KEYBOARD_OVERLAY_RELOAD_IGNORING_CACHE));
   localized_strings.SetString("keyboardOverlaySave",
@@ -244,6 +276,8 @@ void KeyboardOverlayUIHTMLSource::StartDataRequest(const std::string& path,
       l10n_util::GetStringUTF16(IDS_KEYBOARD_OVERLAY_HELP));
   localized_strings.SetString("keyboardOverlayLockScreenOrPowerOff",
       l10n_util::GetStringUTF16(IDS_KEYBOARD_OVERLAY_LOCK_SCREEN_OR_POWER_OFF));
+  localized_strings.SetString("keyboardOverlayInputUnicodeCharacters",
+      l10n_util::GetStringUTF16(IDS_KEYBOARD_OVERLAY_INPUT_UNICODE_CHARACTERS));
 
   static const base::StringPiece keyboard_overlay_html(
       ResourceBundle::GetSharedInstance().GetRawDataResource(
@@ -263,7 +297,8 @@ void KeyboardOverlayUIHTMLSource::StartDataRequest(const std::string& path,
 // KeyboardOverlayHandler
 //
 ////////////////////////////////////////////////////////////////////////////////
-KeyboardOverlayHandler::KeyboardOverlayHandler() {
+KeyboardOverlayHandler::KeyboardOverlayHandler(Profile* profile)
+    : profile_(profile) {
 }
 
 KeyboardOverlayHandler::~KeyboardOverlayHandler() {
@@ -277,6 +312,8 @@ void KeyboardOverlayHandler::RegisterMessages() {
   DCHECK(web_ui_);
   web_ui_->RegisterMessageCallback("getKeyboardOverlayId",
       NewCallback(this, &KeyboardOverlayHandler::GetKeyboardOverlayId));
+  web_ui_->RegisterMessageCallback("getLabelMap",
+      NewCallback(this, &KeyboardOverlayHandler::GetLabelMap));
 }
 
 void KeyboardOverlayHandler::GetKeyboardOverlayId(const ListValue* args) {
@@ -290,6 +327,28 @@ void KeyboardOverlayHandler::GetKeyboardOverlayId(const ListValue* args) {
   web_ui_->CallJavascriptFunction("initKeyboardOverlayId", param);
 }
 
+void KeyboardOverlayHandler::GetLabelMap(const ListValue* args) {
+  DCHECK(profile_);
+  PrefService* pref_service = profile_->GetPrefs();
+  typedef std::map<ModifierKey, ModifierKey> ModifierMap;
+  ModifierMap modifier_map;
+  modifier_map[chromeos::input_method::kSearchKey] = static_cast<ModifierKey>(
+      pref_service->GetInteger(prefs::kLanguageXkbRemapSearchKeyTo));
+  modifier_map[chromeos::input_method::kLeftControlKey] =
+      static_cast<ModifierKey>(
+          pref_service->GetInteger(prefs::kLanguageXkbRemapControlKeyTo));
+  modifier_map[chromeos::input_method::kLeftAltKey] = static_cast<ModifierKey>(
+      pref_service->GetInteger(prefs::kLanguageXkbRemapAltKeyTo));
+
+  DictionaryValue dict;
+  for (ModifierMap::const_iterator i = modifier_map.begin();
+       i != modifier_map.end(); ++i) {
+    dict.SetString(ModifierKeyToLabel(i->first), ModifierKeyToLabel(i->second));
+  }
+
+  web_ui_->CallJavascriptFunction("initIdentifierMap", dict);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 //
 // KeyboardOverlayUI
@@ -298,7 +357,8 @@ void KeyboardOverlayHandler::GetKeyboardOverlayId(const ListValue* args) {
 
 KeyboardOverlayUI::KeyboardOverlayUI(TabContents* contents)
     : HtmlDialogUI(contents) {
-  KeyboardOverlayHandler* handler = new KeyboardOverlayHandler();
+  KeyboardOverlayHandler* handler =
+      new KeyboardOverlayHandler(contents->profile());
   AddMessageHandler((handler)->Attach(this));
   KeyboardOverlayUIHTMLSource* html_source = new KeyboardOverlayUIHTMLSource();
 

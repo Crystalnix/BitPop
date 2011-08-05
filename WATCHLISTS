@@ -143,6 +143,13 @@
                   'chrome/browser/resources/options.html|'\
                   'chrome/browser/dom_ui/options/.*',
     },
+    'ntp' : {
+      'filepath': 'chrome/browser/resources/ntp/.*|'\
+        'chrome/browser/resources/ntp4/.*|'\
+        'chrome/browser/resources/touch_ntp/.*|'\
+        'chrome/browser/resources/touch_ntp/.*|'\
+        'chrome/browser/ui/webui/ntp/.*',
+    },
     'cookie_monster': {
       'filepath': 'net/base/cookie_.*|'\
         'chrome/browser/net/sqlite_persistent_cookie_store.*',
@@ -204,6 +211,12 @@
     'imageburner' : {
       'filepath': 'imageburner'
     },
+    'clang_update': {
+      'filepath': 'tools/clang/scripts/update.sh'
+    },
+    'panels': {
+      'filepath': 'chrome/browser/ui/panels/.*',
+    },
   },
 
   'WATCHLISTS': {
@@ -216,7 +229,7 @@
     'browser_main': ['brettw-cc@chromium.org'],
     'browser_resources': ['arv@chromium.org'],
     'chromeos_login': ['nkostylev+cc@chromium.org'],
-    'content': ['jam@chromium.org'],
+    'content': ['jam@chromium.org', 'joi+watch-content@chromium.org'],
     'download': ['phajdan.jr@chromium.org','rdsmith+dwatch@chromium.org'],
     'history': ['brettw-cc@chromium.org'],
     'renderer': ['darin-cc@chromium.org',
@@ -259,6 +272,7 @@
                  'sergeyu+watch@chromium.org',
                  'simonmorris+watch@chromium.org',
                  'wez+watch@chromium.org'],
+    'ntp': ['estade+watch@chromium.org'],
     'cookie_monster': ['rdsmith@chromium.org'],
     'autofill': ['dhollowa@chromium.org', 'georgey@chromium.org',
                  'isherman@chromium.org'],
@@ -274,5 +288,10 @@
     'dom_login': ['rharrison@chromium.org'],
     'imageburner': ['achuith+watch@chromium.org', 'tbarzic+watch@chromium.org'],
     'filebrowse': ['achuith+watch@chromium.org', 'rginda+watch@chromium.org'],
+    'clang_update': ['fischman+watch@chromium.org', 'ukai+watch@chromium.org'],
+    'panels': ['dimich@chromium.org', 'jennb@chromium.org',
+               'prasadt@chromium.org', 'dcheng@chromium.org',
+	       'jianli@chromium.org'],
+    'importer': ['tfarina@chromium.org'],
   },
 }

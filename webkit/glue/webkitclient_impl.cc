@@ -25,7 +25,6 @@
 #include "base/synchronization/lock.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
-#include "gpu/common/gpu_trace_event.h"
 #include "grit/webkit_chromium_resources.h"
 #include "grit/webkit_resources.h"
 #include "grit/webkit_strings.h"
@@ -207,11 +206,7 @@ WebKitClientImpl::~WebKitClientImpl() {
 }
 
 WebThemeEngine* WebKitClientImpl::themeEngine() {
-#if defined(OS_WIN) || defined(OS_LINUX) || defined(OS_MACOSX)
   return &theme_engine_;
-#else
-  return NULL;
-#endif
 }
 
 WebURLLoader* WebKitClientImpl::createURLLoader() {
@@ -284,16 +279,12 @@ void WebKitClientImpl::histogramEnumeration(
 
 void WebKitClientImpl::traceEventBegin(const char* name, void* id,
                                        const char* extra) {
-  TRACE_EVENT_BEGIN(name, id, extra);
-  GPU_TRACE_EVENT_BEGIN2("webkit", name,
-                         "id", StringPrintf("%p", id).c_str(),
-                         "extra", extra ? extra : "");
+  TRACE_EVENT_BEGIN_ETW(name, id, extra);
 }
 
 void WebKitClientImpl::traceEventEnd(const char* name, void* id,
                                      const char* extra) {
-  TRACE_EVENT_END(name, id, extra);
-  GPU_TRACE_EVENT_END0("webkit", name);
+  TRACE_EVENT_END_ETW(name, id, extra);
 }
 
 namespace {
@@ -451,13 +442,7 @@ double WebKitClientImpl::currentTime() {
 
 void WebKitClientImpl::cryptographicallyRandomValues(
     unsigned char* buffer, size_t length) {
-  uint64 bytes = 0;
-  for (size_t i = 0; i < length; ++i) {
-    size_t offset = i % sizeof(bytes);
-    if (!offset)
-      bytes = base::RandUint64();
-    buffer[i] = reinterpret_cast<unsigned char*>(&bytes)[offset];
-  }
+  base::RandBytes(buffer, length);
 }
 
 void WebKitClientImpl::setSharedTimerFiredFunction(void (*func)()) {
@@ -514,6 +499,11 @@ long WebKitClientImpl::databaseGetFileAttributes(
 
 long long WebKitClientImpl::databaseGetFileSize(
     const WebKit::WebString& vfs_file_name) {
+  return 0;
+}
+
+long long WebKitClientImpl::databaseGetSpaceAvailableForOrigin(
+    const WebKit::WebString& origin_identifier) {
   return 0;
 }
 

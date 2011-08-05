@@ -9,12 +9,12 @@
 #include "chrome/browser/password_manager/password_form_manager.h"
 #include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/autofill_messages.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "webkit/glue/password_form.h"
@@ -41,13 +41,12 @@ class SavePasswordInfoBarDelegate : public ConfirmInfoBarDelegate {
   virtual ~SavePasswordInfoBarDelegate();
 
   // ConfirmInfoBarDelegate
-  virtual void InfoBarClosed();
-  virtual SkBitmap* GetIcon() const;
-  virtual Type GetInfoBarType() const;
-  virtual string16 GetMessageText() const;
-  virtual string16 GetButtonLabel(InfoBarButton button) const;
-  virtual bool Accept();
-  virtual bool Cancel();
+  virtual gfx::Image* GetIcon() const OVERRIDE;
+  virtual Type GetInfoBarType() const OVERRIDE;
+  virtual string16 GetMessageText() const OVERRIDE;
+  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual bool Accept() OVERRIDE;
+  virtual bool Cancel() OVERRIDE;
 
   // The PasswordFormManager managing the form we're asking the user about,
   // and should update as per her decision.
@@ -68,16 +67,12 @@ SavePasswordInfoBarDelegate::SavePasswordInfoBarDelegate(
 }
 
 SavePasswordInfoBarDelegate::~SavePasswordInfoBarDelegate() {
-}
-
-void SavePasswordInfoBarDelegate::InfoBarClosed() {
   UMA_HISTOGRAM_ENUMERATION("PasswordManager.InfoBarResponse",
                             infobar_response_, NUM_RESPONSE_TYPES);
-  delete this;
 }
 
-SkBitmap* SavePasswordInfoBarDelegate::GetIcon() const {
-  return ResourceBundle::GetSharedInstance().GetBitmapNamed(
+gfx::Image* SavePasswordInfoBarDelegate::GetIcon() const {
+  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
       IDR_INFOBAR_SAVE_PASSWORD);
 }
 
@@ -120,8 +115,8 @@ void PasswordManagerDelegateImpl::FillPasswordForm(
 
 void PasswordManagerDelegateImpl::AddSavePasswordInfoBar(
     PasswordFormManager* form_to_save) {
-  tab_contents_->AddInfoBar(
-      new SavePasswordInfoBarDelegate(tab_contents_, form_to_save));
+  tab_contents_->AddInfoBar(new SavePasswordInfoBarDelegate(
+      tab_contents_->tab_contents(), form_to_save));
 }
 
 Profile* PasswordManagerDelegateImpl::GetProfileForPasswordManager() {

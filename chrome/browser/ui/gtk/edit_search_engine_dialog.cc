@@ -6,6 +6,7 @@
 
 #include <gtk/gtk.h>
 
+#include "base/i18n/case_conversion.h"
 #include "base/i18n/rtl.h"
 #include "base/message_loop.h"
 #include "base/utf_string_conversions.h"
@@ -21,6 +22,7 @@
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/image.h"
 
 namespace {
 
@@ -33,7 +35,7 @@ std::string GetDisplayURL(const TemplateURL& turl) {
 void LowercaseInsertTextHandler(GtkEditable *editable, const gchar *text,
                                 gint length, gint *position, gpointer data) {
   string16 original_text = UTF8ToUTF16(text);
-  string16 lower_text = l10n_util::ToLower(original_text);
+  string16 lower_text = base::i18n::ToLower(original_text);
   if (lower_text != original_text) {
     std::string result = UTF16ToUTF8(lower_text);
     // Prevent ourselves getting called recursively about our own edit.
@@ -246,13 +248,13 @@ void EditSearchEngineDialog::UpdateImage(GtkWidget* image,
   if (is_valid) {
     gtk_widget_set_has_tooltip(image, FALSE);
     gtk_image_set_from_pixbuf(GTK_IMAGE(image),
-        ResourceBundle::GetSharedInstance().GetPixbufNamed(
+        ResourceBundle::GetSharedInstance().GetNativeImageNamed(
             IDR_INPUT_GOOD));
   } else {
     gtk_widget_set_tooltip_text(
         image, l10n_util::GetStringUTF8(invalid_message_id).c_str());
     gtk_image_set_from_pixbuf(GTK_IMAGE(image),
-        ResourceBundle::GetSharedInstance().GetPixbufNamed(
+        ResourceBundle::GetSharedInstance().GetNativeImageNamed(
             IDR_INPUT_ALERT));
   }
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "base/stringprintf.h"
 #include "ppapi/cpp/var.h"
+#include "remoting/base/auth_token_util.h"
 #include "remoting/client/client_config.h"
 #include "remoting/client/chromoting_stats.h"
 #include "remoting/client/plugin/chromoting_instance.h"
@@ -18,6 +19,8 @@ namespace remoting {
 
 namespace {
 
+const char kApiVersionAttribute[] = "apiVersion";
+const char kApiMinVersionAttribute[] = "apiMinVersion";
 const char kConnectionInfoUpdate[] = "connectionInfoUpdate";
 const char kDebugInfo[] = "debugInfo";
 const char kDesktopHeight[] = "desktopHeight";
@@ -32,6 +35,7 @@ const char kVideoCaptureLatencyAttribute[] = "videoCaptureLatency";
 const char kVideoEncodeLatencyAttribute[] = "videoEncodeLatency";
 const char kVideoDecodeLatencyAttribute[] = "videoDecodeLatency";
 const char kVideoRenderLatencyAttribute[] = "videoRenderLatency";
+const char kRoundTripLatencyAttribute[] = "roundTripLatency";
 
 }  // namespace
 
@@ -46,6 +50,14 @@ ChromotingScriptableObject::~ChromotingScriptableObject() {
 void ChromotingScriptableObject::Init() {
   // Property addition order should match the interface description at the
   // top of chromoting_scriptable_object.h.
+
+  // Plugin API version.
+  // This should be incremented whenever the API interface changes.
+  AddAttribute(kApiVersionAttribute, Var(1));
+
+  // This should be updated whenever we remove support for an older version
+  // of the API.
+  AddAttribute(kApiMinVersionAttribute, Var(1));
 
   // Connection status.
   AddAttribute(kStatusAttribute, Var(STATUS_UNKNOWN));
@@ -81,12 +93,14 @@ void ChromotingScriptableObject::Init() {
   AddAttribute(kVideoEncodeLatencyAttribute, Var());
   AddAttribute(kVideoDecodeLatencyAttribute, Var());
   AddAttribute(kVideoRenderLatencyAttribute, Var());
+  AddAttribute(kRoundTripLatencyAttribute, Var());
 
   AddMethod("connect", &ChromotingScriptableObject::DoConnect);
-  AddMethod("connectSandboxed",
-            &ChromotingScriptableObject::DoConnectSandboxed);
+  AddMethod("connectUnsandboxed",
+            &ChromotingScriptableObject::DoConnectUnsandboxed);
   AddMethod("disconnect", &ChromotingScriptableObject::DoDisconnect);
   AddMethod("submitLoginInfo", &ChromotingScriptableObject::DoSubmitLogin);
+  AddMethod("setScaleToFit", &ChromotingScriptableObject::DoSetScaleToFit);
   AddMethod("onIq", &ChromotingScriptableObject::DoOnIq);
 }
 
@@ -152,6 +166,8 @@ Var ChromotingScriptableObject::GetProperty(const Var& name, Var* exception) {
     return stats ? stats->video_decode_ms()->Average() : Var();
   if (name.AsString() == kVideoRenderLatencyAttribute)
     return stats ? stats->video_paint_ms()->Average() : Var();
+  if (name.AsString() == kRoundTripLatencyAttribute)
+    return stats ? stats->round_trip_ms()->Average() : Var();
 
   // TODO(ajwong): This incorrectly return a null object if a function
   // property is requested.
@@ -322,65 +338,107 @@ void ChromotingScriptableObject::SendIq(const std::string& message_xml) {
   cb.Call(Var(), Var(message_xml), &exception);
 
   if (!exception.is_undefined())
-    LogDebugInfo("Exception when invoking loginChallenge JS callback.");
+    LogDebugInfo("Exception when invoking sendiq JS callback.");
 }
 
 Var ChromotingScriptableObject::DoConnect(const std::vector<Var>& args,
                                           Var* exception) {
-  if (args.size() != 3) {
-    *exception = Var("Usage: connect(username, host_jid, auth_token)");
-    return Var();
-  }
-
-  ClientConfig config;
-
-  if (!args[0].is_string()) {
-    *exception = Var("The username must be a string.");
-    return Var();
-  }
-  config.username = args[0].AsString();
-
-  if (!args[1].is_string()) {
+  // Parameter order is:
+  //   host_jid
+  //   client_jid
+  //   access_code (optional)
+  unsigned int arg = 0;
+  if (!args[arg].is_string()) {
     *exception = Var("The host_jid must be a string.");
     return Var();
   }
-  config.host_jid = args[1].AsString();
+  std::string host_jid = args[arg++].AsString();
 
-  if (!args[2].is_string()) {
-    *exception = Var("The auth_token must be a string.");
+  if (!args[arg].is_string()) {
+    *exception = Var("The client_jid must be a string.");
     return Var();
   }
-  config.auth_token = args[2].AsString();
+  std::string client_jid = args[arg++].AsString();
+
+  std::string access_code;
+  if (args.size() > arg) {
+    if (!args[arg].is_string()) {
+      *exception = Var("The access code must be a string.");
+      return Var();
+    }
+    access_code = args[arg++].AsString();
+  }
+
+  if (args.size() != arg) {
+    *exception = Var("Too many agruments passed to connect().");
+    return Var();
+  }
 
   LogDebugInfo("Connecting to host.");
-  instance_->Connect(config);
+  VLOG(1) << "client_jid: " << client_jid << ", host_jid: " << host_jid
+          << ", access_code: " << access_code;
+  instance_->ConnectSandboxed(client_jid, host_jid, access_code);
 
   return Var();
 }
 
-Var ChromotingScriptableObject::DoConnectSandboxed(
-    const std::vector<Var>& args, Var* exception) {
-  if (args.size() != 2) {
-    *exception = Var("Usage: connectSandboxed(your_jid, host_jid)");
+Var ChromotingScriptableObject::DoConnectUnsandboxed(
+    const std::vector<Var>& args,
+    Var* exception) {
+  // Parameter order is:
+  //   host_jid
+  //   username
+  //   auth_token
+  //   access_code (optional)
+  unsigned int arg = 0;
+  if (!args[arg].is_string()) {
+    *exception = Var("The host_jid must be a string.");
+    return Var();
+  }
+  std::string host_jid = args[arg++].AsString();
+
+  if (!args[arg].is_string()) {
+    *exception = Var("The username must be a string.");
+    return Var();
+  }
+  std::string username = args[arg++].AsString();
+
+  if (!args[arg].is_string()) {
+    *exception = Var("The auth_token_with_service must be a string.");
+    return Var();
+  }
+  std::string auth_token_with_service = args[arg++].AsString();
+
+  std::string auth_service;
+  std::string auth_token;
+  ParseAuthTokenWithService(auth_token_with_service, &auth_token,
+                            &auth_service);
+
+  std::string access_code;
+  if (args.size() > arg) {
+    if (!args[arg].is_string()) {
+      *exception = Var("The access code must be a string.");
+      return Var();
+    }
+    access_code = args[arg++].AsString();
+  }
+
+  if (args.size() != arg) {
+    *exception = Var("Too many agruments passed to connect().");
     return Var();
   }
 
-  std::string your_jid;
-  if (!args[0].is_string()) {
-    *exception = Var("your_jid must be a string.");
-    return Var();
-  }
-  your_jid = args[0].AsString();
-
-  std::string host_jid;
-  if (!args[1].is_string()) {
-    *exception = Var("host_jid must be a string.");
-    return Var();
-  }
-  host_jid = args[1].AsString();
-
-  VLOG(1) << "your_jid: " << your_jid << " and host_jid: " << host_jid;
-  instance_->ConnectSandboxed(your_jid, host_jid);
+  LogDebugInfo("Connecting to host.");
+  ClientConfig config;
+  config.host_jid = host_jid;
+  config.username = username;
+  config.auth_token = auth_token;
+  config.auth_service = auth_service;
+  config.nonce = access_code;
+  VLOG(1) << "host_jid: " << host_jid << ", username: " << username
+          << ", auth_service: " << auth_service
+          << ", access_code: " << access_code;
+  instance_->Connect(config);
 
   return Var();
 }
@@ -414,6 +472,23 @@ Var ChromotingScriptableObject::DoSubmitLogin(const std::vector<Var>& args,
 
   LogDebugInfo("Submitting login info to host.");
   instance_->SubmitLoginInfo(username, password);
+  return Var();
+}
+
+Var ChromotingScriptableObject::DoSetScaleToFit(const std::vector<Var>& args,
+                                                Var* exception) {
+  if (args.size() != 1) {
+    *exception = Var("Usage: setScaleToFit(scale_to_fit)");
+    return Var();
+  }
+
+  if (!args[0].is_bool()) {
+    *exception = Var("scale_to_fit must be a boolean.");
+    return Var();
+  }
+
+  LogDebugInfo("Setting scale-to-fit.");
+  instance_->SetScaleToFit(args[0].AsBool());
   return Var();
 }
 

@@ -8,8 +8,8 @@
 #include "base/format_macros.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
+#include "base/stringprintf.h"
 #include "base/string_number_conversions.h"
-#include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/browser.h"
@@ -24,6 +24,7 @@
 #include "content/browser/tab_contents/interstitial_page.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/browser/tab_contents/tab_contents_view.h"
+#include "content/common/view_messages.h"
 #include "net/test/test_server.h"
 
 #if defined(TOOLKIT_VIEWS) || defined(OS_WIN)
@@ -45,6 +46,7 @@
 #if defined(OS_WIN)
 #include <Psapi.h>
 #include <windows.h>
+#include "base/string_util.h"
 #endif
 
 #if defined(OS_LINUX)
@@ -169,7 +171,16 @@ class TestInterstitialPage : public InterstitialPage {
   }
 
  protected:
-  virtual void FocusedNodeChanged(bool is_editable_node) {
+  bool OnMessageReceived(const IPC::Message& message) {
+    bool handled = true;
+    IPC_BEGIN_MESSAGE_MAP(TestInterstitialPage, message)
+      IPC_MESSAGE_HANDLER(ViewHostMsg_FocusedNodeChanged, OnFocusedNodeChanged)
+      IPC_MESSAGE_UNHANDLED(handled = false)
+    IPC_END_MESSAGE_MAP()
+    return handled;
+  }
+
+  void OnFocusedNodeChanged(bool is_editable_node) {
     NotificationService::current()->Notify(
         NotificationType::FOCUS_CHANGED_IN_PAGE,
         Source<TabContents>(tab()),
@@ -465,7 +476,7 @@ IN_PROC_BROWSER_TEST_F(BrowserFocusTest, MAYBE_FocusTraversal) {
 
   // Test forward focus traversal.
   for (int i = 0; i < 3; ++i) {
-    SCOPED_TRACE(StringPrintf("outer loop: %d", i));
+    SCOPED_TRACE(base::StringPrintf("outer loop: %d", i));
     // Location bar should be focused.
     ASSERT_TRUE(IsViewFocused(VIEW_ID_LOCATION_BAR));
 
@@ -475,7 +486,7 @@ IN_PROC_BROWSER_TEST_F(BrowserFocusTest, MAYBE_FocusTraversal) {
 
     // Now let's press tab to move the focus.
     for (size_t j = 0; j < arraysize(kExpElementIDs); ++j) {
-      SCOPED_TRACE(StringPrintf("inner loop %" PRIuS, j));
+      SCOPED_TRACE(base::StringPrintf("inner loop %" PRIuS, j));
       // Let's make sure the focus is on the expected element in the page.
       std::string actual;
       ASSERT_TRUE(ui_test_utils::ExecuteJavaScriptAndExtractString(
@@ -515,7 +526,7 @@ IN_PROC_BROWSER_TEST_F(BrowserFocusTest, MAYBE_FocusTraversal) {
 
   // Now let's try reverse focus traversal.
   for (int i = 0; i < 3; ++i) {
-    SCOPED_TRACE(StringPrintf("outer loop: %d", i));
+    SCOPED_TRACE(base::StringPrintf("outer loop: %d", i));
     // Location bar should be focused.
     ASSERT_TRUE(IsViewFocused(VIEW_ID_LOCATION_BAR));
 
@@ -525,7 +536,7 @@ IN_PROC_BROWSER_TEST_F(BrowserFocusTest, MAYBE_FocusTraversal) {
 
     // Now let's press shift-tab to move the focus in reverse.
     for (size_t j = 0; j < arraysize(kExpElementIDs); ++j) {
-      SCOPED_TRACE(StringPrintf("inner loop: %" PRIuS, j));
+      SCOPED_TRACE(base::StringPrintf("inner loop: %" PRIuS, j));
       const char* next_element =
           kExpElementIDs[arraysize(kExpElementIDs) - 1 - j];
 
@@ -686,7 +697,12 @@ IN_PROC_BROWSER_TEST_F(BrowserFocusTest, MAYBE_FocusTraversalOnInterstitial) {
 }
 
 // Focus stays on page with interstitials.
+// http://crbug.com/81451
+#if defined(OS_MACOSX)
+IN_PROC_BROWSER_TEST_F(BrowserFocusTest, FLAKY_InterstitialFocus) {
+#else
 IN_PROC_BROWSER_TEST_F(BrowserFocusTest, InterstitialFocus) {
+#endif
   ASSERT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
   ASSERT_TRUE(test_server()->Start());
 
@@ -722,6 +738,12 @@ IN_PROC_BROWSER_TEST_F(BrowserFocusTest, InterstitialFocus) {
 }
 
 // Make sure Find box can request focus, even when it is already open.
+// Flaky on mac and valgrind. http://crbug.com/67301.
+#if defined(OS_MACOSX)
+#define MAYBE_FindFocusTest FLAKY_FindFocusTest
+#else
+#define MAYBE_FindFocusTest FindFocusTest
+#endif
 IN_PROC_BROWSER_TEST_F(BrowserFocusTest, FindFocusTest) {
   ASSERT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
   ASSERT_TRUE(test_server()->Start());

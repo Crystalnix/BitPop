@@ -23,15 +23,16 @@
 #include "ui/gfx/font.h"
 #include "views/controls/button/native_button.h"
 #include "views/layout/layout_constants.h"
+#include "views/widget/root_view.h"
 #include "views/window/dialog_delegate.h"
 #include "views/window/window.h"
 
 #if defined(OS_WIN)
-#include "ui/gfx/native_theme_win.h"
+#include "ui/gfx/native_theme.h"
 #else
 #include "ui/gfx/skia_utils_gtk.h"
-#include "views/window/hit_test.h"
 #include "views/widget/widget.h"
+#include "views/window/hit_test.h"
 #endif
 
 using ui::MessageBoxFlags;
@@ -256,9 +257,10 @@ void DialogClientView::SetBottomView(View* bottom_view) {
 ///////////////////////////////////////////////////////////////////////////////
 // DialogClientView, View overrides:
 
-void DialogClientView::NativeViewHierarchyChanged(bool attached,
-                                                  gfx::NativeView native_view,
-                                                  RootView* root_view) {
+void DialogClientView::NativeViewHierarchyChanged(
+    bool attached,
+    gfx::NativeView native_view,
+    internal::RootView* root_view) {
   if (attached) {
     UpdateFocusListener();
   }
@@ -396,7 +398,7 @@ gfx::Size DialogClientView::GetPreferredSize() {
 
 bool DialogClientView::AcceleratorPressed(const Accelerator& accelerator) {
   // We only expect Escape key.
-  DCHECK(accelerator.GetKeyCode() == ui::VKEY_ESCAPE);
+  DCHECK(accelerator.key_code() == ui::VKEY_ESCAPE);
   Close();
   return true;
 }
@@ -427,23 +429,24 @@ void DialogClientView::PaintSizeBox(gfx::Canvas* canvas) {
   if (window()->window_delegate()->CanResize() ||
       window()->window_delegate()->CanMaximize()) {
 #if defined(OS_WIN)
-    HDC dc = canvas->BeginPlatformPaint();
-    SIZE gripper_size = { 0, 0 };
-    gfx::NativeThemeWin::instance()->GetThemePartSize(
-        gfx::NativeThemeWin::STATUS, dc, SP_GRIPPER, 1, NULL, TS_TRUE,
-        &gripper_size);
+    gfx::NativeTheme::ExtraParams extra;
+    gfx::Size gripper_size = gfx::NativeTheme::instance()->GetPartSize(
+        gfx::NativeTheme::kWindowResizeGripper, gfx::NativeTheme::kNormal,
+        extra);
 
     // TODO(beng): (http://b/1085509) In "classic" rendering mode, there isn't
     //             a theme-supplied gripper. We should probably improvise
     //             something, which would also require changing |gripper_size|
     //             to have different default values, too...
     size_box_bounds_ = GetContentsBounds();
-    size_box_bounds_.set_x(size_box_bounds_.right() - gripper_size.cx);
-    size_box_bounds_.set_y(size_box_bounds_.bottom() - gripper_size.cy);
-    RECT native_bounds = size_box_bounds_.ToRECT();
-    gfx::NativeThemeWin::instance()->PaintStatusGripper(
-        dc, SP_PANE, 1, 0, &native_bounds);
-    canvas->EndPlatformPaint();
+    size_box_bounds_.set_x(size_box_bounds_.right() - gripper_size.width());
+    size_box_bounds_.set_y(size_box_bounds_.bottom() - gripper_size.height());
+
+    gfx::NativeTheme::instance()->Paint(canvas->AsCanvasSkia(),
+                                        gfx::NativeTheme::kWindowResizeGripper,
+                                        gfx::NativeTheme::kNormal,
+                                        size_box_bounds_,
+                                        extra);
 #else
     NOTIMPLEMENTED();
     // TODO(port): paint size box
@@ -540,7 +543,7 @@ DialogDelegate* DialogClientView::GetDialogDelegate() const {
 }
 
 void DialogClientView::Close() {
-  window()->CloseWindow();
+  window()->Close();
   GetDialogDelegate()->OnClose();
 }
 

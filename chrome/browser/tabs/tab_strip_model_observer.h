@@ -72,14 +72,12 @@ class TabStripModelObserver {
   // was done by a user input event (e.g. clicking on a tab, keystroke) or as a
   // side-effect of some other function.
   //
-  // TODO(sky): consider not overloading this. Instead rename this to
-  // TabActivatedAt (or something) and have TabSelectionChanged as well.
-  // TabSelectedAt. This requires renaming everyone to use new terms instead of
-  // selection.
-  virtual void TabSelectedAt(TabContentsWrapper* old_contents,
-                             TabContentsWrapper* new_contents,
-                             int index,
-                             bool user_gesture);
+  // TODO(dpapad): Add TabSelectionChanged method for when the selected tabs
+  // change.
+  virtual void ActiveTabChanged(TabContentsWrapper* old_contents,
+                                TabContentsWrapper* new_contents,
+                                int index,
+                                bool user_gesture);
 
   // The specified TabContents at |from_index| was moved to |to_index|.
   virtual void TabMoved(TabContentsWrapper* contents,
@@ -95,8 +93,9 @@ class TabStripModelObserver {
                             int index,
                             TabChangeType change_type);
 
-  // The tab contents was replaced at the specified index. This is invoked when
-  // instant is enabled and the user navigates by way of instant.
+  // The tab contents was replaced at the specified index. This is invoked
+  // when instant is enabled and the user navigates by way of instant or when
+  // prerendering swaps in a prerendered TabContents.
   virtual void TabReplacedAt(TabStripModel* tab_strip_model,
                              TabContentsWrapper* old_contents,
                              TabContentsWrapper* new_contents,
@@ -125,6 +124,10 @@ class TabStripModelObserver {
   // Sent when the tabstrip model is about to be deleted and any reference held
   // must be dropped.
   virtual void TabStripModelDeleted();
+
+  // Invoked when an active/selected tab at |index| is selected again (ie - the
+  // active/foreground tab is clicked).
+  virtual void ActiveTabClicked(int index);
 
  protected:
   virtual ~TabStripModelObserver() {}

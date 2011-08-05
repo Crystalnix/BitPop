@@ -13,18 +13,22 @@
 #include "chrome/browser/policy/configuration_policy_provider.h"
 #include "chrome/browser/policy/dummy_configuration_policy_provider.h"
 #include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/prerender/prerender_tracker.h"
+#include "chrome/browser/printing/background_printing_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ui/base/clipboard/clipboard.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 TestingBrowserProcess::TestingBrowserProcess()
     : shutdown_event_(new base::WaitableEvent(true, false)),
       module_ref_count_(0),
       app_locale_("en"),
-      pref_service_(NULL) {
+      local_state_(NULL) {
 }
 
 TestingBrowserProcess::~TestingBrowserProcess() {
+  EXPECT_FALSE(local_state_);
 }
 
 void TestingBrowserProcess::EndSession() {
@@ -60,13 +64,15 @@ base::Thread* TestingBrowserProcess::cache_thread() {
   return NULL;
 }
 
-base::Thread* TestingBrowserProcess::gpu_thread() {
-  return NULL;
-}
-
 WatchDogThread* TestingBrowserProcess::watchdog_thread() {
   return NULL;
 }
+
+#if defined(OS_CHROMEOS)
+base::Thread* TestingBrowserProcess::web_socket_proxy_thread() {
+  return NULL;
+}
+#endif
 
 ProfileManager* TestingBrowserProcess::profile_manager() {
   return profile_manager_.get();
@@ -77,7 +83,7 @@ void TestingBrowserProcess::SetProfileManager(ProfileManager* profile_manager) {
 }
 
 PrefService* TestingBrowserProcess::local_state() {
-  return pref_service_;
+  return local_state_;
 }
 
 policy::BrowserPolicyConnector*
@@ -111,6 +117,14 @@ SidebarManager* TestingBrowserProcess::sidebar_manager() {
 }
 
 TabCloseableStateWatcher* TestingBrowserProcess::tab_closeable_state_watcher() {
+  return NULL;
+}
+
+BackgroundModeManager* TestingBrowserProcess::background_mode_manager() {
+  return NULL;
+}
+
+StatusTray* TestingBrowserProcess::status_tray() {
   return NULL;
 }
 
@@ -176,7 +190,7 @@ unsigned int TestingBrowserProcess::AddRefModule() {
 }
 
 unsigned int TestingBrowserProcess::ReleaseModule() {
-  DCHECK(module_ref_count_ > 0);
+  DCHECK_GT(module_ref_count_, 0U);
   return --module_ref_count_;
 }
 
@@ -191,6 +205,15 @@ printing::PrintJobManager* TestingBrowserProcess::print_job_manager() {
 printing::PrintPreviewTabController*
 TestingBrowserProcess::print_preview_tab_controller() {
   return NULL;
+}
+
+printing::BackgroundPrintingManager*
+TestingBrowserProcess::background_printing_manager() {
+  if (!background_printing_manager_.get()) {
+    background_printing_manager_.reset(
+        new printing::BackgroundPrintingManager());
+  }
+  return background_printing_manager_.get();
 }
 
 const std::string& TestingBrowserProcess::GetApplicationLocale() {
@@ -218,8 +241,14 @@ ChromeNetLog* TestingBrowserProcess::net_log() {
   return NULL;
 }
 
-void TestingBrowserProcess::SetPrefService(PrefService* pref_service) {
-  pref_service_ = pref_service;
+prerender::PrerenderTracker* TestingBrowserProcess::prerender_tracker() {
+  if (!prerender_tracker_.get())
+    prerender_tracker_.reset(new prerender::PrerenderTracker());
+  return prerender_tracker_.get();
+}
+
+void TestingBrowserProcess::SetLocalState(PrefService* local_state) {
+  local_state_ = local_state;
 }
 
 void TestingBrowserProcess::SetGoogleURLTracker(

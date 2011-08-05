@@ -7,33 +7,34 @@
 
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/pref_change_registrar.h"
+#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/tab_contents/render_view_context_menu.h"
 #include "chrome/browser/translate/translate_infobar_delegate.h"
 #include "chrome/browser/translate/translate_manager.h"
 #include "chrome/browser/translate/translate_prefs.h"
 #include "chrome/browser/ui/tab_contents/test_tab_contents_wrapper.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
-#include "chrome/common/net/test_url_fetcher_factory.h"
 #include "chrome/test/testing_browser_process.h"
 #include "chrome/test/testing_profile.h"
 #include "content/browser/browser_thread.h"
 #include "content/browser/renderer_host/mock_render_process_host.h"
 #include "content/browser/renderer_host/test_render_view_host.h"
-#include "content/browser/tab_contents/navigation_controller.h"
+#include "content/browser/tab_contents/navigation_details.h"
 #include "content/browser/tab_contents/test_tab_contents.h"
 #include "content/common/notification_details.h"
 #include "content/common/notification_observer_mock.h"
 #include "content/common/notification_registrar.h"
 #include "content/common/notification_type.h"
+#include "content/common/test_url_fetcher_factory.h"
 #include "content/common/view_messages.h"
 #include "grit/generated_resources.h"
 #include "ipc/ipc_test_sink.h"
 #include "testing/gmock/include/gmock/gmock.h"
-#include "third_party/cld/languages/public/languages.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebContextMenuData.h"
+#include "third_party/cld/languages/public/languages.h"
 
 using testing::_;
 using testing::Pointee;
@@ -84,9 +85,9 @@ class TranslateManagerTest : public TabContentsWrapperTestHarness,
   // Returns the translate infobar if there is 1 infobar and it is a translate
   // infobar.
   TranslateInfoBarDelegate* GetTranslateInfoBar() {
-    return (contents()->infobar_count() == 1) ?
-        contents()->GetInfoBarDelegateAt(0)->AsTranslateInfoBarDelegate() :
-        NULL;
+    return (contents_wrapper()->infobar_count() == 1) ?
+        contents_wrapper()->GetInfoBarDelegateAt(0)->
+            AsTranslateInfoBarDelegate() : NULL;
   }
 
   // If there is 1 infobar and it is a translate infobar, closes it and returns
@@ -96,7 +97,7 @@ class TranslateManagerTest : public TabContentsWrapperTestHarness,
     if (!infobar)
       return false;
     infobar->InfoBarDismissed();  // Simulates closing the infobar.
-    contents()->RemoveInfoBar(infobar);
+    contents_wrapper()->RemoveInfoBar(infobar);
     return true;
   }
 
@@ -129,7 +130,7 @@ class TranslateManagerTest : public TabContentsWrapperTestHarness,
     if (!infobar)
       return false;
     infobar->TranslationDeclined();
-    contents()->RemoveInfoBar(infobar);
+    contents_wrapper()->RemoveInfoBar(infobar);
     return true;
   }
 
@@ -183,7 +184,7 @@ class TranslateManagerTest : public TabContentsWrapperTestHarness,
                                 net::URLRequestStatus::FAILED);
     fetcher->delegate()->OnURLFetchComplete(fetcher, fetcher->original_url(),
                                             status, success ? 200 : 500,
-                                            ResponseCookies(),
+                                            net::ResponseCookies(),
                                             std::string());
   }
 
@@ -196,6 +197,7 @@ class TranslateManagerTest : public TabContentsWrapperTestHarness,
   }
 
   NotificationObserverMock pref_observer_;
+  ScopedTestingBrowserProcess testing_browser_process_;
 
  private:
   NotificationRegistrar notification_registrar_;
@@ -222,16 +224,16 @@ class NavEntryCommittedObserver : public NotificationObserver {
                        const NotificationDetails& details) {
     DCHECK(type == NotificationType::NAV_ENTRY_COMMITTED);
     details_ =
-        *(Details<NavigationController::LoadCommittedDetails>(details).ptr());
+        *(Details<content::LoadCommittedDetails>(details).ptr());
   }
 
-  const NavigationController::LoadCommittedDetails&
+  const content::LoadCommittedDetails&
       get_load_commited_details() const {
     return details_;
   }
 
  private:
-  NavigationController::LoadCommittedDetails details_;
+  content::LoadCommittedDetails details_;
   NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(NavEntryCommittedObserver);
@@ -458,7 +460,7 @@ TEST_F(TranslateManagerTest, TestAllLanguages) {
     // 70-79
     false, false, false, false, true, true, false, true, false, false,
     // 80-89
-    false, false, false, false, false, false, false, false, false, false,
+    false, true, true, false, false, false, false, false, false, false,
     // 90-99
     false, true, false, false, false, false, false, true, false, false,
     // 100-109
@@ -474,7 +476,7 @@ TEST_F(TranslateManagerTest, TestAllLanguages) {
     // 150-159
     false, false, false, false, false, false, false, false, false, false,
     // 160
-    false
+    true
   };
 
   GURL url("http://www.google.com");
@@ -544,18 +546,18 @@ TEST_F(TranslateManagerTest, MultipleOnPageContents) {
 
   // Simulate clicking 'Nope' (don't translate).
   EXPECT_TRUE(DenyTranslation());
-  EXPECT_EQ(0U, contents()->infobar_count());
+  EXPECT_EQ(0U, contents_wrapper()->infobar_count());
 
   // Send a new PageContents, we should not show an infobar.
   SimulateOnTranslateLanguageDetermined("fr", true);
-  EXPECT_EQ(0U, contents()->infobar_count());
+  EXPECT_EQ(0U, contents_wrapper()->infobar_count());
 
   // Do the same steps but simulate closing the infobar this time.
   SimulateNavigation(GURL("http://www.youtube.fr"), "fr", true);
   EXPECT_TRUE(CloseTranslateInfoBar());
-  EXPECT_EQ(0U, contents()->infobar_count());
+  EXPECT_EQ(0U, contents_wrapper()->infobar_count());
   SimulateOnTranslateLanguageDetermined("fr", true);
-  EXPECT_EQ(0U, contents()->infobar_count());
+  EXPECT_EQ(0U, contents_wrapper()->infobar_count());
 }
 
 // Test that reloading the page brings back the infobar.
@@ -571,7 +573,7 @@ TEST_F(TranslateManagerTest, Reload) {
   Reload();
 
   // Ensures it is really handled a reload.
-  const NavigationController::LoadCommittedDetails& nav_details =
+  const content::LoadCommittedDetails& nav_details =
       nav_observer.get_load_commited_details();
   EXPECT_TRUE(nav_details.entry != NULL);  // There was a navigation.
   EXPECT_EQ(NavigationType::EXISTING_PAGE, nav_details.type);
@@ -601,7 +603,7 @@ TEST_F(TranslateManagerTest, ReloadFromLocationBar) {
 
   // Test that we are really getting a same page navigation, the test would be
   // useless if it was not the case.
-  const NavigationController::LoadCommittedDetails& nav_details =
+  const content::LoadCommittedDetails& nav_details =
       nav_observer.get_load_commited_details();
   EXPECT_TRUE(nav_details.entry != NULL);  // There was a navigation.
   EXPECT_EQ(NavigationType::SAME_PAGE, nav_details.type);
@@ -720,13 +722,6 @@ TEST_F(TranslateManagerTest, TranslateInPageNavigation) {
   infobar = GetTranslateInfoBar();
   ASSERT_TRUE(infobar != NULL);
 
-  // Navigate in page, the same infobar should still be shown.
-  ClearRemovedInfoBars();
-  SimulateNavigation(GURL("http://www.google.fr/#ref1"), "fr",
-                     true);
-  EXPECT_FALSE(InfoBarRemoved());
-  EXPECT_EQ(infobar, GetTranslateInfoBar());
-
   // Navigate out of page, a new infobar should show.
   // See note in TranslateCloseInfoBarInPageNavigation test on why it is
   // important to navigate to a page in a different language for this test.
@@ -785,8 +780,7 @@ TEST_F(TranslateManagerTest, ServerReportsUnsupportedLanguage) {
 // Tests that no translate infobar is shown when Chrome is in a language that
 // the translate server does not support.
 TEST_F(TranslateManagerTest, UnsupportedUILanguage) {
-  TestingBrowserProcess* browser_process =
-      static_cast<TestingBrowserProcess*>(g_browser_process);
+  TestingBrowserProcess* browser_process = testing_browser_process_.get();
   std::string original_lang = browser_process->GetApplicationLocale();
   browser_process->SetApplicationLocale("qbz");
 

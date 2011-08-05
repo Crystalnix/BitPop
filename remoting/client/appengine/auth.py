@@ -12,20 +12,30 @@ initiating authentication flows, and for managing credential storage per user.
 """
 
 import os
+import re
+import time
+import urllib
+from urlparse import urlparse
 
-import gdata.gauth
-import gdata.client
 
 from google.appengine.ext import db
+from google.appengine.api import urlfetch
 from google.appengine.api import users
 from google.appengine.ext import webapp
 from google.appengine.ext.webapp import template
 from google.appengine.ext.webapp import util
 from google.appengine.ext.webapp.util import login_required
 
+from django.utils import simplejson as json
+
 
 SCOPES = ['https://www.googleapis.com/auth/chromoting',
           'https://www.googleapis.com/auth/googletalk' ]
+
+# Development OAuth2 ID and keys.
+CLIENT_ID = ('440925447803-d9u05st5jjm3gbe865l0jeaujqfrufrn.'
+            'apps.googleusercontent.com')
+CLIENT_SECRET = 'Nl4vSQEgDpPMP-1rDEsgs3V7'
 
 
 class NotAuthenticated(Exception):
@@ -33,67 +43,79 @@ class NotAuthenticated(Exception):
   pass
 
 
-class OAuthInvalidSetup(Exception):
-  """OAuth configuration on app is not complete."""
-  pass
+class ClientLoginToken(db.Model):
+  auth_token = db.StringProperty()
 
 
-class OAuthConfig(db.Model):
-  """Stores the configuration data for OAuth.
-
-  Currently used to store the consumer key and secret so that it does not need
-  to be checked into the source tree.
-  """
-  consumer_key = db.StringProperty()
-  consumer_secret = db.StringProperty()
-  httpxmppproxy = db.StringProperty()
+class OAuth2Tokens(db.Model):
+  """Stores the Refresh and Access token information for OAuth2."""
+  refresh_token = db.StringProperty()
+  access_token = db.StringProperty()
+  access_token_expiration = db.IntegerProperty()
 
 
-def GetChromotingToken(throws=True):
-  """Retrieves the Chromoting OAuth token for the user.
+def HasOAuth2Tokens(throws=True):
+  oauth2_tokens = OAuth2Tokens.get_or_insert(GetUserId())
+  if oauth2_tokens.refresh_token:
+    return True;
+  return False;
+
+
+def GetOAuth2AccessToken(throws=True):
+  oauth2_tokens = OAuth2Tokens.get_or_insert(GetUserId())
+
+  if not oauth2_tokens.refresh_token:
+    raise NotAuthenticated()
+
+  if time.time() > oauth2_tokens.access_token_expiration:
+    form_fields = {
+        'client_id' : CLIENT_ID,
+        'client_secret' : CLIENT_SECRET,
+        'refresh_token' : oauth2_tokens.refresh_token,
+        'grant_type' : 'refresh_token'
+    }
+    form_data = urllib.urlencode(form_fields)
+    result = urlfetch.fetch(
+        url = 'https://accounts.google.com/o/oauth2/token',
+        payload = form_data,
+        method = urlfetch.POST,
+        headers = {'Content-Type': 'application/x-www-form-urlencoded'})
+    if result.status_code != 200:
+      raise 'something went wrong %d, %s <br />' % (
+          result.status_code, result.content)
+    oauth_json = json.loads(result.content)
+    oauth2_tokens.access_token = oauth_json['access_token']
+    # Give us 30 second buffer to hackily account for RTT on network request.
+    oauth2_tokens.access_token_expiration = (
+        int(oauth_json['expires_in'] + time.time() - 30))
+    oauth2_tokens.put()
+
+  return oauth2_tokens.access_token
+
+
+def GetClientLoginToken(throws=True):
+  """Retrieves the ClientLogin for Chromoting.
 
   Args:
     throws: bool (optional) Default is True. Throws if no token.
 
   Returns:
-    An gdata.gauth.OAuthHmacToken for the current user.
+    The auth token for the current user.
   """
-  user = users.get_current_user()
-  access_token = None
-  if user:
-    access_token = LoadToken('chromoting_token')
-  if throws and not access_token:
+  clientlogin_token = ClientLoginToken.get_or_insert(GetUserId())
+  if throws and not clientlogin_token.auth_token:
     raise NotAuthenticated()
-  return access_token
+  return clientlogin_token.auth_token
 
 
-def GetXmppToken(throws=True):
-  """Retrieves the XMPP for Chromoting.
-
-  Args:
-    throws: bool (optional) Default is True. Throws if no token.
-
-  Returns:
-    An gdata.gauth.ClientLoginToken for the current user.
-  """
-  user = users.get_current_user()
-  access_token = None
-  if user:
-    access_token = LoadToken('xmpp_token')
-  if throws and not access_token:
-    raise NotAuthenticated()
-  return access_token
-
-
-def ClearChromotingToken():
-  """Clears all Chromoting OAuth token state from the datastore."""
-  DeleteToken('request_token')
-  DeleteToken('chromoting_token')
-
-
-def ClearXmppToken():
+def ClearClientLoginToken():
   """Clears all Chromoting ClientLogin token state from the datastore."""
-  DeleteToken('xmpp_token')
+  db.delete(db.Key.from_path('ClientLoginToken', GetUserId()))
+
+
+def ClearOAuth2Token():
+  """Clears all Chromoting ClientLogin token state from the datastore."""
+  db.delete(db.Key.from_path('OAuth2Tokens', GetUserId()))
 
 
 def GetUserId():
@@ -115,117 +137,7 @@ def GetUserId():
   return user.user_id()
 
 
-def LoadToken(name):
-  """Leads a gdata auth token for the current user.
-
-  Tokens are scoped to each user, and retrieved by a name.
-
-  Args:
-    name: A string with the name of the token for the current user.
-
-  Returns:
-    The token associated with the name for the user.
-  """
-  user_id = GetUserId();
-  return gdata.gauth.AeLoad(user_id + name)
-
-
-def SaveToken(name, token):
-  """Saves a gdata auth token for the current user.
-
-  Tokens are scoped to each user, and stored by a name.
-
-  Args:
-    name: A string with the name of the token.
-  """
-  user_id = GetUserId();
-  gdata.gauth.AeSave(token, user_id + name)
-
-
-def DeleteToken(name):
-  """Deletes a stored gdata auth token for the current user.
-
-  Tokens are scoped to each user, and stored by a name.
-
-  Args:
-    name: A string with the name of the token.
-  """
-  user_id = GetUserId();
-  gdata.gauth.AeDelete(user_id + name)
-
-
-def OAuthConfigKey():
-  """Generates a standard key path for this app's OAuth configuration."""
-  return db.Key.from_path('OAuthConfig', 'oauth_config')
-
-
-def GetOAuthConfig(throws=True):
-  """Retrieves the OAuthConfig for this app.
-
-  Returns:
-    The OAuthConfig object for this app.
-
-  Raises:
-    OAuthInvalidSetup if no OAuthConfig exists.
-  """
-  config = db.get(OAuthConfigKey())
-  if throws and not config:
-    raise OAuthInvalidSetup()
-  return config
-
-
-class ChromotingAuthHandler(webapp.RequestHandler):
-  """Initiates getting the OAuth access token for the user.
-
-  This webapp uses 3-legged OAuth. This handlers performs the first step
-  of getting the OAuth request token, and then forwarding on to the
-  Google Accounts authorization endpoint for the second step.  The final
-  step is completed by the ChromotingAuthReturnHandler below.
-
-  FYI, all three steps are collectively known as the "OAuth dance."
-  """
-  @login_required
-  def get(self):
-    ClearChromotingToken()
-    client = gdata.client.GDClient()
-
-    oauth_callback_url = ('http://%s/auth/chromoting_auth_return' %
-        self.request.host)
-    request_token = client.GetOAuthToken(
-            SCOPES, oauth_callback_url, GetOAuthConfig().consumer_key,
-            consumer_secret=GetOAuthConfig().consumer_secret)
-
-    SaveToken('request_token', request_token)
-    domain = None  # Not on an Google Apps domain.
-    auth_uri = request_token.generate_authorization_url()
-    self.redirect(str(auth_uri))
-
-
-class ChromotingAuthReturnHandler(webapp.RequestHandler):
-  """Finishes the authorization started in ChromotingAuthHandler.i
-
-  After the user authorizes the OAuth request token at the OAuth request
-  URL they were redirected to in ChromotingAuthHandler, OAuth will send
-  them back here with an auth token in the URL.
-
-  This handler retrievies the access token, and stores it completing the
-  OAuth dance.
-  """
-  @login_required
-  def get(self):
-    saved_request_token = LoadToken('request_token')
-    DeleteToken('request_token')
-    request_token = gdata.gauth.AuthorizeRequestToken(
-      saved_request_token, self.request.uri)
-
-    # Upgrade the token and save in the user's datastore
-    client = gdata.client.GDClient()
-    access_token = client.GetAccessToken(request_token)
-    SaveToken('chromoting_token', access_token)
-    self.redirect("/")
-
-
-class XmppAuthHandler(webapp.RequestHandler):
+class ClientLoginAuthHandler(webapp.RequestHandler):
   """Prompts Google Accounts credentials and retrieves a ClientLogin token.
 
   This class takes the user's plaintext username and password, and then
@@ -239,95 +151,108 @@ class XmppAuthHandler(webapp.RequestHandler):
   """
   @login_required
   def get(self):
-    ClearXmppToken()
+    ClearClientLoginToken()
     path = os.path.join(os.path.dirname(__file__), 'client_login.html')
     self.response.out.write(template.render(path, {}))
 
   def post(self):
-    client = gdata.client.GDClient()
     email = self.request.get('username')
     password = self.request.get('password')
-    try:
-      client.ClientLogin(
-          email, password, 'chromoclient', 'chromiumsync')
-      SaveToken('xmpp_token', client.auth_token)
-    except gdata.client.CaptchaChallenge:
-      self.response.out.write('You need to solve a Captcha. '
-          'Unforutnately, we still have to implement that.')
+    form_fields = {
+        'accountType' : 'HOSTED_OR_GOOGLE',
+        'Email' : self.request.get('username'),
+        'Passwd' : self.request.get('password'),
+        'service' : 'chromiumsync',
+        'source' : 'chromoplex'
+    }
+    form_data = urllib.urlencode(form_fields)
+    result = urlfetch.fetch(
+        url = 'https://www.google.com/accounts/ClientLogin',
+        payload = form_data,
+        method = urlfetch.POST,
+        headers = {'Content-Type': 'application/x-www-form-urlencoded'})
+    if result.status_code != 200:
+      self.response.out.write(result.content)
+      for i in result.headers:
+        self.response.headers[i] = result.headers[i]
+      self.response.set_status(result.status_code)
+      return
+
+    clientlogin_token = ClientLoginToken(key_name = GetUserId())
+    clientlogin_token.auth_token = re.search(
+        "Auth=(.*)", result.content).group(1)
+    clientlogin_token.put()
     self.redirect('/')
 
 
-class ClearChromotingTokenHandler(webapp.RequestHandler):
-  """Endpoint for dropping the user's Chromoting token."""
+class ClearClientLoginTokenHandler(webapp.RequestHandler):
+  """Endpoint for dropping the user's ClientLogin token."""
   @login_required
   def get(self):
-    ClearChromotingToken()
+    ClearClientLoginToken()
     self.redirect('/')
 
 
-class ClearXmppTokenHandler(webapp.RequestHandler):
-  """Endpoint for dropping the user's Xmpp token."""
+class ClearOAuth2TokenHandler(webapp.RequestHandler):
+  """Endpoint for dropping the user's OAuth2 token."""
   @login_required
   def get(self):
-    ClearXmppToken()
+    ClearOAuth2Token()
     self.redirect('/')
 
 
-class SetupOAuthHandler(webapp.RequestHandler):
-  """Administrative page for specifying the OAuth consumer key/secret."""
+class OAuth2ReturnHandler(webapp.RequestHandler):
+  """Handles the redirect in the OAuth dance."""
   @login_required
   def get(self):
-    path = os.path.join(os.path.dirname(__file__),
-                        'chromoting_oauth_setup.html')
-    self.response.out.write(template.render(path, {}))
+    code = self.request.get('code')
+    state = self.request.get('state')
+    parsed_url = urlparse(self.request.url)
+    server = parsed_url.scheme + '://' + parsed_url.netloc
+    form_fields = {
+        'client_id' : CLIENT_ID,
+        'client_secret' : CLIENT_SECRET,
+        'redirect_uri' : server + '/auth/oauth2_return',
+        'code' : code,
+        'grant_type' : 'authorization_code'
+    }
+    form_data = urllib.urlencode(form_fields)
+    result = urlfetch.fetch(
+        url = 'https://accounts.google.com/o/oauth2/token',
+        payload = form_data,
+        method = urlfetch.POST,
+        headers = {'Content-Type': 'application/x-www-form-urlencoded'})
 
-  def post(self):
-    old_consumer_secret = self.request.get('old_consumer_secret')
+    if result.status_code != 200:
+      self.response.out.write('something went wrong %d, %s <br />' %
+                              (result.status_code, result.content))
+      self.response.out.write(
+          'We tried posting %s code(%s) [%s]' % (form_data, code, form_fields))
+      self.response.set_status(400)
+      return
 
-    query = OAuthConfig.all()
+    oauth_json = json.loads(result.content)
+    oauth2_tokens = OAuth2Tokens(key_name = GetUserId())
+    oauth2_tokens.refresh_token = oauth_json['refresh_token']
+    oauth2_tokens.access_token = oauth_json['access_token']
+    # Give us 30 second buffer to hackily account for RTT on network request.
+    oauth2_tokens.access_token_expiration = (
+        int(oauth_json['expires_in'] + time.time() - 30))
+    oauth2_tokens.put()
 
-    # If there is an existing key, only allow updating if you know the old
-    # key. This is a simple safeguard against random users hitting this page.
-    config = GetOAuthConfig(throws=False)
-    httpxmppproxy = self.request.get('httpxmppproxy')
-    # TODO(ajwong): THIS IS A TOTAL HACK! FIX WITH OWN PAGE.
-    # Currently, this form has one submit button, and 3 pieces of input:
-    # consumer_key, oauth_secret, and the httpxmppproxy address.  The first
-    # two only get committed if the secret + key match.  The third always
-    # get committed via this hack.  Really, it should just be a separate
-    # field/page to set this up.
-    if httpxmppproxy:
-      config.httpxmppproxy = httpxmppproxy
-      config.put()
-    config.consumer_key = self.request.get('consumer_key')
-    if config:
-      if config.consumer_secret != old_consumer_secret:
-        self.response.set_status(400)
-        self.response.out.write('Incorrect old consumer secret')
-        return
+    if state:
+      self.redirect(state)
     else:
-      config = OAuthConfig(key_name = OAuthConfigKey().id_or_name())
+      self.redirect('/')
 
-    config.consumer_key = self.request.get('consumer_key')
-    config.consumer_secret = self.request.get('new_consumer_secret')
-    config.put()
-    self.redirect('/')
-
-def GetHttpXmppProxy():
-  config = GetOAuthConfig(throws=True)
-  if not config.httpxmppproxy:
-    raise OAuthInvalidSetup()
-  return config.httpxmppproxy
 
 def main():
   application = webapp.WSGIApplication(
       [
-      ('/auth/chromoting_auth', ChromotingAuthHandler),
-      ('/auth/xmpp_auth', XmppAuthHandler),
-      ('/auth/chromoting_auth_return', ChromotingAuthReturnHandler),
-      ('/auth/clear_xmpp_token', ClearXmppTokenHandler),
-      ('/auth/clear_chromoting_token', ClearChromotingTokenHandler),
-      ('/auth/setup_oauth', SetupOAuthHandler)
+      ('/auth/clientlogin_auth', ClientLoginAuthHandler),
+      ('/auth/clear_clientlogin_token', ClearClientLoginTokenHandler),
+      ('/auth/clear_oauth2_token', ClearOAuth2TokenHandler),
+      ('/auth/oauth2_return', OAuth2ReturnHandler)
       ],
       debug=True)
   util.run_wsgi_app(application)

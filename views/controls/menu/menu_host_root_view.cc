@@ -11,16 +11,15 @@ namespace views {
 
 MenuHostRootView::MenuHostRootView(Widget* widget,
                                    SubmenuView* submenu)
-    : RootView(widget),
+    : internal::RootView(widget),
       submenu_(submenu),
       forward_drag_to_menu_controller_(true) {
 }
 
 bool MenuHostRootView::OnMousePressed(const MouseEvent& event) {
   forward_drag_to_menu_controller_ =
-      ((event.x() < 0 || event.y() < 0 || event.x() >= width() ||
-        event.y() >= height()) ||
-       !RootView::OnMousePressed(event));
+      !GetLocalBounds().Contains(event.location()) ||
+      !RootView::OnMousePressed(event);
   if (forward_drag_to_menu_controller_ && GetMenuController())
     GetMenuController()->OnMousePressed(submenu_, event);
   return true;

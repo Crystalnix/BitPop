@@ -9,13 +9,15 @@
 #include "base/stl_util-inl.h"
 #include "base/string_piece.h"
 #include "base/task.h"
+#include "chrome/browser/prefs/pref_model_associator.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/sync/abstract_profile_sync_service_test.h"
+#include "chrome/browser/sync/api/sync_data.h"
 #include "chrome/browser/sync/engine/syncapi.h"
-#include "chrome/browser/sync/glue/preference_change_processor.h"
+#include "chrome/browser/sync/glue/generic_change_processor.h"
 #include "chrome/browser/sync/glue/preference_data_type_controller.h"
-#include "chrome/browser/sync/glue/preference_model_associator.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
+#include "chrome/browser/sync/glue/syncable_service_adapter.h"
 #include "chrome/browser/sync/profile_sync_test_util.h"
 #include "chrome/browser/sync/protocol/preference_specifics.pb.h"
 #include "chrome/browser/sync/syncable/model_type.h"
@@ -29,16 +31,32 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::JSONReader;
-using browser_sync::PreferenceChangeProcessor;
+using browser_sync::GenericChangeProcessor;
 using browser_sync::PreferenceDataTypeController;
-using browser_sync::PreferenceModelAssociator;
 using browser_sync::SyncBackendHost;
+using browser_sync::SyncableServiceAdapter;
 using sync_api::SyncManager;
 using testing::_;
+using testing::Invoke;
 using testing::Return;
 
 typedef std::map<const std::string, const Value*> PreferenceValues;
 
+ACTION_P4(BuildPrefSyncComponents, profile_sync_service, pref_sync_service,
+    model_associator_ptr, change_processor_ptr) {
+  sync_api::UserShare* user_share = profile_sync_service->GetUserShare();
+  *change_processor_ptr = new GenericChangeProcessor(pref_sync_service,
+                                 profile_sync_service,
+                                 user_share);
+  *model_associator_ptr = new browser_sync::SyncableServiceAdapter(
+      syncable::PREFERENCES,
+      pref_sync_service,
+      *change_processor_ptr);
+  return ProfileSyncFactory::SyncComponents(*model_associator_ptr,
+                                            *change_processor_ptr);
+}
+
+// TODO(zea): Refactor to remove the ProfileSyncService usage.
 class ProfileSyncServicePreferenceTest
     : public AbstractProfileSyncServiceTest {
  protected:
@@ -51,23 +69,20 @@ class ProfileSyncServicePreferenceTest
         non_default_charset_value_("foo") {}
 
   virtual void SetUp() {
+    AbstractProfileSyncServiceTest::SetUp();
     profile_.reset(new TestingProfile());
     profile_->CreateRequestContext();
     prefs_ = profile_->GetTestingPrefService();
 
     prefs_->RegisterStringPref(not_synced_preference_name_.c_str(),
-                               not_synced_preference_default_value_);
+                               not_synced_preference_default_value_,
+                               PrefService::UNSYNCABLE_PREF);
   }
 
   virtual void TearDown() {
     service_.reset();
-    {
-      // The request context gets deleted on the I/O thread. To prevent a leak
-      // supply one here.
-      BrowserThread io_thread(BrowserThread::IO, MessageLoop::current());
-      profile_.reset();
-    }
-    MessageLoop::current()->RunAllPending();
+    profile_.reset();
+    AbstractProfileSyncServiceTest::TearDown();
   }
 
   bool StartSyncService(Task* task, bool will_fail_association) {
@@ -76,25 +91,26 @@ class ProfileSyncServicePreferenceTest
 
     service_.reset(new TestProfileSyncService(
         &factory_, profile_.get(), "test", false, task));
-
-    // Register the preference data type.
-    model_associator_ =
-        new PreferenceModelAssociator(service_.get());
-    change_processor_ = new PreferenceChangeProcessor(model_associator_,
-                                                      service_.get());
+    pref_sync_service_ = reinterpret_cast<PrefModelAssociator*>(
+        prefs_->GetSyncableService());
+    if (!pref_sync_service_)
+      return false;
     EXPECT_CALL(factory_, CreatePreferenceSyncComponents(_, _)).
-        WillOnce(Return(ProfileSyncFactory::SyncComponents(
-            model_associator_, change_processor_)));
+        WillOnce(BuildPrefSyncComponents(service_.get(),
+                                         pref_sync_service_,
+                                         &model_associator_,
+                                         &change_processor_));
 
     EXPECT_CALL(factory_, CreateDataTypeManager(_, _)).
         WillOnce(ReturnNewDataTypeManager());
 
-    service_->RegisterDataTypeController(
-        new PreferenceDataTypeController(&factory_,
-                                         profile_.get(),
-                                         service_.get()));
+    dtc_ = new PreferenceDataTypeController(&factory_,
+                                            profile_.get(),
+                                            service_.get());
+    service_->RegisterDataTypeController(dtc_);
     profile_->GetTokenService()->IssueAuthTokenForTest(
         GaiaConstants::kSyncService, "token");
+
     service_->Initialize();
     MessageLoop::current()->Run();
     return true;
@@ -111,14 +127,11 @@ class ProfileSyncServicePreferenceTest
     sync_api::ReadTransaction trans(service_->GetUserShare());
     sync_api::ReadNode node(&trans);
 
-    int64 node_id = model_associator_->GetSyncIdFromChromeId(name);
-    if (node_id == sync_api::kInvalidId)
-      return NULL;
-    if (!node.InitByIdLookup(node_id))
+    if (!node.InitByClientTagLookup(syncable::PREFERENCES, name))
       return NULL;
 
     const sync_pb::PreferenceSpecifics& specifics(
-        node.GetPreferenceSpecifics());
+        node.GetEntitySpecifics().GetExtension(sync_pb::preference));
 
     JSONReader reader;
     return reader.JsonToValue(specifics.value(), false, false);
@@ -127,43 +140,45 @@ class ProfileSyncServicePreferenceTest
   int64 WriteSyncedValue(const std::string& name,
                          const Value& value,
                          sync_api::WriteNode* node) {
-    if (!PreferenceModelAssociator::WritePreferenceToNode(name, value, node))
+    SyncData sync_data;
+    if (!PrefModelAssociator::CreatePrefSyncData(name,
+                                                 value,
+                                                 &sync_data)) {
       return sync_api::kInvalidId;
+    }
+    node->SetEntitySpecifics(sync_data.GetSpecifics());
     return node->GetId();
   }
 
   int64 SetSyncedValue(const std::string& name, const Value& value) {
     sync_api::WriteTransaction trans(service_->GetUserShare());
     sync_api::ReadNode root(&trans);
-    if (!root.InitByTagLookup(browser_sync::kPreferencesTag))
+    if (!root.InitByTagLookup(
+        syncable::ModelTypeToRootTag(syncable::PREFERENCES))) {
       return sync_api::kInvalidId;
+    }
 
     sync_api::WriteNode tag_node(&trans);
     sync_api::WriteNode node(&trans);
 
-    int64 node_id = model_associator_->GetSyncIdFromChromeId(name);
-    if (node_id == sync_api::kInvalidId) {
-      if (tag_node.InitByClientTagLookup(syncable::PREFERENCES, name))
-        return WriteSyncedValue(name, value, &tag_node);
-      if (node.InitUniqueByCreation(syncable::PREFERENCES, root, name))
-        return WriteSyncedValue(name, value, &node);
-    } else if (node.InitByIdLookup(node_id)) {
+    if (tag_node.InitByClientTagLookup(syncable::PREFERENCES, name))
+      return WriteSyncedValue(name, value, &tag_node);
+    if (node.InitUniqueByCreation(syncable::PREFERENCES, root, name))
       return WriteSyncedValue(name, value, &node);
-    }
+
     return sync_api::kInvalidId;
   }
 
-  SyncManager::ChangeRecord* MakeChangeRecord(const std::string& name,
-                                              SyncManager::ChangeRecord) {
-    int64 node_id = model_associator_->GetSyncIdFromChromeId(name);
+  SyncManager::ChangeRecord* MakeChangeRecord(int64 node_id,
+      SyncManager::ChangeRecord::Action action) {
     SyncManager::ChangeRecord* record = new SyncManager::ChangeRecord();
-    record->action = SyncManager::ChangeRecord::ACTION_UPDATE;
+    record->action = action;
     record->id = node_id;
     return record;
   }
 
   bool IsSynced(const std::string& pref_name) {
-    return model_associator_->synced_preferences().count(pref_name) > 0;
+    return pref_sync_service_->registered_preferences().count(pref_name) > 0;
   }
 
   std::string ValueString(const Value& value) {
@@ -178,8 +193,11 @@ class ProfileSyncServicePreferenceTest
   scoped_ptr<TestingProfile> profile_;
   TestingPrefService* prefs_;
 
-  PreferenceModelAssociator* model_associator_;
-  PreferenceChangeProcessor* change_processor_;
+  PreferenceDataTypeController* dtc_;
+  PrefModelAssociator* pref_sync_service_;
+  SyncableServiceAdapter* model_associator_;
+  GenericChangeProcessor* change_processor_;
+
   std::string example_url0_;
   std::string example_url1_;
   std::string example_url2_;
@@ -214,7 +232,7 @@ class AddPreferenceEntriesTask : public Task {
   bool success_;
 };
 
-TEST_F(ProfileSyncServicePreferenceTest, WritePreferenceToNode) {
+TEST_F(ProfileSyncServicePreferenceTest, CreatePrefSyncData) {
   prefs_->SetString(prefs::kHomePage, example_url0_);
   CreateRootTask task(this, syncable::PREFERENCES);
   ASSERT_TRUE(StartSyncService(&task, false));
@@ -222,15 +240,12 @@ TEST_F(ProfileSyncServicePreferenceTest, WritePreferenceToNode) {
 
   const PrefService::Preference* pref =
       prefs_->FindPreference(prefs::kHomePage);
-  sync_api::WriteTransaction trans(service_->GetUserShare());
-  sync_api::WriteNode node(&trans);
-  EXPECT_TRUE(node.InitByClientTagLookup(syncable::PREFERENCES,
-                                         prefs::kHomePage));
-
-  EXPECT_TRUE(PreferenceModelAssociator::WritePreferenceToNode(
-      pref->name(), *pref->GetValue(), &node));
-  EXPECT_EQ(UTF8ToWide(prefs::kHomePage), node.GetTitle());
-  const sync_pb::PreferenceSpecifics& specifics(node.GetPreferenceSpecifics());
+  SyncData sync_data;
+  EXPECT_TRUE(PrefModelAssociator::CreatePrefSyncData(pref->name(),
+      *pref->GetValue(), &sync_data));
+  EXPECT_EQ(std::string(prefs::kHomePage), sync_data.GetTag());
+  const sync_pb::PreferenceSpecifics& specifics(sync_data.GetSpecifics().
+      GetExtension(sync_pb::preference));
   EXPECT_EQ(std::string(prefs::kHomePage), specifics.name());
 
   base::JSONReader reader;
@@ -365,15 +380,15 @@ TEST_F(ProfileSyncServicePreferenceTest, UpdatedSyncNodeActionUpdate) {
   ASSERT_TRUE(task.success());
 
   scoped_ptr<Value> expected(Value::CreateStringValue(example_url1_));
-  ASSERT_NE(SetSyncedValue(prefs::kHomePage, *expected), sync_api::kInvalidId);
-  int64 node_id = model_associator_->GetSyncIdFromChromeId(prefs::kHomePage);
-  scoped_ptr<SyncManager::ChangeRecord> record(new SyncManager::ChangeRecord);
-  record->action = SyncManager::ChangeRecord::ACTION_UPDATE;
-  record->id = node_id;
+  int64 node_id = SetSyncedValue(prefs::kHomePage, *expected);
+  ASSERT_NE(node_id, sync_api::kInvalidId);
+  scoped_ptr<SyncManager::ChangeRecord> record(MakeChangeRecord(
+      node_id, SyncManager::ChangeRecord::ACTION_UPDATE));
   {
     sync_api::WriteTransaction trans(service_->GetUserShare());
     change_processor_->ApplyChangesFromSyncModel(&trans, record.get(), 1);
   }
+  change_processor_->CommitChangesFromSyncModel();
 
   const Value& actual = GetPreferenceValue(prefs::kHomePage);
   EXPECT_TRUE(expected->Equals(&actual));
@@ -387,18 +402,18 @@ TEST_F(ProfileSyncServicePreferenceTest, UpdatedSyncNodeActionAdd) {
   scoped_ptr<Value> expected(Value::CreateStringValue(example_url0_));
   int64 node_id = SetSyncedValue(prefs::kHomePage, *expected);
   ASSERT_NE(node_id, sync_api::kInvalidId);
-  scoped_ptr<SyncManager::ChangeRecord> record(new SyncManager::ChangeRecord);
-  record->action = SyncManager::ChangeRecord::ACTION_ADD;
-  record->id = node_id;
+  scoped_ptr<SyncManager::ChangeRecord> record(MakeChangeRecord(
+      node_id, SyncManager::ChangeRecord::ACTION_ADD));
   {
     sync_api::WriteTransaction trans(service_->GetUserShare());
     change_processor_->ApplyChangesFromSyncModel(&trans, record.get(), 1);
   }
+  change_processor_->CommitChangesFromSyncModel();
 
   const Value& actual = GetPreferenceValue(prefs::kHomePage);
   EXPECT_TRUE(expected->Equals(&actual));
-  EXPECT_EQ(node_id,
-            model_associator_->GetSyncIdFromChromeId(prefs::kHomePage));
+  EXPECT_EQ(1U,
+            pref_sync_service_->synced_preferences().count(prefs::kHomePage));
 }
 
 TEST_F(ProfileSyncServicePreferenceTest, UpdatedSyncNodeUnknownPreference) {
@@ -409,13 +424,13 @@ TEST_F(ProfileSyncServicePreferenceTest, UpdatedSyncNodeUnknownPreference) {
   scoped_ptr<Value> expected(Value::CreateStringValue(example_url0_));
   int64 node_id = SetSyncedValue("unknown preference", *expected);
   ASSERT_NE(node_id, sync_api::kInvalidId);
-  scoped_ptr<SyncManager::ChangeRecord> record(new SyncManager::ChangeRecord);
-  record->action = SyncManager::ChangeRecord::ACTION_ADD;
-  record->id = node_id;
+  scoped_ptr<SyncManager::ChangeRecord> record(MakeChangeRecord(
+      node_id, SyncManager::ChangeRecord::ACTION_UPDATE));
   {
     sync_api::WriteTransaction trans(service_->GetUserShare());
     change_processor_->ApplyChangesFromSyncModel(&trans, record.get(), 1);
   }
+  change_processor_->CommitChangesFromSyncModel();
 
   // Nothing interesting happens on the client when it gets an update
   // of an unknown preference.  We just should not crash.
@@ -442,13 +457,14 @@ TEST_F(ProfileSyncServicePreferenceTest, ManagedPreferences) {
       Value::CreateStringValue("http://crbug.com"));
   int64 node_id = SetSyncedValue(prefs::kHomePage, *sync_value);
   ASSERT_NE(node_id, sync_api::kInvalidId);
-  scoped_ptr<SyncManager::ChangeRecord> record(new SyncManager::ChangeRecord);
-  record->action = SyncManager::ChangeRecord::ACTION_UPDATE;
-  record->id = node_id;
+  scoped_ptr<SyncManager::ChangeRecord> record(MakeChangeRecord(
+      node_id, SyncManager::ChangeRecord::ACTION_UPDATE));
   {
     sync_api::WriteTransaction trans(service_->GetUserShare());
     change_processor_->ApplyChangesFromSyncModel(&trans, record.get(), 1);
   }
+  change_processor_->CommitChangesFromSyncModel();
+
   EXPECT_TRUE(managed_value->Equals(
       prefs_->GetManagedPref(prefs::kHomePage)));
   EXPECT_TRUE(user_value->Equals(
@@ -473,21 +489,21 @@ TEST_F(ProfileSyncServicePreferenceTest, DynamicManagedPreferences) {
       prefs::kHomePage, managed_value->DeepCopy());
 
   // Sync node should be gone.
-  EXPECT_EQ(sync_api::kInvalidId,
-            model_associator_->GetSyncIdFromChromeId(prefs::kHomePage));
+  EXPECT_EQ(0U,
+            pref_sync_service_->synced_preferences().count(prefs::kHomePage));
 
   // Change the sync value.
   scoped_ptr<Value> sync_value(
       Value::CreateStringValue("http://example.com/sync"));
   int64 node_id = SetSyncedValue(prefs::kHomePage, *sync_value);
   ASSERT_NE(node_id, sync_api::kInvalidId);
-  scoped_ptr<SyncManager::ChangeRecord> record(new SyncManager::ChangeRecord);
-  record->action = SyncManager::ChangeRecord::ACTION_ADD;
-  record->id = node_id;
+  scoped_ptr<SyncManager::ChangeRecord> record(MakeChangeRecord(
+      node_id, SyncManager::ChangeRecord::ACTION_ADD));
   {
     sync_api::WriteTransaction trans(service_->GetUserShare());
     change_processor_->ApplyChangesFromSyncModel(&trans, record.get(), 1);
   }
+  change_processor_->CommitChangesFromSyncModel();
 
   // The pref value should still be the one dictated by policy.
   EXPECT_TRUE(managed_value->Equals(&GetPreferenceValue(prefs::kHomePage)));

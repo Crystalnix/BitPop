@@ -14,8 +14,8 @@
 #include "chrome/browser/ui/cocoa/infobars/infobar.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_container_controller.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_controller.h"
-#include "skia/ext/skia_utils_mac.h"
 #include "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
+#include "ui/gfx/image.h"
 #include "webkit/glue/window_open_disposition.h"
 
 namespace {
@@ -113,7 +113,7 @@ const float kAnimateCloseDuration = 0.12;
 - (void)awakeFromNib {
   DCHECK(delegate_);
   if (delegate_->GetIcon()) {
-    [image_ setImage:gfx::SkBitmapToNSImage(*(delegate_->GetIcon()))];
+    [image_ setImage:*(delegate_->GetIcon())];
   } else {
     // No icon, remove it from the view and grow the textfield to include the
     // space.
@@ -266,7 +266,7 @@ const float kAnimateCloseDuration = 0.12;
   if (!infoBarClosing_)
     return;
 
-  // Notify the delegate that the infobar was closed.  The delegate may delete
+  // Notify the delegate that the infobar was closed.  The delegate will delete
   // itself as a result of InfoBarClosed(), so we null out its pointer.
   if (delegate_) {
     delegate_->InfoBarClosed();
@@ -506,13 +506,13 @@ const float kAnimateCloseDuration = 0.12;
 //////////////////////////////////////////////////////////////////////////
 // CreateInfoBar() implementations
 
-InfoBar* LinkInfoBarDelegate::CreateInfoBar() {
+InfoBar* LinkInfoBarDelegate::CreateInfoBar(TabContentsWrapper* owner) {
   LinkInfoBarController* controller =
       [[LinkInfoBarController alloc] initWithDelegate:this];
   return new InfoBar(controller);
 }
 
-InfoBar* ConfirmInfoBarDelegate::CreateInfoBar() {
+InfoBar* ConfirmInfoBarDelegate::CreateInfoBar(TabContentsWrapper* owner) {
   ConfirmInfoBarController* controller =
       [[ConfirmInfoBarController alloc] initWithDelegate:this];
   return new InfoBar(controller);

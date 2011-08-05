@@ -11,6 +11,8 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/gtk/accelerators_gtk.h"
+#include "chrome/browser/ui/gtk/gtk_theme_service.h"
+#include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/common/pref_names.h"
 #include "content/common/notification_service.h"
 #include "grit/generated_resources.h"
@@ -20,12 +22,14 @@
 struct GlobalMenuBarCommand {
   int str_id;
   int command;
+  int tag;
 };
 
 namespace {
 
 const int MENU_SEPARATOR =-1;
 const int MENU_END = -2;
+const int MENU_DISABLED_LABEL = -3;
 
 GlobalMenuBarCommand file_menu[] = {
   { IDS_NEW_TAB, IDC_NEW_TAB },
@@ -52,23 +56,12 @@ GlobalMenuBarCommand file_menu[] = {
   { MENU_END, MENU_END }
 };
 
-// TODO(erg): Need to add support for undo/redo/other editing commands that
-// don't go through the command id framework.
 GlobalMenuBarCommand edit_menu[] = {
-  // TODO(erg): Undo
-  // TODO(erg): Redo
-
-  // TODO(erg): Separator
-
   { IDS_CUT, IDC_CUT },
   { IDS_COPY, IDC_COPY },
   { IDS_PASTE, IDC_PASTE },
-  // TODO(erg): Delete
 
   { MENU_SEPARATOR, MENU_SEPARATOR },
-
-  // TODO(erg): Select All
-  // TODO(erg): Another separator
 
   { IDS_FIND, IDC_FIND },
 
@@ -79,8 +72,6 @@ GlobalMenuBarCommand edit_menu[] = {
   { MENU_END, MENU_END }
 };
 
-// TODO(erg): The View menu should be overhauled and based on the Firefox view
-// menu.
 GlobalMenuBarCommand view_menu[] = {
   { IDS_SHOW_BOOKMARK_BAR, IDC_SHOW_BOOKMARK_BAR },
 
@@ -95,6 +86,36 @@ GlobalMenuBarCommand view_menu[] = {
   { IDS_TEXT_DEFAULT_LINUX, IDC_ZOOM_NORMAL },
   { IDS_TEXT_BIGGER_LINUX, IDC_ZOOM_PLUS },
   { IDS_TEXT_SMALLER_LINUX, IDC_ZOOM_MINUS },
+
+  { MENU_END, MENU_END }
+};
+
+GlobalMenuBarCommand history_menu[] = {
+  { IDS_HISTORY_HOME_LINUX, IDC_HOME },
+  { IDS_HISTORY_BACK_LINUX, IDC_BACK },
+  { IDS_HISTORY_FORWARD_LINUX, IDC_FORWARD },
+
+  { MENU_SEPARATOR, MENU_SEPARATOR },
+
+  { IDS_HISTORY_VISITED_LINUX, MENU_DISABLED_LABEL,
+    GlobalMenuBar::TAG_MOST_VISITED_HEADER },
+
+  { MENU_SEPARATOR, MENU_SEPARATOR },
+
+  { IDS_HISTORY_CLOSED_LINUX, MENU_DISABLED_LABEL,
+    GlobalMenuBar::TAG_RECENTLY_CLOSED_HEADER },
+
+  { MENU_SEPARATOR, MENU_SEPARATOR },
+
+  { IDS_SHOWFULLHISTORY_LINK, IDC_SHOW_HISTORY },
+
+  { MENU_END, MENU_END }
+};
+
+GlobalMenuBarCommand bookmark_menu[] = {
+  { IDS_BOOKMARK_MANAGER, IDC_SHOW_BOOKMARK_MANAGER },
+  { IDS_BOOKMARK_CURRENT_PAGE_LINUX, IDC_BOOKMARK_PAGE },
+  { IDS_BOOKMARK_ALL_TABS_LINUX, IDC_BOOKMARK_ALL_TABS },
 
   { MENU_END, MENU_END }
 };
@@ -126,28 +147,33 @@ GlobalMenuBarCommand help_menu[] = {
 
 }  // namespace
 
-GlobalMenuBar::GlobalMenuBar(Browser* browser,
-                             BrowserWindowGtk* window)
+GlobalMenuBar::GlobalMenuBar(Browser* browser)
     : browser_(browser),
-      browser_window_(window),
+      profile_(browser_->profile()),
       menu_bar_(gtk_menu_bar_new()),
+      history_menu_(browser_),
+      bookmark_menu_(browser_),
       dummy_accel_group_(gtk_accel_group_new()),
       block_activation_(false) {
   // The global menu bar should never actually be shown in the app; it should
   // instead remain in our widget hierarchy simply to be noticed by third party
   // components.
-  gtk_widget_set_no_show_all(menu_bar_, TRUE);
+  gtk_widget_set_no_show_all(menu_bar_.get(), TRUE);
 
   // Set a nice name so it shows up in gtkparasite and others.
-  gtk_widget_set_name(menu_bar_, "chrome-hidden-global-menubar");
+  gtk_widget_set_name(menu_bar_.get(), "chrome-hidden-global-menubar");
 
-  BuildGtkMenuFrom(IDS_FILE_MENU_LINUX, &id_to_menu_item_, file_menu);
-  BuildGtkMenuFrom(IDS_EDIT_MENU_LINUX, &id_to_menu_item_, edit_menu);
-  BuildGtkMenuFrom(IDS_VIEW_MENU_LINUX, &id_to_menu_item_, view_menu);
-  BuildGtkMenuFrom(IDS_TOOLS_MENU_LINUX, &id_to_menu_item_, tools_menu);
-  BuildGtkMenuFrom(IDS_HELP_MENU_LINUX, &id_to_menu_item_, help_menu);
+  BuildGtkMenuFrom(IDS_FILE_MENU_LINUX, &id_to_menu_item_, file_menu, NULL);
+  BuildGtkMenuFrom(IDS_EDIT_MENU_LINUX, &id_to_menu_item_, edit_menu, NULL);
+  BuildGtkMenuFrom(IDS_VIEW_MENU_LINUX, &id_to_menu_item_, view_menu, NULL);
+  BuildGtkMenuFrom(IDS_HISTORY_MENU_LINUX, &id_to_menu_item_,
+                   history_menu, &history_menu_);
+  BuildGtkMenuFrom(IDS_BOOKMARKS_MENU_LINUX, &id_to_menu_item_, bookmark_menu,
+                   &bookmark_menu_);
+  BuildGtkMenuFrom(IDS_TOOLS_MENU_LINUX, &id_to_menu_item_, tools_menu, NULL);
+  BuildGtkMenuFrom(IDS_HELP_MENU_LINUX, &id_to_menu_item_, help_menu, NULL);
 
-  for (IDMenuItemMap::const_iterator it = id_to_menu_item_.begin();
+  for (CommandIDMenuItemMap::const_iterator it = id_to_menu_item_.begin();
        it != id_to_menu_item_.end(); ++it) {
     // Get the starting enabled state.
     gtk_widget_set_sensitive(
@@ -179,7 +205,7 @@ GlobalMenuBar::GlobalMenuBar(Browser* browser,
 }
 
 GlobalMenuBar::~GlobalMenuBar() {
-  for (IDMenuItemMap::const_iterator it = id_to_menu_item_.begin();
+  for (CommandIDMenuItemMap::const_iterator it = id_to_menu_item_.begin();
        it != id_to_menu_item_.end(); ++it) {
     browser_->command_updater()->RemoveCommandObserver(it->first, this);
   }
@@ -187,32 +213,16 @@ GlobalMenuBar::~GlobalMenuBar() {
   g_object_unref(dummy_accel_group_);
 }
 
-void GlobalMenuBar::BuildGtkMenuFrom(int menu_str_id,
-                                     std::map<int, GtkWidget*>* id_to_menu_item,
-                                     GlobalMenuBarCommand* commands) {
+void GlobalMenuBar::BuildGtkMenuFrom(
+    int menu_str_id,
+    std::map<int, GtkWidget*>* id_to_menu_item,
+    GlobalMenuBarCommand* commands,
+    GlobalMenuOwner* owner) {
   GtkWidget* menu = gtk_menu_new();
   for (int i = 0; commands[i].str_id != MENU_END; ++i) {
-    GtkWidget* menu_item = NULL;
-    if (commands[i].str_id == MENU_SEPARATOR) {
-      menu_item = gtk_separator_menu_item_new();
-    } else {
-      int command_id = commands[i].command;
-      std::string label =
-          gfx::ConvertAcceleratorsFromWindowsStyle(
-              l10n_util::GetStringUTF8(commands[i].str_id));
-
-      if (command_id == IDC_SHOW_BOOKMARK_BAR)
-        menu_item = gtk_check_menu_item_new_with_mnemonic(label.c_str());
-      else
-        menu_item = gtk_menu_item_new_with_mnemonic(label.c_str());
-
-      id_to_menu_item->insert(std::make_pair(command_id, menu_item));
-      g_object_set_data(G_OBJECT(menu_item), "command-id",
-                        GINT_TO_POINTER(command_id));
-      g_signal_connect(menu_item, "activate",
-                       G_CALLBACK(OnItemActivatedThunk), this);
-    }
-    gtk_widget_show(menu_item);
+    GtkWidget* menu_item = BuildMenuItem(
+        commands[i].str_id, commands[i].command, commands[i].tag,
+        id_to_menu_item, menu);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), menu_item);
   }
 
@@ -221,14 +231,57 @@ void GlobalMenuBar::BuildGtkMenuFrom(int menu_str_id,
   GtkWidget* menu_item = gtk_menu_item_new_with_mnemonic(
       gfx::ConvertAcceleratorsFromWindowsStyle(
           l10n_util::GetStringUTF8(menu_str_id)).c_str());
+
+  // Give the owner a chance to sink the reference before we add it to the menu
+  // bar.
+  if (owner)
+    owner->Init(menu, menu_item);
+
   gtk_menu_item_set_submenu(GTK_MENU_ITEM(menu_item), menu);
   gtk_widget_show(menu_item);
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu_bar_.get()), menu_item);
+}
 
-  gtk_menu_shell_append(GTK_MENU_SHELL(menu_bar_), menu_item);
+GtkWidget* GlobalMenuBar::BuildMenuItem(
+    int string_id,
+    int command_id,
+    int tag_id,
+    std::map<int, GtkWidget*>* id_to_menu_item,
+    GtkWidget* menu_to_add_to) {
+  GtkWidget* menu_item = NULL;
+  if (string_id == MENU_SEPARATOR) {
+    menu_item = gtk_separator_menu_item_new();
+  } else {
+    std::string label =
+        gfx::ConvertAcceleratorsFromWindowsStyle(
+            l10n_util::GetStringUTF8(string_id));
+
+    if (command_id == IDC_SHOW_BOOKMARK_BAR)
+      menu_item = gtk_check_menu_item_new_with_mnemonic(label.c_str());
+    else
+      menu_item = gtk_menu_item_new_with_mnemonic(label.c_str());
+
+    if (tag_id) {
+      g_object_set_data(G_OBJECT(menu_item), "type-tag",
+                        GINT_TO_POINTER(tag_id));
+    }
+
+    if (command_id == MENU_DISABLED_LABEL) {
+      gtk_widget_set_sensitive(menu_item, FALSE);
+    } else {
+      id_to_menu_item->insert(std::make_pair(command_id, menu_item));
+      g_object_set_data(G_OBJECT(menu_item), "command-id",
+                        GINT_TO_POINTER(command_id));
+      g_signal_connect(menu_item, "activate",
+                       G_CALLBACK(OnItemActivatedThunk), this);
+    }
+  }
+  gtk_widget_show(menu_item);
+  return menu_item;
 }
 
 void GlobalMenuBar::EnabledStateChangedForCommand(int id, bool enabled) {
-  IDMenuItemMap::iterator it = id_to_menu_item_.find(id);
+  CommandIDMenuItemMap::iterator it = id_to_menu_item_.find(id);
   if (it != id_to_menu_item_.end())
     gtk_widget_set_sensitive(it->second, enabled);
 }
@@ -238,13 +291,15 @@ void GlobalMenuBar::Observe(NotificationType type,
                             const NotificationDetails& details) {
   DCHECK(type.value == NotificationType::BOOKMARK_BAR_VISIBILITY_PREF_CHANGED);
 
-  IDMenuItemMap::iterator it = id_to_menu_item_.find(IDC_SHOW_BOOKMARK_BAR);
+  CommandIDMenuItemMap::iterator it =
+      id_to_menu_item_.find(IDC_SHOW_BOOKMARK_BAR);
   if (it != id_to_menu_item_.end()) {
     PrefService* prefs = browser_->profile()->GetPrefs();
 
     block_activation_ = true;
-    gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(it->second),
-                                   prefs->GetBoolean(prefs::kShowBookmarkBar));
+    gtk_check_menu_item_set_active(
+        GTK_CHECK_MENU_ITEM(it->second),
+        prefs->GetBoolean(prefs::kShowBookmarkBar));
     block_activation_ = false;
   }
 }

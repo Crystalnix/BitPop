@@ -349,7 +349,6 @@ willAnimateFromState:(bookmarks::VisualState)oldState
 // Or from a context menu over either the bar or a button.
 - (IBAction)addPage:(id)sender;
 - (IBAction)addFolder:(id)sender;
-
 @end
 
 // Redirects from BookmarkBarBridge, the C++ object which glues us to

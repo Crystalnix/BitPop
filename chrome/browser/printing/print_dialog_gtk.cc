@@ -29,6 +29,17 @@ using printing::PrintSettings;
 
 namespace {
 
+// CUPS ColorModel attribute and values.
+const char kCUPSColorModel[] = "cups-ColorModel";
+const char kColor[] = "Color";
+const char kGrayscale[] = "Grayscale";
+
+// CUPS Duplex attribute and values.
+const char kCUPSDuplex[] = "cups-Duplex";
+const char kDuplexNone[] = "None";
+const char kDuplexTumble[] = "DuplexTumble";
+const char kDuplexNoTumble[] = "DuplexNoTumble";
+
 // Helper class to track GTK printers.
 class GtkPrinterList {
  public:
@@ -149,38 +160,55 @@ void PrintDialogGtk::UseDefaultSettings() {
 
 bool PrintDialogGtk::UpdateSettings(const DictionaryValue& settings,
                                     const printing::PageRanges& ranges) {
-  std::string printer_name;
-  settings.GetString(printing::kSettingPrinterName, &printer_name);
+  bool collate;
+  bool color;
+  bool landscape;
+  bool print_to_pdf;
+  int copies;
+  int duplex_mode;
+  std::string device_name;
 
-  scoped_ptr<GtkPrinterList> printer_list(new GtkPrinterList);
-  printer_ = printer_list->GetPrinterWithName(printer_name.c_str());
-  if (printer_) {
-    g_object_ref(printer_);
-    gtk_print_settings_set_printer(gtk_settings_,
-                                   gtk_printer_get_name(printer_));
+  if (!settings.GetBoolean(printing::kSettingLandscape, &landscape) ||
+      !settings.GetBoolean(printing::kSettingCollate, &collate) ||
+      !settings.GetBoolean(printing::kSettingColor, &color) ||
+      !settings.GetBoolean(printing::kSettingPrintToPDF, &print_to_pdf) ||
+      !settings.GetInteger(printing::kSettingDuplexMode, &duplex_mode) ||
+      !settings.GetInteger(printing::kSettingCopies, &copies) ||
+      !settings.GetString(printing::kSettingDeviceName, &device_name)) {
+    return false;
   }
 
-  bool landscape;
-  if (!settings.GetBoolean(printing::kSettingLandscape, &landscape))
-    return false;
+  if (!print_to_pdf) {
+    scoped_ptr<GtkPrinterList> printer_list(new GtkPrinterList);
+    printer_ = printer_list->GetPrinterWithName(device_name.c_str());
+    if (printer_) {
+      g_object_ref(printer_);
+      gtk_print_settings_set_printer(gtk_settings_,
+                                     gtk_printer_get_name(printer_));
+    }
+    gtk_print_settings_set_n_copies(gtk_settings_, copies);
+    gtk_print_settings_set_collate(gtk_settings_, collate);
+    gtk_print_settings_set(gtk_settings_, kCUPSColorModel,
+                           color ? kColor : kGrayscale);
+    const char* cups_duplex_mode;
+    switch (duplex_mode) {
+      case printing::LONG_EDGE:
+        cups_duplex_mode = kDuplexNoTumble;
+        break;
+      case printing::SHORT_EDGE:
+        cups_duplex_mode = kDuplexTumble;
+        break;
+      default:
+        cups_duplex_mode = kDuplexNone;
+        break;
+    }
+    gtk_print_settings_set(gtk_settings_, kCUPSDuplex, cups_duplex_mode);
+  }
 
   gtk_print_settings_set_orientation(
       gtk_settings_,
       landscape ? GTK_PAGE_ORIENTATION_LANDSCAPE :
                   GTK_PAGE_ORIENTATION_PORTRAIT);
-
-  int copies;
-  if (!settings.GetInteger(printing::kSettingCopies, &copies))
-    return false;
-  gtk_print_settings_set_n_copies(gtk_settings_, copies);
-
-  bool collate;
-  if (!settings.GetBoolean(printing::kSettingCollate, &collate))
-    return false;
-  gtk_print_settings_set_collate(gtk_settings_, collate);
-
-  // TODO(thestig) Color: gtk_print_settings_set_color() does not work.
-  // TODO(thestig) Duplex: gtk_print_settings_set_duplex() does not work.
 
   InitPrintSettings(ranges);
   return true;
@@ -195,6 +223,9 @@ void PrintDialogGtk::ShowDialog(
   GtkWindow* parent = BrowserList::GetLastActive()->window()->GetNativeHandle();
   // TODO(estade): We need a window title here.
   dialog_ = gtk_print_unix_dialog_new(NULL, parent);
+  g_signal_connect(dialog_, "delete-event",
+                   G_CALLBACK(gtk_widget_hide_on_delete), NULL);
+
 
   // Set modal so user cannot focus the same tab and press print again.
   gtk_window_set_modal(GTK_WINDOW(dialog_), TRUE);

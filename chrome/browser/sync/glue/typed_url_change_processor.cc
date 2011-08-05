@@ -75,7 +75,13 @@ void TypedUrlChangeProcessor::HandleURLsModified(
           "Could not get the url's visits.");
       return;
     }
-    DCHECK(!visit_vectors[url->id()].empty());
+    // Make sure our visit vector is not empty by ensuring at least the most
+    // recent visit is found. Workaround for http://crbug.com/84258.
+    if (visit_vectors[url->id()].empty()) {
+      history::VisitRow visit(
+          url->id(), url->last_visit(), 0, PageTransition::TYPED, 0);
+      visit_vectors[url->id()].push_back(visit);
+    }
   }
 
   sync_api::WriteTransaction trans(share_handle());
@@ -96,13 +102,6 @@ void TypedUrlChangeProcessor::HandleURLsModified(
     history::VisitVector& visits = visit_vectors[url->id()];
 
     DCHECK(!visits.empty());
-
-    DCHECK(static_cast<size_t>(url->visit_count()) == visits.size());
-    if (static_cast<size_t>(url->visit_count()) != visits.size()) {
-      error_handler()->OnUnrecoverableError(FROM_HERE,
-          "Visit count does not match.");
-      return;
-    }
 
     sync_api::WriteNode update_node(&trans);
     if (update_node.InitByClientTagLookup(syncable::TYPED_URLS, tag)) {
@@ -137,8 +136,7 @@ void TypedUrlChangeProcessor::HandleURLsDeleted(
     for (std::set<GURL>::iterator url = details->urls.begin();
          url != details->urls.end(); ++url) {
       sync_api::WriteNode sync_node(&trans);
-      int64 sync_id =
-      model_associator_->GetSyncIdFromChromeId(url->spec());
+      int64 sync_id = model_associator_->GetSyncIdFromChromeId(url->spec());
       if (sync_api::kInvalidId != sync_id) {
         if (!sync_node.InitByIdLookup(sync_id)) {
           error_handler()->OnUnrecoverableError(FROM_HERE,
@@ -165,8 +163,6 @@ void TypedUrlChangeProcessor::HandleURLsVisited(
         "Could not get the url's visits.");
     return;
   }
-
-  DCHECK(static_cast<size_t>(details->row.visit_count()) == visits.size());
 
   sync_api::WriteTransaction trans(share_handle());
   std::string tag = details->row.url().spec();
@@ -209,6 +205,7 @@ void TypedUrlChangeProcessor::ApplyChangesFromSyncModel(
           "Typed URL delete change does not have necessary specifics.";
       GURL url(changes[i].specifics.GetExtension(sync_pb::typed_url).url());
       history_backend_->DeleteURL(url);
+      model_associator_->Disassociate(changes[i].id);
       continue;
     }
 
@@ -233,19 +230,10 @@ void TypedUrlChangeProcessor::ApplyChangesFromSyncModel(
         continue;
       }
 
-      history::URLRow new_url(url);
-      new_url.set_title(UTF8ToUTF16(typed_url.title()));
+      history::URLRow new_url =
+          TypedUrlModelAssociator::TypedUrlSpecificsToURLRow(typed_url);
 
-      // When we add a new url, the last visit is always added, thus we set
-      // the initial visit count to one.  This value will be automatically
-      // incremented as visits are added.
-      new_url.set_visit_count(1);
-      new_url.set_typed_count(typed_url.typed_count());
-      new_url.set_hidden(typed_url.hidden());
-
-      new_url.set_last_visit(base::Time::FromInternalValue(
-          typed_url.visit(typed_url.visit_size() - 1)));
-
+      model_associator_->Associate(&new_url.url().spec(), changes[i].id);
       new_urls.push_back(new_url);
 
       // The latest visit gets added automatically, so skip it.
@@ -273,12 +261,8 @@ void TypedUrlChangeProcessor::ApplyChangesFromSyncModel(
         return;
       }
 
-      history::URLRow new_url(url);
-      new_url.set_title(UTF8ToUTF16(typed_url.title()));
-      new_url.set_visit_count(old_url.visit_count());
-      new_url.set_typed_count(typed_url.typed_count());
-      new_url.set_last_visit(old_url.last_visit());
-      new_url.set_hidden(typed_url.hidden());
+      history::URLRow new_url =
+          TypedUrlModelAssociator::TypedUrlSpecificsToURLRow(typed_url);
 
       updated_urls.push_back(
         std::pair<history::URLID, history::URLRow>(old_url.id(), new_url));

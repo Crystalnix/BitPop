@@ -37,9 +37,20 @@ class ExtensionDispatcher : public RenderProcessObserver {
   ExtensionDispatcher();
   virtual ~ExtensionDispatcher();
 
+  const std::set<std::string>& function_names() const {
+    return function_names_;
+  }
+
   bool is_extension_process() const { return is_extension_process_; }
   const ExtensionSet* extensions() const { return &extensions_; }
   UserScriptSlave* user_script_slave() { return user_script_slave_.get(); }
+
+  bool IsExtensionActive(const std::string& extension_id);
+
+  // See WebKit::WebPermissionClient::allowScriptExtension
+  bool AllowScriptExtension(WebKit::WebFrame* frame,
+                            const std::string& v8_extension_name,
+                            int extension_group);
 
  private:
   friend class RenderViewTest;
@@ -47,9 +58,6 @@ class ExtensionDispatcher : public RenderProcessObserver {
   // RenderProcessObserver implementation:
   virtual bool OnControlMessageReceived(const IPC::Message& message);
   virtual void WebKitInitialized();
-  virtual bool AllowScriptExtension(const std::string& v8_extension_name,
-                                    const GURL& url,
-                                    int extension_group);
   virtual void IdleNotification();
 
   void OnMessageInvoke(const std::string& extension_id,
@@ -63,10 +71,7 @@ class ExtensionDispatcher : public RenderProcessObserver {
       const Extension::ScriptingWhitelist& extension_ids);
   void OnPageActionsUpdated(const std::string& extension_id,
       const std::vector<std::string>& page_actions);
-  void OnSetAPIPermissions(const std::string& extension_id,
-                           const std::set<std::string>& permissions);
-  void OnSetHostPermissions(const GURL& extension_url,
-                            const std::vector<URLPattern>& permissions);
+  void OnActivateExtension(const std::string& extension_id);
   void OnUpdateUserScripts(base::SharedMemoryHandle table);
 
   // Update the list of active extensions that will be reported when we crash.
@@ -75,6 +80,9 @@ class ExtensionDispatcher : public RenderProcessObserver {
   // Calls RenderThread's RegisterExtension and keeps tracks of which v8
   // extension is for Chrome Extensions only.
   void RegisterExtension(v8::Extension* extension, bool restrict_to_extensions);
+
+  // Sets up the host permissions for |extension|.
+  void InitHostPermissions(const Extension* extension);
 
   // True if this renderer is running extensions.
   bool is_extension_process_;
@@ -92,6 +100,15 @@ class ExtensionDispatcher : public RenderProcessObserver {
 
   // The v8 extensions which are restricted to extension-related contexts.
   std::set<std::string> restricted_v8_extensions_;
+
+  // All declared function names from extension_api.json.
+  std::set<std::string> function_names_;
+
+  // The extensions that are active in this process.
+  std::set<std::string> active_extension_ids_;
+
+  // True once WebKit has been initialized (and it is therefore safe to poke).
+  bool is_webkit_initialized_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionDispatcher);
 };

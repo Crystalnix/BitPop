@@ -23,6 +23,7 @@
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/system_access.h"
 #include "chrome/browser/chromeos/wm_ipc.h"
+#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "content/common/notification_service.h"
 #include "content/common/notification_type.h"
@@ -32,12 +33,20 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "unicode/timezone.h"
 
+// TODO(altimofeev): move to ViewsLoginDisplayHost
+#include "chrome/browser/chromeos/login/views_oobe_display.h"
+
 #if defined(TOUCH_UI)
 #include "base/command_line.h"
 #include "chrome/browser/chromeos/login/dom_login_display_host.h"
 #endif
 
 namespace {
+
+// The delay of triggering initialization of the device policy subsystem
+// after the login screen is initialized. This makes sure that device policy
+// network requests are made while the system is idle waiting for user input.
+const int64 kPolicyServiceInitializationDelayMilliseconds = 100;
 
 // Determines the hardware keyboard from the given locale code
 // and the OEM layout information, and saves it to "Locale State".
@@ -90,9 +99,19 @@ BaseLoginDisplayHost::BaseLoginDisplayHost(const gfx::Rect& background_bounds)
       NotificationService::AllSources());
   DCHECK(default_host_ == NULL);
   default_host_ = this;
+
+  // Add a reference count so the message loop won't exit when other
+  // message loop clients (e.g. menus) do.
+  g_browser_process->AddRefModule();
 }
 
 BaseLoginDisplayHost::~BaseLoginDisplayHost() {
+  // A browser should already exist when destructor is called since
+  // deletion is scheduled with MessageLoop::DeleteSoon() from
+  // OnSessionStart(), so the browser will already have incremented
+  // the reference count.
+  g_browser_process->ReleaseModule();
+
   default_host_ = NULL;
 }
 
@@ -107,8 +126,15 @@ void BaseLoginDisplayHost::StartWizard(
     const GURL& start_url) {
   DVLOG(1) << "Starting wizard, first_screen_name: " << first_screen_name;
   // Create and show the wizard.
-  wizard_controller_.reset();  // Only one controller in a time.
-  wizard_controller_.reset(new WizardController(this, background_bounds_));
+  // Note, dtor of the old WizardController should be called before ctor of the
+  // new one, because "default_controller()" is updated there. So pure "reset()"
+  // is done before new controller creation.
+  wizard_controller_.reset();
+
+  ViewsOobeDisplay* oobe_display = new ViewsOobeDisplay(background_bounds_);
+  wizard_controller_.reset(new WizardController(this, oobe_display));
+  oobe_display->SetScreenObserver(wizard_controller_.get());
+
   wizard_controller_->set_start_url(start_url);
   ShowBackground();
   if (!WizardController::IsDeviceRegistered())
@@ -133,11 +159,20 @@ void BaseLoginDisplayHost::StartSignInScreen() {
   sign_in_controller_.reset();  // Only one controller in a time.
   sign_in_controller_.reset(new chromeos::ExistingUserController(this));
   ShowBackground();
+  if (!WizardController::IsDeviceRegistered()) {
+    SetOobeProgressBarVisible(true);
+    SetOobeProgress(chromeos::BackgroundView::SIGNIN);
+  }
   SetShutdownButtonEnabled(true);
   sign_in_controller_->Init(users);
 
   // Initiate services customization manifest fetching.
   ServicesCustomizationDocument::GetInstance()->StartFetching();
+
+  // Initiate device policy fetching.
+  g_browser_process->browser_policy_connector()->
+      ScheduleServiceInitialization(
+          kPolicyServiceInitializationDelayMilliseconds);
 }
 
 // BaseLoginDisplayHost --------------------------------------------------------
@@ -194,10 +229,10 @@ void ShowLoginWizard(const std::string& first_screen_name,
   gfx::Rect screen_bounds(chromeos::CalculateScreenBounds(size));
 
   // Check whether we need to execute OOBE process.
-  bool oobe_complete = WizardController::IsOobeCompleted();
+  bool oobe_complete = chromeos::WizardController::IsOobeCompleted();
   bool show_login_screen =
       (first_screen_name.empty() && oobe_complete) ||
-      first_screen_name == WizardController::kLoginScreenName;
+      first_screen_name == chromeos::WizardController::kLoginScreenName;
 
   // TODO(nkostylev) Create LoginDisplayHost instance based on flag.
 #if defined(TOUCH_UI)
@@ -212,6 +247,23 @@ void ShowLoginWizard(const std::string& first_screen_name,
       new chromeos::ViewsLoginDisplayHost(screen_bounds);
 #endif
   if (show_login_screen && chromeos::CrosLibrary::Get()->EnsureLoaded()) {
+    // R11 > R12 migration fix. See http://crosbug.com/p/4898.
+    // If user has manually changed locale during R11 OOBE, locale will be set.
+    // On R12 > R12|R13 etc. this fix won't get activated since
+    // OOBE process has set kApplicationLocale to non-default value.
+    PrefService* prefs = g_browser_process->local_state();
+    if (!prefs->HasPrefPath(prefs::kApplicationLocale)) {
+      std::string locale = chromeos::WizardController::GetInitialLocale();
+      prefs->SetString(prefs::kApplicationLocale, locale);
+      chromeos::input_method::EnableInputMethods(
+          locale,
+          chromeos::input_method::kKeyboardLayoutsOnly,
+          chromeos::input_method::GetHardwareInputMethodId());
+      base::ThreadRestrictions::ScopedAllowIO allow_io;
+      const std::string loaded_locale =
+          ResourceBundle::ReloadSharedInstance(locale);
+      g_browser_process->SetApplicationLocale(loaded_locale);
+    }
     display_host->StartSignInScreen();
     return;
   }
@@ -241,7 +293,7 @@ void ShowLoginWizard(const std::string& first_screen_name,
         // Don't need to schedule pref save because setting initial local
         // will enforce preference saving.
         prefs->SetString(prefs::kApplicationLocale, locale);
-        WizardController::SetInitialLocale(locale);
+        chromeos::WizardController::SetInitialLocale(locale);
         // Determine keyboard layout from OEM customization (if provided) or
         // initial locale and save it in preferences.
         DetermineAndSaveHardwareKeyboard(locale, layout);

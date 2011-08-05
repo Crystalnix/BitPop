@@ -17,8 +17,8 @@
 #include "third_party/npapi/bindings/npruntime.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
-#include "ui/gfx/gl/gl_context.h"
 #include "ui/gfx/gl/gl_implementation.h"
+#include "ui/gfx/gl/gl_surface.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/plugins/npapi/default_plugin_shared.h"
 #include "webkit/plugins/npapi/npapi_extension_thunk.h"
@@ -34,6 +34,13 @@
 #endif
 
 using WebKit::WebBindings;
+
+// Declarations for stub implementations of deprecated functions, which are no
+// longer listed in npapi.h.
+extern "C" {
+void* NPN_GetJavaEnv();
+void* NPN_GetJavaPeer(NPP);
+}
 
 namespace webkit {
 namespace npapi {
@@ -62,7 +69,7 @@ static bool SupportsSharingAcceleratedSurfaces() {
   gfx::GLImplementation implementation = gfx::GetGLImplementation();
   if (implementation == gfx::kGLImplementationNone) {
     // Not initialized yet.
-    if (!gfx::GLContext::InitializeOneOff()) {
+    if (!gfx::GLSurface::InitializeOneOff()) {
       return false;
     }
     implementation = gfx::GetGLImplementation();
@@ -108,7 +115,7 @@ void PluginHost::InitializeHostFuncs() {
   host_funcs_.memflush = &NPN_MemFlush;
   host_funcs_.reloadplugins = &NPN_ReloadPlugins;
 
-  // We don't implement java yet
+  // Stubs for deprecated Java functions
   host_funcs_.getJavaEnv = &NPN_GetJavaEnv;
   host_funcs_.getJavaPeer = &NPN_GetJavaPeer;
 

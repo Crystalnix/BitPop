@@ -8,15 +8,18 @@
 #include "base/shared_memory.h"
 #include "base/values.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_extent.h"
 #include "chrome/common/extensions/url_pattern.h"
+#include "chrome/common/extensions/url_pattern_set.h"
 #include "chrome/common/web_apps.h"
+#include "content/common/view_types.h"
 #include "ipc/ipc_message_macros.h"
 
 #define IPC_MESSAGE_START ExtensionMsgStart
 
+IPC_ENUM_TRAITS(ViewType::Type)
+
 // Parameters structure for ExtensionHostMsg_Request.
-IPC_STRUCT_BEGIN(ExtensionHostMsg_DomMessage_Params)
+IPC_STRUCT_BEGIN(ExtensionHostMsg_Request_Params)
   // Message name.
   IPC_STRUCT_MEMBER(std::string, name)
 
@@ -121,8 +124,8 @@ struct ParamTraits<URLPattern> {
 };
 
 template <>
-struct ParamTraits<ExtensionExtent> {
-  typedef ExtensionExtent param_type;
+struct ParamTraits<URLPatternSet> {
+  typedef URLPatternSet param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, void** iter, param_type* p);
   static void Log(const param_type& p, std::string* l);
@@ -166,27 +169,11 @@ IPC_MESSAGE_ROUTED4(ExtensionMsg_MessageInvoke,
 IPC_MESSAGE_CONTROL1(ExtensionMsg_SetFunctionNames,
                      std::vector<std::string>)
 
-// TODO(aa): SetAPIPermissions, SetHostPermissions, and possibly
-// UpdatePageActions should be replaced with just sending additional data in
-// ExtensionLoaded. See: crbug.com/70516.
-
-// Tell the renderer process which permissions the given extension has. See
-// Extension::Permissions for which elements correspond to which permissions.
-IPC_MESSAGE_CONTROL2(ExtensionMsg_SetAPIPermissions,
-                     std::string /* extension_id */,
-                     std::set<std::string> /* permissions */)
-
-// Tell the renderer process which host permissions the given extension has.
-IPC_MESSAGE_CONTROL2(ExtensionMsg_SetHostPermissions,
-                     GURL /* source extension's origin */,
-                     /* URLPatterns the extension can access */
-                     std::vector<URLPattern>)
-
-// Tell the renderer process all known page action ids for a particular
-// extension.
-IPC_MESSAGE_CONTROL2(ExtensionMsg_UpdatePageActions,
-                     std::string /* extension_id */,
-                     std::vector<std::string> /* page_action_ids */)
+// Marks an extension as 'active' in an extension process. 'Active' extensions
+// have more privileges than other extension content that might end up running
+// in the process (e.g. because of iframes or content scripts).
+IPC_MESSAGE_CONTROL1(ExtensionMsg_ActivateExtension,
+                     std::string /* extension_id */)
 
 // Notifies the renderer that an extension was loaded in the browser.
 IPC_MESSAGE_CONTROL1(ExtensionMsg_Loaded,
@@ -216,12 +203,20 @@ IPC_MESSAGE_CONTROL1(ExtensionMsg_UpdateUserScripts,
 IPC_MESSAGE_ROUTED1(ExtensionMsg_GetApplicationInfo,
                     int32 /*page_id*/)
 
+// Tell the renderer which browser window it's being attached to.
+IPC_MESSAGE_ROUTED1(ExtensionMsg_UpdateBrowserWindowId,
+                    int /* id of browser window */)
+
+// Tell the renderer which type this view is.
+IPC_MESSAGE_ROUTED1(ExtensionMsg_NotifyRenderViewType,
+                    ViewType::Type /* view_type */)
+
 // Messages sent from the renderer to the browser.
 
 // A renderer sends this message when an extension process starts an API
 // request. The browser will always respond with a ExtensionMsg_Response.
 IPC_MESSAGE_ROUTED1(ExtensionHostMsg_Request,
-                    ExtensionHostMsg_DomMessage_Params)
+                    ExtensionHostMsg_Request_Params)
 
 // Notify the browser that the given extension added a listener to an event.
 IPC_MESSAGE_CONTROL2(ExtensionHostMsg_AddListener,

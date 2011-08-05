@@ -21,6 +21,7 @@
 #include "base/task.h"
 #include "base/time.h"
 #include "net/base/cookie_store.h"
+#include "net/base/net_api.h"
 
 class GURL;
 
@@ -42,7 +43,7 @@ class CookieList;
 //
 // TODO(deanm) Implement CookieMonster, the cookie database.
 //  - Verify that our domain enforcement and non-dotted handling is correct
-class CookieMonster : public CookieStore {
+class NET_API CookieMonster : public CookieStore {
  public:
   class CanonicalCookie;
   class Delegate;
@@ -230,6 +231,11 @@ class CookieMonster : public CookieStore {
   virtual std::string GetCookiesWithOptions(const GURL& url,
                                             const CookieOptions& options);
 
+  virtual void GetCookiesWithInfo(const GURL& url,
+                                  const CookieOptions& options,
+                                  std::string* cookie_line,
+                                  std::vector<CookieInfo>* cookie_info);
+
   // Deletes all cookies with that might apply to |url| that has |cookie_name|.
   virtual void DeleteCookie(const GURL& url, const std::string& cookie_name);
 
@@ -335,7 +341,7 @@ class CookieMonster : public CookieStore {
   // Record statistics every kRecordStatisticsIntervalSeconds of uptime.
   static const int kRecordStatisticsIntervalSeconds = 10 * 60;
 
-  ~CookieMonster();
+  virtual ~CookieMonster();
 
   bool SetCookieWithCreationTime(const GURL& url,
                                  const std::string& cookie_line,
@@ -479,6 +485,7 @@ class CookieMonster : public CookieStore {
   base::Histogram* histogram_number_duplicate_db_cookies_;
   base::Histogram* histogram_cookie_deletion_cause_;
   base::Histogram* histogram_time_get_;
+  base::Histogram* histogram_time_mac_;
   base::Histogram* histogram_time_load_;
 
   CookieMap cookies_;
@@ -526,7 +533,7 @@ class CookieMonster : public CookieStore {
   DISALLOW_COPY_AND_ASSIGN(CookieMonster);
 };
 
-class CookieMonster::CanonicalCookie {
+class NET_API CookieMonster::CanonicalCookie {
  public:
 
   // These constructors do no validation or canonicalization of their inputs;
@@ -539,6 +546,8 @@ class CookieMonster::CanonicalCookie {
                   const std::string& value,
                   const std::string& domain,
                   const std::string& path,
+                  const std::string& mac_key,
+                  const std::string& mac_algorithm,
                   const base::Time& creation,
                   const base::Time& expiration,
                   const base::Time& last_access,
@@ -563,6 +572,8 @@ class CookieMonster::CanonicalCookie {
                                  const std::string& value,
                                  const std::string& domain,
                                  const std::string& path,
+                                 const std::string& mac_key,
+                                 const std::string& mac_algorithm,
                                  const base::Time& creation,
                                  const base::Time& expiration,
                                  bool secure,
@@ -573,6 +584,8 @@ class CookieMonster::CanonicalCookie {
   const std::string& Value() const { return value_; }
   const std::string& Domain() const { return domain_; }
   const std::string& Path() const { return path_; }
+  const std::string& MACKey() const { return mac_key_; }
+  const std::string& MACAlgorithm() const { return mac_algorithm_; }
   const base::Time& CreationDate() const { return creation_date_; }
   const base::Time& LastAccessDate() const { return last_access_date_; }
   bool DoesExpire() const { return has_expires_; }
@@ -624,11 +637,14 @@ class CookieMonster::CanonicalCookie {
   // this field will be null.  CanonicalCookie consumers should not rely on
   // this field unless they guarantee that the creator of those
   // CanonicalCookies properly initialized the field.
+  // TODO(abarth): We might need to make this field persistent for MAC cookies.
   std::string source_;
   std::string name_;
   std::string value_;
   std::string domain_;
   std::string path_;
+  std::string mac_key_;  // TODO(abarth): Persist to disk.
+  std::string mac_algorithm_;  // TODO(abarth): Persist to disk.
   base::Time creation_date_;
   base::Time expiry_date_;
   base::Time last_access_date_;
@@ -674,7 +690,7 @@ class CookieMonster::Delegate
   virtual ~Delegate() {}
 };
 
-class CookieMonster::ParsedCookie {
+class NET_API CookieMonster::ParsedCookie {
  public:
   typedef std::pair<std::string, std::string> TokenValuePair;
   typedef std::vector<TokenValuePair> PairList;
@@ -699,6 +715,12 @@ class CookieMonster::ParsedCookie {
   const std::string& Path() const { return pairs_[path_index_].second; }
   bool HasDomain() const { return domain_index_ != 0; }
   const std::string& Domain() const { return pairs_[domain_index_].second; }
+  bool HasMACKey() const { return mac_key_index_ != 0; }
+  const std::string& MACKey() const { return pairs_[mac_key_index_].second; }
+  bool HasMACAlgorithm() const { return mac_algorithm_index_ != 0; }
+  const std::string& MACAlgorithm() const {
+    return pairs_[mac_algorithm_index_].second;
+  }
   bool HasExpires() const { return expires_index_ != 0; }
   const std::string& Expires() const { return pairs_[expires_index_].second; }
   bool HasMaxAge() const { return maxage_index_ != 0; }
@@ -759,6 +781,8 @@ class CookieMonster::ParsedCookie {
   // could fit these into 3 bits each if we're worried about size...
   size_t path_index_;
   size_t domain_index_;
+  size_t mac_key_index_;
+  size_t mac_algorithm_index_;
   size_t expires_index_;
   size_t maxage_index_;
   size_t secure_index_;

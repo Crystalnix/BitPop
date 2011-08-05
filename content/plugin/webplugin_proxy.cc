@@ -12,6 +12,7 @@
 #include "build/build_config.h"
 #include "content/common/content_client.h"
 #include "content/common/plugin_messages.h"
+#include "content/common/url_constants.h"
 #include "content/plugin/npobject_proxy.h"
 #include "content/plugin/npobject_util.h"
 #include "content/plugin/plugin_channel.h"
@@ -129,6 +130,11 @@ void WebPluginProxy::SetWindowlessPumpEvent(HANDLE pump_messages_event) {
   DCHECK(pump_messages_event_for_renderer != NULL);
   Send(new PluginHostMsg_SetWindowlessPumpEvent(
       route_id_, pump_messages_event_for_renderer));
+}
+
+void WebPluginProxy::ReparentPluginWindow(HWND window, HWND parent) {
+  PluginThread::current()->Send(
+      new PluginProcessHostMsg_ReparentPluginWindow(window, parent));
 }
 #endif
 
@@ -289,9 +295,9 @@ void WebPluginProxy::HandleURLRequest(const char* url,
         webkit::npapi::WebPluginDelegateImpl::
             PLUGIN_QUIRK_BLOCK_NONSTANDARD_GETURL_REQUESTS) {
       GURL request_url(url);
-      if (!request_url.SchemeIs("http") &&
-          !request_url.SchemeIs("https") &&
-          !request_url.SchemeIs("ftp")) {
+      if (!request_url.SchemeIs(chrome::kHttpScheme) &&
+          !request_url.SchemeIs(chrome::kHttpsScheme) &&
+          !request_url.SchemeIs(chrome::kFtpScheme)) {
         return;
       }
     }
@@ -350,7 +356,10 @@ void WebPluginProxy::Paint(const gfx::Rect& rect) {
     CGContextClearRect(windowless_context_, rect.ToCGRect());
   }
   CGContextClipToRect(windowless_context_, rect.ToCGRect());
-  delegate_->Paint(windowless_context_, rect);
+  // TODO(caryclark): This is a temporary workaround to allow the Darwin / Skia
+  // port to share code with the Darwin / CG port. All ports will eventually use
+  // the common code below.
+  delegate_->CGPaint(windowless_context_, rect);
   if (windowless_context_.get() == saved_context_weak)
     CGContextRestoreGState(windowless_context_);
 #else
@@ -370,7 +379,7 @@ void WebPluginProxy::Paint(const gfx::Rect& rect) {
     // into (which is windowless_canvas_) so it can do blending. So we copy the
     // background bitmap into the windowless_canvas_.
     const SkBitmap& background_bitmap =
-        background_canvas_->getTopPlatformDevice().accessBitmap(false);
+        skia::GetTopDevice(*background_canvas_)->accessBitmap(false);
     windowless_canvas_->drawBitmap(background_bitmap, 0, 0);
   } else {
     // In non-transparent mode, the plugin doesn't care what's underneath, so we

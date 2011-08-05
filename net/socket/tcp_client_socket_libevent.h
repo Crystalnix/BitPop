@@ -13,7 +13,7 @@
 #include "net/base/address_list.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_log.h"
-#include "net/socket/client_socket.h"
+#include "net/socket/stream_socket.h"
 
 struct event;  // From libevent
 
@@ -22,7 +22,7 @@ namespace net {
 class BoundNetLog;
 
 // A client socket that uses TCP as the transport layer.
-class TCPClientSocketLibevent : public ClientSocket, base::NonThreadSafe {
+class TCPClientSocketLibevent : public StreamSocket, base::NonThreadSafe {
  public:
   // The IP address(es) and port number to connect to.  The TCP socket will try
   // each IP address in the list until it succeeds in establishing a
@@ -38,9 +38,12 @@ class TCPClientSocketLibevent : public ClientSocket, base::NonThreadSafe {
   // the given socket and then acts as if Connect() had been called. This
   // function is used by TCPServerSocket() to adopt accepted connections
   // and for testing.
-  void AdoptSocket(int socket);
+  int AdoptSocket(int socket);
 
-  // ClientSocket methods:
+  // Binds the socket to a local IP address and port.
+  int Bind(const IPEndPoint& address);
+
+  // StreamSocket methods:
   virtual int Connect(CompletionCallback* callback);
   virtual void Disconnect();
   virtual bool IsConnected() const;
@@ -130,12 +133,6 @@ class TCPClientSocketLibevent : public ClientSocket, base::NonThreadSafe {
     return next_connect_state_ != CONNECT_STATE_NONE;
   }
 
-  // Returns the OS error code (or 0 on success).
-  int CreateSocket(const struct addrinfo* ai);
-
-  // Returns the OS error code (or 0 on success).
-  int SetupSocket();
-
   // Helper to add a TCP_CONNECT (end) event to the NetLog.
   void LogConnectCompletion(int net_error);
 
@@ -143,6 +140,13 @@ class TCPClientSocketLibevent : public ClientSocket, base::NonThreadSafe {
   int InternalWrite(IOBuffer* buf, int buf_len);
 
   int socket_;
+
+  // Local IP address and port we are bound to. Set to NULL if Bind()
+  // was't called (in that cases OS chooses address/port).
+  scoped_ptr<IPEndPoint> bind_address_;
+
+  // Stores bound socket between Bind() and Connect() calls.
+  int bound_socket_;
 
   // The list of addresses we should try in order to establish a connection.
   AddressList addresses_;

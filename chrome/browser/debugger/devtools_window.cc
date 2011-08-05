@@ -4,6 +4,7 @@
 
 #include "base/command_line.h"
 #include "base/json/json_writer.h"
+#include "base/stringprintf.h"
 #include "base/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
@@ -11,7 +12,6 @@
 #include "chrome/browser/debugger/devtools_manager.h"
 #include "chrome/browser/debugger/devtools_window.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/load_notification_details.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
@@ -26,6 +26,7 @@
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
 #include "content/browser/in_process_webkit/session_storage_namespace.h"
+#include "content/browser/load_notification_details.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/tab_contents/navigation_controller.h"
 #include "content/browser/tab_contents/navigation_entry.h"
@@ -139,7 +140,7 @@ void DevToolsWindow::Show(DevToolsToggleAction action) {
     Browser* inspected_browser;
     int inspected_tab_index;
     // Tell inspected browser to update splitter and switch to inspected panel.
-    if (!IsInspectedBrowserPopup() &&
+    if (!IsInspectedBrowserPopupOrPanel() &&
         FindInspectedBrowserAndTabIndex(&inspected_browser,
                                         &inspected_tab_index)) {
       BrowserWindow* inspected_window = inspected_browser->window();
@@ -188,7 +189,8 @@ void DevToolsWindow::Activate() {
 void DevToolsWindow::SetDocked(bool docked) {
   if (docked_ == docked)
     return;
-  if (docked && (!GetInspectedBrowserWindow() || IsInspectedBrowserPopup())) {
+  if (docked && (!GetInspectedBrowserWindow() ||
+                 IsInspectedBrowserPopupOrPanel())) {
     // Cannot dock, avoid window flashing due to close-reopen cycle.
     return;
   }
@@ -225,7 +227,7 @@ void DevToolsWindow::CreateDevToolsBrowser() {
 
   PrefService* prefs = profile_->GetPrefs();
   if (!prefs->FindPreference(wp_key.c_str())) {
-    prefs->RegisterDictionaryPref(wp_key.c_str());
+    prefs->RegisterDictionaryPref(wp_key.c_str(), PrefService::UNSYNCABLE_PREF);
   }
 
   const DictionaryValue* wp_pref = prefs->GetDictionary(wp_key.c_str());
@@ -267,13 +269,13 @@ BrowserWindow* DevToolsWindow::GetInspectedBrowserWindow() {
       browser->window() : NULL;
 }
 
-bool DevToolsWindow::IsInspectedBrowserPopup() {
+bool DevToolsWindow::IsInspectedBrowserPopupOrPanel() {
   Browser* browser = NULL;
   int tab;
   if (!FindInspectedBrowserAndTabIndex(&browser, &tab))
     return false;
 
-  return (browser->type() & Browser::TYPE_POPUP) != 0;
+  return browser->is_type_popup() || browser->is_type_panel();
 }
 
 void DevToolsWindow::UpdateFrontendAttachedState() {
@@ -452,6 +454,10 @@ bool DevToolsWindow::PreHandleKeyboardEvent(
 
 void DevToolsWindow::HandleKeyboardEvent(const NativeWebKeyboardEvent& event) {
   if (docked_) {
+    if (event.windowsKeyCode == 0x08) {
+      // Do not navigate back in history on Windows (http://crbug.com/74156).
+      return;
+    }
     BrowserWindow* inspected_window = GetInspectedBrowserWindow();
     if (inspected_window)
       inspected_window->HandleKeyboardEvent(event);

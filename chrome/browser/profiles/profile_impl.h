@@ -36,14 +36,14 @@ class NetPrefObserver;
 // The default profile implementation.
 class ProfileImpl : public Profile,
                     public SpellCheckHostObserver,
-                    public NotificationObserver,
-                    public PrefService::Delegate {
+                    public NotificationObserver {
  public:
   virtual ~ProfileImpl();
 
   static void RegisterUserPrefs(PrefService* prefs);
 
   // Profile implementation.
+  virtual std::string GetProfileName();
   virtual ProfileId GetRuntimeId();
   virtual FilePath GetPath();
   virtual bool IsOffTheRecord();
@@ -79,10 +79,11 @@ class ProfileImpl : public Profile,
   virtual DownloadManager* GetDownloadManager();
   virtual PersonalDataManager* GetPersonalDataManager();
   virtual fileapi::FileSystemContext* GetFileSystemContext();
+  virtual quota::QuotaManager* GetQuotaManager();
   virtual bool HasCreatedDownloadManager() const;
   virtual net::URLRequestContextGetter* GetRequestContext();
-  virtual net::URLRequestContextGetter* GetRequestContextForPossibleApp(
-      const Extension* installed_app);
+  virtual net::URLRequestContextGetter* GetRequestContextForRenderProcess(
+      int renderer_child_id);
   virtual net::URLRequestContextGetter* GetRequestContextForMedia();
   virtual net::URLRequestContextGetter* GetRequestContextForExtensions();
   virtual net::URLRequestContextGetter* GetRequestContextForIsolatedApp(
@@ -99,21 +100,15 @@ class ProfileImpl : public Profile,
   virtual GeolocationPermissionContext* GetGeolocationPermissionContext();
   virtual UserStyleSheetWatcher* GetUserStyleSheetWatcher();
   virtual FindBarState* GetFindBarState();
-  virtual SessionService* GetSessionService();
-  virtual void ShutdownSessionService();
-  virtual bool HasSessionService() const;
   virtual bool HasProfileSyncService() const;
   virtual bool DidLastSessionExitCleanly();
   virtual BookmarkModel* GetBookmarkModel();
   virtual ProtocolHandlerRegistry* GetProtocolHandlerRegistry();
   virtual bool IsSameProfile(Profile* profile);
   virtual base::Time GetStartTime() const;
-  virtual TabRestoreService* GetTabRestoreService();
-  virtual void ResetTabRestoreService();
   virtual SpellCheckHost* GetSpellCheckHost();
   virtual void ReinitializeSpellCheckHost(bool force);
   virtual WebKitContext* GetWebKitContext();
-  virtual StatusTray* GetStatusTray();
   virtual void MarkAsCleanShutdown();
   virtual void InitExtensions(bool extensions_enabled);
   virtual void InitPromoResources();
@@ -132,7 +127,6 @@ class ProfileImpl : public Profile,
   virtual ExtensionInfoMap* GetExtensionInfoMap();
   virtual PromoCounter* GetInstantPromoCounter();
   virtual BrowserSignin* GetBrowserSignin();
-  virtual policy::ProfilePolicyConnector* GetPolicyConnector();
   virtual ChromeURLDataManager* GetChromeURLDataManager();
 
 #if defined(OS_CHROMEOS)
@@ -162,9 +156,8 @@ class ProfileImpl : public Profile,
   // Does final initialization. Should be called after prefs were loaded.
   void DoFinalInit();
 
-  // PrefService::Delegate implementation. Does final prefs initialization and
-  // calls Init().
-  virtual void OnPrefsLoaded(PrefService* prefs, bool success);
+  // Does final prefs initialization and calls Init().
+  void OnPrefsLoaded(bool success);
 
   void CreateWebDataService();
   FilePath GetPrefFilePath();
@@ -177,13 +170,13 @@ class ProfileImpl : public Profile,
     GetRequestContext();
   }
 
-  void EnsureSessionServiceCreated() {
-    GetSessionService();
-  }
+  void EnsureSessionServiceCreated();
 
   void RegisterComponentExtensions();
 
   ExtensionPrefValueMap* GetExtensionPrefValueMap();
+
+  void CreateQuotaManagerAndClients();
 
   NotificationRegistrar registrar_;
   PrefChangeRegistrar pref_change_registrar_;
@@ -198,10 +191,10 @@ class ProfileImpl : public Profile,
   scoped_ptr<PrefService> otr_prefs_;
   scoped_ptr<VisitedLinkEventListener> visited_link_event_listener_;
   scoped_ptr<VisitedLinkMaster> visited_link_master_;
-  // Keep extension_prefs_ on top of extensions_service_ because the latter
+  // Keep extension_prefs_ on top of extension_service_ because the latter
   // maintains a pointer to the first and shall be destructed first.
   scoped_ptr<ExtensionPrefs> extension_prefs_;
-  scoped_refptr<ExtensionService> extensions_service_;
+  scoped_ptr<ExtensionService> extension_service_;
   scoped_refptr<UserScriptMaster> user_script_master_;
   scoped_refptr<ExtensionDevToolsManager> extension_devtools_manager_;
   scoped_ptr<ExtensionProcessManager> extension_process_manager_;
@@ -214,8 +207,7 @@ class ProfileImpl : public Profile,
       transport_security_state_;
   scoped_refptr<TransportSecurityPersister>
       transport_security_persister_;
-  scoped_ptr<policy::ProfilePolicyConnector> profile_policy_connector_;
-  scoped_refptr<prerender::PrerenderManager> prerender_manager_;
+  scoped_ptr<prerender::PrerenderManager> prerender_manager_;
   scoped_ptr<NetPrefObserver> net_pref_observer_;
   scoped_ptr<TemplateURLFetcher> template_url_fetcher_;
   scoped_ptr<TemplateURLModel> template_url_model_;
@@ -247,12 +239,11 @@ class ProfileImpl : public Profile,
   scoped_ptr<AutocompleteClassifier> autocomplete_classifier_;
   scoped_refptr<WebDataService> web_data_service_;
   scoped_refptr<PasswordStore> password_store_;
-  scoped_refptr<SessionService> session_service_;
   scoped_refptr<WebKitContext> webkit_context_;
-  scoped_ptr<StatusTray> status_tray_;
   scoped_refptr<PersonalDataManager> personal_data_manager_;
   scoped_refptr<fileapi::FileSystemContext> file_system_context_;
   scoped_ptr<BrowserSignin> browser_signin_;
+  scoped_refptr<quota::QuotaManager> quota_manager_;
   bool history_service_created_;
   bool favicon_service_created_;
   bool created_web_data_service_;
@@ -269,8 +260,6 @@ class ProfileImpl : public Profile,
   // See GetStartTime for details.
   base::Time start_time_;
 
-  scoped_refptr<TabRestoreService> tab_restore_service_;
-
   scoped_refptr<SpellCheckHost> spellcheck_host_;
 
   // Indicates whether |spellcheck_host_| has told us initialization is
@@ -281,10 +270,6 @@ class ProfileImpl : public Profile,
   bool checked_instant_promo_;
   scoped_ptr<PromoCounter> instant_promo_counter_;
 #endif
-
-  // Set to true when ShutdownSessionService is invoked. If true
-  // GetSessionService won't recreate the SessionService.
-  bool shutdown_session_service_;
 
   // The AppCacheService for this profile, shared by all requests contexts
   // associated with this profile. Should only be used on the IO thread.

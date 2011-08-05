@@ -56,6 +56,10 @@ class MockFunction : public ExtensionFunction {
   virtual const std::string GetError() { return std::string(); }
   virtual const std::string GetResult() { return std::string(); }
   virtual void Run() {}
+  virtual void Destruct() const { delete this; }
+  virtual bool RunImpl() { return true; }
+  virtual void SendResponse(bool) { }
+  virtual void HandleBadMessage() { }
 };
 
 class TimedLimitMockFunction : public MockFunction {
@@ -95,11 +99,17 @@ class FrozenMockFunction : public MockFunction {
 class ExtensionsQuotaServiceTest : public testing::Test {
  public:
   ExtensionsQuotaServiceTest()
-      : extension_a_("a"), extension_b_("b"), extension_c_("c") {}
+      : extension_a_("a"),
+        extension_b_("b"),
+        extension_c_("c"),
+        loop_(),
+        ui_thread_(BrowserThread::UI, &loop_) {
+  }
   virtual void SetUp() {
     service_.reset(new ExtensionsQuotaService());
   }
   virtual void TearDown() {
+    loop_.RunAllPending();
     service_.reset();
   }
  protected:
@@ -107,6 +117,8 @@ class ExtensionsQuotaServiceTest : public testing::Test {
   std::string extension_b_;
   std::string extension_c_;
   scoped_ptr<ExtensionsQuotaService> service_;
+  MessageLoop loop_;
+  BrowserThread ui_thread_;
 };
 
 class QuotaLimitHeuristicTest : public testing::Test {

@@ -56,7 +56,8 @@ class GtkThemeService : public ThemeService {
   virtual void SetTheme(const Extension* extension);
   virtual void UseDefaultTheme();
   virtual void SetNativeTheme();
-  virtual bool UsingDefaultTheme();
+  virtual bool UsingDefaultTheme() const;
+  virtual bool UsingNativeTheme() const;
 
   // Overridden from ThemeService, NotificationObserver:
   virtual void Observe(NotificationType type,
@@ -70,9 +71,6 @@ class GtkThemeService : public ThemeService {
 
   // Creates a theme-aware vertical separator widget.
   GtkWidget* CreateToolbarSeparator();
-
-  // Whether we should use the GTK system theme.
-  bool UseGtkTheme() const;
 
   // A wrapper around ui::ThemeProvider::GetColor, transforming the result to a
   // GdkColor.

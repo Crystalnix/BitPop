@@ -9,7 +9,7 @@
 
 #include "app/win/shell.h"
 #include "base/command_line.h"
-#include "base/memory/scoped_native_library.h"
+#include "base/scoped_native_library.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/scoped_gdi_object.h"
@@ -17,6 +17,7 @@
 #include "base/win/windows_version.h"
 #include "chrome/browser/app_icon_win.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/tab_contents/thumbnail_generator.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/browser_list.h"
@@ -36,7 +37,7 @@
 #include "ui/base/win/window_impl.h"
 #include "ui/gfx/gdi_util.h"
 #include "ui/gfx/icon_util.h"
-#include "views/widget/widget_win.h"
+#include "views/widget/native_widget_win.h"
 
 namespace {
 
@@ -847,7 +848,7 @@ void AeroPeekWindow::OnActivate(UINT action,
     return;
 
   // Ask Chrome to activate the tab associated with this thumbnail window.
-  // Since TabStripModel calls AeroPeekManager::TabSelectedAt() when it
+  // Since TabStripModel calls AeroPeekManager::ActiveTabChanged() when it
   // finishes activating the tab. We will move the tab focus of AeroPeek there.
   if (delegate_)
     delegate_->ActivateTab(tab_id_);
@@ -1016,7 +1017,7 @@ bool AeroPeekManager::Enabled() {
   // flooding users with tab thumbnails.
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
   return base::win::GetVersion() >= base::win::VERSION_WIN7 &&
-      views::WidgetWin::IsAeroGlassEnabled() &&
+      views::NativeWidgetWin::IsAeroGlassEnabled() &&
       !command_line->HasSwitch(switches::kApp) &&
       command_line->HasSwitch(switches::kEnableAeroPeekTabs);
 }
@@ -1069,7 +1070,7 @@ void AeroPeekManager::CreateAeroPeekWindowIfNecessary(TabContentsWrapper* tab,
                          GetTabID(tab->tab_contents()),
                          foreground,
                          tab->tab_contents()->GetTitle(),
-                         tab->tab_contents()->GetFavicon());
+                         tab->favicon_tab_helper()->GetFavicon());
   tab_list_.push_back(window);
 }
 
@@ -1110,10 +1111,10 @@ void AeroPeekManager::TabDetachedAt(TabContentsWrapper* contents, int index) {
   DeleteAeroPeekWindowForTab(contents);
 }
 
-void AeroPeekManager::TabSelectedAt(TabContentsWrapper* old_contents,
-                                    TabContentsWrapper* new_contents,
-                                    int index,
-                                    bool user_gesture) {
+void AeroPeekManager::ActiveTabChanged(TabContentsWrapper* old_contents,
+                                       TabContentsWrapper* new_contents,
+                                       int index,
+                                       bool user_gesture) {
   if (old_contents == new_contents)
     return;
 
@@ -1143,7 +1144,7 @@ void AeroPeekManager::TabReplacedAt(TabStripModel* tab_strip_model,
   CreateAeroPeekWindowIfNecessary(new_contents,
                                   (index == tab_strip_model->active_index()));
   // We don't need to update the selection as if |new_contents| is selected the
-  // TabStripModel will send TabSelectedAt.
+  // TabStripModel will send ActiveTabChanged.
 }
 
 void AeroPeekManager::TabMoved(TabContentsWrapper* contents,
@@ -1174,7 +1175,7 @@ void AeroPeekManager::TabChangedAt(TabContentsWrapper* contents,
   // hurting the rendering performance. (These functions just save the
   // information needed for handling update requests from Windows.)
   window->SetTitle(contents->tab_contents()->GetTitle());
-  window->SetFavicon(contents->tab_contents()->GetFavicon());
+  window->SetFavicon(contents->favicon_tab_helper()->GetFavicon());
   window->Update(contents->tab_contents()->is_loading());
 }
 
@@ -1184,7 +1185,7 @@ void AeroPeekManager::TabChangedAt(TabContentsWrapper* contents,
 void AeroPeekManager::ActivateTab(int tab_id) {
   // Ask TabStrip to activate this tab.
   // We don't have to update thumbnails now since TabStrip will call
-  // TabSelectedAt() when it actually activates this tab.
+  // ActiveTabChanged() when it actually activates this tab.
   TabContents* contents = GetTabContents(tab_id);
   if (contents && contents->delegate())
     contents->delegate()->ActivateContents(contents);
@@ -1243,7 +1244,7 @@ bool AeroPeekManager::GetTabPreview(int tab_id, SkBitmap* preview) {
                                            &canvas))
     return false;
 
-  const SkBitmap& bitmap = canvas.getTopPlatformDevice().accessBitmap(false);
+  const SkBitmap& bitmap = skia::GetTopDevice(canvas)->accessBitmap(false);
   bitmap.copyTo(preview, SkBitmap::kARGB_8888_Config);
   return true;
 }

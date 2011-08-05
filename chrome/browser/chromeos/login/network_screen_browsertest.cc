@@ -58,7 +58,7 @@ class NetworkScreenTest : public WizardInProcessBrowserTest {
     cros_mock_->test_api()->SetLoginLibrary(mock_login_library_, true);
     EXPECT_CALL(*mock_login_library_, EmitLoginPromptReady())
         .Times(1);
-    EXPECT_CALL(*mock_login_library_,RequestRetrieveProperty(_,_,_))
+    EXPECT_CALL(*mock_login_library_,RequestRetrievePolicy(_,_))
         .Times(AnyNumber());
 
     // Minimal set of expectations needed on NetworkScreen initialization.
@@ -108,47 +108,45 @@ class NetworkScreenTest : public WizardInProcessBrowserTest {
         .WillRepeatedly((Return(cellular_.get())));
   }
 
+  virtual void SetUpOnMainThread() {
+    mock_screen_observer_.reset(new MockScreenObserver());
+    ASSERT_TRUE(controller() != NULL);
+    network_screen_ = controller()->GetNetworkScreen();
+    ASSERT_TRUE(network_screen_ != NULL);
+    ASSERT_EQ(controller()->current_screen(), network_screen_);
+    network_screen_->screen_observer_ = mock_screen_observer_.get();
+    actor_ = network_screen_->actor();
+    ASSERT_TRUE(actor_ != NULL);
+  }
+
   virtual void TearDownInProcessBrowserTestFixture() {
+    network_screen_->screen_observer_ = controller();
     CrosInProcessBrowserTest::TearDownInProcessBrowserTestFixture();
     cros_mock_->test_api()->SetLoginLibrary(NULL, false);
   }
 
   void EmulateContinueButtonExit(NetworkScreen* network_screen) {
-    scoped_ptr<MockScreenObserver>
-        mock_screen_observer(new MockScreenObserver());
-    EXPECT_CALL(*mock_screen_observer,
+    EXPECT_CALL(*mock_screen_observer_,
                 OnExit(ScreenObserver::NETWORK_CONNECTED))
         .Times(1);
     EXPECT_CALL(*mock_network_library_, Connected())
         .WillOnce(Return(true));
-    controller()->set_observer(mock_screen_observer.get());
-    DummyButtonListener button_listener;
-    views::TextButton button(&button_listener, L"Button");
-    views::MouseEvent event(ui::ET_MOUSE_RELEASED,
-                            0, 0,
-                            ui::EF_LEFT_BUTTON_DOWN);
-    network_screen->ButtonPressed(&button, event);
+    network_screen->OnContinuePressed();
     ui_test_utils::RunAllPendingInMessageLoop();
-    controller()->set_observer(NULL);
   }
 
+  scoped_ptr<MockScreenObserver> mock_screen_observer_;
   MockLoginLibrary* mock_login_library_;
   MockNetworkLibrary* mock_network_library_;
   scoped_ptr<NetworkDevice> cellular_;
+  NetworkScreen* network_screen_;
+  NetworkScreenActor* actor_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(NetworkScreenTest);
 };
 
 IN_PROC_BROWSER_TEST_F(NetworkScreenTest, Ethernet) {
-  ASSERT_TRUE(controller());
-  NetworkScreen* network_screen = controller()->GetNetworkScreen();
-  ASSERT_TRUE(network_screen != NULL);
-  ASSERT_EQ(network_screen, controller()->current_screen());
-
-  NetworkSelectionView* network_view = network_screen->view();
-  ASSERT_TRUE(network_view != NULL);
-
   EXPECT_CALL(*mock_network_library_, ethernet_connected())
       .WillOnce((Return(false)));
   EXPECT_CALL(*mock_network_library_, wifi_connected())
@@ -157,31 +155,23 @@ IN_PROC_BROWSER_TEST_F(NetworkScreenTest, Ethernet) {
       .WillOnce((Return(false)));
   EXPECT_CALL(*mock_network_library_, ethernet_connecting())
       .WillOnce((Return(true)));
-  EXPECT_FALSE(network_view->IsContinueEnabled());
-  network_screen->OnNetworkManagerChanged(mock_network_library_);
+  EXPECT_FALSE(actor_->IsContinueEnabled());
+  network_screen_->OnNetworkManagerChanged(mock_network_library_);
 
   EXPECT_CALL(*mock_network_library_, ethernet_connected())
       .WillOnce(Return(true));
   EXPECT_CALL(*mock_network_library_, Connected())
       .Times(3)
       .WillRepeatedly(Return(true));
-  EXPECT_FALSE(network_view->IsContinueEnabled());
-  EXPECT_FALSE(network_view->IsConnecting());
-  network_screen->OnNetworkManagerChanged(mock_network_library_);
+  EXPECT_FALSE(actor_->IsContinueEnabled());
+  EXPECT_FALSE(actor_->IsConnecting());
+  network_screen_->OnNetworkManagerChanged(mock_network_library_);
 
-  EXPECT_TRUE(network_view->IsContinueEnabled());
-  EmulateContinueButtonExit(network_screen);
+  EXPECT_TRUE(actor_->IsContinueEnabled());
+  EmulateContinueButtonExit(network_screen_);
 }
 
 IN_PROC_BROWSER_TEST_F(NetworkScreenTest, Wifi) {
-  ASSERT_TRUE(controller());
-  NetworkScreen* network_screen = controller()->GetNetworkScreen();
-  ASSERT_TRUE(network_screen != NULL);
-  ASSERT_EQ(network_screen, controller()->current_screen());
-
-  NetworkSelectionView* network_view = network_screen->view();
-  ASSERT_TRUE(network_view != NULL);
-
   EXPECT_CALL(*mock_network_library_, ethernet_connected())
       .WillOnce((Return(false)));
   EXPECT_CALL(*mock_network_library_, wifi_connected())
@@ -199,31 +189,23 @@ IN_PROC_BROWSER_TEST_F(NetworkScreenTest, Wifi) {
       .WillRepeatedly(Return(wifi.get()));
   EXPECT_CALL(*mock_network_library_, wifi_networks())
       .WillRepeatedly(ReturnRef(wifi_networks));
-  EXPECT_FALSE(network_view->IsContinueEnabled());
-  network_screen->OnNetworkManagerChanged(mock_network_library_);
+  EXPECT_FALSE(actor_->IsContinueEnabled());
+  network_screen_->OnNetworkManagerChanged(mock_network_library_);
 
   EXPECT_CALL(*mock_network_library_, ethernet_connected())
       .WillOnce(Return(true));
   EXPECT_CALL(*mock_network_library_, Connected())
         .Times(3)
         .WillRepeatedly(Return(true));
-  EXPECT_FALSE(network_view->IsContinueEnabled());
-  EXPECT_FALSE(network_view->IsConnecting());
-  network_screen->OnNetworkManagerChanged(mock_network_library_);
+  EXPECT_FALSE(actor_->IsContinueEnabled());
+  EXPECT_FALSE(actor_->IsConnecting());
+  network_screen_->OnNetworkManagerChanged(mock_network_library_);
 
-  EXPECT_TRUE(network_view->IsContinueEnabled());
-  EmulateContinueButtonExit(network_screen);
+  EXPECT_TRUE(actor_->IsContinueEnabled());
+  EmulateContinueButtonExit(network_screen_);
 }
 
 IN_PROC_BROWSER_TEST_F(NetworkScreenTest, Cellular) {
-  ASSERT_TRUE(controller());
-  NetworkScreen* network_screen = controller()->GetNetworkScreen();
-  ASSERT_TRUE(network_screen != NULL);
-  ASSERT_EQ(network_screen, controller()->current_screen());
-
-  NetworkSelectionView* network_view = network_screen->view();
-  ASSERT_TRUE(network_view != NULL);
-
   EXPECT_CALL(*mock_network_library_, ethernet_connected())
       .WillOnce((Return(false)));
   EXPECT_CALL(*mock_network_library_, wifi_connected())
@@ -239,31 +221,23 @@ IN_PROC_BROWSER_TEST_F(NetworkScreenTest, Cellular) {
   scoped_ptr<CellularNetwork> cellular(new CellularNetwork("cellular"));
   EXPECT_CALL(*mock_network_library_, cellular_network())
       .WillOnce(Return(cellular.get()));
-  EXPECT_FALSE(network_view->IsContinueEnabled());
-  network_screen->OnNetworkManagerChanged(mock_network_library_);
+  EXPECT_FALSE(actor_->IsContinueEnabled());
+  network_screen_->OnNetworkManagerChanged(mock_network_library_);
 
   EXPECT_CALL(*mock_network_library_, ethernet_connected())
       .WillOnce(Return(true));
   EXPECT_CALL(*mock_network_library_, Connected())
       .Times(3)
       .WillRepeatedly(Return(true));
-  EXPECT_FALSE(network_view->IsContinueEnabled());
-  EXPECT_FALSE(network_view->IsConnecting());
-  network_screen->OnNetworkManagerChanged(mock_network_library_);
+  EXPECT_FALSE(actor_->IsContinueEnabled());
+  EXPECT_FALSE(actor_->IsConnecting());
+  network_screen_->OnNetworkManagerChanged(mock_network_library_);
 
-  EXPECT_TRUE(network_view->IsContinueEnabled());
-  EmulateContinueButtonExit(network_screen);
+  EXPECT_TRUE(actor_->IsContinueEnabled());
+  EmulateContinueButtonExit(network_screen_);
 }
 
 IN_PROC_BROWSER_TEST_F(NetworkScreenTest, Timeout) {
-  ASSERT_TRUE(controller());
-  NetworkScreen* network_screen = controller()->GetNetworkScreen();
-  ASSERT_TRUE(network_screen != NULL);
-  ASSERT_EQ(network_screen, controller()->current_screen());
-
-  NetworkSelectionView* network_view = network_screen->view();
-  ASSERT_TRUE(network_view != NULL);
-
   EXPECT_CALL(*mock_network_library_, ethernet_connected())
       .WillOnce((Return(false)));
   EXPECT_CALL(*mock_network_library_, wifi_connected())
@@ -277,20 +251,20 @@ IN_PROC_BROWSER_TEST_F(NetworkScreenTest, Timeout) {
   scoped_ptr<WifiNetwork> wifi(new WifiNetwork("wifi"));
   EXPECT_CALL(*mock_network_library_, wifi_network())
       .WillOnce(Return(wifi.get()));
-  EXPECT_FALSE(network_view->IsContinueEnabled());
-  network_screen->OnNetworkManagerChanged(mock_network_library_);
+  EXPECT_FALSE(actor_->IsContinueEnabled());
+  network_screen_->OnNetworkManagerChanged(mock_network_library_);
 
   EXPECT_CALL(*mock_network_library_, Connected())
       .Times(2)
       .WillRepeatedly(Return(false));
-  EXPECT_FALSE(network_view->IsContinueEnabled());
-  EXPECT_FALSE(network_view->IsConnecting());
-  network_screen->OnConnectionTimeout();
+  EXPECT_FALSE(actor_->IsContinueEnabled());
+  EXPECT_FALSE(actor_->IsConnecting());
+  network_screen_->OnConnectionTimeout();
 
   // Close infobubble with error message - it makes the test stable.
-  EXPECT_FALSE(network_view->IsContinueEnabled());
-  EXPECT_FALSE(network_view->IsConnecting());
-  network_screen->ClearErrors();
+  EXPECT_FALSE(actor_->IsContinueEnabled());
+  EXPECT_FALSE(actor_->IsConnecting());
+  actor_->ClearErrors();
 }
 
 }  // namespace chromeos

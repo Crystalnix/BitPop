@@ -219,18 +219,13 @@ PepperPluginRegistry::PepperPluginRegistry() {
   }
 }
 
-MessageLoop* PepperPluginRegistry::GetIPCMessageLoop() {
+base::MessageLoopProxy* PepperPluginRegistry::GetIPCMessageLoop() {
   // This is called only in the renderer so we know we have a child process.
   DCHECK(ChildProcess::current()) << "Must be in the renderer.";
-  return ChildProcess::current()->io_message_loop();
+  return ChildProcess::current()->io_message_loop_proxy();
 }
 
 base::WaitableEvent* PepperPluginRegistry::GetShutdownEvent() {
   DCHECK(ChildProcess::current()) << "Must be in the renderer.";
   return ChildProcess::current()->GetShutDownEvent();
-}
-
-std::set<PP_Instance>* PepperPluginRegistry::GetGloballySeenInstanceIDSet() {
-  // This function is not needed on the host side of the proxy.
-  return NULL;
 }

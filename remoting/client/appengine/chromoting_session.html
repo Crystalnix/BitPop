@@ -13,7 +13,7 @@ found in the LICENSE file.
     <!--
     // TODO(ajwong): Total Hack. We should be able to read the URL parameters
     // from JS, and also avoid passing in the connection tokens here.
-    document.xmppAuthToken="{{xmpp_token.token_string}}";
+    document.talkToken="{{talk_token}}";
     document.httpXmppProxy="{{http_xmpp_proxy}}";
     document.username="{{username}}";
     document.hostname="{{hostname}}";
@@ -29,6 +29,8 @@ found in the LICENSE file.
   <body class="chromoting_body" onload="init();">
     <div id="status_msg_div">
       <span id="status_msg" class="status_msg">Initializing...</span>
+      <input type="button" value="Scale to fit" class="scale_to_fit_toggle"
+             id="scale_to_fit_toggle" onclick="toggleScaleToFit();"/>
       <input type="button" value="Show Debug Log" class="debug_log_toggle"
              id="debug_log_toggle" onclick="toggleDebugLog();"/>
     </div>

@@ -19,31 +19,11 @@ namespace chromeos {
 
 class MockCryptohomeLibrary : public CryptohomeLibrary {
  public:
-  MockCryptohomeLibrary() : outcome_(false), code_(0) {
-  }
-  virtual ~MockCryptohomeLibrary() {}
-  void SetUp(bool outcome, int code) {
-    outcome_ = outcome;
-    code_ = code;
-    ON_CALL(*this, AsyncCheckKey(_, _, _))
-        .WillByDefault(
-            WithArgs<2>(Invoke(this, &MockCryptohomeLibrary::DoCallback)));
-    ON_CALL(*this, AsyncMigrateKey(_, _, _, _))
-        .WillByDefault(
-            WithArgs<3>(Invoke(this, &MockCryptohomeLibrary::DoCallback)));
-    ON_CALL(*this, AsyncMount(_, _, _, _))
-        .WillByDefault(
-            WithArgs<3>(Invoke(this, &MockCryptohomeLibrary::DoCallback)));
-    ON_CALL(*this, AsyncMountForBwsi(_))
-        .WillByDefault(
-            WithArgs<0>(Invoke(this, &MockCryptohomeLibrary::DoCallback)));
-    ON_CALL(*this, AsyncRemove(_, _))
-        .WillByDefault(
-            WithArgs<1>(Invoke(this, &MockCryptohomeLibrary::DoCallback)));
-    ON_CALL(*this, AsyncDoAutomaticFreeDiskSpaceControl(_))
-        .WillByDefault(
-            WithArgs<0>(Invoke(this, &MockCryptohomeLibrary::DoCallback)));
-  }
+  MockCryptohomeLibrary();
+  virtual ~MockCryptohomeLibrary();
+
+  void SetUp(bool outcome, int code);
+
   MOCK_METHOD2(CheckKey, bool(const std::string& user_email,
                               const std::string& passhash));
   MOCK_METHOD3(AsyncCheckKey, bool(const std::string& user_email,
@@ -71,6 +51,7 @@ class MockCryptohomeLibrary : public CryptohomeLibrary {
   MOCK_METHOD0(IsMounted, bool(void));
   MOCK_METHOD0(GetSystemSalt, CryptohomeBlob(void));
   MOCK_METHOD1(AsyncDoAutomaticFreeDiskSpaceControl, bool(Delegate* callback));
+  MOCK_METHOD2(AsyncSetOwnerUser, bool(const std::string&, Delegate* callback));
 
   MOCK_METHOD0(TpmIsReady, bool(void));
   MOCK_METHOD0(TpmIsEnabled, bool(void));

@@ -16,10 +16,6 @@
 #include "googleurl/src/gurl.h"
 #include "webkit/glue/form_data.h"
 
-namespace buzz {
-  class XmlElement;
-}  // namespace buzz
-
 enum RequestMethod {
   GET,
   POST
@@ -33,6 +29,10 @@ enum UploadRequired {
 
 class AutofillMetrics;
 
+namespace buzz {
+class XmlElement;
+}
+
 // FormStructure stores a single HTML form together with the values entered
 // in the fields along with additional information needed by Autofill.
 class FormStructure {
@@ -45,7 +45,9 @@ class FormStructure {
   void DetermineHeuristicTypes();
 
   // Encodes the XML upload request from this FormStructure.
-  bool EncodeUploadRequest(bool autofill_used, std::string* encoded_xml) const;
+  bool EncodeUploadRequest(const FieldTypeSet& available_field_types,
+                           bool form_was_autofilled,
+                           std::string* encoded_xml) const;
 
   // Encodes the XML query request for the set of forms.
   // All fields are returned in one XML. For example, there are three forms,
@@ -92,9 +94,9 @@ class FormStructure {
   void LogQualityMetrics(const AutofillMetrics& metric_logger) const;
 
   // Sets the possible types for the field at |index|.
-  void set_possible_types(int index, const FieldTypeSet& types);
+  void set_possible_types(size_t index, const FieldTypeSet& types);
 
-  const AutofillField* field(int index) const;
+  const AutofillField* field(size_t index) const;
   size_t field_count() const;
 
   // Returns the number of fields that are able to be autofilled.
@@ -129,17 +131,10 @@ class FormStructure {
     UPLOAD,
   };
 
-  // Associates the field with the heuristic type for each of the field views.
-  void GetHeuristicFieldInfo(FieldTypeMap* field_types_map);
-
   // Adds form info to |encompassing_xml_element|. |request_type| indicates if
   // it is a query or upload.
   bool EncodeFormRequest(EncodeRequestType request_type,
                          buzz::XmlElement* encompassing_xml_element) const;
-
-  // Helper for EncodeUploadRequest() that collects presense of all data in the
-  // form structure and converts it to string for uploading.
-  std::string ConvertPresenceBitsToString() const;
 
   // The name of the form.
   string16 form_name_;
@@ -150,15 +145,10 @@ class FormStructure {
   // The target URL.
   GURL target_url_;
 
-  bool has_credit_card_field_;
-  bool has_autofillable_field_;
-  bool has_password_fields_;
-
   // The number of fields able to be auto-filled.
   size_t autofill_count_;
 
-  // A vector of all the input fields in the form.  The vector is terminated by
-  // a NULL entry.
+  // A vector of all the input fields in the form.
   ScopedVector<AutofillField> fields_;
 
   // The names of the form input elements, that are part of the form signature.

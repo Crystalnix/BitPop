@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,19 +13,17 @@
 
 namespace skia {
 
-SkDevice* VectorPlatformDeviceSkiaFactory::newDevice(SkCanvas* noUsed,
+SkDevice* VectorPlatformDeviceSkiaFactory::newDevice(SkCanvas* canvas,
                                                      SkBitmap::Config config,
                                                      int width, int height,
                                                      bool isOpaque,
                                                      bool isForLayer) {
   SkASSERT(config == SkBitmap::kARGB_8888_Config);
-  SkMatrix initialTransform;
-  initialTransform.reset();
-  if (isForLayer) {
-    initialTransform.setTranslate(0, height);
-    initialTransform.preScale(1, -1);
-  }
-  return new VectorPlatformDeviceSkia(width, height, initialTransform);
+  SkRefPtr<SkDevice> device = factory_.newDevice(canvas, config, width, height,
+                                                 isOpaque, isForLayer);
+  device->unref();  // SkRefPtr and new both took a reference.
+  SkPDFDevice* pdf_device = static_cast<SkPDFDevice*>(device.get());
+  return new VectorPlatformDeviceSkia(pdf_device);
 }
 
 static inline SkBitmap makeABitmap(int width, int height) {
@@ -34,18 +32,12 @@ static inline SkBitmap makeABitmap(int width, int height) {
   return bitmap;
 }
 
-VectorPlatformDeviceSkia::VectorPlatformDeviceSkia(
-    int width, int height, const SkMatrix& initialTransform)
-    : PlatformDevice(makeABitmap(width, height)),
-      pdf_device_(new SkPDFDevice(width, height, initialTransform)) {
-  pdf_device_->unref();  // SkRefPtr and new both took a reference.
+VectorPlatformDeviceSkia::VectorPlatformDeviceSkia(SkPDFDevice* pdf_device)
+    : PlatformDevice(makeABitmap(pdf_device->width(), pdf_device->height())),
+      pdf_device_(pdf_device) {
 }
 
 VectorPlatformDeviceSkia::~VectorPlatformDeviceSkia() {
-}
-
-bool VectorPlatformDeviceSkia::IsVectorial() {
-  return true;
 }
 
 bool VectorPlatformDeviceSkia::IsNativeFontRenderingAllowed() {
@@ -72,9 +64,6 @@ PlatformDevice::PlatformSurface VectorPlatformDeviceSkia::BeginPlatformPaint() {
   raster_surface_->unref();  // SkRefPtr and create both took a reference.
 
   SkCanvas canvas(raster_surface_.get());
-  SkPaint black;
-  black.setColor(SK_ColorBLACK);
-  canvas.drawPaint(black);
   return raster_surface_->BeginPlatformPaint();
 }
 
@@ -88,15 +77,13 @@ void VectorPlatformDeviceSkia::EndPlatformPaint() {
   draw.fClip=&clip;
   pdf_device_->drawSprite(draw, raster_surface_->accessBitmap(false), 0, 0,
                           paint);
+  // BitmapPlatformDevice matches begin and end calls.
+  raster_surface_->EndPlatformPaint();
   raster_surface_ = NULL;
 }
 
-SkDeviceFactory* VectorPlatformDeviceSkia::getDeviceFactory() {
-  return SkNEW(VectorPlatformDeviceSkiaFactory);
-}
-
 uint32_t VectorPlatformDeviceSkia::getDeviceCapabilities() {
-  return kVector_Capability;
+  return SkDevice::getDeviceCapabilities() | kVector_Capability;
 }
 
 int VectorPlatformDeviceSkia::width() const {
@@ -218,12 +205,16 @@ void VectorPlatformDeviceSkia::drawDevice(const SkDraw& draw,
 }
 
 #if defined(OS_WIN)
-void VectorPlatformDeviceSkia::drawToHDC(HDC dc,
-                                         int x,
-                                         int y,
-                                         const RECT* src_rect) {
+void VectorPlatformDeviceSkia::DrawToNativeContext(HDC dc,
+                                                   int x,
+                                                   int y,
+                                                   const RECT* src_rect) {
   SkASSERT(false);
 }
 #endif
+
+SkDeviceFactory* VectorPlatformDeviceSkia::onNewDeviceFactory() {
+  return SkNEW(VectorPlatformDeviceSkiaFactory);
+}
 
 }  // namespace skia

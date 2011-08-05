@@ -8,6 +8,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/tabs/hover_tab_selector.h"
 #include "chrome/browser/ui/views/tabs/tab_strip_controller.h"
 #include "content/common/notification_observer.h"
 #include "content/common/notification_registrar.h"
@@ -56,11 +57,13 @@ class BrowserTabStripController : public TabStripController,
                                      const gfx::Point& p) OVERRIDE;
   virtual void UpdateLoadingAnimations() OVERRIDE;
   virtual int HasAvailableDragActions() const OVERRIDE;
+  virtual void OnDropIndexUpdate(int index, bool drop_before) OVERRIDE;
   virtual void PerformDrop(bool drop_before,
                            int index,
                            const GURL& url) OVERRIDE;
   virtual bool IsCompatibleWith(BaseTabStrip* other) const OVERRIDE;
   virtual void CreateNewTab() OVERRIDE;
+  virtual void ClickActiveTab(int index) OVERRIDE;
 
   // TabStripModelObserver implementation:
   virtual void TabInsertedAt(TabContentsWrapper* contents,
@@ -68,10 +71,10 @@ class BrowserTabStripController : public TabStripController,
                              bool active) OVERRIDE;
   virtual void TabDetachedAt(TabContentsWrapper* contents,
                              int model_index) OVERRIDE;
-  virtual void TabSelectedAt(TabContentsWrapper* old_contents,
-                             TabContentsWrapper* contents,
-                             int model_index,
-                             bool user_gesture) OVERRIDE;
+  virtual void ActiveTabChanged(TabContentsWrapper* old_contents,
+                                TabContentsWrapper* contents,
+                                int model_index,
+                                bool user_gesture) OVERRIDE;
   virtual void TabMoved(TabContentsWrapper* contents,
                         int from_model_index,
                         int to_model_index) OVERRIDE;
@@ -126,8 +129,10 @@ class BrowserTabStripController : public TabStripController,
 
   NotificationRegistrar notification_registrar_;
 
+  // Helper for performing tab selection as a result of dragging over a tab.
+  HoverTabSelector hover_tab_selector_;
+
   DISALLOW_COPY_AND_ASSIGN(BrowserTabStripController);
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_TABS_BROWSER_TAB_STRIP_CONTROLLER_H_
-

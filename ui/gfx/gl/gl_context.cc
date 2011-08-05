@@ -13,21 +13,14 @@
 
 namespace gfx {
 
-void GLContext::ReleaseCurrent() {
-  // TODO(apatrick): Implement this in GLContext derivatives.
+GLContext::GLContext() {
 }
 
-GLSurface* GLContext::GetSurface() {
-  // TODO(apatrick): Remove this when surfaces are split from contexts.
-  return NULL;
-}
-
-unsigned int GLContext::GetBackingFrameBufferObject() {
-  return 0;
+GLContext::~GLContext() {
 }
 
 std::string GLContext::GetExtensions() {
-  DCHECK(IsCurrent());
+  DCHECK(IsCurrent(NULL));
   const char* ext = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
   return std::string(ext ? ext : "");
 }
@@ -40,28 +33,6 @@ bool GLContext::HasExtension(const char* name) {
   delimited_name += " ";
 
   return extensions.find(delimited_name) != std::string::npos;
-}
-
-bool GLContext::InitializeCommon() {
-  if (!MakeCurrent()) {
-    LOG(ERROR) << "MakeCurrent failed.";
-    return false;
-  }
-
-  if (!IsOffscreen()) {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableGpuVsync))
-      SetSwapInterval(0);
-    else
-      SetSwapInterval(1);
-  }
-
-  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-  if (glGetError() != GL_NO_ERROR) {
-    LOG(ERROR) << "glClear failed.";
-    return false;
-  }
-
-  return true;
 }
 
 bool GLContext::LosesAllContextsOnContextLost()

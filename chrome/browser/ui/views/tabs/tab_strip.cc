@@ -16,6 +16,7 @@
 #include "chrome/browser/ui/views/tabs/tab_strip_controller.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/animation/animation_container.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
@@ -31,9 +32,6 @@
 
 #if defined(OS_WIN)
 #include "views/widget/monitor_win.h"
-#include "views/widget/widget_win.h"
-#elif defined(OS_LINUX)
-#include "views/widget/widget_gtk.h"
 #endif
 
 #undef min
@@ -52,6 +50,11 @@ static const int kNewTabButtonVOffset = 5;
 static const int kSuspendAnimationsTimeMs = 200;
 static const int kTabHOffset = -16;
 static const int kTabStripAnimationVSlop = 40;
+
+// Inverse ratio of the width of a tab edge to the width of the tab. When
+// hovering over the left or right edge of a tab, the drop indicator will
+// point between tabs.
+static const int kTabEdgeRatioInverse = 4;
 
 // Size of the drop indicator.
 static int drop_indicator_width;
@@ -296,7 +299,7 @@ void TabStrip::PaintChildren(gfx::Canvas* canvas) {
     }
   }
 
-  if (GetWindow()->non_client_view()->UseNativeFrame()) {
+  if (GetWindow()->ShouldUseNativeFrame()) {
     bool multiple_tabs_selected = (!selected_tabs.empty() ||
                                    tabs_dragging.size() > 1);
     // Make sure non-active tabs are somewhat transparent.
@@ -331,24 +334,6 @@ void TabStrip::PaintChildren(gfx::Canvas* canvas) {
   // If the active tab is being dragged, it goes last.
   if (active_tab && is_dragging)
     active_tab->Paint(canvas);
-}
-
-// Overridden to support automation. See automation_proxy_uitest.cc.
-const views::View* TabStrip::GetViewByID(int view_id) const {
-  if (tab_count() > 0) {
-    if (view_id == VIEW_ID_TAB_LAST) {
-      return GetTabAtTabDataIndex(tab_count() - 1);
-    } else if ((view_id >= VIEW_ID_TAB_0) && (view_id < VIEW_ID_TAB_LAST)) {
-      int index = view_id - VIEW_ID_TAB_0;
-      if (index >= 0 && index < tab_count()) {
-        return GetTabAtTabDataIndex(index);
-      } else {
-        return NULL;
-      }
-    }
-  }
-
-  return View::GetViewByID(view_id);
 }
 
 gfx::Size TabStrip::GetPreferredSize() {
@@ -777,7 +762,7 @@ void TabStrip::UpdateDropIndex(const DropTargetEvent& event) {
   for (int i = GetMiniTabCount(); i < tab_count(); ++i) {
     Tab* tab = GetTabAtTabDataIndex(i);
     const int tab_max_x = tab->x() + tab->width();
-    const int hot_width = tab->width() / 3;
+    const int hot_width = tab->width() / kTabEdgeRatioInverse;
     if (x < tab_max_x) {
       if (x < tab->x() + hot_width)
         SetDropIndex(i, true);
@@ -794,6 +779,9 @@ void TabStrip::UpdateDropIndex(const DropTargetEvent& event) {
 }
 
 void TabStrip::SetDropIndex(int tab_data_index, bool drop_before) {
+  // Let the controller know of the index update.
+  controller()->OnDropIndexUpdate(tab_data_index, drop_before);
+
   if (tab_data_index == -1) {
     if (drop_info_.get())
       drop_info_.reset(NULL);
@@ -851,15 +839,14 @@ TabStrip::DropInfo::DropInfo(int drop_index, bool drop_before, bool point_down)
   arrow_view = new views::ImageView;
   arrow_view->SetImage(GetDropArrowImage(point_down));
 
-  views::Widget::CreateParams params(views::Widget::CreateParams::TYPE_POPUP);
+  arrow_window = new views::Widget;
+  views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
   params.keep_on_top = true;
   params.transparent = true;
   params.accept_events = false;
   params.can_activate = false;
-  arrow_window = views::Widget::CreateWidget(params);
-  arrow_window->Init(
-      NULL,
-      gfx::Rect(0, 0, drop_indicator_width, drop_indicator_height));
+  params.bounds = gfx::Rect(drop_indicator_width, drop_indicator_height);
+  arrow_window->Init(params);
   arrow_window->SetContentsView(arrow_view);
 }
 

@@ -11,9 +11,9 @@
 #include "views/widget/widget.h"
 
 #if defined(OS_WIN)
-#include "views/widget/widget_win.h"
-#elif defined(OS_LINUX)
-#include "views/widget/widget_gtk.h"
+#include "views/widget/native_widget_win.h"
+#elif defined(TOOLKIT_USES_GTK)
+#include "views/widget/native_widget_gtk.h"
 #endif
 
 static const int kTransparentAlpha = 200;
@@ -39,13 +39,16 @@ DraggedTabView::DraggedTabView(const std::vector<views::View*>& renderers,
       contents_size_(contents_size) {
   set_parent_owned(false);
 
-  views::Widget::CreateParams params(views::Widget::CreateParams::TYPE_POPUP);
+  container_.reset(new views::Widget);
+  views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
   params.transparent = true;
   params.keep_on_top = true;
-  params.delete_on_destroy = false;
-  container_.reset(views::Widget::CreateWidget(params));
+  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.bounds = gfx::Rect(PreferredContainerSize());
+  container_->Init(params);
+  container_->SetContentsView(this);
 #if defined(OS_WIN)
-  static_cast<views::WidgetWin*>(container_.get())->
+  static_cast<views::NativeWidgetWin*>(container_->native_widget())->
       set_can_update_layered_window(false);
 
   BOOL drag;
@@ -54,11 +57,8 @@ DraggedTabView::DraggedTabView(const std::vector<views::View*>& renderers,
     show_contents_on_drag_ = false;
   }
 #endif
-  gfx::Size container_size(PreferredContainerSize());
-  container_->Init(NULL, gfx::Rect(gfx::Point(), container_size));
-  container_->SetContentsView(this);
   container_->SetOpacity(kTransparentAlpha);
-  container_->SetBounds(gfx::Rect(gfx::Point(), container_size));
+  container_->SetBounds(gfx::Rect(gfx::Point(), params.bounds.size()));
 }
 
 DraggedTabView::~DraggedTabView() {
@@ -135,7 +135,7 @@ void DraggedTabView::PaintDetachedView(gfx::Canvas* canvas) {
   gfx::Size ps = GetPreferredSize();
   gfx::CanvasSkia scale_canvas(ps.width(), ps.height(), false);
   SkBitmap& bitmap_device = const_cast<SkBitmap&>(
-      scale_canvas.getTopPlatformDevice().accessBitmap(true));
+      skia::GetTopDevice(scale_canvas)->accessBitmap(true));
   bitmap_device.eraseARGB(0, 0, 0, 0);
 
   int tab_height = renderer_bounds_.back().height();

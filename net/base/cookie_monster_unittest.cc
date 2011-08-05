@@ -253,6 +253,35 @@ TEST(ParsedCookieTest, MultipleEquals) {
   EXPECT_EQ(4U, pc.NumberOfAttributes());
 }
 
+TEST(ParsedCookieTest, MACKey) {
+  CookieMonster::ParsedCookie pc("foo=bar; MAC-Key=3900ac9anw9incvw9f");
+  EXPECT_TRUE(pc.IsValid());
+  EXPECT_EQ("foo", pc.Name());
+  EXPECT_EQ("bar", pc.Value());
+  EXPECT_EQ("3900ac9anw9incvw9f", pc.MACKey());
+  EXPECT_EQ(1U, pc.NumberOfAttributes());
+}
+
+TEST(ParsedCookieTest, MACAlgorithm) {
+  CookieMonster::ParsedCookie pc("foo=bar; MAC-Algorithm=hmac-sha-1");
+  EXPECT_TRUE(pc.IsValid());
+  EXPECT_EQ("foo", pc.Name());
+  EXPECT_EQ("bar", pc.Value());
+  EXPECT_EQ("hmac-sha-1", pc.MACAlgorithm());
+  EXPECT_EQ(1U, pc.NumberOfAttributes());
+}
+
+TEST(ParsedCookieTest, MACKeyAndMACAlgorithm) {
+  CookieMonster::ParsedCookie pc(
+        "foo=bar; MAC-Key=voiae-09fj0302nfqf; MAC-Algorithm=hmac-sha-256");
+  EXPECT_TRUE(pc.IsValid());
+  EXPECT_EQ("foo", pc.Name());
+  EXPECT_EQ("bar", pc.Value());
+  EXPECT_EQ("voiae-09fj0302nfqf", pc.MACKey());
+  EXPECT_EQ("hmac-sha-256", pc.MACAlgorithm());
+  EXPECT_EQ(2U, pc.NumberOfAttributes());
+}
+
 TEST(ParsedCookieTest, QuotedTrailingWhitespace) {
   CookieMonster::ParsedCookie pc("ANCUUID=\"zohNumRKgI0oxyhSsV3Z7D\"  ; "
                                       "expires=Sun, 18-Apr-2027 21:06:29 GMT ; "
@@ -694,6 +723,35 @@ TEST(CookieMonsterTest, HttpOnlyTest) {
   EXPECT_TRUE(cm->SetCookieWithOptions(url_google, "B=A; httponly", options));
   EXPECT_EQ("A=C; B=A", cm->GetCookiesWithOptions(url_google, options));
   EXPECT_EQ("A=C", cm->GetCookies(url_google));
+}
+
+TEST(CookieMonsterTest, GetCookiesWithInfo) {
+  GURL url_google(kUrlGoogle);
+  scoped_refptr<CookieMonster> cm(new CookieMonster(NULL, NULL));
+  CookieOptions options;
+
+  EXPECT_TRUE(cm->SetCookieWithOptions(url_google, "A=B", options));
+  EXPECT_TRUE(cm->SetCookieWithOptions(url_google,
+    "C=D; Mac-Key=390jfn0awf3; Mac-Algorithm=hmac-sha-1", options));
+
+  EXPECT_EQ("A=B; C=D", cm->GetCookiesWithOptions(url_google, options));
+
+  std::string cookie_line;
+  std::vector<CookieStore::CookieInfo> cookie_infos;
+
+  cm->GetCookiesWithInfo(url_google, options, &cookie_line, &cookie_infos);
+
+  EXPECT_EQ("A=B; C=D", cookie_line);
+
+  EXPECT_EQ(2U, cookie_infos.size());
+
+  EXPECT_EQ("A", cookie_infos[0].name);
+  EXPECT_EQ("", cookie_infos[0].mac_key);
+  EXPECT_EQ("", cookie_infos[0].mac_algorithm);
+
+  EXPECT_EQ("C", cookie_infos[1].name);
+  EXPECT_EQ("390jfn0awf3", cookie_infos[1].mac_key);
+  EXPECT_EQ("hmac-sha-1", cookie_infos[1].mac_algorithm);
 }
 
 namespace {

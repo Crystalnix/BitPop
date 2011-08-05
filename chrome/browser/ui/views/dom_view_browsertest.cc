@@ -6,18 +6,17 @@
 #include "chrome/browser/ui/views/dom_view.h"
 #include "chrome/test/in_process_browser_test.h"
 #include "chrome/test/ui_test_utils.h"
-#include "views/widget/root_view.h"
 #include "views/widget/widget.h"
 
-using namespace views;
+using views::Widget;
 
 class DOMViewTest : public InProcessBrowserTest {
  public:
   Widget* CreatePopupWindow() {
-    Widget::CreateParams params(Widget::CreateParams::TYPE_POPUP);
-    params.mirror_origin_in_rtl = false;
-    Widget* widget = Widget::CreateWidget(params);
-    widget->Init(NULL, gfx::Rect(0, 0, 400, 400));
+    Widget* widget = new Widget;
+    Widget::InitParams params(Widget::InitParams::TYPE_POPUP);
+    params.bounds = gfx::Rect(0, 0, 400, 400);
+    widget->Init(params);
     return widget;
   }
 };

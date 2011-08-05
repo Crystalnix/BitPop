@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SKIA_BITMAP_PLATFORM_DEVICE_WIN_H_
-#define SKIA_BITMAP_PLATFORM_DEVICE_WIN_H_
+#ifndef SKIA_EXT_BITMAP_PLATFORM_DEVICE_WIN_H_
+#define SKIA_EXT_BITMAP_PLATFORM_DEVICE_WIN_H_
 #pragma once
 
 #include "skia/ext/platform_device_win.h"
@@ -12,7 +12,7 @@ namespace skia {
 
 class BitmapPlatformDeviceFactory : public SkDeviceFactory {
  public:
-  virtual SkDevice* newDevice(SkCanvas* ignored, SkBitmap::Config config, 
+  virtual SkDevice* newDevice(SkCanvas* ignored, SkBitmap::Config config,
                               int width, int height,
                               bool isOpaque, bool isForLayer);
 };
@@ -69,32 +69,28 @@ class SK_API BitmapPlatformDevice : public PlatformDevice {
   // See warning for copy constructor above.
   BitmapPlatformDevice& operator=(const BitmapPlatformDevice& other);
 
-  virtual SkDeviceFactory* getDeviceFactory() {
-    return SkNEW(BitmapPlatformDeviceFactory);
-  }
-
+  // PlatformDevice overrides
   // Retrieves the bitmap DC, which is the memory DC for our bitmap data. The
   // bitmap DC is lazy created.
   virtual PlatformSurface BeginPlatformPaint();
+  virtual void EndPlatformPaint();
+
+  virtual void DrawToNativeContext(HDC dc, int x, int y, const RECT* src_rect);
+  virtual void MakeOpaque(int x, int y, int width, int height);
 
   // Loads the given transform and clipping region into the HDC. This is
   // overridden from SkDevice.
   virtual void setMatrixClip(const SkMatrix& transform, const SkRegion& region,
                              const SkClipStack&);
 
-  virtual void drawToHDC(HDC dc, int x, int y, const RECT* src_rect);
-  virtual void makeOpaque(int x, int y, int width, int height);
-  virtual bool IsVectorial() { return false; }
-
-  // Returns the color value at the specified location. This does not
-  // consider any transforms that may be set on the device.
-  SkColor getColorAt(int x, int y);
-
  protected:
   // Flushes the Windows device context so that the pixel data can be accessed
   // directly by Skia. Overridden from SkDevice, this is called when Skia
   // starts accessing pixel data.
   virtual void onAccessBitmap(SkBitmap* bitmap);
+
+  // Override SkDevice.
+  virtual SkDeviceFactory* onNewDeviceFactory();
 
  private:
   // Reference counted data that can be shared between multiple devices. This
@@ -109,9 +105,13 @@ class SK_API BitmapPlatformDevice : public PlatformDevice {
   // Data associated with this device, guaranteed non-null. We hold a reference
   // to this object.
   BitmapPlatformDeviceData* data_;
+
+#ifdef SK_DEBUG
+  int begin_paint_count_;
+#endif
 };
 
 }  // namespace skia
 
-#endif  // SKIA_BITMAP_PLATFORM_DEVICE_WIN_H_
+#endif  // SKIA_EXT_BITMAP_PLATFORM_DEVICE_WIN_H_
 

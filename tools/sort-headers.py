@@ -1,4 +1,7 @@
 #!/usr/bin/python
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
 
 """Given a filename as an argument, sort the #include/#imports in that file.
 
@@ -34,7 +37,17 @@ def IncludeCompareKey(line):
   """
   for prefix in ('#include ', '#import '):
     if line.startswith(prefix):
-      return line[len(prefix):]
+      line = line[len(prefix):]
+      break
+
+  # The win32 api has all sorts of implicit include order dependencies :-/
+  # Give a few headers special sort keys that make sure they appear before all
+  # other headers.
+  if line.startswith('<windows.h>'):  # Must be before e.g. shellapi.h
+    return '0'
+  if line.startswith('<unknwn.h>'):  # Must be before e.g. intshcut.h
+    return '1'
+
   return line
 
 

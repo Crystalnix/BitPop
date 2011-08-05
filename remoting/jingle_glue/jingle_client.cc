@@ -114,11 +114,16 @@ void XmppSignalStrategy::OnConnectionStateChanged(
 buzz::PreXmppAuth* XmppSignalStrategy::CreatePreXmppAuth(
     const buzz::XmppClientSettings& settings) {
   buzz::Jid jid(settings.user(), settings.host(), buzz::STR_EMPTY);
+  std::string mechanism = notifier::GaiaTokenPreXmppAuth::kDefaultAuthMechanism;
+  if (settings.token_service() == "oauth2") {
+    mechanism = "X-OAUTH2";
+  }
+
   return new notifier::GaiaTokenPreXmppAuth(
       jid.Str(),
       settings.auth_cookie(),
       settings.token_service(),
-      notifier::GaiaTokenPreXmppAuth::kDefaultAuthMechanism);
+      mechanism);
 }
 
 
@@ -163,21 +168,6 @@ void JavascriptSignalStrategy::AttachXmppProxy(
 
 JavascriptIqRequest* JavascriptSignalStrategy::CreateIqRequest() {
   return new JavascriptIqRequest(&iq_registry_, xmpp_proxy_);
-}
-
-JingleClient::JingleClient(JingleThread* thread,
-                           SignalStrategy* signal_strategy,
-                           PortAllocatorSessionFactory* session_factory,
-                           Callback* callback)
-    : enable_nat_traversing_(false),
-      thread_(thread),
-      state_(START),
-      initialized_(false),
-      closed_(false),
-      initialized_finished_(false),
-      callback_(callback),
-      signal_strategy_(signal_strategy),
-      port_allocator_session_factory_(session_factory) {
 }
 
 JingleClient::JingleClient(JingleThread* thread,

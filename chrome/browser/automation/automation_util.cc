@@ -7,16 +7,18 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
+#include "base/synchronization/waitable_event.h"
 #include "base/time.h"
 #include "base/values.h"
 #include "chrome/browser/automation/automation_provider.h"
 #include "chrome/browser/automation/automation_provider_json.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser.h"
 #include "content/browser/browser_thread.h"
-#include "content/browser/renderer_host/browser_render_process_host.h"
+#include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "net/base/cookie_monster.h"
@@ -105,19 +107,21 @@ TabContents* GetTabContentsAt(int browser_index, int tab_index) {
   return browser->GetTabContentsAt(tab_index);
 }
 
+net::URLRequestContextGetter* GetRequestContext(TabContents* contents) {
+  // Since we may be on the UI thread don't call GetURLRequestContext().
+  // Get the request context specific to the current TabContents and app.
+  return contents->profile()->GetRequestContextForRenderProcess(
+      contents->render_view_host()->process()->id());
+}
+
 void GetCookies(const GURL& url,
                 TabContents* contents,
                 int* value_size,
                 std::string* value) {
   *value_size = -1;
   if (url.is_valid() && contents) {
-    // Since we may be on the UI thread don't call GetURLRequestContext().
-    // Get the request context specific to the current TabContents and app.
-    const Extension* installed_app = static_cast<BrowserRenderProcessHost*>(
-        contents->render_view_host()->process())->installed_app();
     scoped_refptr<net::URLRequestContextGetter> context_getter =
-        contents->profile()->GetRequestContextForPossibleApp(installed_app);
-
+        GetRequestContext(contents);
     base::WaitableEvent event(true /* manual reset */,
                               false /* not initially signaled */);
     CHECK(BrowserThread::PostTask(
@@ -137,13 +141,8 @@ void SetCookie(const GURL& url,
   *response_value = -1;
 
   if (url.is_valid() && contents) {
-    // Since we may be on the UI thread don't call GetURLRequestContext().
-    // Get the request context specific to the current TabContents and app.
-    const Extension* installed_app = static_cast<BrowserRenderProcessHost*>(
-        contents->render_view_host()->process())->installed_app();
     scoped_refptr<net::URLRequestContextGetter> context_getter =
-        contents->profile()->GetRequestContextForPossibleApp(installed_app);
-
+        GetRequestContext(contents);
     base::WaitableEvent event(true /* manual reset */,
                               false /* not initially signaled */);
     bool success = false;
@@ -164,13 +163,8 @@ void DeleteCookie(const GURL& url,
                   bool* success) {
   *success = false;
   if (url.is_valid() && contents) {
-    // Since we may be on the UI thread don't call GetURLRequestContext().
-    // Get the request context specific to the current TabContents and app.
-    const Extension* installed_app = static_cast<BrowserRenderProcessHost*>(
-        contents->render_view_host()->process())->installed_app();
     scoped_refptr<net::URLRequestContextGetter> context_getter =
-        contents->profile()->GetRequestContextForPossibleApp(installed_app);
-
+        GetRequestContext(contents);
     base::WaitableEvent event(true /* manual reset */,
                               false /* not initially signaled */);
     CHECK(BrowserThread::PostTask(
@@ -275,6 +269,8 @@ void SetCookieJSON(AutomationProvider* provider,
   std::string name, value;
   std::string domain;
   std::string path = "/";
+  std::string mac_key;
+  std::string mac_algorithm;
   bool secure = false;
   double expiry = 0;
   bool http_only = false;
@@ -296,16 +292,18 @@ void SetCookieJSON(AutomationProvider* provider,
     reply.SendError("optional 'path' invalid");
     return;
   }
+  // mac_key and mac_algorithm are optional.
+  if (cookie_dict->HasKey("mac_key"))
+    cookie_dict->GetString("mac_key", &mac_key);
+  if (cookie_dict->HasKey("mac_algorithm"))
+    cookie_dict->GetString("mac_algorithm", &mac_algorithm);
   if (cookie_dict->HasKey("secure") &&
       !cookie_dict->GetBoolean("secure", &secure)) {
     reply.SendError("optional 'secure' invalid");
     return;
   }
   if (cookie_dict->HasKey("expiry")) {
-    int expiry_int;
-    if (cookie_dict->GetInteger("expiry", &expiry_int)) {
-      expiry = expiry_int;
-    } else if (!cookie_dict->GetDouble("expiry", &expiry)) {
+    if (!cookie_dict->GetDouble("expiry", &expiry)) {
       reply.SendError("optional 'expiry' invalid");
       return;
     }
@@ -318,7 +316,8 @@ void SetCookieJSON(AutomationProvider* provider,
 
   scoped_ptr<net::CookieMonster::CanonicalCookie> cookie(
       net::CookieMonster::CanonicalCookie::Create(
-          GURL(url), name, value, domain, path, base::Time(),
+          GURL(url), name, value, domain, path,
+          mac_key, mac_algorithm, base::Time(),
           base::Time::FromDoubleT(expiry), secure, http_only));
   if (!cookie.get()) {
     reply.SendError("given 'cookie' parameters are invalid");

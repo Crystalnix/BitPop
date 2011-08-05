@@ -8,41 +8,79 @@
 #include "base/metrics/histogram.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/prefs/pref_service.h"
-#include "chrome/browser/ui/webui/shown_sections_handler.h"
+#include "chrome/browser/ui/webui/ntp/shown_sections_handler.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
 
 const int AppsPromo::kDefaultAppsCounterMax = 10;
 
+namespace {
+
+// The default logo for the promo.
+const char kDefaultPromoLogo[] = "chrome://theme/IDR_WEBSTORE_ICON";
+
+} // namespace
+
 // static
 void AppsPromo::RegisterPrefs(PrefService* local_state) {
   std::string empty;
+  local_state->RegisterBooleanPref(prefs::kNTPWebStoreEnabled, false);
   local_state->RegisterStringPref(prefs::kNTPWebStorePromoId, empty);
   local_state->RegisterStringPref(prefs::kNTPWebStorePromoHeader, empty);
   local_state->RegisterStringPref(prefs::kNTPWebStorePromoButton, empty);
   local_state->RegisterStringPref(prefs::kNTPWebStorePromoLink, empty);
+  local_state->RegisterStringPref(prefs::kNTPWebStorePromoLogo, empty);
   local_state->RegisterStringPref(prefs::kNTPWebStorePromoExpire, empty);
+  local_state->RegisterIntegerPref(prefs::kNTPWebStorePromoUserGroup, 0);
 }
 
 // static
 void AppsPromo::RegisterUserPrefs(PrefService* prefs) {
   // Set the default value for the counter to max+1 since we don't install
   // default apps for new users.
-  prefs->RegisterIntegerPref(
-      prefs::kAppsPromoCounter, kDefaultAppsCounterMax + 1);
-  prefs->RegisterBooleanPref(prefs::kDefaultAppsInstalled, false);
-  prefs->RegisterStringPref(prefs::kNTPWebStorePromoLastId, std::string());
+  prefs->RegisterIntegerPref(prefs::kAppsPromoCounter,
+                             kDefaultAppsCounterMax + 1,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kDefaultAppsInstalled,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kNTPWebStorePromoLastId,
+                            std::string(),
+                            PrefService::UNSYNCABLE_PREF);
 }
 
 // static
 void AppsPromo::ClearPromo() {
   PrefService* local_state = g_browser_process->local_state();
+  local_state->ClearPref(prefs::kNTPWebStoreEnabled);
   local_state->ClearPref(prefs::kNTPWebStorePromoId);
   local_state->ClearPref(prefs::kNTPWebStorePromoHeader);
   local_state->ClearPref(prefs::kNTPWebStorePromoButton);
   local_state->ClearPref(prefs::kNTPWebStorePromoLink);
+  local_state->ClearPref(prefs::kNTPWebStorePromoLogo);
   local_state->ClearPref(prefs::kNTPWebStorePromoExpire);
+  local_state->ClearPref(prefs::kNTPWebStorePromoUserGroup);
+}
+
+// static
+bool AppsPromo::IsPromoSupportedForLocale() {
+  PrefService* local_state = g_browser_process->local_state();
+  // PromoResourceService will clear the promo data if the current locale is
+  // not supported.
+  return local_state->HasPrefPath(prefs::kNTPWebStorePromoId) &&
+      local_state->HasPrefPath(prefs::kNTPWebStorePromoHeader) &&
+      local_state->HasPrefPath(prefs::kNTPWebStorePromoButton) &&
+      local_state->HasPrefPath(prefs::kNTPWebStorePromoLink) &&
+      local_state->HasPrefPath(prefs::kNTPWebStorePromoLogo) &&
+      local_state->HasPrefPath(prefs::kNTPWebStorePromoExpire) &&
+      local_state->HasPrefPath(prefs::kNTPWebStorePromoUserGroup);
+}
+
+// static
+bool AppsPromo::IsWebStoreSupportedForLocale() {
+  PrefService* local_state = g_browser_process->local_state();
+  return local_state->GetBoolean(prefs::kNTPWebStoreEnabled);
 }
 
 // static
@@ -70,9 +108,24 @@ GURL AppsPromo::GetPromoLink() {
 }
 
 // static
+GURL AppsPromo::GetPromoLogo() {
+  PrefService* local_state = g_browser_process->local_state();
+  GURL logo_url(local_state->GetString(prefs::kNTPWebStorePromoLogo));
+  if (logo_url.is_valid() && logo_url.SchemeIs("data"))
+    return logo_url;
+  return GURL(kDefaultPromoLogo);
+}
+
+// static
 std::string AppsPromo::GetPromoExpireText() {
   PrefService* local_state = g_browser_process->local_state();
   return local_state->GetString(prefs::kNTPWebStorePromoExpire);
+}
+
+// static
+int AppsPromo::GetPromoUserGroup() {
+  PrefService* local_state = g_browser_process->local_state();
+  return local_state->GetInteger(prefs::kNTPWebStorePromoUserGroup);
 }
 
 // static
@@ -80,25 +133,23 @@ void AppsPromo::SetPromo(const std::string& id,
                          const std::string& header_text,
                          const std::string& button_text,
                          const GURL& link,
-                         const std::string& expire_text) {
+                         const std::string& expire_text,
+                         const GURL& logo,
+                         const int user_group) {
   PrefService* local_state = g_browser_process->local_state();
   local_state->SetString(prefs::kNTPWebStorePromoId, id);
   local_state->SetString(prefs::kNTPWebStorePromoButton, button_text);
   local_state->SetString(prefs::kNTPWebStorePromoHeader, header_text);
   local_state->SetString(prefs::kNTPWebStorePromoLink, link.spec());
+  local_state->SetString(prefs::kNTPWebStorePromoLogo, logo.spec());
   local_state->SetString(prefs::kNTPWebStorePromoExpire, expire_text);
+  local_state->SetInteger(prefs::kNTPWebStorePromoUserGroup, user_group);
 }
 
 // static
-bool AppsPromo::IsPromoSupportedForLocale() {
+void AppsPromo::SetWebStoreSupportedForLocale(bool supported) {
   PrefService* local_state = g_browser_process->local_state();
-  // PromoResourceService will clear the promo data if the current locale is
-  // not supported.
-  return local_state->HasPrefPath(prefs::kNTPWebStorePromoId) &&
-      local_state->HasPrefPath(prefs::kNTPWebStorePromoHeader) &&
-      local_state->HasPrefPath(prefs::kNTPWebStorePromoButton) &&
-      local_state->HasPrefPath(prefs::kNTPWebStorePromoLink) &&
-      local_state->HasPrefPath(prefs::kNTPWebStorePromoExpire);
+  local_state->SetBoolean(prefs::kNTPWebStoreEnabled, supported);
 }
 
 AppsPromo::AppsPromo(PrefService* prefs)
@@ -167,8 +218,9 @@ bool AppsPromo::ShouldShowAppLauncher(const ExtensionIdSet& installed_ids) {
   if (!installed_ids.empty())
     return true;
 
-  // Otherwise, only show the app launcher if there's a promo for this locale.
-  return IsPromoSupportedForLocale();
+  // Otherwise, only show the app launcher if the web store is supported for the
+  // current locale.
+  return IsWebStoreSupportedForLocale();
 #endif
 }
 
@@ -176,14 +228,16 @@ void AppsPromo::ExpireDefaultApps() {
   SetPromoCounter(kDefaultAppsCounterMax + 1);
 }
 
-void AppsPromo::MaximizeAppsIfFirstView() {
+void AppsPromo::MaximizeAppsIfNecessary() {
   std::string promo_id = GetPromoId();
+  int maximize_setting = GetPromoUserGroup();
 
   // Maximize the apps section of the NTP if this is the first time viewing the
-  // specific promo.
+  // specific promo and the current user group is targetted.
   if (GetLastPromoId() != promo_id) {
-    prefs_->SetString(prefs::kNTPWebStorePromoLastId, promo_id);
-    ShownSectionsHandler::SetShownSection(prefs_, APPS);
+    if ((maximize_setting & GetCurrentUserGroup()) != 0)
+      ShownSectionsHandler::SetShownSection(prefs_, APPS);
+    SetLastPromoId(promo_id);
   }
 }
 
@@ -218,4 +272,11 @@ void AppsPromo::SetPromoCounter(int val) {
 
 bool AppsPromo::GetDefaultAppsInstalled() const {
   return prefs_->GetBoolean(prefs::kDefaultAppsInstalled);
+}
+
+AppsPromo::UserGroup AppsPromo::GetCurrentUserGroup() const {
+  const PrefService::Preference* last_promo_id
+      = prefs_->FindPreference(prefs::kNTPWebStorePromoLastId);
+  CHECK(last_promo_id);
+  return last_promo_id->IsDefaultValue() ? USERS_NEW : USERS_EXISTING;
 }

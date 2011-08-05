@@ -18,9 +18,6 @@
 
 namespace {
 
-// Default delay for the time-out at which we stop message loop.
-const int kTimeoutInMS = 20000;
-
 // View subclass that allows you to specify the preferred size.
 class TestView : public views::View {
  public:
@@ -88,7 +85,7 @@ void ViewEventTestBase::TearDown() {
 #if defined(OS_WIN)
     DestroyWindow(window_->GetNativeWindow());
 #else
-    window_->CloseWindow();
+    window_->Close();
     MessageLoop::current()->PostTask(FROM_HERE, new MessageLoop::QuitTask());
     ui_test_utils::RunMessageLoop();
 #endif
@@ -135,11 +132,6 @@ void ViewEventTestBase::StartMessageLoopAndRunTest() {
       FROM_HERE,
       NewRunnableMethod(this, &ViewEventTestBase::DoTestOnMessageLoop));
 
-  // Start the timeout timer to prevent hangs.
-  MessageLoop::current()->PostDelayedTask(FROM_HERE,
-      method_factory_.NewRunnableMethod(&ViewEventTestBase::TimedOut),
-      kTimeoutInMS);
-
   MessageLoop::current()->Run();
 }
 
@@ -168,14 +160,4 @@ void ViewEventTestBase::RunTestMethod(Task* task) {
   task->Run();
   if (HasFatalFailure())
     Done();
-}
-
-void ViewEventTestBase::TimedOut() {
-  std::string error_message = "Test timed out. Each test runs for a max of ";
-  error_message += base::IntToString(kTimeoutInMS);
-  error_message += " ms (kTimeoutInMS).";
-
-  GTEST_NONFATAL_FAILURE_(error_message.c_str());
-
-  Done();
 }

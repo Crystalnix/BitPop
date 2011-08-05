@@ -54,20 +54,57 @@ class AutofillTest(pyauto.PyUITest):
   def testFillProfileCrazyCharacters(self):
     """Test filling profiles with unicode strings and crazy characters."""
     # Adding autofill profiles.
-    file_path = os.path.join(self.DataDir(), 'autofill', 'crazy_autofill.txt')
+    file_path = os.path.join(self.DataDir(), 'autofill', 'functional',
+                             'crazy_autofill.txt')
     profiles = self.EvalDataFrom(file_path)
     self.FillAutofillProfile(profiles=profiles)
 
-    self.assertEqual(profiles, self.GetAutofillProfile()['profiles'])
+    self.assertEqual(profiles, self.GetAutofillProfile()['profiles'],
+                     msg='Autofill profile data does not match.')
 
     # Adding credit cards.
-    file_path = os.path.join(self.DataDir(), 'autofill',
+    file_path = os.path.join(self.DataDir(), 'autofill', 'functional',
                              'crazy_creditcards.txt')
     test_data = self.EvalDataFrom(file_path)
     credit_cards_input = test_data['input']
     self.FillAutofillProfile(credit_cards=credit_cards_input)
+
     self.assertEqual(test_data['expected'],
-                     self.GetAutofillProfile()['credit_cards'])
+                     self.GetAutofillProfile()['credit_cards'],
+                     msg='Autofill credit card data does not match.')
+
+  def testSegmentNumbersNotSupportedInDOMUI(self):
+    """Test segmented phone/fax numbers no longer supported in DOM UI.
+
+    Phone and fax |COUNTRY_CODE| and |CITY_CODE| are only supported when
+    aggregating a web form and no longer processed in parts through the DOM UI
+    (when adding profiles through prefs settings).
+    """
+    profile_input = [{'NAME_FIRST': 'John',
+                     'NAME_LAST': 'Doe',
+                     'ADDRESS_HOME_LINE1': '123 H St.',
+                     'ADDRESS_HOME_CITY': 'San Jose',
+                     'ADDRESS_HOME_STATE': 'CA',
+                     'ADDRESS_HOME_ZIP': '95110',
+                     'ADDRESS_HOME_COUNTRY': 'China',
+                     'PHONE_HOME_COUNTRY_CODE': '86',
+                     'PHONE_HOME_CITY_CODE': '108',
+                     'PHONE_HOME_NUMBER': '8828000',
+                     'PHONE_FAX_COUNTRY_CODE': '86',
+                     'PHONE_FAX_CITY_CODE': '108',
+                     'PHONE_FAX_NUMBER': '8828000'}]
+
+    profile_expected = [{'NAME_FIRST': 'John',
+                        'NAME_LATE': 'Doe',
+                        'ADDRESS_HOME_LINE1': '123 H St.',
+                        'ADDRESS_HOME_CITY': 'San Jose',
+                        'ADDRESS_HOME_STATE': 'CA',
+                        'ADDRESS_HOME_ZIP': '95110',
+                        'ADDRESS_HOME_COUNTRY': 'China'}]
+
+    self.FillAutofillProfile(profiles=profile_input)
+    self.assertEqual(profile_expected, self.GetAutofillProfile()['profiles'],
+                     msg='Segmented phone/fax numbers supported in DOM UI.')
 
   def testGetProfilesEmpty(self):
     """Test getting profiles when none have been filled."""
@@ -76,20 +113,25 @@ class AutofillTest(pyauto.PyUITest):
     self.assertEqual([], profile['credit_cards'])
 
   def testAutofillInvalid(self):
-    """Test filling in invalid values for profiles."""
-    # First try profiles with invalid input.
+    """Test filling in invalid values for profiles are saved as-is.
+
+    Phone/Fax information entered into the prefs UI is not validated or rejected
+    except for duplicates.
+    """
+    # First try profiles with invalid ZIP input.
     without_invalid = {'NAME_FIRST': u'Will',
                        'ADDRESS_HOME_CITY': 'Sunnyvale',
                        'ADDRESS_HOME_STATE': 'CA',
                        'ADDRESS_HOME_ZIP': 'my_zip',
                        'ADDRESS_HOME_COUNTRY': 'United States'}
-    # Add some invalid fields.
+    # Add invalid data for phone and fax fields.
     with_invalid = without_invalid.copy()
     with_invalid['PHONE_HOME_WHOLE_NUMBER'] = 'Invalid_Phone_Number'
     with_invalid['PHONE_FAX_WHOLE_NUMBER'] = 'Invalid_Fax_Number'
     self.FillAutofillProfile(profiles=[with_invalid])
-    self.assertEqual([without_invalid],
-                     self.GetAutofillProfile()['profiles'])
+    self.assertNotEqual(
+        [without_invalid], self.GetAutofillProfile()['profiles'],
+        msg='Phone/Fax data entered into prefs UI is validated.')
 
   def testAutofillPrefsStringSavedAsIs(self):
     """Test invalid credit card numbers typed in prefs should be saved as-is."""
@@ -98,6 +140,40 @@ class AutofillTest(pyauto.PyUITest):
     self.assertEqual([credit_card],
                      self.GetAutofillProfile()['credit_cards'],
                      msg='Credit card number in prefs not saved as-is.')
+
+  def _FillFormAndSubmit(self, dictionary, filename, tab_index=0, windex=0):
+    """Navigate to the form, input values into the fields, and submit form.
+
+    Args:
+      dictionary: Dictionary key/value pairs for profiles or credit card values.
+      filename: HTML form website file. The file is the basic file name and not
+                the path to the file. File is assumed to be located in
+                autofill/functional directory of the data folder.
+      tab_index: Integer index of the tab to work on; defaults to 0 (first tab).
+      windex: Integer index of the browser window to work on; defaults to 0
+              (first window).
+    """
+    url = self.GetHttpURLForDataPath('autofill', 'functional', filename)
+    self.NavigateToURL(url)
+    for key, value in dictionary.iteritems():
+      # Fill data into form field.
+      script = """
+        document.getElementById("%s").value = "%s";
+        window.domAutomationController.send("done");
+      """ % (key, value)
+      self.ExecuteJavascript(script, tab_index, windex)
+    # Submit form.
+    js_code = """
+      document.getElementById("testform").submit();
+      window.addEventListener("unload", function() {
+        window.domAutomationController.send("done");
+      });
+    """
+    self.ExecuteJavascript(js_code, tab_index, windex)
+    # Wait for Autofill to aggregate profile into preferences.
+    self.WaitUntil(
+        lambda: self.GetDOMValue('document.readyState'),
+        expect_retval='complete')
 
   def _LuhnCreditCardNumberValidator(self, number):
     """Validates whether a number is valid or invalid using the Luhn test.
@@ -143,26 +219,10 @@ class AutofillTest(pyauto.PyUITest):
                        'CREDIT_CARD_EXP_4_DIGIT_YEAR': '2014'}
 
     cc_number = invalid_cc_info['CREDIT_CARD_NUMBER']
+    self._FillFormAndSubmit(
+        invalid_cc_info, 'autofill_creditcard_form.html', tab_index=0, windex=0)
     self.assertFalse(self._LuhnCreditCardNumberValidator(cc_number),
                      msg='This test requires an invalid credit card number.')
-    url = self.GetHttpURLForDataPath(
-        os.path.join('autofill', 'autofill_creditcard_form.html'))
-    self.NavigateToURL(url)
-    for key, value in invalid_cc_info.iteritems():
-      script = ('document.getElementById("%s").value = "%s"; '
-                'window.domAutomationController.send("done");') % (key, value)
-      self.ExecuteJavascript(script, 0, 0)
-    js_code = """
-      document.getElementById("cc_submit").submit();
-      window.addEventListener("unload", function() {
-        window.domAutomationController.send("done");
-      });
-    """
-    self.ExecuteJavascript(js_code, 0, 0)
-    # Wait until the form is submitted and the page completes loading.
-    self.WaitUntil(
-        lambda: self.GetDOMValue('document.readyState'),
-        expect_retval='complete')
     cc_infobar = self.GetBrowserInfo()['windows'][0]['tabs'][0]['infobars']
     self.assertFalse(
         cc_infobar, msg='Save credit card infobar offered to save CC info.')
@@ -183,7 +243,7 @@ class AutofillTest(pyauto.PyUITest):
                          'CREDIT_CARD_EXP_4_DIGIT_YEAR': '2013'}]
 
     url = self.GetHttpURLForDataPath(
-        os.path.join('autofill', 'autofill_creditcard_form.html'))
+        'autofill', 'functional', 'autofill_creditcard_form.html')
     for cc_info in credit_card_info:
       self.NavigateToURL(url)
       for key, value in cc_info.iteritems():
@@ -194,7 +254,7 @@ class AutofillTest(pyauto.PyUITest):
                   'window.domAutomationController.send("done");') % (key, value)
         self.ExecuteJavascript(script, 0, 0)
       js_code = """
-        document.getElementById("cc_submit").submit();
+        document.getElementById("testform").submit();
         window.addEventListener("unload", function() {
           window.domAutomationController.send("done");
         });
@@ -215,27 +275,37 @@ class AutofillTest(pyauto.PyUITest):
                       '-' in aggregated_cc_1 or '-' in aggregated_cc_2),
                      msg='Whitespaces or separator chars not stripped.')
 
+  def testAggregatesMinValidProfile(self):
+    """Test that Autofill aggregates a minimum valid profile.
+
+    The minimum required address fields must be specified: First Name,
+    Last Name, Address Line 1, City, Zip Code, and State.
+    """
+    profile = {'NAME_FIRST': 'Bob',
+               'NAME_LAST': 'Smith',
+               'ADDRESS_HOME_LINE1': '1234 H St.',
+               'ADDRESS_HOME_CITY': 'Mountain View',
+               'ADDRESS_HOME_STATE': 'CA',
+               'ADDRESS_HOME_ZIP': '95110'}
+    self._FillFormAndSubmit(
+        profile, 'duplicate_profiles_test.html', tab_index=0, windex=0)
+    self.assertTrue(self.GetAutofillProfile()['profiles'],
+                    msg='Profile with minimum address values not aggregated.')
+
   def testProfilesNotAggregatedWithNoAddress(self):
-    """Test Autofill does not aggregate profiles with no address info."""
+    """Test Autofill does not aggregate profiles with no address info.
+
+    The minimum required address fields must be specified: First Name,
+    Last Name, Address Line 1, City, Zip Code, and State.
+    """
     profile = {'NAME_FIRST': 'Bob',
                'NAME_LAST': 'Smith',
                'EMAIL_ADDRESS': 'bsmith@example.com',
                'COMPANY_NAME': 'Company X',
-               'PHONE_HOME_WHOLE_NUMBER': '650-123-4567',}
-    url = self.GetHttpURLForDataPath(
-        os.path.join('autofill', 'duplicate_profiles_test.html'))
-    self.NavigateToURL(url)
-    for key, value in profile.iteritems():
-      script = ('document.getElementById("%s").value = "%s"; '
-                'window.domAutomationController.send("done");') % (key, value)
-      self.ExecuteJavascript(script, 0, 0)
-    js_code = """
-      document.getElementById("merge_dup").submit();
-      window.addEventListener("unload", function() {
-        window.domAutomationController.send("done");
-      });
-    """
-    self.ExecuteJavascript(js_code, 0, 0)
+               'ADDRESS_HOME_CITY': 'Mountain View',
+               'PHONE_HOME_WHOLE_NUMBER': '650-555-4567',}
+    self._FillFormAndSubmit(
+        profile, 'duplicate_profiles_test.html', tab_index=0, windex=0)
     self.assertFalse(self.GetAutofillProfile()['profiles'],
                      msg='Profile with no address info was aggregated.')
 
@@ -249,39 +319,11 @@ class AutofillTest(pyauto.PyUITest):
                'ADDRESS_HOME_STATE': 'CA',
                'ADDRESS_HOME_ZIP': '95110',
                'COMPANY_NAME': 'Company X',
-               'PHONE_HOME_WHOLE_NUMBER': '408-123-4567',}
-    url = self.GetHttpURLForDataPath(
-        os.path.join('autofill', 'duplicate_profiles_test.html'))
-    self.NavigateToURL(url)
-    for key, value in profile.iteritems():
-      script = ('document.getElementById("%s").value = "%s"; '
-                'window.domAutomationController.send("done");') % (key, value)
-      self.ExecuteJavascript(script, 0, 0)
-    js_code = """
-      document.getElementById("merge_dup").submit();
-      window.addEventListener("unload", function() {
-        window.domAutomationController.send("done");
-      });
-    """
-    self.ExecuteJavascript(js_code, 0, 0)
+               'PHONE_HOME_WHOLE_NUMBER': '408-871-4567',}
+    self._FillFormAndSubmit(
+        profile, 'duplicate_profiles_test.html', tab_index=0, windex=0)
     self.assertFalse(self.GetAutofillProfile()['profiles'],
                      msg='Profile with invalid email was aggregated.')
-
-  def _SendKeyEventsToPopulateForm(self, tab_index=0, windex=0):
-    """Send key events to populate a web form with Autofill profile data.
-
-    Args:
-      tab_index: The tab index, default is 0.
-      windex: The window index, default is 0.
-    """
-    TAB_KEYPRESS = 0x09  # Tab keyboard key press.
-    DOWN_KEYPRESS = 0x28  # Down arrow keyboard key press.
-    RETURN_KEYPRESS = 0x0D  # Return keyboard key press.
-
-    self.SendWebkitKeypressEvent(TAB_KEYPRESS, tab_index, windex)
-    self.SendWebkitKeypressEvent(DOWN_KEYPRESS, tab_index, windex)
-    self.SendWebkitKeypressEvent(DOWN_KEYPRESS, tab_index, windex)
-    self.SendWebkitKeypressEvent(RETURN_KEYPRESS, tab_index, windex)
 
   def testComparePhoneNumbers(self):
     """Test phone fields parse correctly from a given profile.
@@ -290,18 +332,20 @@ class AutofillTest(pyauto.PyUITest):
     field, invoke the autofill popup list, select the first profile within the
     list, and commit to the profile to populate the form.
     """
-    profile_path = os.path.join(self.DataDir(), 'autofill',
+    profile_path = os.path.join(self.DataDir(), 'autofill', 'functional',
                                 'phone_pinput_autofill.txt')
-    profile_expected_path = os.path.join(self.DataDir(), 'autofill',
-                                         'phone_pexpected_autofill.txt')
+    profile_expected_path = os.path.join(
+        self.DataDir(), 'autofill', 'functional',
+        'phone_pexpected_autofill.txt')
     profiles = self.EvalDataFrom(profile_path)
     profiles_expected = self.EvalDataFrom(profile_expected_path)
     self.FillAutofillProfile(profiles=profiles)
     url = self.GetHttpURLForDataPath(
-        os.path.join('autofill', 'form_phones.html'))
+        'autofill', 'functional', 'form_phones.html')
     for profile_expected in profiles_expected:
       self.NavigateToURL(url)
-      self._SendKeyEventsToPopulateForm()
+      self.assertTrue(self.AutofillPopulateForm('NAME_FIRST'),
+                      msg='Autofill form could not be populated.')
       form_values = {}
       for key, value in profile_expected.iteritems():
         js_returning_field_value = (
@@ -328,24 +372,9 @@ class AutofillTest(pyauto.PyUITest):
                         'CREDIT_CARD_EXP_MONTH': '12',
                         'CREDIT_CARD_EXP_4_DIGIT_YEAR': '2014'}
 
-    url = self.GetHttpURLForDataPath(
-        os.path.join('autofill', 'cc_autocomplete_off_test.html'))
-    self.NavigateToURL(url)
-    for key, value in credit_card_info.iteritems():
-      script = ('document.getElementById("%s").value = "%s"; '
-                'window.domAutomationController.send("done");') % (key, value)
-      self.ExecuteJavascript(script, 0, 0)
-    js_code = """
-      document.getElementById("cc_submit").submit();
-      window.addEventListener("unload", function() {
-        window.domAutomationController.send("done");
-      });
-    """
-    self.ExecuteJavascript(js_code, 0, 0)
-    # Wait until form is submitted and page completes loading.
-    self.WaitUntil(
-        lambda: self.GetDOMValue('document.readyState'),
-        expect_retval='complete')
+    self._FillFormAndSubmit(
+        credit_card_info, 'cc_autocomplete_off_test.html',
+        tab_index=0, windex=0)
     cc_infobar = self.GetBrowserInfo()['windows'][0]['tabs'][0]['infobars']
     self.assertFalse(cc_infobar,
                      msg='Save credit card infobar offered to save CC info.')
@@ -360,13 +389,14 @@ class AutofillTest(pyauto.PyUITest):
                'ADDRESS_HOME_STATE': 'CA',
                'ADDRESS_HOME_ZIP': '95110',
                'COMPANY_NAME': 'Company X',
-               'PHONE_HOME_WHOLE_NUMBER': '408-123-4567',}
+               'PHONE_HOME_WHOLE_NUMBER': '408-871-4567',}
 
     self.FillAutofillProfile(profiles=[profile])
     url = self.GetHttpURLForDataPath(
-        os.path.join('autofill', 'read_only_field_test.html'))
+        'autofill', 'functional', 'read_only_field_test.html')
     self.NavigateToURL(url)
-    self._SendKeyEventsToPopulateForm()
+    self.assertTrue(self.AutofillPopulateForm('firstname'),
+                    msg='Autofill form could not be populated.')
     js_return_readonly_field = (
         'var field_value = document.getElementById("email").value;'
         'window.domAutomationController.send(field_value);')
@@ -384,6 +414,120 @@ class AutofillTest(pyauto.PyUITest):
     self.assertEqual(
         addrline1_field_value, profile['ADDRESS_HOME_LINE1'],
         'Unexpected value "%s" in the Address field.' % addrline1_field_value)
+
+  def testFormFillableOnReset(self):
+    """Test form is fillable from a profile after form was reset.
+
+    Steps:
+      1. Fill form using a saved profile.
+      2. Reset the form.
+      3. Fill form using a saved profile.
+    """
+    profile = {'NAME_FIRST': 'Bob',
+               'NAME_LAST': 'Smith',
+               'EMAIL_ADDRESS': 'bsmith@gmail.com',
+               'ADDRESS_HOME_LINE1': '1234 H St.',
+               'ADDRESS_HOME_CITY': 'San Jose',
+               'PHONE_HOME_WHOLE_NUMBER': '4088714567',}
+
+    self.FillAutofillProfile(profiles=[profile])
+    url = self.GetHttpURLForDataPath(
+        'autofill', 'functional', 'autofill_test_form.html')
+    self.NavigateToURL(url)
+    # Fill form using an address profile.
+    self.assertTrue(self.AutofillPopulateForm('NAME_FIRST'),
+                    msg='Autofill form could not be populated.')
+    # Reset the form.
+    self.ExecuteJavascript('document.getElementById("testform").reset();'
+                           'window.domAutomationController.send("done");',
+                           0, 0)
+    # Fill in the form using an Autofill profile.
+    self.assertTrue(self.AutofillPopulateForm('NAME_FIRST'),
+                    msg='Autofill form could not be populated.')
+    # Verify value in fields match value in the profile dictionary.
+    form_values = {}
+    for key, value in profile.iteritems():
+      js_returning_field_value = (
+          'var field_value = document.getElementById("%s").value;'
+          'window.domAutomationController.send(field_value);'
+          ) % key
+      form_values[key] = self.ExecuteJavascript(
+          js_returning_field_value, 0, 0)
+      self.assertEqual(
+          form_values[key], value,
+          msg=('Original profile not equal to expected profile at key: "%s"\n'
+               'Expected: "%s"\nReturned: "%s"' % (
+                   key, value, form_values[key])))
+
+  def testDistinguishMiddleInitialWithinName(self):
+    """Test Autofill distinguishes a middle initial in a name."""
+    profile = {'NAME_FIRST': 'Bob',
+               'NAME_MIDDLE': 'Leo',
+               'NAME_LAST': 'Smith',
+               'EMAIL_ADDRESS': 'bsmith@gmail.com',
+               'ADDRESS_HOME_LINE1': '1234 H St.',
+               'ADDRESS_HOME_CITY': 'San Jose',
+               'PHONE_HOME_WHOLE_NUMBER': '4088714567',}
+
+    middle_initial = profile['NAME_MIDDLE'][0]
+    self.FillAutofillProfile(profiles=[profile])
+    url = self.GetHttpURLForDataPath(
+        'autofill', 'functional', 'autofill_middleinit_form.html')
+    self.NavigateToURL(url)
+    # Fill form using an address profile.
+    self.assertTrue(self.AutofillPopulateForm('NAME_FIRST'),
+                    msg='Autofill form could not be populated.')
+    js_return_middleinit_field = (
+        'var field_value = document.getElementById("NAME_MIDDLE").value;'
+        'window.domAutomationController.send(field_value);')
+    middleinit_field_value = self.ExecuteJavascript(
+        js_return_middleinit_field, 0, 0)
+    self.assertEqual(middleinit_field_value, middle_initial,
+                     msg=('Middle initial "%s" not distinguished from "%s".' %
+                          (middleinit_field_value, profile['NAME_MIDDLE'])))
+
+  def testMultipleEmailFilledByOneUserGesture(self):
+    """Test forms with multiple email addresses are filled properly.
+
+    Entire form should be filled with one user gesture.
+    """
+    profile = {'NAME_FIRST': 'Bob',
+               'NAME_LAST': 'Smith',
+               'EMAIL_ADDRESS': 'bsmith@gmail.com',
+               'PHONE_HOME_WHOLE_NUMBER': '4088714567',}
+
+    self.FillAutofillProfile(profiles=[profile])
+    url = self.GetHttpURLForDataPath(
+        'autofill', 'functional', 'autofill_confirmemail_form.html')
+    self.NavigateToURL(url)
+    # Fill form using an address profile.
+    self.assertTrue(self.AutofillPopulateForm('NAME_FIRST'),
+                    msg='Autofill form could not be populated.')
+    js_return_confirmemail_field = (
+        'var field_value = document.getElementById("EMAIL_CONFIRM").value;'
+        'window.domAutomationController.send(field_value);')
+    confirmemail_field_value = self.ExecuteJavascript(
+        js_return_confirmemail_field, 0, 0)
+    self.assertEqual(confirmemail_field_value, profile['EMAIL_ADDRESS'],
+                     msg=('Confirmation Email address "%s" not equal to Email\n'
+                          'address "%s".' % (confirmemail_field_value,
+                                             profile['EMAIL_ADDRESS'])))
+
+  def testProfileWithEmailInOtherFieldNotSaved(self):
+    """Test profile not aggregated if email found in non-email field."""
+    profile = {'NAME_FIRST': 'Bob',
+               'NAME_LAST': 'Smith',
+               'ADDRESS_HOME_LINE1': 'bsmith@gmail.com',
+               'ADDRESS_HOME_CITY': 'San Jose',
+               'ADDRESS_HOME_STATE': 'CA',
+               'ADDRESS_HOME_ZIP': '95110',
+               'COMPANY_NAME': 'Company X',
+               'PHONE_HOME_WHOLE_NUMBER': '408-871-4567',}
+    self._FillFormAndSubmit(
+        profile, 'duplicate_profiles_test.html', tab_index=0, windex=0)
+    self.assertFalse(self.GetAutofillProfile()['profiles'],
+                     msg='Profile with email in a non-email field was '
+                         'aggregated.')
 
   def FormFillLatencyAfterSubmit(self):
     """Test latency time on form submit with lots of stored Autofill profiles.
@@ -403,7 +547,7 @@ class AutofillTest(pyauto.PyUITest):
     """
     # HTML file needs to be run from a http:// url.
     url = self.GetHttpURLForDataPath(
-        os.path.join('autofill', 'latency_after_submit_test.html'))
+        'autofill', 'functional', 'latency_after_submit_test.html')
     # Run the generator script to generate the dictionary list needed for the
     # profiles.
     gen = autofill_dataset_generator.DatasetGenerator(
@@ -411,7 +555,8 @@ class AutofillTest(pyauto.PyUITest):
     list_of_dict = gen.GenerateDataset(num_of_dict_to_generate=1501)
     self.FillAutofillProfile(profiles=list_of_dict)
     self.NavigateToURL(url)
-    self._SendKeyEventsToPopulateForm()
+    self.assertTrue(self.AutofillPopulateForm('NAME_FIRST'),
+                    msg='Autofill form could not be populated.')
     # TODO(dyu): add automated form hang or crash verification.
     raw_input(
         'Verify the test manually. Test hang time after submitting the form.')
@@ -427,7 +572,7 @@ class AutofillTest(pyauto.PyUITest):
     # the results a few days later by visiting the same url.
     url = 'http://www.corp.google.com/~dyu/autofill/crowdsourcing-test.html'
     # Adding crowdsourcing Autofill profile.
-    file_path = os.path.join(self.DataDir(), 'autofill',
+    file_path = os.path.join(self.DataDir(), 'autofill', 'functional',
                              'crowdsource_autofill.txt')
     profiles = self.EvalDataFrom(file_path)
     self.FillAutofillProfile(profiles=profiles)
@@ -449,19 +594,60 @@ class AutofillTest(pyauto.PyUITest):
       self.ExecuteJavascript(fname_field, 0, 0);
       self.ExecuteJavascript(lname_field, 0, 0);
       self.ExecuteJavascript(email_field, 0, 0);
-      self.ExecuteJavascript('document.getElementById("frmsubmit").submit();'
+      self.ExecuteJavascript('document.getElementById("testform").submit();'
                              'window.domAutomationController.send("done");',
                              0, 0)
 
-  def MergeDuplicateProfilesInAutofill(self):
+  def testMergeAggregatedProfilesWithSameAddress(self):
+    """Test that profiles merge for aggregated data with same address.
+
+    The criterion for when two profiles are expected to be merged is when their
+    'Address Line 1' and 'City' data match. When two profiles are merged, any
+    remaining address fields are expected to be overwritten. Any non-address
+    fields should accumulate multi-valued data.
+    """
+    self._AggregateProfilesIntoAutofillPrefs('dataset_2.txt')
+    # Expecting 4 profiles out of the original 14 within Autofill preferences.
+    self.assertEqual(4, len(self.GetAutofillProfile()['profiles']),
+                     msg='Aggregated profiles did not merge correctly.')
+
+  def testProfilesNotMergedWhenNoMinAddressData(self):
+    """Test profiles are not merged without mininum address values.
+
+    Mininum address values needed during aggregation are: address line 1, city,
+    state, and zip code.
+
+    Profiles are merged when data for address line 1 and city match.
+    """
+    self._AggregateProfilesIntoAutofillPrefs('dataset_no_address.txt')
+    self.assertFalse(self.GetAutofillProfile()['profiles'],
+                     msg='Profile with no min address data was merged.')
+
+  def MergeAggregatedDuplicatedProfiles(self):
     """Test Autofill ability to merge duplicate profiles and throw away junk."""
+    num_of_profiles = self._AggregateProfilesIntoAutofillPrefs('dataset.txt')
+    # Verify total number of inputted profiles is greater than the final number
+    # of profiles after merging.
+    self.assertTrue(
+        num_of_profiles > len(self.GetAutofillProfile()['profiles']))
+
+  def _AggregateProfilesIntoAutofillPrefs(self, data):
+    """Aggregate profiles from forms into Autofill preferences.
+
+    Args:
+      data: Name of the data set file.
+
+    Returns:
+      Number of profiles in the dictionary list.
+    """
     # HTML file needs to be run from a http:// url.
     url = self.GetHttpURLForDataPath(
-        os.path.join('autofill', 'duplicate_profiles_test.html'))
+        'autofill', 'functional', 'duplicate_profiles_test.html')
     # Run the parser script to generate the dictionary list needed for the
     # profiles.
     c = autofill_dataset_converter.DatasetConverter(
-        os.path.join(self.DataDir(), 'autofill', 'dataset.txt'),
+        os.path.abspath(
+            os.path.join(self.DataDir(), 'autofill', 'functional', data)),
         logging_level=logging.INFO)  # Set verbosity to INFO, WARNING, ERROR.
     list_of_dict = c.Convert()
 
@@ -471,20 +657,10 @@ class AutofillTest(pyauto.PyUITest):
         script = ('document.getElementById("%s").value = "%s"; '
                   'window.domAutomationController.send("done");') % (key, value)
         self.ExecuteJavascript(script, 0, 0)
-      self.ExecuteJavascript('document.getElementById("merge_dup").submit();'
+      self.ExecuteJavascript('document.getElementById("testform").submit();'
                              'window.domAutomationController.send("done");',
                              0, 0)
-    # Verify total number of inputted profiles is greater than the final number
-    # of profiles after merging.
-    self.assertTrue(
-        len(list_of_dict) > len(self.GetAutofillProfile()['profiles']))
-    # Write profile dictionary to a file.
-    merged_profile = os.path.join(self.DataDir(), 'autofill',
-                                  'merged-profiles.txt')
-    profile_dict = self.GetAutofillProfile()['profiles']
-    output = open(merged_profile, 'wb')
-    pickle.dump(profile_dict, output)
-    output.close()
+    return len(list_of_dict)
 
 
 if __name__ == '__main__':

@@ -10,9 +10,8 @@
 #include "chrome/browser/policy/device_management_backend_mock.h"
 #include "chrome/browser/policy/device_management_service.h"
 #include "chrome/browser/policy/proto/device_management_constants.h"
-#include "chrome/common/net/test_url_fetcher_factory.h"
-#include "chrome/test/test_url_request_context_getter.h"
 #include "content/browser/browser_thread.h"
+#include "content/common/test_url_fetcher_factory.h"
 #include "net/base/escape.h"
 #include "net/url_request/url_request_status.h"
 #include "net/url_request/url_request_test_util.h"
@@ -44,10 +43,10 @@ template<typename TESTBASE>
 class DeviceManagementServiceTestBase : public TESTBASE {
  protected:
   DeviceManagementServiceTestBase()
-      : request_context_(new TestURLRequestContextGetter()),
+      : ui_thread_(BrowserThread::UI, &loop_),
         io_thread_(BrowserThread::IO, &loop_) {
     ResetService();
-    service_->Initialize(request_context_.get());
+    InitializeService();
   }
 
   virtual void SetUp() {
@@ -58,7 +57,6 @@ class DeviceManagementServiceTestBase : public TESTBASE {
     URLFetcher::set_factory(NULL);
     backend_.reset();
     service_.reset();
-    request_context_ = NULL;
     loop_.RunAllPending();
   }
 
@@ -68,13 +66,18 @@ class DeviceManagementServiceTestBase : public TESTBASE {
     backend_.reset(service_->CreateBackend());
   }
 
+  void InitializeService() {
+    service_->ScheduleInitialization(0);
+    loop_.RunAllPending();
+  }
+
   TestURLFetcherFactory factory_;
-  scoped_refptr<TestURLRequestContextGetter> request_context_;
   scoped_ptr<DeviceManagementService> service_;
   scoped_ptr<DeviceManagementBackend> backend_;
 
  private:
   MessageLoopForUI loop_;
+  BrowserThread ui_thread_;
   BrowserThread io_thread_;
 };
 
@@ -113,7 +116,7 @@ TEST_P(DeviceManagementServiceFailedRequestTest, RegisterRequest) {
                                           GURL(kServiceUrl),
                                           GetParam().request_status_,
                                           GetParam().http_status_,
-                                          ResponseCookies(),
+                                          net::ResponseCookies(),
                                           GetParam().response_);
 }
 
@@ -129,7 +132,7 @@ TEST_P(DeviceManagementServiceFailedRequestTest, UnregisterRequest) {
                                           GURL(kServiceUrl),
                                           GetParam().request_status_,
                                           GetParam().http_status_,
-                                          ResponseCookies(),
+                                          net::ResponseCookies(),
                                           GetParam().response_);
 }
 
@@ -149,7 +152,7 @@ TEST_P(DeviceManagementServiceFailedRequestTest, PolicyRequest) {
                                           GURL(kServiceUrl),
                                           GetParam().request_status_,
                                           GetParam().http_status_,
-                                          ResponseCookies(),
+                                          net::ResponseCookies(),
                                           GetParam().response_);
 }
 
@@ -180,6 +183,12 @@ INSTANTIATE_TEST_CASE_P(
         FailedRequestParams(
             DeviceManagementBackend::kErrorServiceDeviceNotFound,
             net::URLRequestStatus::SUCCESS,
+            410,
+            PROTO_STRING(kResponseEmpty)),
+        // TODO(pastarmovj): Remove once DM server is deployed.
+        FailedRequestParams(
+            DeviceManagementBackend::kErrorServiceDeviceNotFound,
+            net::URLRequestStatus::SUCCESS,
             901,
             PROTO_STRING(kResponseEmpty)),
         FailedRequestParams(
@@ -197,6 +206,12 @@ INSTANTIATE_TEST_CASE_P(
             net::URLRequestStatus::SUCCESS,
             404,
             PROTO_STRING(kResponseEmpty)),
+        FailedRequestParams(
+            DeviceManagementBackend::kErrorServiceActivationPending,
+            net::URLRequestStatus::SUCCESS,
+            412,
+            PROTO_STRING(kResponseEmpty)),
+        // TODO(pastarmovj): Remove once DM server is deployed.
         FailedRequestParams(
             DeviceManagementBackend::kErrorServiceActivationPending,
             net::URLRequestStatus::SUCCESS,
@@ -316,7 +331,7 @@ TEST_F(DeviceManagementServiceTest, RegisterRequest) {
                                           GURL(kServiceUrl),
                                           status,
                                           200,
-                                          ResponseCookies(),
+                                          net::ResponseCookies(),
                                           response_data);
 }
 
@@ -358,7 +373,7 @@ TEST_F(DeviceManagementServiceTest, UnregisterRequest) {
                                           GURL(kServiceUrl),
                                           status,
                                           200,
-                                          ResponseCookies(),
+                                          net::ResponseCookies(),
                                           response_data);
 }
 
@@ -418,7 +433,7 @@ TEST_F(DeviceManagementServiceTest, JobQueueing) {
   ASSERT_FALSE(fetcher);
 
   // Now initialize the service. That should start the job.
-  service_->Initialize(request_context_.get());
+  InitializeService();
   fetcher = factory_.GetFetcherByID(0);
   ASSERT_TRUE(fetcher);
   factory_.RemoveFetcherFromMap(0);
@@ -433,7 +448,7 @@ TEST_F(DeviceManagementServiceTest, JobQueueing) {
                                           GURL(kServiceUrl),
                                           status,
                                           200,
-                                          ResponseCookies(),
+                                          net::ResponseCookies(),
                                           response_data);
 }
 
@@ -473,7 +488,7 @@ TEST_F(DeviceManagementServiceTest, CancelDuringCallback) {
                                           GURL(kServiceUrl),
                                           status,
                                           500,
-                                          ResponseCookies(),
+                                          net::ResponseCookies(),
                                           "");
 
   // Backend should have been reset.

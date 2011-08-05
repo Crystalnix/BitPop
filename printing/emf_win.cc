@@ -403,10 +403,10 @@ bool Emf::Record::SafePlayback(const XFORM* base_matrix) const {
   return res;
 }
 
-skia::PlatformDevice* Emf::StartPageForVectorCanvas(
-    const gfx::Size& page_size, const gfx::Point& content_origin,
+SkDevice* Emf::StartPageForVectorCanvas(
+    const gfx::Size& page_size, const gfx::Rect& content_area,
     const float& scale_factor) {
-  if (!StartPage(page_size, content_origin, scale_factor))
+  if (!StartPage(page_size, content_area, scale_factor))
     return NULL;
 
   return skia::VectorPlatformDeviceEmfFactory::CreateDevice(page_size.width(),
@@ -415,9 +415,8 @@ skia::PlatformDevice* Emf::StartPageForVectorCanvas(
 }
 
 bool Emf::StartPage(const gfx::Size& /*page_size*/,
-                    const gfx::Point& /*content_origin*/,
-                    const float& scale_factor) {
-  DCHECK_EQ(1.0f, scale_factor);  // We don't support scaling here.
+                    const gfx::Rect& /*content_area*/,
+                    const float& /*scale_factor*/) {
   DCHECK(hdc_);
   if (!hdc_)
     return false;

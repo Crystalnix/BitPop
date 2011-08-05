@@ -49,11 +49,11 @@ LocatedEvent::LocatedEvent(const LocatedEvent& model, View* source,
                            View* target)
     : Event(model),
       location_(model.location_) {
-  if (target)
+  if (target && target != source)
     View::ConvertPointToView(source, target, &location_);
 }
 
-LocatedEvent::LocatedEvent(const LocatedEvent& model, RootView* root)
+LocatedEvent::LocatedEvent(const LocatedEvent& model, View* root)
     : Event(model),
       location_(model.location_) {
   View::ConvertPointFromWidget(root, &location_);
@@ -172,15 +172,6 @@ uint16 KeyEvent::GetCharacterFromKeyCode(ui::KeyboardCode key_code, int flags) {
 ////////////////////////////////////////////////////////////////////////////////
 // MouseEvent, public:
 
-// TODO(msw): Kill this legacy constructor when we update uses.
-MouseEvent::MouseEvent(ui::EventType type,
-                       View* source,
-                       View* target,
-                       const gfx::Point &l,
-                       int flags)
-    : LocatedEvent(MouseEvent(type, l.x(), l.y(), flags), source, target) {
-}
-
 MouseEvent::MouseEvent(const MouseEvent& model, View* source, View* target)
     : LocatedEvent(model, source, target) {
 }
@@ -215,7 +206,7 @@ TouchEvent::TouchEvent(const TouchEvent& model, View* source, View* target)
 ////////////////////////////////////////////////////////////////////////////////
 // TouchEvent, private:
 
-TouchEvent::TouchEvent(const TouchEvent& model, RootView* root)
+TouchEvent::TouchEvent(const TouchEvent& model, View* root)
     : LocatedEvent(model, root),
       touch_id_(model.touch_id_),
       radius_(model.radius_),

@@ -78,11 +78,13 @@ cr.define('options', function() {
           OptionsPage.navigateToPage('changePicture');
         };
         chrome.send('loadAccountPicture');
-      }
 
-      if (cr.commandLine.options['--bwsi']) {
-        // Disable the screen lock checkbox for the guest mode.
-        $('enable-screen-lock').disabled = true;
+        if (cr.commandLine.options['--bwsi']) {
+          // Disable the screen lock checkbox and change-picture-button in
+          // guest mode.
+          $('enable-screen-lock').disabled = true;
+          $('change-picture-button').disabled = true;
+        }
       }
 
       if (PersonalOptions.disablePasswordManagement()) {
@@ -91,6 +93,16 @@ cr.define('options', function() {
         $('passwords-offersave').value = false;
         $('passwords-neversave').value = true;
         $('manage-passwords').disabled = true;
+      }
+
+      if (PersonalOptions.disableAutofillManagement()) {
+        $('autofill-settings').disabled = true;
+
+        // Disable and turn off autofill.
+        var autofillEnabled = $('autofill-enabled');
+        autofillEnabled.disabled = true;
+        autofillEnabled.checked = false;
+        cr.dispatchSimpleEvent(autofillEnabled, 'change');
       }
     },
 
@@ -102,21 +114,13 @@ cr.define('options', function() {
                         function() { chrome.send('stopSyncing'); });
     },
 
-    setElementVisible_: function(element, visible) {
-      element.hidden = !visible;
-      if (visible)
-        element.classList.remove('hidden');
-      else
-        element.classList.add('hidden');
-    },
-
     setSyncEnabled_: function(enabled) {
       this.syncEnabled = enabled;
     },
 
     setSyncSetupCompleted_: function(completed) {
       this.syncSetupCompleted = completed;
-      this.setElementVisible_($('customize-sync'), completed);
+      $('customize-sync').hidden = !completed;
       $('privacy-dashboard-link').hidden = !completed;
     },
 
@@ -128,7 +132,7 @@ cr.define('options', function() {
       var statusSet = status != '';
       $('sync-overview').hidden = statusSet;
       $('sync-status').hidden = !statusSet;
-      $('sync-status-text').textContent = status;
+      $('sync-status-text').innerHTML = status;
     },
 
     setSyncStatusErrorVisible_: function(visible) {
@@ -145,11 +149,11 @@ cr.define('options', function() {
 
       // link-button does is not zero-area when the contents of the button are
       // empty, so explicitly hide the element.
-      this.setElementVisible_($('sync-action-link'), status.length != 0);
+      $('sync-action-link').hidden = !status.length;
     },
 
     setProfilesSectionVisible_: function(visible) {
-      this.setElementVisible_($('profiles-create'), visible);
+      $('profiles-create').hidden = !visible;
     },
 
     setNewProfileButtonEnabled_: function(enabled) {
@@ -161,7 +165,7 @@ cr.define('options', function() {
     },
 
     setStartStopButtonVisible_: function(visible) {
-      this.setElementVisible_($('start-stop-sync'), visible);
+      $('start-stop-sync').hidden = !visible;
     },
 
     setStartStopButtonEnabled_: function(enabled) {
@@ -183,7 +187,7 @@ cr.define('options', function() {
     },
 
     hideSyncSection_: function() {
-      this.setElementVisible_($('sync-section'), false);
+      $('sync-section').hidden = true;
     },
 
     /**
@@ -211,6 +215,14 @@ cr.define('options', function() {
    * @return {boolean} True if password management should be disabled.
    */
   PersonalOptions.disablePasswordManagement = function() {
+    return cr.commandLine.options['--bwsi'];
+  };
+
+  /**
+   * Returns whether the user should be able to manage autofill settings.
+   * @return {boolean} True if password management should be disabled.
+   */
+  PersonalOptions.disableAutofillManagement = function() {
     return cr.commandLine.options['--bwsi'];
   };
 

@@ -10,10 +10,8 @@ ResourceDispatcherTest.CrossSiteAfterCrash
 NewTabUITest.NTPHasThumbnails
 # http://crbug.com/45574   Unhappy on ChromeOS valgrind
 LayoutPluginTester.UnloadNoCrash
-# http://crbug.com/53825 Times out on CrOS valgrind.
-MediaTest.VideoBear*
-# http://crbug.com/53937 Fails on CrOS valgrind
-UILayoutTest.MediaUILayoutTest
 # These tests fail due to timeouts, see http://crbug.com/64619
 OptionsUITest.CommandAgainGoesBackToOptionsTab
 OptionsUITest.TwoCommandsOneTab
+# Fails on chromeos. http://crbug.com/84294.
+PPAPITest.Transport

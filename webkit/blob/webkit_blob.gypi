@@ -6,7 +6,7 @@
   'targets': [
     {
       'target_name': 'blob',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '02567509-F7CA-4E84-8524-4F72DA2D3111',
       'dependencies': [
         '<(DEPTH)/app/app.gyp:app_base',
@@ -20,6 +20,8 @@
         'blob_storage_controller.h',
         'blob_url_request_job.cc',
         'blob_url_request_job.h',
+        'blob_url_request_job_factory.cc',
+        'blob_url_request_job_factory.h',
         'deletable_file_reference.cc',
         'deletable_file_reference.h',
         'view_blob_internals_job.cc',

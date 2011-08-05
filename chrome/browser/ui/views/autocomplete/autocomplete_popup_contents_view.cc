@@ -6,11 +6,11 @@
 
 #include "base/compiler_specific.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/autocomplete/autocomplete_edit_view.h"
 #include "chrome/browser/autocomplete/autocomplete_popup_model.h"
 #include "chrome/browser/instant/instant_confirm_dialog.h"
 #include "chrome/browser/instant/promo_counter.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/views/autocomplete/autocomplete_result_view.h"
 #include "chrome/browser/ui/views/bubble/bubble_border.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
@@ -39,10 +39,10 @@
 #include <objidl.h>
 
 #include "base/win/scoped_gdi_object.h"
-#include "views/widget/widget_win.h"
+#include "views/widget/native_widget_win.h"
 #endif
 
-#if defined(OS_LINUX)
+#if defined(TOOLKIT_USES_GTK)
 #include "ui/gfx/skia_utils_gtk.h"
 #endif
 
@@ -117,7 +117,34 @@ class OptInButtonBorder : public views::Border {
   DISALLOW_COPY_AND_ASSIGN(OptInButtonBorder);
 };
 
+gfx::NativeView GetRelativeWindowForPopup(gfx::NativeView edit_native_view) {
+#if defined(OS_WIN)
+  // When an IME is attached to the rich-edit control, retrieve its window
+  // handle and show this popup window under the IME windows.
+  // Otherwise, show this popup window under top-most windows.
+  // TODO(hbono): http://b/1111369 if we exclude this popup window from the
+  // display area of IME windows, this workaround becomes unnecessary.
+  HWND ime_window = ImmGetDefaultIMEWnd(edit_native_view);
+  return ime_window ? ime_window : HWND_NOTOPMOST;
+#elif defined(TOOLKIT_USES_GTK)
+  GtkWidget* toplevel = gtk_widget_get_toplevel(edit_native_view);
+  DCHECK(GTK_WIDGET_TOPLEVEL(toplevel));
+  return toplevel;
+#endif
+}
+
 }  // namespace
+
+class AutocompletePopupContentsView::AutocompletePopupWidget
+    : public views::Widget,
+      public base::SupportsWeakPtr<AutocompletePopupWidget> {
+ public:
+  AutocompletePopupWidget() {}
+  virtual ~AutocompletePopupWidget() {}
+
+ private:
+   DISALLOW_COPY_AND_ASSIGN(AutocompletePopupWidget);
+};
 
 class AutocompletePopupContentsView::InstantOptInView
     : public views::View,
@@ -202,13 +229,13 @@ class AutocompletePopupContentsView::InstantOptInView
 
 AutocompletePopupContentsView::AutocompletePopupContentsView(
     const gfx::Font& font,
-    AutocompleteEditView* edit_view,
+    OmniboxView* omnibox_view,
     AutocompleteEditModel* edit_model,
     Profile* profile,
     const views::View* location_bar)
     : model_(new AutocompletePopupModel(this, edit_model, profile)),
       opt_in_view_(NULL),
-      edit_view_(edit_view),
+      omnibox_view_(omnibox_view),
       location_bar_(location_bar),
       result_font_(font.DeriveFont(kEditFontAdjust)),
       result_bold_font_(result_font_.DeriveFont(0, gfx::Font::BOLD)),
@@ -328,15 +355,16 @@ void AutocompletePopupContentsView::UpdatePopupAppearance() {
 
   if (popup_ == NULL) {
     // If the popup is currently closed, we need to create it.
-    popup_ = (new AutocompletePopupClass)->AsWeakPtr();
-    views::Widget::CreateParams params(views::Widget::CreateParams::TYPE_POPUP);
+    popup_ = (new AutocompletePopupWidget)->AsWeakPtr();
+    views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
     params.can_activate = false;
     params.transparent = true;
-    popup_->SetCreateParams(params);
-    popup_->Init(location_bar_->GetWidget()->GetNativeView(), GetPopupBounds());
+    params.parent = location_bar_->GetWidget()->GetNativeView();
+    params.bounds = GetPopupBounds();
+    popup_->Init(params);
     popup_->SetContentsView(this);
-    popup_->MoveAbove(popup_->GetRelativeWindowForPopup(
-        edit_view_->GetNativeView()));
+    popup_->MoveAbove(
+        GetRelativeWindowForPopup(omnibox_view_->GetNativeView()));
     popup_->Show();
   } else {
     // Animate the popup shrinking, but don't animate growing larger since that
@@ -578,7 +606,7 @@ void AutocompletePopupContentsView::MakeContentsPath(
 void AutocompletePopupContentsView::UpdateBlurRegion() {
 #if defined(OS_WIN)
   // We only support background blurring on Vista with Aero-Glass enabled.
-  if (!views::WidgetWin::IsAeroGlassEnabled() || !GetWidget())
+  if (!views::NativeWidgetWin::IsAeroGlassEnabled() || !GetWidget())
     return;
 
   // Provide a blurred background effect within the contents region of the
@@ -619,15 +647,14 @@ void AutocompletePopupContentsView::OpenIndex(
   if (!HasMatchAt(index))
     return;
 
-  const AutocompleteMatch& match = model_->result().match_at(index);
-  // OpenURL() may close the popup, which will clear the result set and, by
-  // extension, |match| and its contents.  So copy the relevant strings out to
-  // make sure they stay alive until the call completes.
-  const GURL url(match.destination_url);
+  // OpenMatch() may close the popup, which will clear the result set and, by
+  // extension, |match| and its contents.  So copy the relevant match out to
+  // make sure it stays alive until the call completes.
+  AutocompleteMatch match = model_->result().match_at(index);
   string16 keyword;
   const bool is_keyword_hint = model_->GetKeywordForMatch(match, &keyword);
-  edit_view_->OpenURL(url, disposition, match.transition, GURL(), index,
-                      is_keyword_hint ? string16() : keyword);
+  omnibox_view_->OpenMatch(match, disposition, GURL(), index,
+                         is_keyword_hint ? string16() : keyword);
 }
 
 size_t AutocompletePopupContentsView::GetIndexForPoint(

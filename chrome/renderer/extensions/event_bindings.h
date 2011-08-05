@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,7 @@
 
 class ExtensionDispatcher;
 class GURL;
+class ListValue;
 class RenderThreadBase;
 class RenderView;
 
@@ -25,7 +26,7 @@ class EventBindings {
   static const char* kName;  // The v8::Extension name, for dependencies.
   static const char* kTestingExtensionId;
 
-  static v8::Extension* Get();
+  static v8::Extension* Get(ExtensionDispatcher* dispatcher);
 
   // Allow RenderThread to be mocked out.
   static void SetRenderThread(RenderThreadBase* thread);
@@ -45,7 +46,7 @@ class EventBindings {
   // v8::Undefined(). A DCHECK is setup to break if it is otherwise.
   static void CallFunction(const std::string& extension_id,
                            const std::string& function_name,
-                           int argc, v8::Handle<v8::Value>* argv,
+                           const ListValue& arguments,
                            RenderView* render_view,
                            const GURL& event_url);
 };

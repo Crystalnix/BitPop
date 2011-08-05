@@ -75,6 +75,21 @@ sync_api::SyncManager::Status AllStatus::CalcSyncing(
         snapshot->syncer_status.num_updates_downloaded_total;
     status.tombstone_updates_received +=
         snapshot->syncer_status.num_tombstone_updates_downloaded_total;
+    status.num_local_overwrites_total +=
+        snapshot->syncer_status.num_local_overwrites;
+    status.num_server_overwrites_total +=
+        snapshot->syncer_status.num_server_overwrites;
+    if (snapshot->syncer_status.num_updates_downloaded_total == 0) {
+      ++status.empty_get_updates;
+    } else {
+      ++status.nonempty_get_updates;
+    }
+    if (snapshot->syncer_status.num_successful_commits == 0 &&
+        snapshot->syncer_status.num_updates_downloaded_total == 0) {
+      ++status.useless_sync_cycles;
+    } else {
+      ++status.useful_sync_cycles;
+    }
   }
   return status;
 }
@@ -119,16 +134,14 @@ void AllStatus::OnSyncEngineEvent(const SyncEngineEvent& event) {
 
 void AllStatus::HandleServerConnectionEvent(
     const ServerConnectionEvent& event) {
-  if (ServerConnectionEvent::STATUS_CHANGED == event.what_happened) {
-    ScopedStatusLock lock(this);
-    status_.server_up = IsGoodReplyFromServer(event.connection_code);
-    status_.server_reachable = event.server_reachable;
+  ScopedStatusLock lock(this);
+  status_.server_up = IsGoodReplyFromServer(event.connection_code);
+  status_.server_reachable = event.server_reachable;
 
-    if (event.connection_code == HttpResponse::SERVER_CONNECTION_OK) {
-      status_.authenticated = true;
-    } else {
-      status_.authenticated = false;
-    }
+  if (event.connection_code == HttpResponse::SERVER_CONNECTION_OK) {
+    status_.authenticated = true;
+  } else {
+    status_.authenticated = false;
   }
 }
 
@@ -142,9 +155,9 @@ void AllStatus::SetNotificationsEnabled(bool notifications_enabled) {
   status_.notifications_enabled = notifications_enabled;
 }
 
-void AllStatus::IncrementNotificationsSent() {
+void AllStatus::IncrementNotifiableCommits() {
   ScopedStatusLock lock(this);
-  ++status_.notifications_sent;
+  ++status_.notifiable_commits;
 }
 
 void AllStatus::IncrementNotificationsReceived() {

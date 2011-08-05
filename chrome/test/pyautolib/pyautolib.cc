@@ -27,7 +27,7 @@ PyUITestSuiteBase::~PyUITestSuiteBase() {
   Shutdown();
 }
 
-void PyUITestSuiteBase::Initialize(const FilePath& browser_dir) {
+void PyUITestSuiteBase::InitializeWithPath(const FilePath& browser_dir) {
   SetBrowserDirectory(browser_dir);
   UITestSuite::Initialize();
 }
@@ -183,7 +183,7 @@ FilePath PyUITestBase::GetDownloadDirectory() {
 }
 
 bool PyUITestBase::OpenNewBrowserWindow(bool show) {
-  return automation()->OpenNewBrowserWindow(Browser::TYPE_NORMAL, show);
+  return automation()->OpenNewBrowserWindow(Browser::TYPE_TABBED, show);
 }
 
 bool PyUITestBase::CloseBrowserWindow(int window_index) {
@@ -244,7 +244,7 @@ std::string PyUITestBase::_GetBookmarksAsJSON() {
       automation()->GetBrowserWindow(0);  // Window doesn't matter.
   EXPECT_TRUE(browser_proxy.get());
   if (!browser_proxy.get())
-    return false;
+    return NULL;
 
   std::string s;
   EXPECT_TRUE(browser_proxy->GetBookmarksAsJSON(&s));

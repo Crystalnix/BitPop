@@ -12,9 +12,9 @@
 #include "base/string_number_conversions.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "webkit/quota/quota_manager.h"
 
-using namespace fileapi;
-
+namespace fileapi {
 namespace {
 
 static const char* const kTestOrigins[] = {
@@ -46,6 +46,7 @@ scoped_refptr<FileSystemContext> NewFileSystemContext(
   return new FileSystemContext(base::MessageLoopProxy::CreateForCurrentThread(),
                                base::MessageLoopProxy::CreateForCurrentThread(),
                                special_storage_policy,
+                               NULL /* quota manager */,
                                FilePath(), false /* is_incognito */,
                                allow_file_access, unlimited_quota, NULL);
 }
@@ -90,3 +91,5 @@ TEST(FileSystemContextTest, IsStorageUnlimited) {
               context->IsStorageUnlimited(origin));
   }
 }
+
+}  // namespace fileapi

@@ -10,6 +10,7 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "chrome/browser/sync/glue/data_type_controller.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
 #include "content/browser/browser_thread.h"
@@ -64,6 +65,7 @@ DataTypeManagerImpl::DataTypeManagerImpl(SyncBackendHost* backend,
       controllers_(controllers),
       state_(DataTypeManager::STOPPED),
       needs_reconfigure_(false),
+      last_configure_reason_(sync_api::CONFIGURE_REASON_UNKNOWN),
       method_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
   DCHECK(backend_);
   // Ensure all data type controllers are stopped.
@@ -98,7 +100,19 @@ bool DataTypeManagerImpl::GetControllersNeedingStart(
   return found_any;
 }
 
-void DataTypeManagerImpl::Configure(const TypeSet& desired_types) {
+void DataTypeManagerImpl::Configure(const TypeSet& desired_types,
+                                        sync_api::ConfigureReason reason) {
+  ConfigureImpl(desired_types, reason, true);
+}
+
+void DataTypeManagerImpl::ConfigureWithoutNigori(const TypeSet& desired_types,
+    sync_api::ConfigureReason reason) {
+  ConfigureImpl(desired_types, reason, false);
+}
+
+void DataTypeManagerImpl::ConfigureImpl(const TypeSet& desired_types,
+                                        sync_api::ConfigureReason reason,
+                                        bool enable_nigori) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (state_ == STOPPING) {
     // You can not set a configuration while stopping.
@@ -112,6 +126,15 @@ void DataTypeManagerImpl::Configure(const TypeSet& desired_types) {
     VLOG(1) << "Received configure request while configuration in flight. "
             << "Postponing until current configuration complete.";
     needs_reconfigure_ = true;
+    last_configure_reason_ = reason;
+
+    // Note we should never be in a state to reconfigure with nigori disabled.
+    // Reconfigures serve to store teh configure request from the user if
+    // another one is already in progress. Since enable_nigori is set to false
+    // only on migration and migration code should not initialize configure
+    // if there is already one in progress, enable_nigori should always be true
+    // if we are here.
+    DCHECK(enable_nigori);
     return;
   }
 
@@ -146,11 +169,13 @@ void DataTypeManagerImpl::Configure(const TypeSet& desired_types) {
   // types to start/stop, because it could be that some types haven't
   // started due to crypto errors but the backend host needs to know that we're
   // disabling them anyway).
-  Restart();
+  Restart(reason, enable_nigori);
 }
 
-void DataTypeManagerImpl::Restart() {
+void DataTypeManagerImpl::Restart(sync_api::ConfigureReason reason,
+                                  bool enable_nigori) {
   VLOG(1) << "Restarting...";
+  last_restart_time_ = base::Time::Now();
 
   DCHECK(state_ == STOPPED || state_ == CONFIGURED || state_ == BLOCKED);
 
@@ -172,7 +197,9 @@ void DataTypeManagerImpl::Restart() {
   backend_->ConfigureDataTypes(
       controllers_,
       last_requested_types_,
-      method_factory_.NewRunnableMethod(&DataTypeManagerImpl::DownloadReady));
+      reason,
+      method_factory_.NewRunnableMethod(&DataTypeManagerImpl::DownloadReady),
+      enable_nigori);
 }
 
 void DataTypeManagerImpl::DownloadReady() {
@@ -202,7 +229,6 @@ void DataTypeManagerImpl::StartNextType() {
     // Note: we do this whether or not GetControllersNeedingStart is true,
     // because we may need to stop datatypes.
     SetBlockedAndNotify();
-    needs_reconfigure_ = false;
     VLOG(1) << "Reconfiguring due to previous configure attempt occuring while"
             << " busy.";
 
@@ -210,7 +236,10 @@ void DataTypeManagerImpl::StartNextType() {
     // callees are not re-entrant.
     MessageLoop::current()->PostTask(FROM_HERE,
         method_factory_.NewRunnableMethod(&DataTypeManagerImpl::Configure,
-            last_requested_types_));
+            last_requested_types_, last_configure_reason_));
+
+    needs_reconfigure_ = false;
+    last_configure_reason_ = sync_api::CONFIGURE_REASON_UNKNOWN;
     return;
   }
 
@@ -218,6 +247,7 @@ void DataTypeManagerImpl::StartNextType() {
   // things like encryption, which may still need to be sorted out before we
   // can announce we're "Done" configuration entirely.
   if (GetControllersNeedingStart(NULL)) {
+    VLOG(1) << "GetControllersNeedingStart returned true. DTM blocked";
     SetBlockedAndNotify();
     return;
   }
@@ -270,7 +300,7 @@ void DataTypeManagerImpl::TypeStartCallback(
   // Any other result is a fatal error.  Shut down any types we've
   // managed to start up to this point and pass the result to the
   // callback.
-  VLOG(1) << "Failed " << started_dtc->name();
+  VLOG(0) << "Failed " << started_dtc->name();
   ConfigureResult configure_result = DataTypeManager::ABORTED;
   switch (result) {
     case DataTypeController::ABORTED:
@@ -356,6 +386,34 @@ void DataTypeManagerImpl::NotifyDone(ConfigureResult result,
     const tracked_objects::Location& location) {
   ConfigureResultWithErrorLocation result_with_location(result, location,
                                                         last_requested_types_);
+  AddToConfigureTime();
+  VLOG(1) << "Total time spent configuring: "
+          << configure_time_delta_.InSecondsF() << "s";
+  switch (result) {
+    case DataTypeManager::OK:
+      VLOG(1) << "NotifyDone called with result: OK";
+      UMA_HISTOGRAM_TIMES("Sync.ConfigureTime.OK",
+                          configure_time_delta_);
+      break;
+    case DataTypeManager::ASSOCIATION_FAILED:
+      VLOG(1) << "NotifyDone called with result: ASSOCIATION_FAILED";
+      UMA_HISTOGRAM_TIMES("Sync.ConfigureTime.ASSOCIATION_FAILED",
+                          configure_time_delta_);
+      break;
+    case DataTypeManager::ABORTED:
+      VLOG(1) << "NotifyDone called with result: ABORTED";
+      UMA_HISTOGRAM_TIMES("Sync.ConfigureTime.ABORTED",
+                          configure_time_delta_);
+      break;
+    case DataTypeManager::UNRECOVERABLE_ERROR:
+      VLOG(1) << "NotifyDone called with result: UNRECOVERABLE_ERROR";
+      UMA_HISTOGRAM_TIMES("Sync.ConfigureTime.UNRECOVERABLE_ERROR",
+                          configure_time_delta_);
+      break;
+    default:
+      NOTREACHED();
+      break;
+  }
   NotificationService::current()->Notify(
       NotificationType::SYNC_CONFIGURE_DONE,
       Source<DataTypeManager>(this),
@@ -372,10 +430,18 @@ DataTypeManager::State DataTypeManagerImpl::state() {
 
 void DataTypeManagerImpl::SetBlockedAndNotify() {
   state_ = BLOCKED;
+  AddToConfigureTime();
+  VLOG(1) << "Accumulated spent configuring: "
+          << configure_time_delta_.InSecondsF() << "s";
   NotificationService::current()->Notify(
       NotificationType::SYNC_CONFIGURE_BLOCKED,
       Source<DataTypeManager>(this),
       NotificationService::NoDetails());
+}
+
+void DataTypeManagerImpl::AddToConfigureTime() {
+  DCHECK(!last_restart_time_.is_null());
+  configure_time_delta_ += (base::Time::Now() - last_restart_time_);
 }
 
 }  // namespace browser_sync

@@ -30,6 +30,7 @@ import struct
 import time
 import urlparse
 import warnings
+import zlib
 
 # Ignore deprecation warnings, they make our output more cluttered.
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -280,11 +281,13 @@ class TestPageHandler(BasePageHandler):
       self.EchoHeader,
       self.EchoHeaderCache,
       self.EchoAllHandler,
+      self.ZipFileHandler,
       self.FileHandler,
       self.SetCookieHandler,
       self.AuthBasicHandler,
       self.AuthDigestHandler,
       self.SlowServerHandler,
+      self.ChunkedServerHandler,
       self.ContentTypeHandler,
       self.NoContentHandler,
       self.ServerRedirectHandler,
@@ -746,6 +749,72 @@ class TestPageHandler(BasePageHandler):
       data = data.replace(old_text, new_text)
     return data
 
+  def ZipFileHandler(self):
+    """This handler sends the contents of the requested file in compressed form.
+    Can pass in a parameter that specifies that the content length be
+    C - the compressed size (OK),
+    U - the uncompressed size (Non-standard, but handled),
+    S - less than compressed (OK because we keep going),
+    M - larger than compressed but less than uncompressed (an error),
+    L - larger than uncompressed (an error)
+    Example: compressedfiles/Picture_1.doc?C
+    """
+
+    prefix = "/compressedfiles/"
+    if not self.path.startswith(prefix):
+      return False
+
+    # Consume a request body if present.
+    if self.command == 'POST' or self.command == 'PUT' :
+      self.ReadRequestBody()
+
+    _, _, url_path, _, query, _ = urlparse.urlparse(self.path)
+
+    if not query in ('C', 'U', 'S', 'M', 'L'):
+      return False
+
+    sub_path = url_path[len(prefix):]
+    entries = sub_path.split('/')
+    file_path = os.path.join(self.server.data_dir, *entries)
+    if os.path.isdir(file_path):
+      file_path = os.path.join(file_path, 'index.html')
+
+    if not os.path.isfile(file_path):
+      print "File not found " + sub_path + " full path:" + file_path
+      self.send_error(404)
+      return True
+
+    f = open(file_path, "rb")
+    data = f.read()
+    uncompressed_len = len(data)
+    f.close()
+
+    # Compress the data.
+    data = zlib.compress(data)
+    compressed_len = len(data)
+
+    content_length = compressed_len
+    if query == 'U':
+      content_length = uncompressed_len
+    elif query == 'S':
+      content_length = compressed_len / 2
+    elif query == 'M':
+      content_length = (compressed_len + uncompressed_len) / 2
+    elif query == 'L':
+      content_length = compressed_len + uncompressed_len
+
+    self.send_response(200)
+    self.send_header('Content-type', 'application/msword')
+    self.send_header('Content-encoding', 'deflate')
+    self.send_header('Connection', 'close')
+    self.send_header('Content-Length', content_length)
+    self.send_header('ETag', '\'' + file_path + '\'')
+    self.end_headers()
+
+    self.wfile.write(data)
+
+    return True
+
   def FileHandler(self):
     """This handler sends the contents of the requested file.  Wow, it's like
     a real webserver!"""
@@ -896,6 +965,9 @@ class TestPageHandler(BasePageHandler):
 
     # Authentication successful.  (Return a cachable response to allow for
     # testing cached pages that require authentication.)
+    old_protocol_version = self.protocol_version
+    self.protocol_version = "HTTP/1.1"
+
     if_none_match = self.headers.getheader('if-none-match')
     if if_none_match == "abc":
       self.send_response(304)
@@ -906,6 +978,7 @@ class TestPageHandler(BasePageHandler):
       gif_path = os.path.join(self.server.data_dir, *test_image_path)
       if not os.path.isfile(gif_path):
         self.send_error(404)
+        self.protocol_version = old_protocol_version
         return True
 
       f = open(gif_path, "rb")
@@ -931,6 +1004,7 @@ class TestPageHandler(BasePageHandler):
       self.wfile.write('You sent:<br>%s<p>' % self.headers)
       self.wfile.write('</body></html>')
 
+    self.protocol_version = old_protocol_version
     return True
 
   def GetNonce(self, force_reset=False):
@@ -1049,6 +1123,47 @@ class TestPageHandler(BasePageHandler):
     self.send_header('Content-type', 'text/plain')
     self.end_headers()
     self.wfile.write("waited %d seconds" % wait_sec)
+    return True
+
+  def ChunkedServerHandler(self):
+    """Send chunked response. Allows to specify chunks parameters:
+     - waitBeforeHeaders - ms to wait before sending headers
+     - waitBetweenChunks - ms to wait between chunks
+     - chunkSize - size of each chunk in bytes
+     - chunksNumber - number of chunks
+    Example: /chunked?waitBeforeHeaders=1000&chunkSize=5&chunksNumber=5
+    waits one second, then sends headers and five chunks five bytes each."""
+    if not self._ShouldHandleRequest("/chunked"):
+      return False
+    query_char = self.path.find('?')
+    chunkedSettings = {'waitBeforeHeaders' : 0,
+                       'waitBetweenChunks' : 0,
+                       'chunkSize' : 5,
+                       'chunksNumber' : 5}
+    if query_char >= 0:
+      params = self.path[query_char + 1:].split('&')
+      for param in params:
+        keyValue = param.split('=')
+        if len(keyValue) == 2:
+          try:
+            chunkedSettings[keyValue[0]] = int(keyValue[1])
+          except ValueError:
+            pass
+    time.sleep(0.001 * chunkedSettings['waitBeforeHeaders']);
+    self.protocol_version = 'HTTP/1.1' # Needed for chunked encoding
+    self.send_response(200)
+    self.send_header('Content-type', 'text/plain')
+    self.send_header('Connection', 'close')
+    self.send_header('Transfer-Encoding', 'chunked')
+    self.end_headers()
+    # Chunked encoding: sending all chunks, then final zero-length chunk and
+    # then final CRLF.
+    for i in range(0, chunkedSettings['chunksNumber']):
+      if i > 0:
+        time.sleep(0.001 * chunkedSettings['waitBetweenChunks'])
+      self.sendChunkHelp('*' * chunkedSettings['chunkSize'])
+      self.wfile.flush(); # Keep in mind that we start flushing only after 1kb.
+    self.sendChunkHelp('')
     return True
 
   def ContentTypeHandler(self):
@@ -1237,13 +1352,22 @@ class TestPageHandler(BasePageHandler):
     self.wfile.write('Use <pre>%s?http://dest...</pre>' % redirect_name)
     self.wfile.write('</body></html>')
 
+  # called by chunked handling function
+  def sendChunkHelp(self, chunk):
+    # Each chunk consists of: chunk size (hex), CRLF, chunk body, CRLF
+    self.wfile.write('%X\r\n' % len(chunk))
+    self.wfile.write(chunk)
+    self.wfile.write('\r\n')
+
 
 class SyncPageHandler(BasePageHandler):
   """Handler for the main HTTP sync server."""
 
   def __init__(self, request, client_address, sync_http_server):
-    get_handlers = [self.ChromiumSyncTimeHandler]
-    post_handlers = [self.ChromiumSyncCommandHandler]
+    get_handlers = [self.ChromiumSyncMigrationOpHandler,
+                    self.ChromiumSyncTimeHandler]
+    post_handlers = [self.ChromiumSyncCommandHandler,
+                     self.ChromiumSyncTimeHandler]
     BasePageHandler.__init__(self, request, client_address,
                              sync_http_server, [], get_handlers,
                              post_handlers, [])
@@ -1257,9 +1381,15 @@ class SyncPageHandler(BasePageHandler):
     if not self._ShouldHandleRequest(test_name):
       return False
 
+    # Chrome hates it if we send a response before reading the request.
+    if self.headers.getheader('content-length'):
+      length = int(self.headers.getheader('content-length'))
+      raw_request = self.rfile.read(length)
+
     self.send_response(200)
-    self.send_header('Content-type', 'text/html')
+    self.send_header('Content-Type', 'text/plain')
     self.end_headers()
+    self.wfile.write('0123456789')
     return True
 
   def ChromiumSyncCommandHandler(self):
@@ -1278,6 +1408,22 @@ class SyncPageHandler(BasePageHandler):
     http_response, raw_reply = self.server.HandleCommand(
         self.path, raw_request)
     self.send_response(http_response)
+    self.end_headers()
+    self.wfile.write(raw_reply)
+    return True
+
+  def ChromiumSyncMigrationOpHandler(self):
+    """Handle a chromiumsync test-op command arriving via http.
+    """
+    test_name = "/chromiumsync/migrate"
+    if not self._ShouldHandleRequest(test_name):
+      return False
+
+    http_response, raw_reply = self.server._sync_handler.HandleMigrate(
+        self.path)
+    self.send_response(http_response)
+    self.send_header('Content-Type', 'text/html')
+    self.send_header('Content-Length', len(raw_reply))
     self.end_headers()
     self.wfile.write(raw_reply)
     return True

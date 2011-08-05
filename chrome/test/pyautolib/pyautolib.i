@@ -120,6 +120,10 @@ class TabProxy {
   AutomationMsg_NavigationResponseValues
       NavigateToURLBlockUntilNavigationsComplete(
           const GURL& url, int number_of_navigations);
+  %feature("docstring", "Navigates to a given GURL asynchronously. "
+           "Does not wait for the navigation to complete, or even begin; "
+           "Use NavigateToURL() if you want to wait.") NavigateToURLAsync;
+  bool TabProxy::NavigateToURLAsync(const GURL& url);
   %feature("docstring", "Equivalent to hitting the Back button. "
            "Blocks until navigation completes.") GoBack;
   AutomationMsg_NavigationResponseValues GoBack();
@@ -163,10 +167,11 @@ class PyUITestSuiteBase {
  public:
   %feature("docstring", "Create the suite.") PyUITestSuiteBase;
   PyUITestSuiteBase(int argc, char** argv);
-  ~PyUITestSuiteBase();
+  virtual ~PyUITestSuiteBase();
 
-  %feature("docstring", "Initialize from the path to browser dir.") Initialize;
-  void Initialize(const FilePath& browser_dir);
+  %feature("docstring", "Initialize from the path to browser dir.")
+      InitializeWithPath;
+  void InitializeWithPath(const FilePath& browser_dir);
   %feature("docstring", "Set chrome source root path, used in some tests")
       SetCrSourceRoot;
   void SetCrSourceRoot(const FilePath& path);
@@ -358,11 +363,6 @@ class PyUITestBase {
                         int tab_index=0);
 
   // Misc methods
-  %feature("docstring", "Determine if the browser is running. "
-           "Returns False if user closed the window or if the browser died")
-      IsBrowserRunning;
-  bool IsBrowserRunning();
-
   %feature("docstring", "Install an extension from the given file.  The file "
            "must be specified with an absolute path. Returns the extension ID "
            "if successfully installed and loaded. Otherwise, returns the empty "

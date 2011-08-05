@@ -7,7 +7,7 @@
 #include "chrome/browser/chromeos/frame/bubble_window.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/ui/views/bubble/bubble_border.h"
-#include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/font.h"
@@ -40,6 +40,7 @@ static const int kTitleFontSizeDelta = 1;
 namespace chromeos {
 
 BubbleFrameView::BubbleFrameView(views::Window* frame,
+                                 views::WindowDelegate* window_delegate,
                                  BubbleWindow::Style style)
     : frame_(frame),
       style_(style),
@@ -48,8 +49,8 @@ BubbleFrameView::BubbleFrameView(views::Window* frame,
       throbber_(NULL) {
   set_border(new BubbleBorder(BubbleBorder::NONE));
 
-  if (frame_->window_delegate()->ShouldShowWindowTitle()) {
-    title_ = new views::Label(frame_->window_delegate()->GetWindowTitle());
+  if (window_delegate->ShouldShowWindowTitle()) {
+    title_ = new views::Label(window_delegate->GetWindowTitle());
     title_->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
     title_->SetFont(title_->font().DeriveFont(kFontSizeCorrectionDelta,
                                               gfx::Font::BOLD));
@@ -227,7 +228,7 @@ void BubbleFrameView::OnPaint(gfx::Canvas* canvas) {
 void BubbleFrameView::ButtonPressed(views::Button* sender,
                                     const views::Event& event) {
   if (close_button_ != NULL && sender == close_button_)
-    frame_->CloseWindow();
+    frame_->Close();
 }
 
 }  // namespace chromeos

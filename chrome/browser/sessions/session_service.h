@@ -56,6 +56,8 @@ class SessionService : public BaseSessionService,
   // For testing.
   explicit SessionService(const FilePath& save_path);
 
+  virtual ~SessionService();
+
   // Invoke at a point when you think session restore might occur. For example,
   // during startup and window creation this is invoked to see if a session
   // needs to be restored. If a session needs to be restored it is done so
@@ -182,18 +184,13 @@ class SessionService : public BaseSessionService,
   typedef std::map<SessionID::id_type, SessionWindow*> IdToSessionWindow;
 
 
-  virtual ~SessionService();
-
   // These types mirror Browser::Type, but are re-defined here because these
   // specific enumeration _values_ are written into the session database and
   // are needed to maintain forward compatibility.
+  // Note that we only store browsers of type TYPE_TABBED and TYPE_POPUP.
   enum WindowType {
-    TYPE_NORMAL = 0,
-    TYPE_POPUP = 1,
-    TYPE_APP = 2,
-    TYPE_APP_POPUP = TYPE_APP + TYPE_POPUP,
-    TYPE_DEVTOOLS = TYPE_APP + 4,
-    TYPE_APP_PANEL = TYPE_APP + 8
+    TYPE_TABBED = 0,
+    TYPE_POPUP = 1
   };
 
   void Init();
@@ -366,10 +363,7 @@ class SessionService : public BaseSessionService,
   bool ShouldTrackChangesToWindow(const SessionID& window_id);
 
   // Returns true if we track changes to the specified browser type.
-  static bool should_track_changes_for_browser_type(Browser::Type type) {
-    return type == Browser::TYPE_NORMAL ||
-        (type == Browser::TYPE_POPUP && browser_defaults::kRestorePopups);
-  }
+  static bool should_track_changes_for_browser_type(Browser::Type type);
 
   // Returns true if we should record a window close as pending.
   // |has_open_trackable_browsers_| must be up-to-date before calling this.

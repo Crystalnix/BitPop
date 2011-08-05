@@ -6,6 +6,8 @@
 
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
+#include "content/common/database_messages.h"
+#include "content/common/view_messages.h"
 #include "content/renderer/render_view.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDataSource.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
@@ -18,6 +20,7 @@ using WebKit::WebDataSource;
 using WebKit::WebFrame;
 using WebKit::WebFrameClient;
 using WebKit::WebSecurityOrigin;
+using WebKit::WebString;
 using WebKit::WebURLRequest;
 using WebKit::WebView;
 
@@ -50,7 +53,8 @@ static bool IsWhitelistedForContentSettings(WebFrame* frame) {
 
 ContentSettingsObserver::ContentSettingsObserver(RenderView* render_view)
     : RenderViewObserver(render_view),
-      RenderViewObserverTracker<ContentSettingsObserver>(render_view) {
+      RenderViewObserverTracker<ContentSettingsObserver>(render_view),
+      plugins_temporarily_allowed_(false) {
   ClearBlockedContentSettings();
 }
 
@@ -65,13 +69,21 @@ void ContentSettingsObserver::SetContentSettings(
 
 ContentSetting ContentSettingsObserver::GetContentSetting(
     ContentSettingsType type) {
+  if (type == CONTENT_SETTINGS_TYPE_PLUGINS &&
+      plugins_temporarily_allowed_) {
+    return CONTENT_SETTING_ALLOW;
+  }
   return current_content_settings_.settings[type];
 }
 
 void ContentSettingsObserver::DidBlockContentType(
     ContentSettingsType settings_type,
     const std::string& resource_identifier) {
-  if (!content_blocked_[settings_type]) {
+  // Always send a message when |resource_identifier| is not empty, to tell the
+  // browser which resource was blocked (otherwise the browser will only show
+  // the first resource to be blocked, and none that are blocked at a later
+  // time).
+  if (!content_blocked_[settings_type] || !resource_identifier.empty()) {
     content_blocked_[settings_type] = true;
     Send(new ViewHostMsg_ContentBlocked(routing_id(), settings_type,
                                         resource_identifier));
@@ -81,6 +93,10 @@ void ContentSettingsObserver::DidBlockContentType(
 bool ContentSettingsObserver::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ContentSettingsObserver, message)
+    // Don't swallow LoadBlockedPlugins messages, as they're sent to every
+    // blocked plugin.
+    IPC_MESSAGE_HANDLER_GENERIC(ViewMsg_LoadBlockedPlugins,
+                                OnLoadBlockedPlugins(); handled = false)
     IPC_MESSAGE_HANDLER(ViewMsg_SetContentSettingsForLoadingURL,
                         OnSetContentSettingsForLoadingURL)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -124,6 +140,34 @@ void ContentSettingsObserver::DidCommitProvisionalLoad(
   }
 }
 
+bool ContentSettingsObserver::AllowDatabase(WebFrame* frame,
+                                            const WebString& name,
+                                            const WebString& display_name,
+                                            unsigned long estimated_size) {
+  if (frame->securityOrigin().isEmpty() ||
+      frame->top()->securityOrigin().isEmpty())
+    return false; // Uninitialized document.
+
+  bool result = false;
+  Send(new ViewHostMsg_AllowDatabase(
+      routing_id(), GURL(frame->securityOrigin().toString()),
+      GURL(frame->top()->securityOrigin().toString()),
+      name, display_name, &result));
+  return result;
+}
+
+bool ContentSettingsObserver::AllowFileSystem(WebFrame* frame) {
+  if (frame->securityOrigin().isEmpty() ||
+      frame->top()->securityOrigin().isEmpty())
+    return false; // Uninitialized document.
+
+  bool result = false;
+  Send(new ViewHostMsg_AllowFileSystem(
+      routing_id(), GURL(frame->securityOrigin().toString()),
+      GURL(frame->top()->securityOrigin().toString()), &result));
+  return result;
+}
+
 bool ContentSettingsObserver::AllowImages(WebFrame* frame,
                                           bool enabled_per_settings) {
   if (enabled_per_settings &&
@@ -138,10 +182,24 @@ bool ContentSettingsObserver::AllowImages(WebFrame* frame,
   return false;  // Other protocols fall through here.
 }
 
+bool ContentSettingsObserver::AllowIndexedDB(WebFrame* frame,
+                                             const WebString& name,
+                                             const WebSecurityOrigin& origin) {
+  if (frame->securityOrigin().isEmpty() ||
+      frame->top()->securityOrigin().isEmpty())
+    return false; // Uninitialized document.
+
+  bool result = false;
+  Send(new ViewHostMsg_AllowIndexedDB(
+      routing_id(), GURL(frame->securityOrigin().toString()),
+      GURL(frame->top()->securityOrigin().toString()),
+      name, &result));
+  return result;
+}
+
 bool ContentSettingsObserver::AllowPlugins(WebFrame* frame,
                                            bool enabled_per_settings) {
-  return render_view()->WebFrameClient::allowPlugins(
-      frame, enabled_per_settings);
+  return enabled_per_settings;
 }
 
 bool ContentSettingsObserver::AllowScript(WebFrame* frame,
@@ -155,6 +213,27 @@ bool ContentSettingsObserver::AllowScript(WebFrame* frame,
     return true;
 
   return false;  // Other protocols fall through here.
+}
+
+bool ContentSettingsObserver::AllowStorage(WebFrame* frame, bool local) {
+  if (frame->securityOrigin().isEmpty() ||
+      frame->top()->securityOrigin().isEmpty())
+    return false; // Uninitialized document.
+  bool result = false;
+
+  StoragePermissionsKey key(GURL(frame->securityOrigin().toString()), local);
+  std::map<StoragePermissionsKey, bool>::const_iterator permissions =
+      cached_storage_permissions_.find(key);
+  if (permissions != cached_storage_permissions_.end())
+    return permissions->second;
+
+  Send(new ViewHostMsg_AllowDOMStorage(
+      routing_id(), GURL(frame->securityOrigin().toString()),
+      GURL(frame->top()->securityOrigin().toString()),
+      local ? DOM_STORAGE_LOCAL : DOM_STORAGE_SESSION,
+      &result));
+  cached_storage_permissions_[key] = result;
+  return result;
 }
 
 void ContentSettingsObserver::DidNotAllowPlugins(WebFrame* frame) {
@@ -171,14 +250,19 @@ void ContentSettingsObserver::OnSetContentSettingsForLoadingURL(
   host_content_settings_[url] = content_settings;
 }
 
+void ContentSettingsObserver::OnLoadBlockedPlugins() {
+  plugins_temporarily_allowed_ = true;
+}
+
 bool ContentSettingsObserver::AllowContentType(
     ContentSettingsType settings_type) {
   // CONTENT_SETTING_ASK is only valid for cookies.
   return current_content_settings_.settings[settings_type] !=
-    CONTENT_SETTING_BLOCK;
+      CONTENT_SETTING_BLOCK;
 }
 
 void ContentSettingsObserver::ClearBlockedContentSettings() {
   for (size_t i = 0; i < arraysize(content_blocked_); ++i)
     content_blocked_[i] = false;
+  cached_storage_permissions_.clear();
 }

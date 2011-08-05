@@ -9,7 +9,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/process.h"
 #include "base/tracked.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "content/browser/browser_message_filter.h"
 #include "content/browser/in_process_webkit/dom_storage_area.h"
 #include "content/browser/in_process_webkit/webkit_context.h"
@@ -25,8 +24,7 @@ struct DOMStorageMsg_Event_Params;
 class DOMStorageMessageFilter : public BrowserMessageFilter {
  public:
   // Only call the constructor from the UI thread.
-  DOMStorageMessageFilter(int process_id, WebKitContext* webkit_context,
-                          HostContentSettingsMap* host_content_settings_map);
+  DOMStorageMessageFilter(int process_id, WebKitContext* webkit_context);
 
   // BrowserMessageFilter implementation
   virtual void OnChannelConnected(int32 peer_pid);
@@ -44,7 +42,7 @@ class DOMStorageMessageFilter : public BrowserMessageFilter {
  private:
   friend class BrowserThread;
   friend class DeleteTask<DOMStorageMessageFilter>;
-  ~DOMStorageMessageFilter();
+  virtual ~DOMStorageMessageFilter();
 
   // Message Handlers.
   void OnStorageAreaId(int64 namespace_id, const string16& origin,
@@ -53,7 +51,7 @@ class DOMStorageMessageFilter : public BrowserMessageFilter {
   void OnKey(int64 storage_area_id, unsigned index, NullableString16* key);
   void OnGetItem(int64 storage_area_id, const string16& key,
                  NullableString16* value);
-  void OnSetItem(int render_view_id, int64 storage_area_id, const string16& key,
+  void OnSetItem(int64 storage_area_id, const string16& key,
                  const string16& value, const GURL& url,
                  WebKit::WebStorageArea::Result* result,
                  NullableString16* old_value);
@@ -87,8 +85,6 @@ class DOMStorageMessageFilter : public BrowserMessageFilter {
 
   // Used to dispatch messages to the correct view host.
   int process_id_;
-
-  scoped_refptr<HostContentSettingsMap> host_content_settings_map_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(DOMStorageMessageFilter);
 };

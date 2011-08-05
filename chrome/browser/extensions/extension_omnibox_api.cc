@@ -13,6 +13,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
+#include "chrome/browser/ui/browser.h"
 #include "content/common/notification_service.h"
 
 namespace events {
@@ -262,4 +263,25 @@ void ApplyDefaultSuggestionForExtensionKeyword(
   }
 
   match->contents.assign(description);
+}
+
+void LaunchAppFromOmnibox(const AutocompleteMatch& match,
+                          Profile* profile,
+                          WindowOpenDisposition disposition) {
+  ExtensionService* service = profile->GetExtensionService();
+  const Extension* extension =
+      service->GetInstalledApp(match.destination_url);
+  // While the Omnibox popup is open, the extension can be updated, changing
+  // its URL and leaving us with no extension being found. In this case, we
+  // ignore the request.
+  if (!extension)
+    return;
+
+  // Look at the preferences to find the right launch container.  If no
+  // preference is set, launch as a regular tab.
+  extension_misc::LaunchContainer launch_container =
+      service->extension_prefs()->GetLaunchContainer(
+          extension, ExtensionPrefs::LAUNCH_REGULAR);
+
+  Browser::OpenApplication(profile, extension, launch_container, disposition);
 }

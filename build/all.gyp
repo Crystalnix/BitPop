@@ -22,6 +22,7 @@
         '../media/media.gyp:*',
         '../net/net.gyp:*',
         '../ppapi/ppapi.gyp:*',
+        '../ppapi/ppapi_internal.gyp:*',
         '../printing/printing.gyp:*',
         '../sdch/sdch.gyp:*',
         '../skia/skia.gyp:*',
@@ -59,7 +60,7 @@
             '../v8/tools/gyp/v8.gyp:*',
           ],
         }],
-        ['OS=="mac" or OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['OS=="mac" or OS=="linux"', {
           'dependencies': [
             '../third_party/yasm/yasm.gyp:*#host',
            ],
@@ -88,7 +89,7 @@
             }],
           ],
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['toolkit_uses_gtk==1', {
           'dependencies': [
             '../tools/gtk_clipboard_dump/gtk_clipboard_dump.gyp:*',
             '../tools/xdisplaycheck/xdisplaycheck.gyp:*',
@@ -131,7 +132,7 @@
             '../remoting/remoting.gyp:*',
           ],
         }],
-        ['use_openssl!=1', {
+        ['use_openssl==0', {
           'dependencies': [
             '../net/third_party/nss/ssl.gyp:*',
           ],
@@ -156,6 +157,7 @@
         '../crypto/crypto.gyp:crypto_unittests',
         '../ui/ui.gyp:gfx_unittests',
         '../gpu/gpu.gyp:gpu_unittests',
+        '../gpu/gles2_conform_support/gles2_conform_support.gyp:gles2_conform_support',
         '../ipc/ipc.gyp:ipc_tests',
         '../jingle/jingle.gyp:jingle_unittests',
         '../media/media.gyp:media_unittests',
@@ -163,6 +165,7 @@
         '../printing/printing.gyp:printing_unittests',
         '../remoting/remoting.gyp:remoting_unittests',
         '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+        '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
         'temp_gyp/googleurl.gyp:googleurl_unittests',
       ],
       'conditions': [
@@ -221,6 +224,7 @@
         '../printing/printing.gyp:printing_unittests',
         '../remoting/remoting.gyp:remoting_unittests',
         '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+        '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
         'temp_gyp/googleurl.gyp:googleurl_unittests',
       ],
       'conditions': [
@@ -257,8 +261,10 @@
       'target_name': 'chromium_builder_perf',
       'type': 'none',
       'dependencies': [
+        'chromium_builder_qa', # needed for pyauto
         '../chrome/chrome.gyp:memory_test',
         '../chrome/chrome.gyp:page_cycler_tests',
+        '../chrome/chrome.gyp:performance_ui_tests',
         '../chrome/chrome.gyp:plugin_tests',
         '../chrome/chrome.gyp:startup_tests',
         '../chrome/chrome.gyp:tab_switching_test',
@@ -281,11 +287,11 @@
         '../chrome/chrome.gyp:chromedriver',
       ],
       'conditions': [
-        ['OS=="mac" or OS=="win" or (OS=="linux" and target_arch==python_arch)', {
+        ['OS=="mac" or OS=="win" or (os_posix==1 and target_arch==python_arch)', {
           'dependencies': [
             '../chrome/chrome.gyp:pyautolib',
           ],
-        }], # 'OS=="mac" or OS=="win" or (OS=="linux" and target_arch==python_arch)'
+        }],
       ],
     }, # target_name: chromium_builder_qa
   ],
@@ -326,6 +332,7 @@
             '../printing/printing.gyp:printing_unittests',
             '../remoting/remoting.gyp:remoting_unittests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             'temp_gyp/googleurl.gyp:googleurl_unittests',
           ],
         },
@@ -356,6 +363,7 @@
             '../printing/printing.gyp:printing_unittests',
             '../remoting/remoting.gyp:remoting_unittests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             'temp_gyp/googleurl.gyp:googleurl_unittests',
           ],
         },
@@ -373,6 +381,7 @@
             '../printing/printing.gyp:printing_unittests',
             '../remoting/remoting.gyp:remoting_unittests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
           ],
         },
         {
@@ -395,6 +404,7 @@
             '../ui/ui.gyp:gfx_unittests',
             '../jingle/jingle.gyp:jingle_unittests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
           ],
         },
       ],  # targets
@@ -444,6 +454,7 @@
             '../printing/printing.gyp:printing_unittests',
             '../remoting/remoting.gyp:remoting_unittests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../third_party/WebKit/Source/WebKit/chromium/WebKit.gyp:copy_TestNetscapePlugIn',
             '../views/views.gyp:views_unittests',
             # TODO(nsylvain) ui_tests.exe depends on test_shell_common.
@@ -473,6 +484,7 @@
             '../printing/printing.gyp:printing_unittests',
             '../remoting/remoting.gyp:remoting_unittests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             'temp_gyp/googleurl.gyp:googleurl_unittests',
           ],
         },
@@ -546,6 +558,7 @@
             '../printing/printing.gyp:printing_unittests',
             '../remoting/remoting.gyp:remoting_unittests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../views/views.gyp:views_unittests',
             'temp_gyp/googleurl.gyp:googleurl_unittests',
           ],

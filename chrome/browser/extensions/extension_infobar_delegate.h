@@ -6,12 +6,16 @@
 #define CHROME_BROWSER_EXTENSIONS_EXTENSION_INFOBAR_DELEGATE_H_
 #pragma once
 
+#include "base/scoped_ptr.h"
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
+#include "content/common/notification_observer.h"
+#include "content/common/notification_registrar.h"
 
 class Browser;
 class Extension;
 class ExtensionHost;
-class TabContents;
+class GURL;
+class TabContentsWrapper;
 
 // The InfobarDelegate for creating and managing state for the ExtensionInfobar
 // plus monitor when the extension goes away.
@@ -43,17 +47,16 @@ class ExtensionInfoBarDelegate : public InfoBarDelegate,
   virtual ~ExtensionInfoBarDelegate();
 
   // InfoBarDelegate:
-  virtual InfoBar* CreateInfoBar();
-  virtual bool EqualsDelegate(InfoBarDelegate* delegate) const;
-  virtual void InfoBarDismissed();
-  virtual void InfoBarClosed();
-  virtual Type GetInfoBarType() const;
-  virtual ExtensionInfoBarDelegate* AsExtensionInfoBarDelegate();
+  virtual InfoBar* CreateInfoBar(TabContentsWrapper* owner) OVERRIDE;
+  virtual bool EqualsDelegate(InfoBarDelegate* delegate) const OVERRIDE;
+  virtual void InfoBarDismissed() OVERRIDE;
+  virtual Type GetInfoBarType() const OVERRIDE;
+  virtual ExtensionInfoBarDelegate* AsExtensionInfoBarDelegate() OVERRIDE;
 
   // NotificationObserver:
   virtual void Observe(NotificationType type,
                        const NotificationSource& source,
-                       const NotificationDetails& details);
+                       const NotificationDetails& details) OVERRIDE;
 
   // The extension host we are showing the InfoBar for. The delegate needs to
   // own this since the InfoBar gets deleted and recreated when you switch tabs

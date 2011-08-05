@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-# Copyright (c) 2010 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -124,7 +124,7 @@ class InstantTest(pyauto.PyUITest):
 
   def testInstantOverlayNotStoredInHistory(self):
     """Test that instant overlay page is not stored in history."""
-    url = self.GetFileURLForPath(os.path.join(self.DataDir(), 'title2.html'))
+    url = self.GetFileURLForDataPath('title2.html')
     self.SetOmniboxText(url)
     self.assertTrue(self.WaitUntil(self._DoneLoading))
     history = self.GetHistoryInfo().History()
@@ -138,8 +138,8 @@ class InstantTest(pyauto.PyUITest):
 
   def testInstantDisablesPopupsOnPrefetch(self):
     """Test that instant disables popups when prefetching."""
-    file_url = self.GetFileURLForPath(os.path.join(
-        self.DataDir(), 'popup_blocker', 'popup-blocked-to-post-blank.html'))
+    file_url = self.GetFileURLForDataPath(
+        'popup_blocker', 'popup-blocked-to-post-blank.html')
     self.SetOmniboxText(file_url)
     self.assertTrue(self.WaitUntil(self._DoneLoading))
     location = self.GetInstantInfo()['location']
@@ -191,6 +191,31 @@ class InstantTest(pyauto.PyUITest):
     self.OpenNewBrowserWindow(True)
     self.CloseBrowserWindow(1)
     self.assertEqual(self.GetActiveTabTitle(), 'about:blank')
+
+  def testPreFetchInstantURLNotInHistory(self):
+    """Test that pre-fetched URLs are not saved in History."""
+    self._BringUpInstant()
+    history = self.GetHistoryInfo().History()
+    self.assertFalse(history, msg='Pre-feteched URL saved in History')
+
+  def testPreFetchInstantURLGeneratesNoPopups(self):
+    """Test that pre-fetched URL does not generate popups."""
+    file_url = self.GetHttpURLForDataPath('pyauto_private', 'popup_blocker',
+                                          'PopupTest1.html')
+    # Set the preference to allow all sites to show popups.
+    self.SetPrefs(pyauto.kDefaultContentSettings, {u'popups': 1})
+    self.SetOmniboxText(file_url)
+    self.WaitUntilOmniboxQueryDone()
+    self.assertEqual(1, self.GetBrowserWindowCount(),
+                     msg='Pre-fetched URL generated popups.')
+
+  def testPreFetchInstantURLSetsNoCookies(self):
+    """Test that pre-fetched URL does not set cookies."""
+    file_url = self.GetHttpURLForDataPath('cookie1.html')
+    self.SetOmniboxText(file_url)
+    self.WaitUntilOmniboxQueryDone()
+    cookie_data = self.GetCookie(pyauto.GURL(file_url))
+    self.assertFalse(cookie_data, msg='Cookie set for pre-fetched instant URL')
 
   def _AssertInstantDoesNotDownloadFile(self, path):
     """Asserts instant does not download the specified file.

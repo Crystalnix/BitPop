@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "views/controls/menu/menu_config.h"
 #include "views/controls/menu/menu_delegate.h"
 
 namespace views {
@@ -12,6 +13,10 @@ bool MenuDelegate::IsItemChecked(int id) const {
 
 std::wstring MenuDelegate::GetLabel(int id) const {
   return std::wstring();
+}
+
+const gfx::Font& MenuDelegate::GetLabelFont(int id) const {
+  return MenuConfig::instance().font;
 }
 
 std::wstring MenuDelegate::GetTooltipText(int id,
@@ -50,7 +55,8 @@ void MenuDelegate::ExecuteCommand(int id, int mouse_event_flags) {
   ExecuteCommand(id);
 }
 
-bool MenuDelegate::IsTriggerableEvent(const MouseEvent& e) {
+bool MenuDelegate::IsTriggerableEvent(MenuItemView* source,
+                                      const MouseEvent& e) {
   return e.IsLeftMouseButton() || e.IsRightMouseButton();
 }
 
@@ -104,10 +110,13 @@ MenuItemView* MenuDelegate::GetSiblingMenu(MenuItemView* menu,
   return NULL;
 }
 
-int MenuDelegate::GetMaxWidthForMenu() {
+int MenuDelegate::GetMaxWidthForMenu(MenuItemView* menu) {
   // NOTE: this needs to be large enough to accommodate the wrench menu with
   // big fonts.
   return 800;
+}
+
+void MenuDelegate::WillShowMenu(MenuItemView* menu) {
 }
 
 }  // namespace views

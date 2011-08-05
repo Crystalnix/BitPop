@@ -1,4 +1,4 @@
-# Copyright (c) 2009 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -20,6 +20,7 @@
       'ENABLE_DATABASE=1',
       'ENABLE_DATAGRID=0',
       'ENABLE_DATA_TRANSFER_ITEMS=1',
+      'ENABLE_DETAILS=1',
       'ENABLE_DEVICE_ORIENTATION=1',
       'ENABLE_DIRECTORY_UPLOAD=1',
       'ENABLE_DOM_STORAGE=1',
@@ -27,23 +28,26 @@
       'ENABLE_JAVASCRIPT_I18N_API=1',
       'ENABLE_FILE_SYSTEM=1',
       'ENABLE_FILTERS=1',
-      'ENABLE_FULLSCREEN_API=1',
       'ENABLE_GEOLOCATION=1',
+      'ENABLE_GESTURE_RECOGNIZER=1',
       'ENABLE_ICONDATABASE=0',
       'ENABLE_INDEXED_DATABASE=1',
       'ENABLE_INPUT_SPEECH=1',
       'ENABLE_JAVASCRIPT_DEBUGGER=1',
       'ENABLE_JSC_MULTIPLE_THREADS=0',
-      'ENABLE_LEVELDB=0',
+      'ENABLE_LEVELDB=1',
       'ENABLE_LINK_PREFETCH=1',
       'ENABLE_METER_TAG=1',
       'ENABLE_MEDIA_STATISTICS=1',
-      'ENABLE_MEDIA_STREAM=1',
+      'ENABLE_MEDIA_STREAM=0',
+      'ENABLE_MHTML=1',
       'ENABLE_NOTIFICATIONS=1',
       'ENABLE_OFFLINE_WEB_APPLICATIONS=1',
       'ENABLE_OPENTYPE_SANITIZER=1',
       'ENABLE_ORIENTATION_EVENTS=0',
+      'ENABLE_PAGE_VISIBILITY_API=1',
       'ENABLE_PROGRESS_TAG=1',
+      'ENABLE_QUOTA=1',
       'ENABLE_REQUEST_ANIMATION_FRAME=1',
       'ENABLE_RUBY=1',
       'ENABLE_SANDBOX=1',
@@ -56,6 +60,7 @@
       'ENABLE_SVG_FOREIGN_OBJECT=<(enable_svg)',
       'ENABLE_SVG_USE=<(enable_svg)',
       'ENABLE_TOUCH_EVENTS=<(enable_touch_events)',
+      'ENABLE_TOUCH_ICON_LOADING=0',
       'ENABLE_V8_SCRIPT_DEBUG_SERVER=1',
       'ENABLE_VIDEO=1',
       'ENABLE_WEB_SOCKETS=1',
@@ -86,23 +91,39 @@
     'enable_svg%': '<(enable_svg)',
     'enable_touch_events%': '<(enable_touch_events)',
     'conditions': [
-      ['(OS=="win" or OS=="linux" or OS=="mac") and use_accelerated_compositing==1', {
+      ['use_accelerated_compositing==1', {
         'feature_defines': [
           'WTF_USE_ACCELERATED_COMPOSITING=1',
           'ENABLE_3D_RENDERING=1',
+        ],
+      }],
+      ['use_accelerated_compositing==1 and OS!="mac"', {
+        'feature_defines': [
           'ENABLE_ACCELERATED_2D_CANVAS=1',
         ],
-        'use_accelerated_compositing': 1,
       }],
       ['use_accelerated_compositing==1 and use_threaded_compositing==1', {
         'feature_defines': [
           'WTF_USE_THREADED_COMPOSITING=1',
         ],
-        'use_threaded_compositing': 1,
       }],
-      ['OS=="mac"', {
+      # TODO(crogers): For the moment Windows is only enabled for
+      # Google-branded build, since the FFmpeg DLLs need to be re-built
+      # for chromium.
+      ['OS=="mac" or OS=="linux" or (OS=="win" and branding=="Chrome")', {
         'feature_defines': [
           'ENABLE_WEB_AUDIO=1',
+        ],
+      }],
+      # Mac OS X uses Accelerate.framework FFT by default instead of FFmpeg.
+      ['OS!="mac"', {
+        'feature_defines': [
+          'WTF_USE_WEBAUDIO_FFMPEG=1',
+        ],
+      }],
+      ['enable_register_protocol_handler==1', {
+        'feature_defines': [
+          'ENABLE_REGISTER_PROTOCOL_HANDLER=1',
         ],
       }],
     ],

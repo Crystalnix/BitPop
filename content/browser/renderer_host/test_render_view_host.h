@@ -78,7 +78,8 @@ class TestRenderWidgetHostView : public RenderWidgetHostView {
   virtual void SetIsLoading(bool is_loading) {}
   virtual void UpdateCursor(const WebCursor& cursor) {}
   virtual void UpdateCursorIfOverSelf() {}
-  virtual void ImeUpdateTextInputState(WebKit::WebTextInputType state,
+  virtual void ImeUpdateTextInputState(ui::TextInputType state,
+                                       bool can_compose_inline,
                                        const gfx::Rect& caret_rect) {}
   virtual void ImeCancelComposition() {}
   virtual void DidUpdateBackingStore(
@@ -181,6 +182,11 @@ class TestRenderViewHost : public RenderViewHost {
   // This is a helper function for simulating the most common types of loads.
   void SendNavigateWithTransition(int page_id, const GURL& url,
                                   PageTransition::Type transition);
+
+  // Calls OnMsgShouldCloseACK on the RenderViewHost with the given parameter.
+  void SendShouldCloseACK(bool proceed);
+
+  void TestOnMsgStartDragging(const WebDropData& drop_data);
 
   // If set, *delete_counter is incremented when this object destructs.
   void set_delete_counter(int* delete_counter) {

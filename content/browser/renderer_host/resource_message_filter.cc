@@ -4,9 +4,6 @@
 
 #include "content/browser/renderer_host/resource_message_filter.h"
 
-#include "chrome/browser/net/chrome_url_request_context.h"
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/common/render_messages.h"
 #include "content/browser/browser_thread.h"
 #include "content/browser/resource_context.h"
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
@@ -43,9 +40,7 @@ bool ResourceMessageFilter::OnMessageReceived(const IPC::Message& message,
       message, this, message_was_ok);
 }
 
-ChromeURLRequestContext* ResourceMessageFilter::GetURLRequestContext(
+net::URLRequestContext* ResourceMessageFilter::GetURLRequestContext(
     ResourceType::Type type) {
-  net::URLRequestContext* rv =
-      url_request_context_selector_->GetRequestContext(type);
-  return static_cast<ChromeURLRequestContext*>(rv);
+  return url_request_context_selector_->GetRequestContext(type);
 }

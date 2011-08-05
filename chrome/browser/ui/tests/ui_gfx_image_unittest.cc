@@ -6,9 +6,9 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/image.h"
-#include "ui/gfx/image_unittest.h"
+#include "ui/gfx/image_unittest_util.h"
 
-#if defined(OS_LINUX)
+#if defined(TOOLKIT_USES_GTK)
 #include <gtk/gtk.h>
 #include "ui/gfx/gtk_util.h"
 #endif
@@ -34,7 +34,7 @@ TEST(UiGfxImageTest, ViewsImageView) {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(TOOLKIT_USES_GTK)
 TEST(UiGfxImageTest, GtkImageView) {
   GtkWidget* window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
   gtk_window_resize(GTK_WINDOW(window), 200, 200);
@@ -43,7 +43,7 @@ TEST(UiGfxImageTest, GtkImageView) {
   GtkWidget* fixed = gtk_fixed_new();
   gtk_container_add(GTK_CONTAINER(window), fixed);
 
-  gfx::Image image(gfx::test::CreateBitmap());
+  gfx::Image image(gfx::test::CreateBitmap(25, 25));
   GtkWidget* image_view = gtk_image_new_from_pixbuf(image);
   gtk_fixed_put(GTK_FIXED(fixed), image_view, 10, 10);
   gtk_widget_set_size_request(image_view, 25, 25);

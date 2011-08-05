@@ -90,7 +90,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_TabOnRemoved) {
   ASSERT_TRUE(RunExtensionTest("tabs/on_removed")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, CaptureVisibleTabJpeg) {
+// Test is timing out on linux and cros and flaky on others.
+// See http://crbug.com/83876
+#if defined(OS_LINUX)
+#define MAYBE_CaptureVisibleTabJpeg DISABLED_CaptureVisibleTabJpeg
+#else
+#define MAYBE_CaptureVisibleTabJpeg FLAKY_CaptureVisibleTabJpeg
+#endif
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_CaptureVisibleTabJpeg) {
   host_resolver()->AddRule("a.com", "127.0.0.1");
   host_resolver()->AddRule("b.com", "127.0.0.1");
   ASSERT_TRUE(StartTestServer());
@@ -98,13 +105,27 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, CaptureVisibleTabJpeg) {
                                   "test_jpeg.html")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, CaptureVisibleTabPng) {
+// Test is timing out on linux and cros and flaky on others.
+// See http://crbug.com/83876
+#if defined(OS_LINUX)
+#define MAYBE_CaptureVisibleTabPng DISABLED_CaptureVisibleTabPng
+#else
+#define MAYBE_CaptureVisibleTabPng FLAKY_CaptureVisibleTabPng
+#endif
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_CaptureVisibleTabPng) {
   host_resolver()->AddRule("a.com", "127.0.0.1");
   host_resolver()->AddRule("b.com", "127.0.0.1");
   ASSERT_TRUE(StartTestServer());
   ASSERT_TRUE(RunExtensionSubtest("tabs/capture_visible_tab",
                                   "test_png.html")) << message_;
 }
+
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_CaptureVisibleTabRace) {
+  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(RunExtensionSubtest("tabs/capture_visible_tab",
+                                  "test_race.html")) << message_;
+}
+
 
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, TabsOnUpdated) {
   ASSERT_TRUE(StartTestServer());

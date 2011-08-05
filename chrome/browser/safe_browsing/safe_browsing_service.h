@@ -51,6 +51,10 @@ class SafeBrowsingService
     URL_MALWARE,
     BINARY_MALWARE_URL,  // Binary url leads to a malware.
     BINARY_MALWARE_HASH,  // Binary hash indicates this is a malware.
+
+    // Url detected by the client-side phishing model.  Note that unlike the
+    // above values, this does not correspond to a downloaded list.
+    CLIENT_SIDE_PHISHING_URL,
   };
 
   // Structure used to pass parameters between the IO and UI thread when
@@ -250,12 +254,12 @@ class SafeBrowsingService
   // Report hits to the unsafe contents (malware, phishing, unsafe download URL)
   // to the server. Can only be called on UI thread.  If |post_data| is
   // non-empty, the request will be sent as a POST instead of a GET.
-  void ReportSafeBrowsingHit(const GURL& malicious_url,
-                             const GURL& page_url,
-                             const GURL& referrer_url,
-                             bool is_subresource,
-                             UrlCheckResult threat_type,
-                             const std::string& post_data);
+  virtual void ReportSafeBrowsingHit(const GURL& malicious_url,
+                                     const GURL& page_url,
+                                     const GURL& referrer_url,
+                                     bool is_subresource,
+                                     UrlCheckResult threat_type,
+                                     const std::string& post_data);
 
  protected:
   // Creates the safe browsing service.  Need to initialize before using.

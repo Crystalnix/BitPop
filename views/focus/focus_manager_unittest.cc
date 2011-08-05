@@ -32,12 +32,8 @@
 #include "views/window/window.h"
 #include "views/window/window_delegate.h"
 
-#if defined(OS_WIN)
-#include "views/widget/widget_win.h"
-#include "views/window/window_win.h"
-#elif defined(OS_LINUX)
+#if defined(OS_LINUX)
 #include "ui/base/keycodes/keyboard_code_conversion_gtk.h"
-#include "views/window/window_gtk.h"
 #endif
 
 namespace {
@@ -130,20 +126,14 @@ class FocusManagerTest : public testing::Test, public WindowDelegate {
   virtual void TearDown() {
     if (focus_change_listener_)
       GetFocusManager()->RemoveFocusChangeListener(focus_change_listener_);
-    window_->CloseWindow();
+    window_->Close();
 
     // Flush the message loop to make Purify happy.
     message_loop()->RunAllPending();
   }
 
   FocusManager* GetFocusManager() {
-#if defined(OS_WIN)
-    return static_cast<WindowWin*>(window_)->GetFocusManager();
-#elif defined(OS_LINUX)
-    return static_cast<WindowGtk*>(window_)->GetFocusManager();
-#else
-    NOTIMPLEMENTED();
-#endif
+    return window_->GetFocusManager();
   }
 
   void FocusNativeView(gfx::NativeView native_view) {
@@ -277,12 +267,12 @@ class BorderView : public NativeViewHost {
 
   virtual ~BorderView() {}
 
-  virtual RootView* GetContentsRootView() {
-    return widget_->GetRootView();
+  virtual internal::RootView* GetContentsRootView() {
+    return static_cast<internal::RootView*>(widget_->GetRootView());
   }
 
   virtual FocusTraversable* GetFocusTraversable() {
-    return widget_->GetRootView();
+    return static_cast<internal::RootView*>(widget_->GetRootView());
   }
 
   virtual void ViewHierarchyChanged(bool is_add, View *parent, View *child) {
@@ -290,15 +280,14 @@ class BorderView : public NativeViewHost {
 
     if (child == this && is_add) {
       if (!widget_) {
-        widget_ = Widget::CreateWidget(
-            Widget::CreateParams(Widget::CreateParams::TYPE_CONTROL));
+        widget_ = new Widget;
+        Widget::InitParams params(Widget::InitParams::TYPE_CONTROL);
 #if defined(OS_WIN)
-        gfx::NativeView parent_native_view =
-            parent->GetRootView()->GetWidget()->GetNativeView();
+        params.parent = parent->GetWidget()->GetNativeView();
 #elif defined(TOOLKIT_USES_GTK)
-        gfx::NativeView parent_native_view = native_view();
+        params.parent = native_view();
 #endif
-        widget_->Init(parent_native_view, gfx::Rect(0, 0, 0, 0));
+        widget_->Init(params);
         widget_->SetFocusTraversableParentView(this);
         widget_->SetContentsView(child_);
       }
@@ -306,8 +295,8 @@ class BorderView : public NativeViewHost {
       // We have been added to a view hierarchy, attach the native view.
       Attach(widget_->GetNativeView());
       // Also update the FocusTraversable parent so the focus traversal works.
-      widget_->GetRootView()->SetFocusTraversableParent(
-          GetWidget()->GetFocusTraversable());
+      static_cast<internal::RootView*>(widget_->GetRootView())->
+          SetFocusTraversableParent(GetWidget()->GetFocusTraversable());
     }
   }
 
@@ -885,10 +874,11 @@ class TestCheckbox : public Checkbox {
   }
 };
 
-class TestRadioButton : public RadioButton {
+class TestRadioButton : public NativeRadioButton {
  public:
-  explicit TestRadioButton(const std::wstring& text) : RadioButton(text, 1) {
-  };
+  explicit TestRadioButton(const std::wstring& text)
+      : NativeRadioButton(text, 1) {
+  }
   virtual gfx::NativeView TestGetNativeControlView() {
     return native_wrapper_->GetTestingHandle();
   }
@@ -1507,7 +1497,7 @@ class MessageTrackingView : public View {
 #if defined(OS_WIN)
 // This test is now Windows only. Linux Views port does not handle accelerator
 // keys in AcceleratorHandler anymore. The logic has been moved into
-// WidgetGtk::OnKeyEvent().
+// NativeWidgetGtk::OnKeyEvent().
 // Tests that the keyup messages are eaten for accelerators.
 TEST_F(FocusManagerTest, IgnoreKeyupForAccelerators) {
   FocusManager* focus_manager = GetFocusManager();
@@ -1603,46 +1593,46 @@ TEST_F(FocusManagerTest, CreationForNativeRoot) {
   ASSERT_TRUE(hwnd);
 
   // Create a view window parented to native dialog.
-  WidgetWin window1;
-  window1.set_delete_on_destroy(false);
-  window1.set_window_style(WS_CHILD);
-  window1.Init(hwnd, gfx::Rect(0, 0, 100, 100));
+  scoped_ptr<Widget> widget1(new Widget);
+  Widget::InitParams params(Widget::InitParams::TYPE_CONTROL);
+  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.parent = hwnd;
+  params.bounds = gfx::Rect(0, 0, 100, 100);
+  widget1->Init(params);
 
   // Get the focus manager directly from the first window.  Should exist
   // because the first window is the root widget.
-  views::FocusManager* focus_manager_member1 = window1.GetFocusManager();
+  views::FocusManager* focus_manager_member1 = widget1->GetFocusManager();
   EXPECT_TRUE(focus_manager_member1);
 
   // Create another view window parented to the first view window.
-  WidgetWin window2;
-  window2.set_delete_on_destroy(false);
-  window2.set_window_style(WS_CHILD);
-  window2.Init(window1.GetNativeView(), gfx::Rect(0, 0, 100, 100));
+  scoped_ptr<Widget> widget2(new Widget);
+  params.parent = widget1->GetNativeView();
+  widget2->Init(params);
 
   // Get the focus manager directly from the second window. Should return the
   // first window's focus manager.
-  views::FocusManager* focus_manager_member2 = window2.GetFocusManager();
+  views::FocusManager* focus_manager_member2 = widget2->GetFocusManager();
   EXPECT_EQ(focus_manager_member2, focus_manager_member1);
 
   // Get the focus manager indirectly using the first window handle. Should
   // return the first window's focus manager.
   views::FocusManager* focus_manager_indirect =
       views::FocusManager::GetFocusManagerForNativeView(
-          window1.GetNativeView());
+          widget1->GetNativeView());
   EXPECT_EQ(focus_manager_indirect, focus_manager_member1);
 
   // Get the focus manager indirectly using the second window handle. Should
   // return the first window's focus manager.
   focus_manager_indirect =
       views::FocusManager::GetFocusManagerForNativeView(
-          window2.GetNativeView());
+          widget2->GetNativeView());
   EXPECT_EQ(focus_manager_indirect, focus_manager_member1);
 
   DestroyWindow(hwnd);
 }
 #endif
 
-#if defined(OS_CHROMEOS)
 class FocusManagerDtorTest : public FocusManagerTest {
  protected:
   typedef std::vector<std::string> DtorTrackVector;
@@ -1675,21 +1665,20 @@ class FocusManagerDtorTest : public FocusManagerTest {
     DtorTrackVector* dtor_tracker_;
   };
 
-  class WindowGtkDtorTracked : public WindowGtk {
+  class WindowDtorTracked : public Window {
    public:
-    WindowGtkDtorTracked(WindowDelegate* window_delegate,
-                         DtorTrackVector* dtor_tracker)
-        : WindowGtk(window_delegate),
-          dtor_tracker_(dtor_tracker) {
-      tracked_focus_manager_ = new FocusManagerDtorTracked(this,
-          dtor_tracker_);
-      non_client_view()->SetFrameView(CreateFrameViewForWindow());
-      InitWindow(NULL, gfx::Rect(0, 0, 100, 100));
+    WindowDtorTracked(WindowDelegate* window_delegate,
+                      DtorTrackVector* dtor_tracker)
+        : dtor_tracker_(dtor_tracker) {
+      tracked_focus_manager_ = new FocusManagerDtorTracked(this, dtor_tracker_);
+      Window::InitParams params(window_delegate);
+      params.widget_init_params.bounds = gfx::Rect(0, 0, 100, 100);
+      InitWindow(params);
       ReplaceFocusManager(tracked_focus_manager_);
     }
 
-    virtual ~WindowGtkDtorTracked() {
-      dtor_tracker_->push_back("WindowGtkDtorTracked");
+    virtual ~WindowDtorTracked() {
+      dtor_tracker_->push_back("WindowDtorTracked");
     }
 
     FocusManagerDtorTracked* tracked_focus_manager_;
@@ -1698,17 +1687,16 @@ class FocusManagerDtorTest : public FocusManagerTest {
 
  public:
   virtual void SetUp() {
-   // Create WindowGtkDtorTracked that uses FocusManagerDtorTracked.
-   window_ = new WindowGtkDtorTracked(this, &dtor_tracker_);
-   ASSERT_TRUE(GetFocusManager() ==
-        static_cast<WindowGtkDtorTracked*>(window_)->tracked_focus_manager_);
-
-   window_->Show();
+    // Create WindowDtorTracked that uses FocusManagerDtorTracked.
+    window_ = new WindowDtorTracked(this, &dtor_tracker_);
+    ASSERT_TRUE(GetFocusManager() == static_cast<WindowDtorTracked*>(
+        window_)->tracked_focus_manager_);
+    window_->Show();
   }
 
   virtual void TearDown() {
     if (window_) {
-      window_->CloseWindow();
+      window_->Close();
       message_loop()->RunAllPending();
     }
   }
@@ -1726,7 +1714,7 @@ TEST_F(FocusManagerDtorTest, FocusManagerDestructedLast) {
   tabbed_pane->AddTab(L"Awesome tab", button);
 
   // Close the window.
-  window_->CloseWindow();
+  window_->Close();
   message_loop()->RunAllPending();
 
   // Test window, button and focus manager should all be destructed.
@@ -1739,6 +1727,5 @@ TEST_F(FocusManagerDtorTest, FocusManagerDestructedLast) {
   window_ = NULL;
 }
 
-#endif  // defined(OS_CHROMEOS)
 
 }  // namespace views

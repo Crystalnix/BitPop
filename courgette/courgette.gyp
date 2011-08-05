@@ -44,7 +44,7 @@
   'targets': [
     {
       'target_name': 'courgette_lib',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
         '../third_party/lzma_sdk/lzma_sdk.gyp:lzma_sdk',
@@ -106,7 +106,7 @@
         '../testing/gtest.gyp:gtest',
       ],
       'conditions': [
-        [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd"', {
+        [ 'toolkit_uses_gtk == 1', {
           'dependencies': [
             # Workaround for gyp bug 69.
             # Needed to handle the #include chain:
@@ -132,7 +132,7 @@
         '../testing/gtest.gyp:gtest',
       ],
       'conditions': [
-        [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd"', {
+        [ 'toolkit_uses_gtk == 1', {
           'dependencies': [
             # Workaround for gyp bug 69.
             # Needed to handle the #include chain:
@@ -149,7 +149,7 @@
       'targets': [
         {
           'target_name': 'courgette_lib64',
-          'type': '<(library)',
+          'type': 'static_library',
           'dependencies': [
             '../base/base.gyp:base_nacl_win64',
             '../third_party/lzma_sdk/lzma_sdk.gyp:lzma_sdk64',

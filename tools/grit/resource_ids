@@ -1,4 +1,4 @@
-# Copyright (c) 2010 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 #
@@ -130,5 +130,22 @@
   # This file is generated during the build.
   "<(SHARED_INTERMEDIATE_DIR)/devtools/devtools_resources.grd": {
     "includes": [20500],
-  }
+  },
+  # All standard and large theme resources should have the same IDs.
+  "chrome/app/theme/theme_resources_standard.grd": {
+    "includes": [21000],
+  },
+  "chrome/app/theme/theme_resources_large.grd": {
+    "includes": [21000],
+  },
+  # This file is generated during the build.
+  "chrome/browser/debugger/frontend/devtools_frontend_resources.grd": {
+    "includes": [21500],
+  },
+  "chrome/browser/resources/options_resources.grd": {
+    "includes": [22000],
+  },
+  "cloud_print/virtual_driver/win/install/virtual_driver_setup_resources.grd": {
+    "messages": [22500],
+  },
 }

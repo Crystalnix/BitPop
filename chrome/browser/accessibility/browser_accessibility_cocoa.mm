@@ -8,6 +8,7 @@
 
 #include "base/string16.h"
 #include "base/sys_string_conversions.h"
+#include "base/utf_string_conversions.h"
 #include "chrome/browser/renderer_host/render_widget_host_view_mac.h"
 #include "grit/webkit_strings.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebRect.h"
@@ -35,28 +36,55 @@ struct RoleEntry {
 
 static const RoleEntry roles[] = {
   { WebAccessibility::ROLE_NONE, NSAccessibilityUnknownRole },
+  { WebAccessibility::ROLE_ALERT, NSAccessibilityGroupRole },
+  { WebAccessibility::ROLE_ALERT_DIALOG, NSAccessibilityGroupRole },
+  { WebAccessibility::ROLE_APPLICATION, NSAccessibilityGroupRole },
+  { WebAccessibility::ROLE_ARTICLE, NSAccessibilityGroupRole },
   { WebAccessibility::ROLE_BUTTON, NSAccessibilityButtonRole },
+  { WebAccessibility::ROLE_CELL, @"AXCell" },
   { WebAccessibility::ROLE_CHECKBOX, NSAccessibilityCheckBoxRole },
   { WebAccessibility::ROLE_COLUMN, NSAccessibilityColumnRole },
+  { WebAccessibility::ROLE_COLUMN_HEADER, NSAccessibilityGroupRole },
+  { WebAccessibility::ROLE_DIALOG, NSAccessibilityGroupRole },
+  { WebAccessibility::ROLE_DOCUMENT, NSAccessibilityGroupRole },
   { WebAccessibility::ROLE_GRID, NSAccessibilityGridRole },
   { WebAccessibility::ROLE_GROUP, NSAccessibilityGroupRole },
   { WebAccessibility::ROLE_HEADING, @"AXHeading" },
   { WebAccessibility::ROLE_IGNORED, NSAccessibilityUnknownRole },
   { WebAccessibility::ROLE_IMAGE, NSAccessibilityImageRole },
+  { WebAccessibility::ROLE_LANDMARK_BANNER, NSAccessibilityGroupRole },
+  { WebAccessibility::ROLE_LANDMARK_COMPLEMENTARY, NSAccessibilityGroupRole },
+  { WebAccessibility::ROLE_LANDMARK_CONTENTINFO, NSAccessibilityGroupRole },
+  // TODO: role: main should report SubRole: AXLandmarkMain
+  { WebAccessibility::ROLE_LANDMARK_MAIN, NSAccessibilityGroupRole },
+  { WebAccessibility::ROLE_LANDMARK_NAVIGATION, NSAccessibilityGroupRole },
+  { WebAccessibility::ROLE_LANDMARK_SEARCH, NSAccessibilityGroupRole },
   { WebAccessibility::ROLE_LINK, NSAccessibilityLinkRole },
   { WebAccessibility::ROLE_LIST, NSAccessibilityListRole },
+  { WebAccessibility::ROLE_LIST_ITEM, NSAccessibilityGroupRole },
+  { WebAccessibility::ROLE_LOG, NSAccessibilityGroupRole },
+  { WebAccessibility::ROLE_MARQUEE, NSAccessibilityGroupRole },
+  { WebAccessibility::ROLE_MATH, NSAccessibilityGroupRole },
+  { WebAccessibility::ROLE_NOTE, NSAccessibilityGroupRole },
+  { WebAccessibility::ROLE_POPUP_BUTTON, NSAccessibilityPopUpButtonRole },
   { WebAccessibility::ROLE_RADIO_BUTTON, NSAccessibilityRadioButtonRole },
   { WebAccessibility::ROLE_RADIO_GROUP, NSAccessibilityRadioGroupRole },
+  { WebAccessibility::ROLE_REGION, NSAccessibilityGroupRole },
   { WebAccessibility::ROLE_ROW, NSAccessibilityRowRole },
+  { WebAccessibility::ROLE_ROW_HEADER, NSAccessibilityGroupRole },
   { WebAccessibility::ROLE_SCROLLAREA, NSAccessibilityScrollAreaRole },
   { WebAccessibility::ROLE_SCROLLBAR, NSAccessibilityScrollBarRole },
   { WebAccessibility::ROLE_STATIC_TEXT, NSAccessibilityStaticTextRole },
+  { WebAccessibility::ROLE_STATUS, NSAccessibilityGroupRole },
   { WebAccessibility::ROLE_TABLE, NSAccessibilityTableRole },
+  { WebAccessibility::ROLE_TABLE_HEADER_CONTAINER, NSAccessibilityGroupRole },
   { WebAccessibility::ROLE_TAB_GROUP, NSAccessibilityTabGroupRole },
-  { WebAccessibility::ROLE_TEXT_FIELD, NSAccessibilityTextFieldRole },
   { WebAccessibility::ROLE_TEXTAREA, NSAccessibilityTextAreaRole },
-  { WebAccessibility::ROLE_WEB_AREA, @"AXWebArea" },
+  { WebAccessibility::ROLE_TEXT_FIELD, NSAccessibilityTextFieldRole },
+  { WebAccessibility::ROLE_TIMER, NSAccessibilityGroupRole },
+  { WebAccessibility::ROLE_TOOLTIP, NSAccessibilityGroupRole },
   { WebAccessibility::ROLE_WEBCORE_LINK, NSAccessibilityLinkRole },
+  { WebAccessibility::ROLE_WEB_AREA, @"AXWebArea" },
 };
 
 // GetState checks the bitmask used in webaccessibility.h to check
@@ -104,6 +132,17 @@ bool GetState(BrowserAccessibility* accessibility, int state) {
       else
         [children_ addObject:child];
     }
+
+    // Also, add indirect children (if any).
+    for (uint32 i = 0;
+         i < browserAccessibility_->indirect_child_ids().size();
+         ++i) {
+      int32 child_id = browserAccessibility_->indirect_child_ids()[i];
+      BrowserAccessibilityCocoa* child =
+          browserAccessibility_->manager()->GetFromRendererID(child_id)->
+              toBrowserAccessibilityCocoa();
+      [children_ addObject:child];
+    }
   }
   return children_;
 }
@@ -133,11 +172,11 @@ bool GetState(BrowserAccessibility* accessibility, int state) {
 
 // Returns a string indicating the role of this object.
 - (NSString*)role {
-  WebAccessibility::Role value =
+  WebAccessibility::Role browserAccessibilityRole =
       static_cast<WebAccessibility::Role>( browserAccessibility_->role());
 
   // Roles that we only determine at runtime.
-  if (value == WebAccessibility::ROLE_TEXT_FIELD &&
+  if (browserAccessibilityRole == WebAccessibility::ROLE_TEXT_FIELD &&
       GetState(browserAccessibility_, WebAccessibility::STATE_PROTECTED)) {
     return @"AXSecureTextField";
   }
@@ -145,7 +184,7 @@ bool GetState(BrowserAccessibility* accessibility, int state) {
   NSString* role = NSAccessibilityUnknownRole;
   const size_t numRoles = sizeof(roles) / sizeof(roles[0]);
   for (size_t i = 0; i < numRoles; ++i) {
-    if (roles[i].value == value) {
+    if (roles[i].value == browserAccessibilityRole) {
       role = roles[i].string;
       break;
     }
@@ -165,6 +204,24 @@ bool GetState(BrowserAccessibility* accessibility, int state) {
 
   if ([[self role] isEqualToString:@"AXHeading"])
     return l10n_util::GetNSString(IDS_AX_ROLE_HEADING);
+
+  if ([[self role] isEqualToString:NSAccessibilityGroupRole]) {
+    const std::vector<std::pair<string16, string16> >& htmlAttributes =
+        browserAccessibility_->html_attributes();
+    WebAccessibility::Role browserAccessibilityRole =
+        static_cast<WebAccessibility::Role>(browserAccessibility_->role());
+
+    if (browserAccessibilityRole != WebAccessibility::ROLE_GROUP &&
+        browserAccessibilityRole != WebAccessibility::ROLE_LIST_ITEM) {
+      for (size_t i = 0; i < htmlAttributes.size(); ++i) {
+        const std::pair<string16, string16>& htmlAttribute = htmlAttributes[i];
+        if (htmlAttribute.first == ASCIIToUTF16("role")) {
+          // This is not localized.
+          return base::SysUTF16ToNSString(htmlAttribute.second);
+        }
+      }
+    }
+  }
 
   return NSAccessibilityRoleDescription([self role], nil);
 }
@@ -258,10 +315,29 @@ bool GetState(BrowserAccessibility* accessibility, int state) {
         GetState(browserAccessibility_, WebAccessibility::STATE_TRAVERSED)];
   }
 
+  // AXTable attributes.
+  if ([[self role] isEqualToString:NSAccessibilityTableRole]) {
+    if ([attribute isEqualToString:NSAccessibilityRowsAttribute]) {
+      NSMutableArray* ret = [[[NSMutableArray alloc] init] autorelease];
+      for (BrowserAccessibilityCocoa* child in [self children]) {
+        if ([[child role] isEqualToString:NSAccessibilityRowRole])
+          [ret addObject:child];
+      }
+      return ret;
+    } else if ([attribute isEqualToString:NSAccessibilityColumnsAttribute]) {
+      NSMutableArray* ret = [[[NSMutableArray alloc] init] autorelease];
+      for (BrowserAccessibilityCocoa* child in [self children]) {
+        if ([[child role] isEqualToString:NSAccessibilityColumnRole])
+          [ret addObject:child];
+      }
+      return ret;
+    }
+  }
+
   // AXWebArea attributes.
   if ([attribute isEqualToString:@"AXLoaded"])
     return [NSNumber numberWithBool:YES];
-  if ([attribute isEqualToString:@"AXURL"]) {
+  if ([attribute isEqualToString:NSAccessibilityURLAttribute]) {
     WebAccessibility::Attribute urlAttribute =
         [[self role] isEqualToString:@"AXWebArea"] ?
             WebAccessibility::ATTR_DOC_URL :
@@ -301,6 +377,53 @@ bool GetState(BrowserAccessibility* accessibility, int state) {
     if ([attribute isEqualToString:NSAccessibilitySelectedTextRangeAttribute]) {
       return [NSValue valueWithRange:NSMakeRange(selStart, selLength)];
     }
+  }
+  return nil;
+}
+
+// Returns the accessibility value for the given attribute and parameter. If the
+// value isn't supported this will return nil.
+- (id)accessibilityAttributeValue:(NSString*)attribute
+                     forParameter:(id)parameter {
+  if ([attribute isEqualToString:
+      NSAccessibilityStringForRangeParameterizedAttribute]) {
+    NSRange range =[(NSValue*)parameter rangeValue];
+    return base::SysUTF16ToNSString(
+        browserAccessibility_->value().substr(range.location, range.length));
+  }
+
+  // TODO(dtseng): support the following attributes.
+  if ([attribute isEqualTo:NSAccessibilityLineForIndexParameterizedAttribute] ||
+      [attribute isEqualTo:NSAccessibilityRangeForLineParameterizedAttribute] ||
+      [attribute isEqualTo:
+          NSAccessibilityRangeForPositionParameterizedAttribute] ||
+      [attribute isEqualTo:
+          NSAccessibilityRangeForIndexParameterizedAttribute] ||
+      [attribute isEqualTo:
+          NSAccessibilityBoundsForRangeParameterizedAttribute] ||
+      [attribute isEqualTo:NSAccessibilityRTFForRangeParameterizedAttribute] ||
+      [attribute isEqualTo:
+          NSAccessibilityStyleRangeForIndexParameterizedAttribute]) {
+    return nil;
+  }
+  return nil;
+}
+
+// Returns an array of parameterized attributes names that this object will
+// respond to.
+- (NSArray*)accessibilityParameterizedAttributeNames {
+  if ([self role] == NSAccessibilityTextFieldRole) {
+    return [NSArray arrayWithObjects:
+        NSAccessibilityLineForIndexParameterizedAttribute,
+        NSAccessibilityRangeForLineParameterizedAttribute,
+        NSAccessibilityStringForRangeParameterizedAttribute,
+        NSAccessibilityRangeForPositionParameterizedAttribute,
+        NSAccessibilityRangeForIndexParameterizedAttribute,
+        NSAccessibilityBoundsForRangeParameterizedAttribute,
+        NSAccessibilityRTFForRangeParameterizedAttribute,
+        NSAccessibilityAttributedStringForRangeParameterizedAttribute,
+        NSAccessibilityStyleRangeForIndexParameterizedAttribute,
+        nil];
   }
   return nil;
 }
@@ -372,11 +495,18 @@ bool GetState(BrowserAccessibility* accessibility, int state) {
       NSAccessibilityTopLevelUIElementAttribute,
       NSAccessibilityValueAttribute,
       NSAccessibilityWindowAttribute,
-      @"AXURL",
+      NSAccessibilityURLAttribute,
       @"AXVisited",
       nil]];
 
   // Specific role attributes.
+  if ([self role] == NSAccessibilityTableRole) {
+    [ret addObjectsFromArray:[NSArray arrayWithObjects:
+        NSAccessibilityColumnsAttribute,
+        NSAccessibilityRowsAttribute,
+        nil]];
+  }
+
   if ([self role] == @"AXWebArea") {
     [ret addObjectsFromArray:[NSArray arrayWithObjects:
         @"AXLoaded",
@@ -426,11 +556,10 @@ bool GetState(BrowserAccessibility* accessibility, int state) {
 // that backs this object.
 - (void)accessibilityPerformAction:(NSString*)action {
   // TODO(feldstein): Support more actions.
-  if ([action isEqualToString:NSAccessibilityPressAction]) {
+  if ([action isEqualToString:NSAccessibilityPressAction])
     [delegate_ doDefaultAction:browserAccessibility_->renderer_id()];
-  } else if ([action isEqualToString:NSAccessibilityShowMenuAction]) {
-    // TODO(dtseng): implement.
-  }
+  else if ([action isEqualToString:NSAccessibilityShowMenuAction])
+    [delegate_ performShowMenuAction:self];
 }
 
 // Returns the description of the given action.

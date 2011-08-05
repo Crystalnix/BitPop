@@ -16,6 +16,12 @@ struct ExtensionSyncData {
   ExtensionSyncData();
   ~ExtensionSyncData();
 
+  // Merge |new_data| into this object.  All version-independent
+  // properties are copied from |new_data|, and version-dependent
+  // properties are copied only if |new_data|'s version is equal to or
+  // greater than the current version.
+  void Merge(const ExtensionSyncData& new_data);
+
   std::string id;
 
   // Version-independent properties (i.e., used even when the
@@ -29,6 +35,8 @@ struct ExtensionSyncData {
   // version of the currenty-installed extension matches |version|).
   Version version;
   GURL update_url;
+  // Used only for debugging.
+  std::string name;
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_EXTENSION_SYNC_DATA_H_

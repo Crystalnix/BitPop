@@ -16,16 +16,7 @@ bool TestVideoDecoder::Init() {
       pp::Module::Get()->GetBrowserInterface(PPB_VIDEODECODER_DEV_INTERFACE));
   var_interface_ = reinterpret_cast<PPB_Var const*>(
       pp::Module::Get()->GetBrowserInterface(PPB_VAR_INTERFACE));
-  testing_interface_ = reinterpret_cast<PPB_Testing_Dev const*>(
-      pp::Module::Get()->GetBrowserInterface(PPB_TESTING_DEV_INTERFACE));
-  if (!testing_interface_) {
-    // Give a more helpful error message for the testing interface being gone
-    // since that needs special enabling in Chrome.
-    instance_->AppendError("This test needs the testing interface, which is "
-        "not currently available. In Chrome, use --enable-pepper-testing when "
-        "launching.");
-  }
-  return video_decoder_interface_ && var_interface_ && testing_interface_;
+  return video_decoder_interface_ && var_interface_ && InitTestingInterface();
 }
 
 void TestVideoDecoder::RunTest() {
@@ -38,7 +29,7 @@ void TestVideoDecoder::QuitMessageLoop() {
 
 std::string TestVideoDecoder::TestCreate() {
   PP_Resource decoder = video_decoder_interface_->Create(
-      instance_->pp_instance(), NULL);
+      instance_->pp_instance(), NULL, PP_MakeCompletionCallback(NULL, NULL));
   if (decoder == 0) {
     return "Error creating the decoder";
   }

@@ -10,6 +10,7 @@
 
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "base/version.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/sandboxed_extension_unpacker.h"
@@ -46,7 +47,6 @@ class CrxInstaller
     : public SandboxedExtensionUnpackerClient,
       public ExtensionInstallUI::Delegate {
  public:
-
   // This is pretty lame, but given the difficulty of connecting a particular
   // ExtensionFunction to a resulting download in the download manager, it's
   // currently necessary. This is the |id| of an extension to be installed
@@ -55,21 +55,28 @@ class CrxInstaller
   // crbug.com/54916
   static void SetWhitelistedInstallId(const std::string& id);
 
+  struct WhitelistEntry {
+    WhitelistEntry();
+    ~WhitelistEntry();
+
+    scoped_ptr<DictionaryValue> parsed_manifest;
+    std::string localized_name;
+  };
+
   // Exempt the next extension install with |id| from displaying a confirmation
   // prompt, since the user already agreed to the install via
   // beginInstallWithManifest. We require that the extension manifest matches
-  // |parsed_manifest| which is what was used to prompt with. Ownership of
-  // |parsed_manifest| is transferred here.
-  static void SetWhitelistedManifest(const std::string& id,
-                                     DictionaryValue* parsed_manifest);
+  // the manifest in |entry|, which is what was used to prompt with. Ownership
+  // of |entry| is transferred here.
+  static void SetWhitelistEntry(const std::string& id, WhitelistEntry* entry);
 
-  // Returns the previously stored manifest from a call to
-  // SetWhitelistedManifest.
-  static const DictionaryValue* GetWhitelistedManifest(const std::string& id);
+  // Returns the previously stored manifest from a call to SetWhitelistEntry.
+  static const CrxInstaller::WhitelistEntry* GetWhitelistEntry(
+      const std::string& id);
 
-  // Removes any whitelisted manifest for |id| and returns it. The caller owns
+  // Removes any whitelist data for |id| and returns it. The caller owns
   // the return value and is responsible for deleting it.
-  static DictionaryValue* RemoveWhitelistedManifest(const std::string& id);
+  static WhitelistEntry* RemoveWhitelistEntry(const std::string& id);
 
   // Returns whether |id| is whitelisted - only call this on the UI thread.
   static bool IsIdWhitelisted(const std::string& id);
@@ -79,10 +86,10 @@ class CrxInstaller
   static bool ClearWhitelistedInstallId(const std::string& id);
 
   // Constructor.  Extensions will be installed into
-  // frontend->install_directory() then registered with |frontend|. Any install
-  // UI will be displayed using |client|. Pass NULL for |client| for silent
-  // install.
-  CrxInstaller(ExtensionService* frontend,
+  // frontend_weak->install_directory() then registered with
+  // |frontend_weak|. Any install UI will be displayed using
+  // |client|. Pass NULL for |client| for silent install.
+  CrxInstaller(base::WeakPtr<ExtensionService> frontend_weak,
                ExtensionInstallUI* client);
 
   // Install the crx in |source_file|.
@@ -134,8 +141,18 @@ class CrxInstaller
     original_mime_type_ = original_mime_type;
   }
 
+  extension_misc::CrxInstallCause install_cause() const {
+    return install_cause_;
+  }
+
+  void set_install_cause(extension_misc::CrxInstallCause install_cause) {
+    install_cause_ = install_cause;
+  }
+
  private:
-  ~CrxInstaller();
+  friend class ExtensionUpdaterTest;
+
+  virtual ~CrxInstaller();
 
   // Converts the source user script to an extension.
   void ConvertUserScriptOnFileThread();
@@ -151,6 +168,7 @@ class CrxInstaller
   virtual void OnUnpackFailure(const std::string& error_message);
   virtual void OnUnpackSuccess(const FilePath& temp_dir,
                                const FilePath& extension_dir,
+                               const DictionaryValue* original_manifest,
                                const Extension* extension);
 
   // Returns true if we can skip confirmation because the install was
@@ -170,6 +188,7 @@ class CrxInstaller
   void ReportFailureFromUIThread(const std::string& error);
   void ReportSuccessFromFileThread();
   void ReportSuccessFromUIThread();
+  void NotifyCrxInstallComplete();
 
   // The file we're installing.
   FilePath source_file_;
@@ -216,6 +235,10 @@ class CrxInstaller
   // ExtensionService on success, or delete it on failure.
   scoped_refptr<const Extension> extension_;
 
+  // A parsed copy of the unmodified original manifest, before any
+  // transformations like localization have taken place.
+  scoped_ptr<DictionaryValue> original_manifest_;
+
   // If non-empty, contains the current version of the extension we're
   // installing (for upgrades).
   std::string current_version_;
@@ -228,7 +251,7 @@ class CrxInstaller
   FilePath temp_dir_;
 
   // The frontend we will report results back to.
-  scoped_refptr<ExtensionService> frontend_;
+  base::WeakPtr<ExtensionService> frontend_weak_;
 
   // The client we will work with to do the installation. This can be NULL, in
   // which case the install is silent.
@@ -254,6 +277,10 @@ class CrxInstaller
   // The value of the content type header sent with the CRX.
   // Ignorred unless |require_extension_mime_type_| is true.
   std::string original_mime_type_;
+
+  // What caused this install?  Used only for histograms that report
+  // on failure rates, broken down by the cause of the install.
+  extension_misc::CrxInstallCause install_cause_;
 
   DISALLOW_COPY_AND_ASSIGN(CrxInstaller);
 };

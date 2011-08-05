@@ -1,5 +1,5 @@
 #!/usr/bin/python
-# Copyright (c) 2010 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -10,6 +10,7 @@ import re
 import pyauto_functional  # Must be imported before pyauto
 import pyauto
 import test_utils
+
 
 class InfobarTest(pyauto.PyUITest):
   """TestCase for Infobars."""
@@ -31,6 +32,13 @@ class InfobarTest(pyauto.PyUITest):
           print 'Window', window['index'], 'tab', tab['index']
           pp.pprint(tab['infobars'])
 
+  def setUp(self):
+    pyauto.PyUITest.setUp(self)
+    self._flash_plugin_type = 'Plug-in'
+    if (self.IsChromeOS() and
+        self.GetBrowserInfo()['properties']['branding'] == 'Google Chrome'):
+      self._flash_plugin_type = 'Pepper Plugin'
+
   def _GetTabInfo(self, windex=0, tab_index=0):
     """Helper to return info for the given tab in the given window.
 
@@ -40,13 +48,13 @@ class InfobarTest(pyauto.PyUITest):
 
   def testPluginCrashInfobar(self):
     """Verify the "plugin crashed" infobar."""
-    flash_url = self.GetFileURLForPath(os.path.join(self.DataDir(),
-                                                    'plugin', 'flash.swf'))
+    flash_url = self.GetFileURLForDataPath('plugin', 'flash.swf')
     # Trigger flash plugin
     self.NavigateToURL(flash_url)
     child_processes = self.GetBrowserInfo()['child_processes']
     flash = [x for x in child_processes if
-             x['type'] == 'Plug-in' and x['name'] == 'Shockwave Flash'][0]
+             x['type'] == self._flash_plugin_type and
+             x['name'] == 'Shockwave Flash'][0]
     self.assertTrue(flash)
     logging.info('Killing flash plugin. pid %d' % flash['pid'])
     self.Kill(flash['pid'])
@@ -79,8 +87,8 @@ class InfobarTest(pyauto.PyUITest):
 
   def testGeolocationInfobar(self):
     """Verify geoLocation infobar."""
-    url = self.GetFileURLForPath(os.path.join(  # triggers geolocation
-        self.DataDir(), 'geolocation', 'geolocation_on_load.html'))
+    url = self.GetFileURLForDataPath(  # triggers geolocation
+        'geolocation', 'geolocation_on_load.html')
     match_text='file:/// wants to track your physical location'
     self.NavigateToURL(url)
     self.assertTrue(self.WaitForInfobarCount(1))
@@ -91,8 +99,8 @@ class InfobarTest(pyauto.PyUITest):
 
   def testGeolocationInfobarInMultipleTabsAndWindows(self):
     """Verify GeoLocation inforbar in multiple tabs."""
-    url = self.GetFileURLForPath(os.path.join(  # triggers geolocation
-        self.DataDir(), 'geolocation', 'geolocation_on_load.html'))
+    url = self.GetFileURLForDataPath(  # triggers geolocation
+        'geolocation', 'geolocation_on_load.html')
     match_text='file:/// wants to track your physical location'
     for tab_index in range(1, 2):
       self.AppendTab(pyauto.GURL(url))
@@ -116,8 +124,7 @@ class InfobarTest(pyauto.PyUITest):
     zip_file = 'a_zip_file.zip'
     html_file = 'download-a_zip_file.html'
     assert pyauto.PyUITest.IsEnUS()
-    file_url = self.GetFileURLForPath(
-        os.path.join(self.DataDir(), 'downloads', html_file))
+    file_url = self.GetFileURLForDataPath('downloads', html_file)
     match_text = 'This site is attempting to download multiple files. ' \
                  'Do you want to allow this?'
     self.NavigateToURL('chrome://downloads')  # trigger download manager
@@ -138,11 +145,9 @@ class InfobarTest(pyauto.PyUITest):
     test_utils.RemoveDownloadedTestFile(self, zip_file)
 
   def testPluginCrashForMultiTabs(self):
-    """Verify that plugin crash infobar only shows up on the tabs using the
-       plugin"""
+    """Verify plugin crash infobar shows up only on the tabs using plugin."""
     non_flash_url = self.GetFileURLForDataPath('english_page.html')
-    flash_url = self.GetFileURLForPath(
-        os.path.join(self.DataDir(), 'plugin', 'FlashSpin.swf'))
+    flash_url = self.GetFileURLForDataPath('plugin', 'FlashSpin.swf')
     # False = Non flash url, True = Flash url
     # We have set of these values to compare a flash page and a non-flash page
     urls_type = [False, True, False, True, False]
@@ -152,22 +157,30 @@ class InfobarTest(pyauto.PyUITest):
     # Killing flash process
     child_processes = self.GetBrowserInfo()['child_processes']
     flash = [x for x in child_processes if
-             x['type'] == 'Plug-in' and x['name'] == 'Shockwave Flash'][0]
+             x['type'] == self._flash_plugin_type and
+             x['name'] == 'Shockwave Flash'][0]
     self.assertTrue(flash)
     self.Kill(flash['pid'])
     # Crash plugin infobar should show up in the second tab of this window
     # so passing window and tab argument in the wait for an infobar.
     self.assertTrue(self.WaitForInfobarCount(1, windex=0, tab_index=1))
-    info = self.GetBrowserInfo()
     for i in range(len(urls_type)):
-      infobar = info['windows'][0]['tabs'][i]['infobars']
       # Verify that if page doesn't have flash plugin,
       # it should not have infobar popped-up
+      self.ActivateTab(i)
       if not urls_type[i]:
-        self.assertFalse(infobar)
+        info = self.GetBrowserInfo()
+        self.assertFalse(
+            info['windows'][0]['tabs'][i]['infobars'],
+            msg='Did not expect crash infobar in tab at index %d' % i)
       elif urls_type[i]:
+        self.assertTrue(
+            self.WaitForInfobarCount(1, windex=0, tab_index=i),
+            msg='Expected crash infobar in tab at index %d' % i)
+        infobar = self.GetBrowserInfo()['windows'][0]['tabs'][i]['infobars']
         self.assertEqual(infobar[0]['type'], 'confirm_infobar')
         self.assertEqual(len(infobar), 1)
+
 
 if __name__ == '__main__':
   pyauto_functional.Main()

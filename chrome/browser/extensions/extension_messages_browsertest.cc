@@ -1,13 +1,13 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_message_service.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/renderer/extensions/event_bindings.h"
-#include "chrome/renderer/extensions/renderer_extension_bindings.h"
 #include "chrome/test/render_view_test.h"
 #include "content/common/view_messages.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -23,14 +23,14 @@ static void DispatchOnConnect(int source_port_id, const std::string& name,
   // to itself".
   args.Set(3, Value::CreateStringValue(EventBindings::kTestingExtensionId));
   args.Set(4, Value::CreateStringValue(EventBindings::kTestingExtensionId));
-  RendererExtensionBindings::Invoke(
+  EventBindings::CallFunction(
       "", ExtensionMessageService::kDispatchOnConnect, args, NULL, GURL());
 }
 
 static void DispatchOnDisconnect(int source_port_id) {
   ListValue args;
   args.Set(0, Value::CreateIntegerValue(source_port_id));
-  RendererExtensionBindings::Invoke(
+  EventBindings::CallFunction(
       "", ExtensionMessageService::kDispatchOnDisconnect, args, NULL, GURL());
 }
 
@@ -38,7 +38,7 @@ static void DispatchOnMessage(const std::string& message, int source_port_id) {
   ListValue args;
   args.Set(0, Value::CreateStringValue(message));
   args.Set(1, Value::CreateIntegerValue(source_port_id));
-  RendererExtensionBindings::Invoke(
+  EventBindings::CallFunction(
       "", ExtensionMessageService::kDispatchOnMessage, args, NULL, GURL());
 }
 
@@ -86,7 +86,7 @@ TEST_F(RenderViewTest, ExtensionMessagesOpenChannel) {
   iter = IPC::SyncMessage::GetDataIterator(alert_msg);
   ViewHostMsg_RunJavaScriptMessage::SendParam alert_param;
   ASSERT_TRUE(IPC::ReadParam(alert_msg, &iter, &alert_param));
-  EXPECT_EQ(L"content got: 42", alert_param.a);
+  EXPECT_EQ(ASCIIToUTF16("content got: 42"), alert_param.a);
 }
 
 // Tests that the bindings for handling a new channel connection and channel
@@ -138,7 +138,7 @@ TEST_F(RenderViewTest, ExtensionMessagesOnConnect) {
   void* iter = IPC::SyncMessage::GetDataIterator(alert_msg);
   ViewHostMsg_RunJavaScriptMessage::SendParam alert_param;
   ASSERT_TRUE(IPC::ReadParam(alert_msg, &iter, &alert_param));
-  EXPECT_EQ(L"got: 42", alert_param.a);
+  EXPECT_EQ(ASCIIToUTF16("got: 42"), alert_param.a);
 
   // Now simulate the channel closing.
   render_thread_.sink().ClearMessages();
@@ -151,5 +151,5 @@ TEST_F(RenderViewTest, ExtensionMessagesOnConnect) {
   ASSERT_TRUE(alert_msg);
   iter = IPC::SyncMessage::GetDataIterator(alert_msg);
   ASSERT_TRUE(IPC::ReadParam(alert_msg, &iter, &alert_param));
-  EXPECT_EQ(L"disconnected: 24", alert_param.a);
+  EXPECT_EQ(ASCIIToUTF16("disconnected: 24"), alert_param.a);
 }

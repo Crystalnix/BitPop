@@ -4,6 +4,7 @@
 
 #include "chrome/browser/chromeos/frame/panel_browser_view.h"
 
+#include "chrome/browser/chromeos/frame/browser_view.h"
 #include "chrome/browser/chromeos/frame/panel_controller.h"
 #include "third_party/cros/chromeos_wm_ipc_enums.h"
 #include "views/widget/widget.h"
@@ -26,6 +27,8 @@ PanelBrowserView::PanelBrowserView(Browser* browser)
     : BrowserView(browser),
       creator_xid_(0) {
 }
+
+PanelBrowserView::~PanelBrowserView() {}
 
 ////////////////////////////////////////////////////////////////////////////////
 // PanelBrowserView functions
@@ -96,6 +99,11 @@ void PanelBrowserView::SetCreatorView(PanelBrowserView* creator) {
   DCHECK(creator);
   GtkWindow* window = creator->GetNativeHandle();
   creator_xid_ = ui::GetX11WindowFromGtkWidget(GTK_WIDGET(window));
+}
+
+WindowOpenDisposition PanelBrowserView::GetDispositionForPopupBounds(
+    const gfx::Rect& bounds) {
+  return chromeos::BrowserView::DispositionForPopupBounds(bounds);
 }
 
 bool PanelBrowserView::GetSavedWindowBounds(gfx::Rect* bounds) const {

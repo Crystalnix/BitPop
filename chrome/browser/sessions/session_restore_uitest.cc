@@ -11,6 +11,7 @@
 #include "chrome/browser/defaults.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/url_constants.h"
 #include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/automation/browser_proxy.h"
 #include "chrome/test/automation/window_proxy.h"
@@ -271,6 +272,34 @@ TEST_F(SessionRestoreUITest, ClosedTabStaysClosed) {
   ASSERT_EQ(url1_, GetActiveTabURL());
 }
 
+// Test to verify that the print preview tab is not restored.
+TEST_F(SessionRestoreUITest, DontRestorePrintPreviewTabTest) {
+  NavigateToURL(url1_);
+
+  int window_count;
+  ASSERT_TRUE(automation()->GetBrowserWindowCount(&window_count));
+  ASSERT_EQ(1, window_count);
+  scoped_refptr<BrowserProxy> browser_proxy(automation()->GetBrowserWindow(0));
+  ASSERT_TRUE(browser_proxy.get());
+
+  // Append the print preview tab.
+  GURL printPreviewURL(chrome::kChromeUIPrintURL);
+  ASSERT_TRUE(browser_proxy->AppendTab(printPreviewURL));
+
+  scoped_refptr<TabProxy> active_tab(browser_proxy->GetActiveTab());
+  ASSERT_TRUE(active_tab.get());
+  ASSERT_EQ(printPreviewURL, GetActiveTabURL());
+
+  // Restart and make sure we have only one window with one tab and the url
+  // is url1_.
+  QuitBrowserAndRestore(1);
+  browser_proxy = NULL;
+
+  AssertOneWindowWithOneTab();
+
+  ASSERT_EQ(url1_, GetActiveTabURL());
+}
+
 // Creates a tabbed browser and popup and makes sure we restore both.
 TEST_F(SessionRestoreUITest, NormalAndPopup) {
   if (!browser_defaults::kRestorePopups)
@@ -326,11 +355,11 @@ TEST_F(SessionRestoreUITest, NormalAndPopup) {
 
   // The order of whether the normal window or popup is first depends upon
   // activation order, which is not necessarily consistant across runs.
-  if (type1 == Browser::TYPE_NORMAL) {
+  if (type1 == Browser::TYPE_TABBED) {
     EXPECT_EQ(type2, Browser::TYPE_POPUP);
   } else {
     EXPECT_EQ(type1, Browser::TYPE_POPUP);
-    EXPECT_EQ(type2, Browser::TYPE_NORMAL);
+    EXPECT_EQ(type2, Browser::TYPE_TABBED);
   }
 }
 
@@ -381,7 +410,7 @@ TEST_F(SessionRestoreUITest, TwoWindowsCloseOneRestoreOnlyOne) {
   ASSERT_EQ(1, window_count);
 
   // Open a second window.
-  ASSERT_TRUE(automation()->OpenNewBrowserWindow(Browser::TYPE_NORMAL,
+  ASSERT_TRUE(automation()->OpenNewBrowserWindow(Browser::TYPE_TABBED,
                                                  true));
   ASSERT_TRUE(automation()->GetBrowserWindowCount(&window_count));
   ASSERT_EQ(2, window_count);

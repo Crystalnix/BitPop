@@ -4,17 +4,19 @@
 
 #include "chrome/browser/search_engines/template_url.h"
 
+#include "base/i18n/case_conversion.h"
 #include "base/i18n/icu_string_conversions.h"
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
+#include "base/stringprintf.h"
 #include "base/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "chrome/browser/search_engines/search_engine_type.h"
 #include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url_model.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/installer/util/google_update_settings.h"
+#include "content/browser/user_metrics.h"
 #include "net/base/escape.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/favicon_size.h"
@@ -352,7 +354,8 @@ std::string TemplateURLRef::ReplaceSearchTermsUsingTermsData(
         if (accepted_suggestion == NO_SUGGESTION_CHOSEN)
           url.insert(i->index, "aq=f&");
         else if (accepted_suggestion != NO_SUGGESTIONS_AVAILABLE)
-          url.insert(i->index, StringPrintf("aq=%d&", accepted_suggestion));
+          url.insert(i->index,
+                     base::StringPrintf("aq=%d&", accepted_suggestion));
         break;
 
       case GOOGLE_BASE_URL:
@@ -628,7 +631,7 @@ void TemplateURL::SetInstantURL(const std::string& url,
 void TemplateURL::set_keyword(const string16& keyword) {
   // Case sensitive keyword matching is confusing. As such, we force all
   // keywords to be lower case.
-  keyword_ = l10n_util::ToLower(keyword);
+  keyword_ = base::i18n::ToLower(keyword);
   autogenerate_keyword_ = false;
 }
 

@@ -14,6 +14,7 @@
 
 #include "base/memory/weak_ptr.h"
 #include "base/process.h"
+#include "base/task.h"
 #include "gpu/command_buffer/service/command_buffer_service.h"
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "ipc/ipc_channel.h"
@@ -76,6 +77,10 @@ class GpuCommandBufferStub
   void AcceleratedSurfaceBuffersSwapped(uint64 swap_buffers_count);
 #endif  // defined(OS_MACOSX)
 
+  // Called when the command buffer was destroyed, and the stub should now
+  // unblock itself and handle pending messages.
+  void CommandBufferWasDestroyed();
+
  private:
   // Message handlers:
   void OnInitialize(base::SharedMemoryHandle ring_buffer,
@@ -83,8 +88,10 @@ class GpuCommandBufferStub
                     IPC::Message* reply_message);
   void OnGetState(IPC::Message* reply_message);
   void OnFlush(int32 put_offset,
+               int32 last_known_get,
+               uint32 flush_count,
                IPC::Message* reply_message);
-  void OnAsyncFlush(int32 put_offset);
+  void OnAsyncFlush(int32 put_offset, uint32 flush_count);
   void OnCreateTransferBuffer(int32 size,
                               int32 id_request,
                               IPC::Message* reply_message);
@@ -100,6 +107,7 @@ class GpuCommandBufferStub
   void OnCommandProcessed();
   void HandleDeferredMessages();
   void OnScheduled();
+  void OnParseError();
 
 #if defined(OS_MACOSX)
   void OnSetWindowSize(const gfx::Size& size);
@@ -107,6 +115,7 @@ class GpuCommandBufferStub
 #endif  // defined(OS_MACOSX)
 
   void ResizeCallback(gfx::Size size);
+  void ReportState();
 
   // The lifetime of objects of this class is managed by a GpuChannel. The
   // GpuChannels destroy all the GpuCommandBufferStubs that they own when they
@@ -121,6 +130,7 @@ class GpuCommandBufferStub
   std::vector<int32> requested_attribs_;
   uint32 parent_texture_id_;
   int32 route_id_;
+  uint32 last_flush_count_;
 
   // The following two fields are used on Mac OS X to identify the window
   // for the rendering results on the browser side.

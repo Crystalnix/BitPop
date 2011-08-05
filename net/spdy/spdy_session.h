@@ -23,8 +23,8 @@
 #include "net/base/request_priority.h"
 #include "net/base/ssl_config_service.h"
 #include "net/base/upload_data_stream.h"
-#include "net/socket/client_socket.h"
 #include "net/socket/client_socket_handle.h"
+#include "net/socket/stream_socket.h"
 #include "net/spdy/spdy_framer.h"
 #include "net/spdy/spdy_io_buffer.h"
 #include "net/spdy/spdy_protocol.h"
@@ -44,8 +44,8 @@ class SpdySettingsStorage;
 class SpdyStream;
 class SSLInfo;
 
-class SpdySession : public base::RefCounted<SpdySession>,
-                    public spdy::SpdyFramerVisitorInterface {
+class NET_API SpdySession : public base::RefCounted<SpdySession>,
+                            public spdy::SpdyFramerVisitorInterface {
  public:
   // Create a new SpdySession.
   // |host_port_proxy_pair| is the host/port that this session connects to, and
@@ -204,6 +204,7 @@ class SpdySession : public base::RefCounted<SpdySession>,
  private:
   friend class base::RefCounted<SpdySession>;
   FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, GetActivePushStream);
+  friend class HttpNetworkTransactionTest;
 
   struct PendingCreateStream {
     PendingCreateStream(const GURL& url, RequestPriority priority,
@@ -330,6 +331,8 @@ class SpdySession : public base::RefCounted<SpdySession>,
                                  size_t len);
   virtual void OnControl(const spdy::SpdyControlFrame* frame);
 
+  static bool SetDomainVerification(bool value);
+
   // Callbacks for the Spdy session.
   CompletionCallbackImpl<SpdySession> read_callback_;
   CompletionCallbackImpl<SpdySession> write_callback_;
@@ -435,6 +438,7 @@ class SpdySession : public base::RefCounted<SpdySession>,
   static bool use_ssl_;
   static bool use_flow_control_;
   static size_t max_concurrent_stream_limit_;
+  static bool verify_domain_authentication_;
 };
 
 class NetLogSpdySynParameter : public NetLog::EventParameters {

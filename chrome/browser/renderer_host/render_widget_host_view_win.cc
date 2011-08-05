@@ -50,7 +50,7 @@
 #include "views/focus/focus_manager.h"
 #include "views/focus/focus_util_win.h"
 // Included for views::kReflectedMessage - TODO(beng): move this to win_util.h!
-#include "views/widget/widget_win.h"
+#include "views/widget/native_widget_win.h"
 #include "webkit/glue/webaccessibility.h"
 #include "webkit/glue/webcursor.h"
 #include "webkit/plugins/npapi/plugin_constants_win.h"
@@ -169,20 +169,22 @@ void DrawDeemphasized(const SkColor& color,
                       HDC backing_store_dc,
                       HDC paint_dc) {
   gfx::CanvasSkia canvas(paint_rect.width(), paint_rect.height(), true);
-  HDC dc = canvas.beginPlatformPaint();
-  BitBlt(dc,
-         0,
-         0,
-         paint_rect.width(),
-         paint_rect.height(),
-         backing_store_dc,
-         paint_rect.x(),
-         paint_rect.y(),
-         SRCCOPY);
-  canvas.endPlatformPaint();
+  {
+    skia::ScopedPlatformPaint scoped_platform_paint(&canvas);
+    HDC dc = scoped_platform_paint.GetPlatformSurface();
+    BitBlt(dc,
+           0,
+           0,
+           paint_rect.width(),
+           paint_rect.height(),
+           backing_store_dc,
+           paint_rect.x(),
+           paint_rect.y(),
+           SRCCOPY);
+  }
   canvas.FillRectInt(color, 0, 0, paint_rect.width(), paint_rect.height());
-  canvas.getTopPlatformDevice().drawToHDC(paint_dc, paint_rect.x(),
-                                          paint_rect.y(), NULL);
+  skia::DrawToNativeContext(&canvas, paint_dc, paint_rect.x(),
+                            paint_rect.y(), NULL);
 }
 
 // The plugin wrapper window which lives in the browser process has this proc
@@ -235,7 +237,7 @@ RenderWidgetHostViewWin::RenderWidgetHostViewWin(RenderWidgetHost* widget)
       parent_hwnd_(NULL),
       is_loading_(false),
       overlay_color_(0),
-      text_input_type_(WebKit::WebTextInputTypeNone) {
+      text_input_type_(ui::TEXT_INPUT_TYPE_NONE) {
   render_widget_host_->set_view(this);
   registrar_.Add(this,
                  NotificationType::RENDERER_PROCESS_TERMINATED,
@@ -585,18 +587,23 @@ void RenderWidgetHostViewWin::SetIsLoading(bool is_loading) {
 }
 
 void RenderWidgetHostViewWin::ImeUpdateTextInputState(
-    WebKit::WebTextInputType type,
+    ui::TextInputType type,
+    bool can_compose_inline,
     const gfx::Rect& caret_rect) {
+  // TODO(kinaba): currently, can_compose_inline is ignored and always treated
+  // as true. We need to support "can_compose_inline=false" for PPAPI plugins
+  // that may want to avoid drawing composition-text by themselves and pass
+  // the responsibility to the browser.
   if (text_input_type_ != type) {
     text_input_type_ = type;
-    if (type == WebKit::WebTextInputTypeText)
+    if (type == ui::TEXT_INPUT_TYPE_TEXT)
       ime_input_.EnableIME(m_hWnd);
     else
       ime_input_.DisableIME(m_hWnd);
   }
 
   // Only update caret position if the input method is enabled.
-  if (type == WebKit::WebTextInputTypeText)
+  if (type == ui::TEXT_INPUT_TYPE_TEXT)
     ime_input_.UpdateCaretRect(m_hWnd, caret_rect);
 }
 
@@ -832,14 +839,22 @@ void RenderWidgetHostViewWin::OnDestroy() {
 void RenderWidgetHostViewWin::OnPaint(HDC unused_dc) {
   DCHECK(render_widget_host_->process()->HasConnection());
 
-  // If the GPU process is rendering directly into the View,
-  // call the compositor directly.
-  RenderWidgetHost* render_widget_host = GetRenderWidgetHost();
-  if (render_widget_host->is_accelerated_compositing_active()) {
+  // If the GPU process is rendering directly into the View, compositing is
+  // already triggered by damage to compositor_host_window_, so all we need to
+  // do here is clear borders during resize.
+  if (render_widget_host_ &&
+      render_widget_host_->is_accelerated_compositing_active()) {
     // We initialize paint_dc here so that BeginPaint()/EndPaint()
     // get called to validate the region.
     CPaintDC paint_dc(m_hWnd);
-    render_widget_host_->ScheduleComposite();
+    RECT host_rect, child_rect;
+    GetClientRect(&host_rect);
+    if (::GetClientRect(compositor_host_window_, &child_rect) &&
+        (child_rect.right < host_rect.right ||
+         child_rect.bottom < host_rect.bottom)) {
+      paint_dc.FillRect(&host_rect,
+          reinterpret_cast<HBRUSH>(GetStockObject(WHITE_BRUSH)));
+    }
     return;
   }
 
@@ -961,8 +976,8 @@ void RenderWidgetHostViewWin::DrawBackground(const RECT& dirty_rect,
                         dc_rect.right - dc_rect.left,
                         dc_rect.bottom - dc_rect.top);
 
-    canvas.getTopPlatformDevice().drawToHDC(*dc, dirty_rect.left,
-                                            dirty_rect.top, NULL);
+    skia::DrawToNativeContext(&canvas, *dc, dirty_rect.left, dirty_rect.top,
+                              NULL);
   } else {
     HBRUSH white_brush = reinterpret_cast<HBRUSH>(GetStockObject(WHITE_BRUSH));
     dc->FillRect(&dirty_rect, white_brush);
@@ -1065,8 +1080,10 @@ void RenderWidgetHostViewWin::OnInputLangChange(DWORD character_set,
 }
 
 void RenderWidgetHostViewWin::OnThemeChanged() {
-  if (render_widget_host_)
-    render_widget_host_->SystemThemeChanged();
+  if (!render_widget_host_)
+    return;
+  render_widget_host_->Send(new ViewMsg_ThemeChanged(
+      render_widget_host_->routing_id()));
 }
 
 LRESULT RenderWidgetHostViewWin::OnNotify(int w_param, NMHDR* header) {
@@ -1475,6 +1492,12 @@ static void PaintCompositorHostWindow(HWND hWnd) {
   PAINTSTRUCT paint;
   BeginPaint(hWnd, &paint);
 
+  RenderWidgetHostViewWin* win = static_cast<RenderWidgetHostViewWin*>(
+      ui::GetWindowUserData(hWnd));
+  // Trigger composite to rerender window.
+  if (win)
+    win->ScheduleComposite();
+
   EndPaint(hWnd, &paint);
 }
 
@@ -1486,6 +1509,7 @@ static LRESULT CALLBACK CompositorHostWindowProc(HWND hWnd, UINT message,
   case WM_ERASEBKGND:
     return 0;
   case WM_DESTROY:
+    ui::SetWindowUserData(hWnd, NULL);
     return 0;
   case WM_PAINT:
     PaintCompositorHostWindow(hWnd);
@@ -1493,6 +1517,11 @@ static LRESULT CALLBACK CompositorHostWindowProc(HWND hWnd, UINT message,
   default:
     return DefWindowProc(hWnd, message, wParam, lParam);
   }
+}
+
+void RenderWidgetHostViewWin::ScheduleComposite() {
+  if (render_widget_host_)
+    render_widget_host_->ScheduleComposite();
 }
 
 // Creates a HWND within the RenderWidgetHostView that will serve as a host
@@ -1525,8 +1554,13 @@ gfx::PluginWindowHandle RenderWidgetHostViewWin::GetCompositingSurface() {
 
   RECT currentRect;
   GetClientRect(&currentRect);
-  int width = currentRect.right - currentRect.left;
-  int height = currentRect.bottom - currentRect.top;
+
+  // Ensure window does not have zero area because D3D cannot create a zero
+  // area swap chain.
+  int width = std::max(1,
+      static_cast<int>(currentRect.right - currentRect.left));
+  int height = std::max(1,
+      static_cast<int>(currentRect.bottom - currentRect.top));
 
   compositor_host_window_ = CreateWindowEx(
     WS_EX_LEFT | WS_EX_LTRREADING | WS_EX_RIGHTSCROLLBAR,
@@ -1534,6 +1568,8 @@ gfx::PluginWindowHandle RenderWidgetHostViewWin::GetCompositingSurface() {
     WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_DISABLED,
     0, 0, width, height, m_hWnd, 0, GetModuleHandle(NULL), 0);
   ui::CheckWindowCreated(compositor_host_window_);
+
+  ui::SetWindowUserData(compositor_host_window_, this);
 
   return static_cast<gfx::PluginWindowHandle>(compositor_host_window_);
 }
@@ -1581,25 +1617,19 @@ void RenderWidgetHostViewWin::ShowCompositorHostWindow(bool show) {
 }
 
 void RenderWidgetHostViewWin::SetAccessibilityFocus(int acc_obj_id) {
-  if (!browser_accessibility_manager_.get() ||
-      !render_widget_host_ ||
-      !render_widget_host_->process() ||
-      !render_widget_host_->process()->HasConnection()) {
+  if (!render_widget_host_)
     return;
-  }
 
-  render_widget_host_->SetAccessibilityFocus(acc_obj_id);
+  render_widget_host_->Send(new ViewMsg_SetAccessibilityFocus(
+      render_widget_host_->routing_id(), acc_obj_id));
 }
 
 void RenderWidgetHostViewWin::AccessibilityDoDefaultAction(int acc_obj_id) {
-  if (!browser_accessibility_manager_.get() ||
-      !render_widget_host_ ||
-      !render_widget_host_->process() ||
-      !render_widget_host_->process()->HasConnection()) {
+  if (!render_widget_host_)
     return;
-  }
 
-  render_widget_host_->AccessibilityDoDefaultAction(acc_obj_id);
+  render_widget_host_->Send(new ViewMsg_AccessibilityDoDefaultAction(
+      render_widget_host_->routing_id(), acc_obj_id));
 }
 
 LRESULT RenderWidgetHostViewWin::OnGetObject(UINT message, WPARAM wparam,
@@ -1716,7 +1746,12 @@ void RenderWidgetHostViewWin::EnsureTooltip() {
         WS_EX_TRANSPARENT | l10n_util::GetExtendedTooltipStyles(),
         TOOLTIPS_CLASS, NULL, TTS_NOPREFIX, 0, 0, 0, 0, m_hWnd, NULL,
         NULL, NULL);
-    ui::CheckWindowCreated(tooltip_hwnd_);
+    if (!tooltip_hwnd_) {
+      // Tooltip creation can inexplicably fail. See bug 82913 for details.
+      LOG_GETLASTERROR(WARNING) <<
+          "Tooltip creation failed, tooltips won't work";
+      return;
+    }
     ti.uFlags = TTF_TRANSPARENT;
     ti.lpszText = LPSTR_TEXTCALLBACK;
   }

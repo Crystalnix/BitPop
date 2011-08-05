@@ -6,9 +6,10 @@
 
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/tab_contents/tab_contents.h"
+#include "content/common/view_messages.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
-#include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -21,8 +22,8 @@ PluginInstallerInfoBarDelegate::PluginInstallerInfoBarDelegate(
 PluginInstallerInfoBarDelegate::~PluginInstallerInfoBarDelegate() {
 }
 
-SkBitmap* PluginInstallerInfoBarDelegate::GetIcon() const {
-  return ResourceBundle::GetSharedInstance().GetBitmapNamed(
+gfx::Image* PluginInstallerInfoBarDelegate::GetIcon() const {
+  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
       IDR_INFOBAR_PLUGIN_INSTALL);
 }
 
@@ -46,7 +47,8 @@ string16 PluginInstallerInfoBarDelegate::GetButtonLabel(
 }
 
 bool PluginInstallerInfoBarDelegate::Accept() {
-  tab_contents_->render_view_host()->InstallMissingPlugin();
+  RenderViewHost* host = tab_contents_->render_view_host();
+  host->Send(new ViewMsg_InstallMissingPlugin(host->routing_id()));
   return true;
 }
 

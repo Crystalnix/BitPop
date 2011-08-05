@@ -28,11 +28,13 @@
 #include "content/common/notification_type.h"
 #include "grit/app_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/dragdrop/gtk_dnd_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/gtk_util.h"
+#include "ui/gfx/image.h"
 #include "ui/gfx/point.h"
 
 namespace {
@@ -60,8 +62,10 @@ const int kHorizontalMoveThreshold = 16;  // pixels
 // tabs.
 const int kTabHOffset = -16;
 
-// A linux specific menu item for toggling window decorations.
-const int kShowWindowDecorationsCommand = 200;
+// Inverse ratio of the width of a tab edge to the width of the tab. When
+// hovering over the left or right edge of a tab, the drop indicator will
+// point between tabs.
+const int kTabEdgeRatioInverse = 4;
 
 // Size of the drop indicator.
 static int drop_indicator_width;
@@ -699,7 +703,8 @@ TabStripGtk::TabStripGtk(TabStripModel* model, BrowserWindowGtk* window)
       window_(window),
       theme_service_(GtkThemeService::GetFrom(model->profile())),
       resize_layout_factory_(this),
-      added_as_message_loop_observer_(false) {
+      added_as_message_loop_observer_(false),
+      hover_tab_selector_(model) {
   theme_service_->InitThemesFor(this);
   registrar_.Add(this, NotificationType::BROWSER_THEME_CHANGED,
                  NotificationService::AllSources());
@@ -1009,10 +1014,10 @@ void TabStripGtk::TabDetachedAt(TabContentsWrapper* contents, int index) {
   GetTabAt(index)->set_closing(true);
 }
 
-void TabStripGtk::TabSelectedAt(TabContentsWrapper* old_contents,
-                                TabContentsWrapper* new_contents,
-                                int index,
-                                bool user_gesture) {
+void TabStripGtk::ActiveTabChanged(TabContentsWrapper* old_contents,
+                                   TabContentsWrapper* new_contents,
+                                   int index,
+                                   bool user_gesture) {
   DCHECK(index >= 0 && index < static_cast<int>(GetTabCount()));
 
   // We have "tiny tabs" if the tabs are so tiny that the unselected ones are
@@ -1576,7 +1581,7 @@ void TabStripGtk::UpdateDropIndex(GdkDragContext* context, gint x, gint y) {
     TabGtk* tab = GetTabAt(i);
     gfx::Rect bounds = tab->GetNonMirroredBounds(tabstrip_.get());
     const int tab_max_x = bounds.x() + bounds.width();
-    const int hot_width = bounds.width() / 3;
+    const int hot_width = bounds.width() / kTabEdgeRatioInverse;
     if (x < tab_max_x) {
       if (x < bounds.x() + hot_width)
         SetDropIndex(i, true);
@@ -1595,6 +1600,13 @@ void TabStripGtk::UpdateDropIndex(GdkDragContext* context, gint x, gint y) {
 void TabStripGtk::SetDropIndex(int index, bool drop_before) {
   bool is_beneath;
   gfx::Rect drop_bounds = GetDropBounds(index, drop_before, &is_beneath);
+
+  // Perform a delayed tab transition if hovering directly over a tab;
+  // otherwise, cancel the pending one.
+  if (index != -1 && !drop_before)
+    hover_tab_selector_.StartTabTransition(index);
+  else
+    hover_tab_selector_.CancelTabTransition();
 
   if (!drop_info_.get()) {
     drop_info_.reset(new DropInfo(index, drop_before, !is_beneath));
@@ -1630,11 +1642,14 @@ bool TabStripGtk::CompleteDrop(guchar* data, bool is_plain_text) {
   // Destroy the drop indicator.
   drop_info_.reset();
 
+  // Cancel any pending tab transition.
+  hover_tab_selector_.CancelTabTransition();
+
   GURL url;
   if (is_plain_text) {
     AutocompleteMatch match;
     model_->profile()->GetAutocompleteClassifier()->Classify(
-        UTF8ToUTF16(reinterpret_cast<char*>(data)), string16(), false,
+        UTF8ToUTF16(reinterpret_cast<char*>(data)), string16(), false, false,
         &match, NULL);
     url = match.destination_url;
   } else {
@@ -1662,7 +1677,7 @@ bool TabStripGtk::CompleteDrop(guchar* data, bool is_plain_text) {
 
 // static
 GdkPixbuf* TabStripGtk::GetDropArrowImage(bool is_down) {
-  return ResourceBundle::GetSharedInstance().GetPixbufNamed(
+  return ResourceBundle::GetSharedInstance().GetNativeImageNamed(
       is_down ? IDR_TAB_DROP_DOWN : IDR_TAB_DROP_UP);
 }
 
@@ -1969,6 +1984,10 @@ gboolean TabStripGtk::OnDragLeave(GtkWidget* widget, GdkDragContext* context,
                                   guint time) {
   // Destroy the drop indicator.
   drop_info_->DestroyContainer();
+
+  // Cancel any pending tab transition.
+  hover_tab_selector_.CancelTabTransition();
+
   return FALSE;
 }
 

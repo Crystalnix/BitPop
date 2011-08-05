@@ -50,6 +50,11 @@ void TabContentsView::CreateNewWindow(
 
     if (tab_contents_->delegate())
       tab_contents_->delegate()->TabContentsCreated(new_contents);
+  } else {
+    NotificationService::current()->Notify(
+        NotificationType::CREATING_NEW_WINDOW_CANCELLED,
+        Source<TabContents>(tab_contents_),
+        Details<const ViewHostMsg_CreateWindow_Params>(&params));
   }
 }
 
@@ -68,7 +73,7 @@ void TabContentsView::ShowCreatedWindow(int route_id,
                                         bool user_gesture) {
   TabContents* contents = delegate_view_helper_.GetCreatedWindow(route_id);
   if (contents) {
-    tab_contents()->AddOrBlockNewContents(
+    tab_contents()->AddNewContents(
         contents, disposition, initial_pos, user_gesture);
   }
 }
@@ -142,12 +147,6 @@ RenderWidgetHostView* TabContentsView::CreateNewWidgetInternal(
       tab_contents()->render_view_host()->process());
 }
 
-RenderWidgetHostView* TabContentsView::CreateNewFullscreenWidgetInternal(
-    int route_id) {
-  return delegate_view_helper_.CreateNewFullscreenWidget(
-      route_id, tab_contents()->render_view_host()->process());
-}
-
 void TabContentsView::ShowCreatedWidgetInternal(
     RenderWidgetHostView* widget_host_view, const gfx::Rect& initial_pos) {
   if (tab_contents_->delegate())
@@ -156,6 +155,12 @@ void TabContentsView::ShowCreatedWidgetInternal(
   widget_host_view->InitAsPopup(tab_contents_->GetRenderWidgetHostView(),
                                 initial_pos);
   widget_host_view->GetRenderWidgetHost()->Init();
+}
+
+RenderWidgetHostView* TabContentsView::CreateNewFullscreenWidgetInternal(
+    int route_id) {
+  return delegate_view_helper_.CreateNewFullscreenWidget(
+      route_id, tab_contents()->render_view_host()->process());
 }
 
 void TabContentsView::ShowCreatedFullscreenWidgetInternal(

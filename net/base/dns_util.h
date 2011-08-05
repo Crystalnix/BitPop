@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,8 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/string_piece.h"
+#include "net/base/net_api.h"
 
 namespace net {
 
@@ -17,17 +19,17 @@ namespace net {
 //
 //   dotted: a string in dotted form: "www.google.com"
 //   out: a result in DNS form: "\x03www\x06google\x03com\x00"
-bool DNSDomainFromDot(const std::string& dotted, std::string* out);
+NET_TEST bool DNSDomainFromDot(const std::string& dotted, std::string* out);
 
 // DNSDomainToString coverts a domain in DNS format to a dotted string.
-std::string DNSDomainToString(const std::string& domain);
+NET_TEST std::string DNSDomainToString(const std::string& domain);
 
 // Returns true iff the given character is in the set of valid DNS label
 // characters as given in RFC 3490, 4.1, 3(a)
-bool IsSTD3ASCIIValidCharacter(char c);
+NET_TEST bool IsSTD3ASCIIValidCharacter(char c);
 
 // Returns the hostname by trimming the ending dot, if one exists.
-std::string TrimEndingDot(const std::string& host);
+NET_API std::string TrimEndingDot(const std::string& host);
 
 // DNS resource record types. See
 // http://www.iana.org/assignments/dns-parameters
@@ -52,6 +54,37 @@ static const uint8 kDNSSEC_RSA_SHA256 = 8;
 // RFC 4509
 static const uint8 kDNSSEC_SHA1 = 1;
 static const uint8 kDNSSEC_SHA256 = 2;
+
+// A Buffer is used for walking over a DNS response packet.
+class DnsResponseBuffer {
+ public:
+  DnsResponseBuffer(const uint8* p, unsigned len)
+      : p_(p),
+        packet_(p),
+        len_(len),
+        packet_len_(len) {
+  }
+
+  bool U8(uint8* v);
+  bool U16(uint16* v);
+  bool U32(uint32* v);
+  bool Skip(unsigned n);
+
+  bool Block(base::StringPiece* out, unsigned len);
+
+  // DNSName parses a (possibly compressed) DNS name from the packet. If |name|
+  // is not NULL, then the name is written into it. See RFC 1035 section 4.1.4.
+  bool DNSName(std::string* name);
+
+ private:
+  const uint8* p_;
+  const uint8* const packet_;
+  unsigned len_;
+  const unsigned packet_len_;
+
+  DISALLOW_COPY_AND_ASSIGN(DnsResponseBuffer);
+};
+
 
 }  // namespace net
 

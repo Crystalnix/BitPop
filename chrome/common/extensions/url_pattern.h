@@ -182,7 +182,7 @@ class URLPattern {
   bool IsValidScheme(const std::string& scheme) const;
 
   // Returns true if this instance matches the specified URL.
-  bool MatchesUrl(const GURL& url) const;
+  bool MatchesURL(const GURL& url) const;
 
   // Returns true if |test| matches our scheme.
   bool MatchesScheme(const std::string& test) const;
@@ -233,6 +233,13 @@ class URLPattern {
   // with STL containers.
   URLPattern();
 #endif
+
+  // Returns true if any of the |schemes| items matches our scheme.
+  bool MatchesAnyScheme(const std::vector<std::string>& schemes) const;
+
+  // If the URLPattern contains a wildcard scheme, returns a list of
+  // equivalent literal schemes, otherwise returns the current scheme.
+  std::vector<std::string> GetExplicitSchemes() const;
 
   // A bitmask containing the schemes which are considered valid for this
   // pattern. Parse() uses this to decide whether a pattern contains a valid

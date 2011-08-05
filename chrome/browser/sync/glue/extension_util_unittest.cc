@@ -6,7 +6,7 @@
 
 #include "base/file_path.h"
 #include "base/values.h"
-#include "chrome/browser/extensions/mock_extension_service.h"
+#include "chrome/browser/extensions/extension_sync_data.h"
 #include "chrome/browser/sync/protocol/extension_specifics.pb.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
@@ -16,10 +16,6 @@
 namespace browser_sync {
 
 namespace {
-
-using ::testing::_;
-using ::testing::Return;
-using ::testing::StrictMock;
 
 #if defined(OS_WIN)
 const FilePath::CharType kExtensionFilePath[] = FILE_PATH_LITERAL("c:\\foo");
@@ -155,330 +151,45 @@ TEST_F(ExtensionUtilTest, IsExtensionValid) {
 #endif
 }
 
-TEST_F(ExtensionUtilTest, IsExtensionSpecificsUnset) {
-  {
-    sync_pb::ExtensionSpecifics specifics;
-    EXPECT_TRUE(IsExtensionSpecificsUnset(specifics));
-  }
-
-  {
-    sync_pb::ExtensionSpecifics specifics;
-    specifics.set_id("a");
-    EXPECT_FALSE(IsExtensionSpecificsUnset(specifics));
-  }
-
-  {
-    sync_pb::ExtensionSpecifics specifics;
-    specifics.set_version("a");
-    EXPECT_FALSE(IsExtensionSpecificsUnset(specifics));
-  }
-
-  {
-    sync_pb::ExtensionSpecifics specifics;
-    specifics.set_update_url("a");
-    EXPECT_FALSE(IsExtensionSpecificsUnset(specifics));
-  }
-
-  {
-    sync_pb::ExtensionSpecifics specifics;
-    specifics.set_enabled(true);
-    EXPECT_FALSE(IsExtensionSpecificsUnset(specifics));
-  }
-
-  {
-    sync_pb::ExtensionSpecifics specifics;
-    specifics.set_incognito_enabled(true);
-    EXPECT_FALSE(IsExtensionSpecificsUnset(specifics));
-  }
-
-  {
-    sync_pb::ExtensionSpecifics specifics;
-    specifics.set_name("a");
-    EXPECT_FALSE(IsExtensionSpecificsUnset(specifics));
-  }
-}
-
-TEST_F(ExtensionUtilTest, IsExtensionSpecificsValid) {
-  sync_pb::ExtensionSpecifics specifics;
-  EXPECT_FALSE(IsExtensionSpecificsValid(specifics));
-  specifics.set_id(kValidId);
-  EXPECT_FALSE(IsExtensionSpecificsValid(specifics));
-  specifics.set_version(kValidVersion);
-  EXPECT_TRUE(IsExtensionSpecificsValid(specifics));
-  EXPECT_FALSE(IsExtensionSpecificsUnset(specifics));
-  specifics.set_update_url(kValidUpdateUrl1);
-  EXPECT_TRUE(IsExtensionSpecificsValid(specifics));
-  EXPECT_FALSE(IsExtensionSpecificsUnset(specifics));
-
-  {
-    sync_pb::ExtensionSpecifics specifics_copy(specifics);
-    specifics_copy.set_id("invalid");
-    EXPECT_FALSE(IsExtensionSpecificsValid(specifics_copy));
-  }
-
-  {
-    sync_pb::ExtensionSpecifics specifics_copy(specifics);
-    specifics_copy.set_version("invalid");
-    EXPECT_FALSE(IsExtensionSpecificsValid(specifics_copy));
-  }
-
-  {
-    sync_pb::ExtensionSpecifics specifics_copy(specifics);
-    specifics_copy.set_update_url("http:invalid.com:invalid");
-    EXPECT_FALSE(IsExtensionSpecificsValid(specifics_copy));
-  }
-}
-
-TEST_F(ExtensionUtilTest, AreExtensionSpecificsEqual) {
-  sync_pb::ExtensionSpecifics a, b;
-  EXPECT_TRUE(AreExtensionSpecificsEqual(a, b));
-
-  a.set_id("a");
-  EXPECT_FALSE(AreExtensionSpecificsEqual(a, b));
-  b.set_id("a");
-  EXPECT_TRUE(AreExtensionSpecificsEqual(a, b));
-
-  a.set_version("1.5");
-  EXPECT_FALSE(AreExtensionSpecificsEqual(a, b));
-  b.set_version("1.5");
-  EXPECT_TRUE(AreExtensionSpecificsEqual(a, b));
-
-  a.set_update_url("http://www.foo.com");
-  EXPECT_FALSE(AreExtensionSpecificsEqual(a, b));
-  b.set_update_url("http://www.foo.com");
-  EXPECT_TRUE(AreExtensionSpecificsEqual(a, b));
-
-  a.set_enabled(true);
-  EXPECT_FALSE(AreExtensionSpecificsEqual(a, b));
-  b.set_enabled(true);
-  EXPECT_TRUE(AreExtensionSpecificsEqual(a, b));
-
-  a.set_incognito_enabled(true);
-  EXPECT_FALSE(AreExtensionSpecificsEqual(a, b));
-  b.set_incognito_enabled(true);
-  EXPECT_TRUE(AreExtensionSpecificsEqual(a, b));
-
-  a.set_name("name");
-  EXPECT_FALSE(AreExtensionSpecificsEqual(a, b));
-  b.set_name("name");
-  EXPECT_TRUE(AreExtensionSpecificsEqual(a, b));
-}
-
-TEST_F(ExtensionUtilTest, CopyUserProperties) {
-  sync_pb::ExtensionSpecifics dest_specifics;
-  dest_specifics.set_version(kVersion2);
-  dest_specifics.set_update_url(kValidUpdateUrl1);
-  dest_specifics.set_enabled(true);
-  dest_specifics.set_incognito_enabled(false);
-  dest_specifics.set_name(kName);
-
+TEST_F(ExtensionUtilTest, SpecificsToSyncData) {
   sync_pb::ExtensionSpecifics specifics;
   specifics.set_id(kValidId);
-  specifics.set_version(kVersion3);
   specifics.set_update_url(kValidUpdateUrl2);
   specifics.set_enabled(false);
   specifics.set_incognito_enabled(true);
-  specifics.set_name(kName2);
-
-  CopyUserProperties(specifics, &dest_specifics);
-  EXPECT_EQ("", dest_specifics.id());
-  EXPECT_EQ(kVersion2, dest_specifics.version());
-  EXPECT_EQ(kValidUpdateUrl1, dest_specifics.update_url());
-  EXPECT_FALSE(dest_specifics.enabled());
-  EXPECT_TRUE(dest_specifics.incognito_enabled());
-  EXPECT_EQ(kName, dest_specifics.name());
-}
-
-TEST_F(ExtensionUtilTest, CopyNonUserProperties) {
-  sync_pb::ExtensionSpecifics dest_specifics;
-  dest_specifics.set_id(kValidId);
-  dest_specifics.set_version(kVersion2);
-  dest_specifics.set_update_url(kValidUpdateUrl1);
-  dest_specifics.set_enabled(true);
-  dest_specifics.set_incognito_enabled(false);
-  dest_specifics.set_name(kName);
-
-  sync_pb::ExtensionSpecifics specifics;
-  specifics.set_id("");
-  specifics.set_version(kVersion3);
-  specifics.set_update_url(kValidUpdateUrl2);
-  specifics.set_enabled(false);
-  specifics.set_incognito_enabled(true);
-  specifics.set_name(kName2);
-
-  CopyNonUserProperties(specifics, &dest_specifics);
-  EXPECT_EQ("", dest_specifics.id());
-  EXPECT_EQ(kVersion3, dest_specifics.version());
-  EXPECT_EQ(kValidUpdateUrl2, dest_specifics.update_url());
-  EXPECT_TRUE(dest_specifics.enabled());
-  EXPECT_FALSE(dest_specifics.incognito_enabled());
-  EXPECT_EQ(kName2, dest_specifics.name());
-}
-
-TEST_F(ExtensionUtilTest, AreExtensionSpecificsUserPropertiesEqual) {
-  sync_pb::ExtensionSpecifics a, b;
-  EXPECT_TRUE(AreExtensionSpecificsUserPropertiesEqual(a, b));
-
-  a.set_id("a");
-  b.set_id("b");
-  EXPECT_TRUE(AreExtensionSpecificsUserPropertiesEqual(a, b));
-
-  a.set_version("1.5");
-  b.set_version("1.6");
-  EXPECT_TRUE(AreExtensionSpecificsUserPropertiesEqual(a, b));
-
-  a.set_name("name");
-  b.set_name("name2");
-  EXPECT_TRUE(AreExtensionSpecificsUserPropertiesEqual(a, b));
-
-  a.set_update_url("http://www.foo.com");
-  b.set_update_url("http://www.foo2.com");
-  EXPECT_TRUE(AreExtensionSpecificsUserPropertiesEqual(a, b));
-
-  a.set_enabled(true);
-  EXPECT_FALSE(AreExtensionSpecificsUserPropertiesEqual(a, b));
-  b.set_enabled(true);
-  EXPECT_TRUE(AreExtensionSpecificsUserPropertiesEqual(a, b));
-
-  a.set_incognito_enabled(true);
-  EXPECT_FALSE(AreExtensionSpecificsUserPropertiesEqual(a, b));
-  b.set_incognito_enabled(true);
-  EXPECT_TRUE(AreExtensionSpecificsUserPropertiesEqual(a, b));
-}
-
-TEST_F(ExtensionUtilTest, AreExtensionSpecificsNonUserPropertiesEqual) {
-  sync_pb::ExtensionSpecifics a, b;
-  EXPECT_TRUE(AreExtensionSpecificsNonUserPropertiesEqual(a, b));
-
-  a.set_enabled(true);
-  b.set_enabled(false);
-  EXPECT_TRUE(AreExtensionSpecificsNonUserPropertiesEqual(a, b));
-
-  a.set_incognito_enabled(true);
-  b.set_incognito_enabled(false);
-  EXPECT_TRUE(AreExtensionSpecificsNonUserPropertiesEqual(a, b));
-
-  a.set_id("a");
-  EXPECT_FALSE(AreExtensionSpecificsNonUserPropertiesEqual(a, b));
-  b.set_id("a");
-  EXPECT_TRUE(AreExtensionSpecificsNonUserPropertiesEqual(a, b));
-
-  a.set_version("1.5");
-  EXPECT_FALSE(AreExtensionSpecificsNonUserPropertiesEqual(a, b));
-  b.set_version("1.5");
-  EXPECT_TRUE(AreExtensionSpecificsNonUserPropertiesEqual(a, b));
-
-  a.set_update_url("http://www.foo.com");
-  EXPECT_FALSE(AreExtensionSpecificsNonUserPropertiesEqual(a, b));
-  b.set_update_url("http://www.foo.com");
-  EXPECT_TRUE(AreExtensionSpecificsNonUserPropertiesEqual(a, b));
-
-  a.set_name("name");
-  EXPECT_FALSE(AreExtensionSpecificsNonUserPropertiesEqual(a, b));
-  b.set_name("name");
-  EXPECT_TRUE(AreExtensionSpecificsNonUserPropertiesEqual(a, b));
-}
-
-scoped_refptr<Extension> MakeSyncableExtension(
-    const std::string& version_string,
-    const std::string& update_url_spec,
-    const std::string& name,
-    const FilePath& extension_path) {
-  DictionaryValue source;
-  source.SetString(extension_manifest_keys::kVersion, version_string);
-  source.SetString(extension_manifest_keys::kUpdateURL, update_url_spec);
-  source.SetString(extension_manifest_keys::kName, name);
-  std::string error;
-  scoped_refptr<Extension> extension = Extension::Create(
-      extension_path, Extension::INTERNAL, source,
-      Extension::STRICT_ERROR_CHECKS, &error);
-  EXPECT_TRUE(extension);
-  EXPECT_EQ("", error);
-  return extension;
-}
-
-TEST_F(ExtensionUtilTest, GetExtensionSpecifics) {
-  FilePath file_path(kExtensionFilePath);
-  StrictMock<MockExtensionService> mock_extension_service;
-  EXPECT_CALL(mock_extension_service, IsExtensionEnabled(_))
-      .WillOnce(Return(true));
-  EXPECT_CALL(mock_extension_service, IsIncognitoEnabled(_))
-      .WillOnce(Return(false));
-
-  scoped_refptr<Extension> extension(
-      MakeSyncableExtension(
-          kValidVersion, kValidUpdateUrl1, kName, file_path));
-  sync_pb::ExtensionSpecifics specifics;
-  GetExtensionSpecifics(*extension, mock_extension_service, &specifics);
-  EXPECT_EQ(extension->id(), specifics.id());
-  EXPECT_EQ(extension->VersionString(), kValidVersion);
-  EXPECT_EQ(extension->update_url().spec(), kValidUpdateUrl1);
-  EXPECT_TRUE(specifics.enabled());
-  EXPECT_FALSE(specifics.incognito_enabled());
-  EXPECT_EQ(kName, specifics.name());
-}
-
-// TODO(akalin): Make ExtensionService/ExtensionUpdater testable
-// enough to be able to write a unittest for SetExtensionProperties().
-
-TEST_F(ExtensionUtilTest, MergeExtensionSpecificsWithUserProperties) {
-  sync_pb::ExtensionSpecifics merged_specifics;
-  merged_specifics.set_id(kValidId);
-  merged_specifics.set_update_url(kValidUpdateUrl1);
-  merged_specifics.set_enabled(true);
-  merged_specifics.set_incognito_enabled(false);
-  merged_specifics.set_version(kVersion2);
-
-  sync_pb::ExtensionSpecifics specifics;
-  specifics.set_id(kValidId);
-  specifics.set_update_url(kValidUpdateUrl2);
-  merged_specifics.set_enabled(false);
-  merged_specifics.set_incognito_enabled(true);
-
   specifics.set_version(kVersion1);
-  {
-    sync_pb::ExtensionSpecifics result = merged_specifics;
-    MergeExtensionSpecifics(specifics, false, &result);
-    EXPECT_TRUE(AreExtensionSpecificsUserPropertiesEqual(
-        result, merged_specifics));
-    EXPECT_TRUE(AreExtensionSpecificsNonUserPropertiesEqual(
-        result, merged_specifics));
-  }
-  {
-    sync_pb::ExtensionSpecifics result = merged_specifics;
-    MergeExtensionSpecifics(specifics, true, &result);
-    EXPECT_TRUE(AreExtensionSpecificsEqual(result, merged_specifics));
-  }
+  specifics.set_name(kName);
 
-  specifics.set_version(kVersion2);
-  {
-    sync_pb::ExtensionSpecifics result = merged_specifics;
-    MergeExtensionSpecifics(specifics, false, &result);
-    EXPECT_TRUE(AreExtensionSpecificsUserPropertiesEqual(
-        result, merged_specifics));
-    EXPECT_TRUE(AreExtensionSpecificsNonUserPropertiesEqual(
-        result, specifics));
-  }
-  {
-    sync_pb::ExtensionSpecifics result = merged_specifics;
-    MergeExtensionSpecifics(specifics, true, &result);
-    EXPECT_TRUE(AreExtensionSpecificsEqual(result, specifics));
-  }
+  ExtensionSyncData sync_data;
+  EXPECT_TRUE(SpecificsToSyncData(specifics, &sync_data));
+  EXPECT_EQ(specifics.id(), sync_data.id);
+  EXPECT_EQ(specifics.version(), sync_data.version.GetString());
+  EXPECT_EQ(specifics.update_url(), sync_data.update_url.spec());
+  EXPECT_EQ(specifics.enabled(), sync_data.enabled);
+  EXPECT_EQ(specifics.incognito_enabled(), sync_data.incognito_enabled);
+  EXPECT_EQ(specifics.name(), sync_data.name);
+}
 
-  specifics.set_version(kVersion3);
+TEST_F(ExtensionUtilTest, SyncDataToSpecifics) {
+  ExtensionSyncData sync_data;
+  sync_data.id = kValidId;
+  sync_data.update_url = GURL(kValidUpdateUrl2);
+  sync_data.enabled = true;
+  sync_data.incognito_enabled = false;
   {
-    sync_pb::ExtensionSpecifics result = merged_specifics;
-    MergeExtensionSpecifics(specifics, false, &result);
-    EXPECT_TRUE(AreExtensionSpecificsUserPropertiesEqual(
-        result, merged_specifics));
-    EXPECT_TRUE(AreExtensionSpecificsNonUserPropertiesEqual(
-        result, specifics));
+    scoped_ptr<Version> version(Version::GetVersionFromString(kVersion1));
+    sync_data.version = *version;
   }
-  {
-    sync_pb::ExtensionSpecifics result = merged_specifics;
-    MergeExtensionSpecifics(specifics, true, &result);
-    EXPECT_TRUE(AreExtensionSpecificsEqual(result, specifics));
-  }
+  sync_data.name = kName;
+
+  sync_pb::ExtensionSpecifics specifics;
+  SyncDataToSpecifics(sync_data, &specifics);
+  EXPECT_EQ(sync_data.id, specifics.id());
+  EXPECT_EQ(sync_data.update_url.spec(), specifics.update_url());
+  EXPECT_EQ(sync_data.enabled, specifics.enabled());
+  EXPECT_EQ(sync_data.incognito_enabled, specifics.incognito_enabled());
+  EXPECT_EQ(sync_data.version.GetString(), specifics.version());
+  EXPECT_EQ(sync_data.name, specifics.name());
 }
 
 }  // namespace

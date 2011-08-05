@@ -13,6 +13,7 @@
 #include "base/string_number_conversions.h"
 #include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/system_monitor/system_monitor.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/extension_tab_helper.h"
@@ -23,7 +24,7 @@
 #include "chrome/browser/tabs/tab_strip_model_order_controller.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
-#include "chrome/browser/ui/webui/new_tab_ui.h"
+#include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/testing_profile.h"
@@ -37,7 +38,6 @@
 #include "content/common/notification_source.h"
 #include "content/common/property_bag.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/base/system_monitor/system_monitor.h"
 
 using testing::_;
 
@@ -120,12 +120,18 @@ class TabStripDummyDelegate : public TabStripModelDelegate {
   }
   virtual bool CanRestoreTab() { return false; }
   virtual void RestoreTab() {}
-  virtual bool CanCloseContentsAt(int index) { return can_close_ ; }
+  virtual bool CanCloseContents(std::vector<int>* indices) {
+    if (!can_close_)
+      indices->clear();
+    return can_close_;
+  }
   virtual bool CanBookmarkAllTabs() const { return false; }
   virtual void BookmarkAllTabs() {}
   virtual bool CanCloseTab() const { return true; }
   virtual bool UseVerticalTabs() const { return false; }
   virtual void ToggleUseVerticalTabs() {}
+  virtual bool UseCompactNavigationBar() const { return false; }
+  virtual void ToggleUseCompactNavigationBar() {}
   virtual bool LargeIconsPermitted() const { return true; }
 
  private:
@@ -256,8 +262,8 @@ class TabStripModelTest : public RenderViewHostTestHarness {
   std::wstring profile_path_;
   std::map<TabContents*, int> foo_;
 
-  // ProfileManager requires a ui::SystemMonitor.
-  ui::SystemMonitor system_monitor;
+  // ProfileManager requires a base::SystemMonitor.
+  base::SystemMonitor system_monitor;
 
   ProfileManager pm_;
 };
@@ -338,10 +344,10 @@ class MockTabStripModelObserver : public TabStripModelObserver {
     s->foreground = foreground;
     states_.push_back(s);
   }
-  virtual void TabSelectedAt(TabContentsWrapper* old_contents,
-                             TabContentsWrapper* new_contents,
-                             int index,
-                             bool user_gesture) {
+  virtual void ActiveTabChanged(TabContentsWrapper* old_contents,
+                                TabContentsWrapper* new_contents,
+                                int index,
+                                bool user_gesture) {
     State* s = new State(new_contents, index, SELECT);
     s->src_contents = old_contents;
     s->user_gesture = user_gesture;
@@ -2177,7 +2183,7 @@ TEST_F(TabStripModelTest, CloseSelectedTabs) {
 
 // Verifies that if we change the selection from a multi selection to a single
 // selection, but not in a way that changes the selected_index that
-// TabSelectedAt is still invoked.
+// ActiveTabChanged is still invoked.
 TEST_F(TabStripModelTest, MultipleToSingle) {
   TabStripDummyDelegate delegate(NULL);
   TabStripModel strip(&delegate, profile());

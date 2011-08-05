@@ -413,7 +413,8 @@ IN_PROC_BROWSER_TEST_F(NotificationTest, TestCloseOpen) {
   EXPECT_EQ(NotificationPanel::CLOSED, tester->state());
 }
 
-IN_PROC_BROWSER_TEST_F(NotificationTest, TestScrollBalloonToVisible) {
+// TODO(lipalani): http://crbug.com/83123
+IN_PROC_BROWSER_TEST_F(NotificationTest, DISABLED_TestScrollBalloonToVisible) {
   BalloonCollectionImpl* collection = GetBalloonCollectionImpl();
   NotificationPanel* panel = GetNotificationPanel();
   NotificationPanelTester* tester = panel->GetTester();
@@ -488,7 +489,8 @@ IN_PROC_BROWSER_TEST_F(NotificationTest, TestScrollBalloonToVisible) {
   }
 }
 
-IN_PROC_BROWSER_TEST_F(NotificationTest, TestActivateDeactivate) {
+// Seems to be flaky. http://crbug.com/84427
+IN_PROC_BROWSER_TEST_F(NotificationTest, FLAKY_TestActivateDeactivate) {
   BalloonCollectionImpl* collection = GetBalloonCollectionImpl();
   NotificationPanel* panel = GetNotificationPanel();
   NotificationPanelTester* tester = panel->GetTester();

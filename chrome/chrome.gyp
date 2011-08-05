@@ -23,6 +23,7 @@
     'chromium_dependencies': [
       'common',
       'browser',
+      'debugger',
       'profile_import',
       'renderer',
       'syncapi',
@@ -71,6 +72,10 @@
                 'app/resources/locale_settings_linux.grd',
           }],
         ],
+      },],
+      ['os_posix == 1 and OS != "mac" and OS != "linux"', {
+        'platform_locale_settings_grd':
+            'app/resources/locale_settings_linux.grd',
       },],
       ['OS=="mac"', {
         'tweak_info_plist_path': 'tools/build/mac/tweak_info_plist',
@@ -240,6 +245,34 @@
       'includes': [ '../build/grit_target.gypi' ],
     },
     {
+      'target_name': 'theme_resources_large',
+      'type': 'none',
+      'actions': [
+        {
+          'action_name': 'theme_resources_large',
+          'variables': {
+            'grit_grd_file': 'app/theme/theme_resources_large.grd',
+          },
+          'includes': [ '../build/grit_action.gypi' ],
+        },
+      ],
+      'includes': [ '../build/grit_target.gypi' ],
+    },
+    {
+      'target_name': 'theme_resources_standard',
+      'type': 'none',
+      'actions': [
+        {
+          'action_name': 'theme_resources_standard',
+          'variables': {
+            'grit_grd_file': 'app/theme/theme_resources_standard.grd',
+          },
+          'includes': [ '../build/grit_action.gypi' ],
+        },
+      ],
+      'includes': [ '../build/grit_target.gypi' ],
+    },
+    {
       'target_name': 'platform_locale_settings',
       'type': 'none',
       'actions': [
@@ -274,6 +307,13 @@
           'action_name': 'net_internals_resources',
           'variables': {
             'grit_grd_file': 'browser/resources/net_internals_resources.grd',
+          },
+          'includes': [ '../build/grit_action.gypi' ],
+        },
+        {
+          'action_name': 'options_resources',
+          'variables': {
+            'grit_grd_file': 'browser/resources/options_resources.grd',
           },
           'includes': [ '../build/grit_action.gypi' ],
         },
@@ -316,6 +356,34 @@
                      '<@(grit_defines)' ],
           'message': 'Generating resources from <(grit_grd_file)',
         },
+        {
+          'action_name': 'devtools_frontend_resources',
+          # This can't use ../build/grit_action.gypi because the grd file
+          # is generated a build time, so the trick of using grit_info to get
+          # the real inputs/outputs at GYP time isn't possible.
+          'variables': {
+            'grit_cmd': ['python', '../tools/grit/grit.py'],
+            'frontend_folder': 'browser/debugger/frontend',
+            'grit_grd_file':
+               '<(frontend_folder)/devtools_frontend_resources.grd',
+          },
+          'inputs': [
+            '<(grit_grd_file)',
+            '<(frontend_folder)/devtools_frontend.html',
+          ],
+          'outputs': [
+            '<(grit_out_dir)/grit/devtools_frontend_resources.h',
+            '<(grit_out_dir)/devtools_frontend_resources.pak',
+            '<(grit_out_dir)/grit/devtools_frontend_resources_map.cc',
+            '<(grit_out_dir)/grit/devtools_frontend_resources_map.h',
+          ],
+          'action': ['<@(grit_cmd)',
+                     '-i', '<(grit_grd_file)', 'build',
+                     '-o', '<(grit_out_dir)',
+                     '-D', 'SHARED_INTERMEDIATE_DIR=<(SHARED_INTERMEDIATE_DIR)',
+                     '<@(grit_defines)' ],
+          'message': 'Generating resources from <(grit_grd_file)',
+        },
       ],
       'includes': [ '../build/grit_target.gypi' ],
     },
@@ -348,13 +416,16 @@
     },
     {
       'target_name': 'debugger',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '57823D8C-A317-4713-9125-2C91FDFD12D6',
       'dependencies': [
+        'chrome_extra_resources',
         'chrome_resources',
         'chrome_strings',
+        '../base/base.gyp:base',
         '../net/net.gyp:http_server',
         'theme_resources',
+        'theme_resources_standard',
         '../skia/skia.gyp:skia',
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
@@ -369,6 +440,8 @@
         'browser/debugger/debugger_remote_service.h',
         'browser/debugger/devtools_client_host.cc',
         'browser/debugger/devtools_client_host.h',
+        'browser/debugger/devtools_file_util.cc',
+        'browser/debugger/devtools_file_util.h',
         'browser/debugger/devtools_http_protocol_handler.cc',
         'browser/debugger/devtools_http_protocol_handler.h',
         'browser/debugger/devtools_manager.cc',
@@ -395,7 +468,7 @@
         'browser/debugger/inspectable_tab_proxy.h',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
           ],
@@ -404,7 +477,7 @@
     },
     {
       'target_name': 'utility',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '4D2B38E6-65FF-4F97-B88A-E441DF54EBF7',
       'dependencies': [
         '../base/base.gyp:base',
@@ -419,7 +492,7 @@
         '..',
       ],
       'conditions': [
-        ['OS=="linux"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
           ],
@@ -428,7 +501,7 @@
     },
     {
       'target_name': 'profile_import',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
       ],
@@ -442,12 +515,13 @@
       # Provides a syncapi dynamic library target from checked-in binaries,
       # or from compiling a stub implementation.
       'target_name': 'syncapi',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
-	'browser/sync/engine/http_post_provider_factory.h',
-	'browser/sync/engine/http_post_provider_interface.h',
+        'browser/sync/engine/http_post_provider_factory.h',
+        'browser/sync/engine/http_post_provider_interface.h',
         'browser/sync/engine/syncapi.cc',
         'browser/sync/engine/syncapi.h',
+        'browser/sync/engine/configure_reason.h'
       ],
       'include_dirs': [
         '..',
@@ -479,7 +553,7 @@
     },
     {
       'target_name': 'sync',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         'browser/sync/engine/all_status.cc',
         'browser/sync/engine/all_status.h',
@@ -501,8 +575,6 @@
         'browser/sync/engine/download_updates_command.h',
         'browser/sync/engine/get_commit_ids_command.cc',
         'browser/sync/engine/get_commit_ids_command.h',
-        'browser/sync/engine/idle_query_linux.cc',
-        'browser/sync/engine/idle_query_linux.h',
         'browser/sync/engine/model_changing_syncer_command.cc',
         'browser/sync/engine/model_changing_syncer_command.h',
         'browser/sync/engine/model_safe_worker.cc',
@@ -548,6 +620,10 @@
         'browser/sync/js_arg_list.cc',
         'browser/sync/js_arg_list.h',
         'browser/sync/js_backend.h',
+        'browser/sync/js_directory_change_listener.cc',
+        'browser/sync/js_directory_change_listener.h',
+        'browser/sync/js_event_details.cc',
+        'browser/sync/js_event_details.h',
         'browser/sync/js_event_handler.h',
         'browser/sync/js_event_handler_list.cc',
         'browser/sync/js_event_handler_list.h',
@@ -570,6 +646,7 @@
         'browser/sync/sessions/sync_session.h',
         'browser/sync/sessions/sync_session_context.cc',
         'browser/sync/sessions/sync_session_context.h',
+        'browser/sync/shared_value.h',
         'browser/sync/syncable/autofill_migration.h',
         'browser/sync/syncable/blob.h',
         'browser/sync/syncable/dir_open_result.h',
@@ -594,8 +671,6 @@
         'browser/sync/syncable/syncable_id.h',
         'browser/sync/syncable/syncable_enum_conversions.cc',
         'browser/sync/syncable/syncable_enum_conversions.h',
-        'browser/sync/util/crypto_helpers.cc',
-        'browser/sync/util/crypto_helpers.h',
         'browser/sync/util/cryptographer.cc',
         'browser/sync/util/cryptographer.h',
         'browser/sync/util/dbgq.h',
@@ -638,7 +713,7 @@
             'browser/sync/util/data_encryption.h',
           ],
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
           ],
@@ -665,7 +740,7 @@
     # A library for sending and receiving server-issued notifications.
     {
       'target_name': 'sync_notifier',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         'browser/sync/notifier/cache_invalidation_packet_handler.cc',
         'browser/sync/notifier/cache_invalidation_packet_handler.h',
@@ -687,7 +762,6 @@
         'browser/sync/notifier/sync_notifier.h',
         'browser/sync/notifier/sync_notifier_factory.h',
         'browser/sync/notifier/sync_notifier_factory.cc',
-        'browser/sync/notifier/sync_notifier_callback.h',
       ],
       'include_dirs': [
         '..',
@@ -707,7 +781,7 @@
     },
     {
       'target_name': 'service',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '2DA87614-55C5-4E56-A17E-0CD099786197',
       'dependencies': [
         'chrome_strings',
@@ -739,6 +813,8 @@
         'service/cloud_print/cloud_print_proxy.h',
         'service/cloud_print/cloud_print_proxy_backend.cc',
         'service/cloud_print/cloud_print_proxy_backend.h',
+        'service/cloud_print/cloud_print_token_store.cc',
+        'service/cloud_print/cloud_print_token_store.h',
         'service/cloud_print/cloud_print_url_fetcher.cc',
         'service/cloud_print/cloud_print_url_fetcher.h',
         'service/cloud_print/job_status_updater.cc',
@@ -752,8 +828,6 @@
         'service/gaia/service_gaia_authenticator.h',
         'service/net/service_url_request_context.cc',
         'service/net/service_url_request_context.h',
-        'service/remoting/chromoting_host_manager.cc',
-        'service/remoting/chromoting_host_manager.h',
       ],
       'include_dirs': [
         '..',
@@ -769,12 +843,15 @@
             'service/cloud_print/print_system_win.cc',
           ],
         }],
-        ['OS=="linux"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
           ],
         }],
         ['use_cups==1', {
+          'dependencies': [
+            '../printing/printing.gyp:cups',
+          ],
           'defines': [
             # CP_PRINT_SYSTEM_AVAILABLE disables default dummy implementation
             # of cloud print system, and allows to use custom implementaiton.
@@ -783,33 +860,6 @@
           'sources': [
             'service/cloud_print/print_system_cups.cc',
           ],
-          'conditions': [
-            ['OS=="mac"', {
-              'link_settings': {
-                'libraries': [
-                  '$(SDKROOT)/usr/lib/libcups.dylib',
-                ]
-              },
-            }, {
-              'link_settings': {
-                'libraries': [
-                  '-lcups',
-                  '-lgcrypt',
-                ],
-              },
-            }],
-          ],
-        }],
-        ['remoting==1', {
-          'dependencies': [
-            '../remoting/remoting.gyp:chromoting_host',
-          ],
-        }],
-        ['remoting==0', {
-          'sources!': [
-            'service/remoting/chromoting_host_manager.cc',
-            'service/remoting/chromoting_host_manager.h',
-          ],
         }],
       ],
     },
@@ -817,15 +867,8 @@
       'target_name': 'ipclist',
       'type': 'executable',
       'dependencies': [
-         'chrome',
-         'chrome_resources',
-         'chrome_strings',
-         'test_support_common',
-         'test_support_ui',
-         '../skia/skia.gyp:skia',
-         '../testing/gtest.gyp:gtest',
-         '../third_party/libxslt/libxslt.gyp:libxslt',
-         '../third_party/npapi/npapi.gyp:npapi',
+        'test_support_common',
+        '../skia/skia.gyp:skia',
       ],
       'include_dirs': [
          '..',
@@ -1122,6 +1165,9 @@
           'include_dirs': [
             '..',
           ],
+          'dependencies': [
+            '../base/base.gyp:base',
+          ],
           'sources': [
             'tools/convert_dict/aff_reader.cc',
             'tools/convert_dict/aff_reader.h',
@@ -1162,7 +1208,9 @@
               'variables': {
                 'pak_inputs': [
                   '<(grit_out_dir)/component_extension_resources.pak',
+                  '<(grit_out_dir)/devtools_frontend_resources.pak',
                   '<(grit_out_dir)/devtools_resources.pak',
+                  '<(grit_out_dir)/options_resources.pak',
                   '<(grit_out_dir)/net_internals_resources.pak',
                   '<(grit_out_dir)/shared_resources.pak',
                   '<(grit_out_dir)/sync_internals_resources.pak',
@@ -1221,7 +1269,7 @@
                   'inputs': [
                     '<(PRODUCT_DIR)/automated_ui_tests',
                     '<(PRODUCT_DIR)/reliability_tests',
-                    '<(PRODUCT_DIR)/lib.target/_pyautolib.so',
+                    '<(PRODUCT_DIR)/_pyautolib.so',
                   ],
                   'outputs': [
                     '<(PRODUCT_DIR)/strip_reliability_tests.stamp',
@@ -1238,7 +1286,22 @@
               ],
             }],
           ],
-        }
+        },
+        {
+          'target_name': 'ipcfuzz',
+          'type': 'loadable_module',
+          'include_dirs': [
+            '..',
+          ],
+          'dependencies': [
+            'test_support_common',
+            '../skia/skia.gyp:skia',
+          ],
+          'sources': [
+            'tools/ipclist/all_messages.h',
+            'tools/ipclist/ipcfuzz.cc',
+          ],
+        },
       ],
     },],  # OS=="linux"
     ['OS=="win"',
@@ -1260,6 +1323,7 @@
             '../media/media.gyp:*',
             '../net/net.gyp:*',
             '../ppapi/ppapi.gyp:*',
+            '../ppapi/ppapi_internal.gyp:*',
             '../printing/printing.gyp:*',
             '../sdch/sdch.gyp:*',
             '../skia/skia.gyp:*',
@@ -1404,10 +1468,11 @@
         },
         {
           'target_name': 'automation',
-          'type': '<(library)',
+          'type': 'static_library',
           'msvs_guid': '1556EF78-C7E6-43C8-951F-F6B43AC0DD12',
           'dependencies': [
             'theme_resources',
+            'theme_resources_standard',
             '../base/base.gyp:test_support_base',
             '../skia/skia.gyp:skia',
             '../testing/gtest.gyp:gtest',
@@ -1466,7 +1531,7 @@
         },
       ]},  # 'targets'
     ],  # OS=="win"
-    ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+    ['os_posix == 1 and OS != "mac"', {
       'targets': [{
         'target_name': 'packed_resources',
         'type': 'none',
@@ -1495,6 +1560,17 @@
                 '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.pak',
                 '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.pak',
                 '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources.pak',
+              ],
+              'conditions': [
+                ['touchui==0', {
+                  'pak_inputs': [
+                    '<(grit_out_dir)/theme_resources_standard.pak',
+                  ],
+                }, {  # else: touchui!=0
+                  'pak_inputs': [
+                    '<(grit_out_dir)/theme_resources_large.pak',
+                  ],
+                }],
               ],
             },
             'inputs': [
@@ -1556,7 +1632,7 @@
           },
         ],
       }],  # targets
-    }],  # OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"
+    }],  # os_posix == 1 and OS != "mac"
   ],  # 'conditions'
 }
 

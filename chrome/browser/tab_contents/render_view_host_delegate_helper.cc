@@ -13,14 +13,15 @@
 #include "chrome/browser/background_contents_service_factory.h"
 #include "chrome/browser/character_encoding.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/gpu_data_manager.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
+#include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/background_contents.h"
 #include "chrome/browser/user_style_sheet_watcher.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "content/browser/gpu/gpu_data_manager.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/renderer_host/render_widget_fullscreen_host.h"
@@ -104,13 +105,23 @@ TabContents* RenderViewHostDelegateViewHelper::CreateNewWindow(
     }
   }
 
+  TabContents* base_tab_contents = opener->GetAsTabContents();
+
+  // Do not create the new TabContents if the opener is a prerender TabContents.
+  prerender::PrerenderManager* prerender_manager =
+      profile->GetPrerenderManager();
+  if (prerender_manager &&
+      prerender_manager->IsTabContentsPrerendering(base_tab_contents)) {
+    return NULL;
+  }
+
   // Create the new web contents. This will automatically create the new
   // TabContentsView. In the future, we may want to create the view separately.
   TabContents* new_contents =
       new TabContents(profile,
                       site,
                       route_id,
-                      opener->GetAsTabContents(),
+                      base_tab_contents,
                       NULL);
   new_contents->set_opener_web_ui_type(webui_type);
   TabContentsView* new_view = new_contents->view();
@@ -150,8 +161,10 @@ RenderViewHostDelegateViewHelper::CreateNewFullscreenWidget(
 
 TabContents* RenderViewHostDelegateViewHelper::GetCreatedWindow(int route_id) {
   PendingContents::iterator iter = pending_contents_.find(route_id);
+
+  // Certain systems can block the creation of new windows. If we didn't succeed
+  // in creating one, just return NULL.
   if (iter == pending_contents_.end()) {
-    DCHECK(false);
     return NULL;
   }
 
@@ -286,6 +299,7 @@ WebPreferences RenderViewHostDelegateHelper::GetWebkitPrefs(
     web_prefs.experimental_webgl_enabled =
         gpu_enabled() &&
         !command_line.HasSwitch(switches::kDisable3DAPIs) &&
+        !prefs->GetBoolean(prefs::kDisable3DAPIs) &&
         !command_line.HasSwitch(switches::kDisableExperimentalWebGL);
     web_prefs.gl_multisampling_enabled =
         !command_line.HasSwitch(switches::kDisableGLMultisampling);
@@ -324,6 +338,10 @@ WebPreferences RenderViewHostDelegateHelper::GetWebkitPrefs(
         !command_line.HasSwitch(switches::kDisableInteractiveFormValidation);
     web_prefs.fullscreen_enabled =
         command_line.HasSwitch(switches::kEnableFullScreen);
+    web_prefs.allow_displaying_insecure_content =
+        prefs->GetBoolean(prefs::kWebKitAllowDisplayingInsecureContent);
+    web_prefs.allow_running_insecure_content =
+        prefs->GetBoolean(prefs::kWebKitAllowRunningInsecureContent);
 
     // The user stylesheet watcher may not exist in a testing profile.
     if (profile->GetUserStyleSheetWatcher()) {

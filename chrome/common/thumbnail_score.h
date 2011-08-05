@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,6 +35,13 @@ struct ThumbnailScore {
   // percentage of pixels that are the most common luma. Higher boring
   // scores indicate that a higher percentage of a bitmap are all the
   // same brightness (most likely the same color).
+  //
+  // The score should only be used for comparing two thumbnails taken from
+  // the same page to see which one is more boring/interesting. The
+  // absolute score is not suitable for judging whether the thumbnail is
+  // actually boring or not. For instance, www.google.com is very
+  // succinct, so the boring score can be as high as 0.9, depending on the
+  // browser window size.
   double boring_score;
 
   // Whether the thumbnail was taken with height greater then
@@ -49,6 +56,11 @@ struct ThumbnailScore {
   // page; i.e. most MediaWiki sites would be indistinguishable by
   // thumbnails with |at_top| set to false.
   bool at_top;
+
+  // Whether this thumbnail was taken after load was completed.
+  // Thumbnails taken while page loading may only contain partial
+  // contents.
+  bool load_completed;
 
   // Record the time when a thumbnail was taken. This is used to make
   // sure thumbnails are kept fresh.

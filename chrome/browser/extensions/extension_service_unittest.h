@@ -9,8 +9,8 @@
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/message_loop.h"
+#include "base/scoped_temp_dir.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "content/browser/browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -46,7 +46,8 @@ class ExtensionServiceTestBase : public testing::Test {
   scoped_ptr<Profile> profile_;
   FilePath extensions_install_dir_;
   FilePath data_dir_;
-  scoped_refptr<ExtensionService> service_;
+  // Owned by |profile_|.
+  ExtensionService* service_;
   size_t total_successes_;
   MessageLoop loop_;
   BrowserThread ui_thread_;

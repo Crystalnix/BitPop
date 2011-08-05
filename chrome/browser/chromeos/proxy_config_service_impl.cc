@@ -109,6 +109,10 @@ bool ProxyConfigServiceImpl::ProxyConfig::Setting::CanBeWrittenByUser(
 
 //----------- ProxyConfigServiceImpl::ProxyConfig: public methods --------------
 
+ProxyConfigServiceImpl::ProxyConfig::ProxyConfig() : mode(MODE_DIRECT) {}
+
+ProxyConfigServiceImpl::ProxyConfig::~ProxyConfig() {}
+
 void ProxyConfigServiceImpl::ProxyConfig::ToNetProxyConfig(
     net::ProxyConfig* net_config) {
   switch (mode) {

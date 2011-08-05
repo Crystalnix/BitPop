@@ -161,7 +161,11 @@ class PepperPluginDelegateImpl
   // notifies all of the plugins.
   void OnSetFocus(bool has_focus);
 
+  // Returns whether or not a Pepper plugin is focused.
+  bool IsPluginFocused() const;
+
   // PluginDelegate implementation.
+  virtual void PluginFocusChanged(bool focused) OVERRIDE;
   virtual void PluginCrashed(webkit::ppapi::PluginInstance* instance);
   virtual void InstanceCreated(
       webkit::ppapi::PluginInstance* instance);
@@ -175,7 +179,7 @@ class PepperPluginDelegateImpl
   virtual PlatformImage2D* CreateImage2D(int width, int height);
   virtual PlatformContext3D* CreateContext3D();
   virtual PlatformVideoDecoder* CreateVideoDecoder(
-      PP_VideoDecoderConfig_Dev* decoder_config);
+      media::VideoDecodeAccelerator::Client* client);
   virtual PpapiBroker* ConnectToPpapiBroker(
       webkit::ppapi::PPB_Broker_Impl* client);
   virtual void NumberOfFindResultsChanged(int identifier,
@@ -271,6 +275,9 @@ class PepperPluginDelegateImpl
   virtual P2PSocketDispatcher* GetP2PSocketDispatcher();
   virtual webkit_glue::P2PTransport* CreateP2PTransport();
   virtual double GetLocalTimeZoneOffset(base::Time t);
+  virtual std::string GetFlashCommandLineArgs();
+  virtual base::SharedMemory* CreateAnonymousSharedMemory(uint32_t size);
+  virtual ::ppapi::Preferences GetPreferences();
 
  private:
   // Asynchronously attempts to create a PPAPI broker for the given plugin.
@@ -299,6 +306,9 @@ class PepperPluginDelegateImpl
 
   typedef IDMap<scoped_refptr<PpapiBrokerImpl>, IDMapOwnPointer> BrokerMap;
   BrokerMap pending_connect_broker_;
+
+  // Whether or not the focus is on a PPAPI plugin
+  bool is_pepper_plugin_focused_;
 
   DISALLOW_COPY_AND_ASSIGN(PepperPluginDelegateImpl);
 };

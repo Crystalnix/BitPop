@@ -11,7 +11,9 @@
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/browser_frame_view.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
+#include "third_party/ocmock/gtest_support.h"
 #import "third_party/ocmock/OCMock/OCMock.h"
+#import "third_party/ocmock/ocmock_extensions.h"
 
 namespace {
 
@@ -59,12 +61,9 @@ id CreateBrowserWindowControllerMock() {
   id delegate = [OCMockObject mockForClass:[BrowserWindowController class]];
   // Make conformsToProtocol return YES for @protocol(BrowserCommandExecutor)
   // to satisfy the DCHECK() in handleExtraKeyboardShortcut.
-  //
-  // TODO(akalin): Figure out how to replace OCMOCK_ANY below with
-  // @protocol(BrowserCommandExecutor) and have it work.
-  BOOL yes = YES;
-  [[[delegate stub] andReturnValue:OCMOCK_VALUE(yes)]
-    conformsToProtocol:OCMOCK_ANY];
+  [[[delegate stub] andReturnBool:YES]
+    conformsToProtocol:[OCMArg conformsToProtocol:
+                        @protocol(BrowserCommandExecutor)]];
   return delegate;
 }
 
@@ -83,7 +82,7 @@ TEST_F(ChromeEventProcessingWindowTest,
 
   // Don't wish to mock all the way down...
   [window_ setDelegate:nil];
-  [delegate verify];
+  EXPECT_OCMOCK_VERIFY(delegate);
 }
 
 // Verify that an unhandled shortcut does not get forwarded via
@@ -100,7 +99,7 @@ TEST_F(ChromeEventProcessingWindowTest, PerformKeyEquivalentNoForward) {
 
   // Don't wish to mock all the way down...
   [window_ setDelegate:nil];
-  [delegate verify];
+  EXPECT_OCMOCK_VERIFY(delegate);
 }
 
 }  // namespace

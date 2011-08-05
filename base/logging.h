@@ -468,7 +468,7 @@ std::string* MakeCheckOpString(const t1& v1, const t2& v2, const char* names) {
 }
 
 // MSVC doesn't like complex extern templates and DLLs.
-#if !defined(COMPILER_MSVC)
+#if !defined(COMPILER_MSVC) && defined(BASE_DLL)
 // Commonly used instantiations of MakeCheckOpString<>. Explicitly instantiated
 // in logging.cc.
 extern template std::string* MakeCheckOpString<int, int>(
@@ -622,7 +622,7 @@ enum { DEBUG_MODE = ENABLE_DLOG };
   COMPACT_GOOGLE_LOG_EX_ERROR_REPORT(ClassName , ##__VA_ARGS__)
 #define COMPACT_GOOGLE_LOG_DCHECK COMPACT_GOOGLE_LOG_ERROR_REPORT
 const LogSeverity LOG_DCHECK = LOG_ERROR_REPORT;
-extern DcheckState g_dcheck_state;
+BASE_API extern DcheckState g_dcheck_state;
 #define DCHECK_IS_ON()                                                  \
   ((::logging::g_dcheck_state ==                                        \
     ::logging::ENABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS) &&        \
@@ -794,7 +794,7 @@ inline void LogAtLevel(int const log_level, std::string const &msg) {
 // This class is used to explicitly ignore values in the conditional
 // logging macros.  This avoids compiler warnings like "value computed
 // is not used" and "statement has no effect".
-class BASE_API LogMessageVoidify {
+class LogMessageVoidify {
  public:
   LogMessageVoidify() { }
   // This has to be an operator with a precedence lower than << but
@@ -842,7 +842,7 @@ class BASE_API Win32ErrorLogMessage {
 };
 #elif defined(OS_POSIX)
 // Appends a formatted system message of the errno type
-class ErrnoLogMessage {
+class BASE_API ErrnoLogMessage {
  public:
   ErrnoLogMessage(const char* file,
                   int line,

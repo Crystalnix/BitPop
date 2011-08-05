@@ -29,7 +29,6 @@ cr.define('ntp4', function() {
       assert(this.appData.id, 'Got an app without an ID');
 
       this.className = 'app';
-      this.setAttribute('app-id', this.appData.id);
 
       var appImg = this.ownerDocument.createElement('img');
       appImg.src = this.appData.icon_big;
@@ -77,6 +76,52 @@ cr.define('ntp4', function() {
       // Don't allow the click to trigger a link or anything
       e.preventDefault();
     },
+
+    get appId() {
+      return this.appData.id;
+    },
+  };
+
+  /**
+   * Creates a new Link object. This is a stub implementation for now.
+   * @param {Object} data The url and title.
+   * @constructor
+   * @extends {HTMLAnchorElement}
+   */
+  function Link(data) {
+    var el = cr.doc.createElement('a');
+    el.__proto__ = Link.prototype;
+    el.data = data;
+    el.initialize();
+
+    return el;
+  };
+
+  Link.prototype = {
+    __proto__: HTMLAnchorElement.prototype,
+
+    initialize: function() {
+      this.className = 'link';
+      var thumbnailDiv = this.ownerDocument.createElement('div');
+      this.appendChild(thumbnailDiv);
+
+      var title = this.ownerDocument.createElement('span');
+      title.textContent = this.data.title;
+      this.appendChild(title);
+    },
+
+    /**
+     * Set the size and position of the link tile.
+     * @param {number} size The total size of |this|.
+     * @param {number} x The x-position.
+     * @param {number} y The y-position.
+     *     animate.
+     */
+    setBounds: function(size, x, y) {
+      this.style.width = this.style.height = size + 'px';
+      this.style.left = x + 'px';
+      this.style.top = y + 'px';
+    },
   };
 
   // The fraction of the app tile size that the icon uses.
@@ -123,6 +168,52 @@ cr.define('ntp4', function() {
      */
     appendApp: function(appData) {
       this.appendTile(new App(appData));
+    },
+
+    /** @inheritDoc */
+    shouldAcceptDrag: function(dataTransfer) {
+      return ntp4.getCurrentlyDraggingTile() ||
+          (dataTransfer && dataTransfer.types.indexOf('url') != -1);
+    },
+
+    /** @inheritDoc */
+    addOutsideData: function(dataTransfer, index) {
+      var url = dataTransfer.getData('url');
+      assert(url);
+      if (!url)
+        return;
+
+      // If the dataTransfer has html data, use that html's text contents as the
+      // title of the new link.
+      var html = dataTransfer.getData('text/html');
+      var title;
+      if (html) {
+        // It's important that we don't attach this node to the document
+        // because it might contain scripts.
+        var node = this.ownerDocument.createElement('div');
+        node.innerHTML = html;
+        title = node.textContent;
+      }
+      if (!title)
+        title = url;
+
+      var data = {url: url, title: title};
+      this.addTileAt(new Link(data), index);
+    },
+
+    /** @inheritDoc */
+    tileMoved: function(draggedTile) {
+      if (!(draggedTile.firstChild instanceof App))
+        return;
+
+      var appIds = [];
+      for (var i = 0; i < this.tileElements_.length; i++) {
+        var tileContents = this.tileElements_[i].firstChild;
+        if (tileContents instanceof App)
+          appIds.push(tileContents.appId);
+      }
+
+      chrome.send('reorderApps', [draggedTile.firstChild.appId, appIds]);
     },
   };
 

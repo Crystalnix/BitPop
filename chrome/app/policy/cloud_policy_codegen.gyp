@@ -137,7 +137,7 @@
     },
     {
       'target_name': 'policy',
-      'type': '<(library)',
+      'type': 'static_library',
       'hard_dependency': 1,
       'direct_dependent_settings': {
         'include_dirs': [
@@ -164,6 +164,7 @@
         'cloud_policy_code_generate',
         'cloud_policy_proto_compile',
         'cloud_policy_backend_header_compile',
+        '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/third_party/protobuf/protobuf.gyp:protobuf_lite',
       ],
     },
@@ -173,7 +174,7 @@
       'targets': [
         {
           'target_name': 'policy_win64',
-          'type': '<(library)',
+          'type': 'static_library',
           'hard_dependency': 1,
           'sources': [
             '<(policy_constant_header_path)',

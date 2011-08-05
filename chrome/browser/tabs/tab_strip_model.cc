@@ -17,12 +17,12 @@
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_helper.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
 #include "chrome/browser/tabs/tab_strip_model_delegate.h"
 #include "chrome/browser/tabs/tab_strip_model_order_controller.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/browser/ui/webui/web_ui_util.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/url_constants.h"
 #include "content/browser/renderer_host/render_process_host.h"
@@ -30,6 +30,7 @@
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/browser/tab_contents/tab_contents_delegate.h"
 #include "content/browser/tab_contents/tab_contents_view.h"
+#include "content/browser/user_metrics.h"
 #include "content/common/notification_service.h"
 
 namespace {
@@ -182,8 +183,8 @@ TabContentsWrapper* TabStripModel::ReplaceTabContentsAt(
   // selected contents as selection changing.
   if (active_index() == index) {
     FOR_EACH_OBSERVER(TabStripModelObserver, observers_,
-                      TabSelectedAt(old_contents, new_contents, active_index(),
-                                    false));
+                      ActiveTabChanged(old_contents, new_contents,
+                                       active_index(), false));
   }
   return old_contents;
 }
@@ -254,8 +255,8 @@ void TabStripModel::ActivateTabAt(int index, bool user_gesture) {
   }
   if (old_contents != new_contents || had_multi) {
     FOR_EACH_OBSERVER(TabStripModelObserver, observers_,
-                      TabSelectedAt(old_contents, new_contents,
-                                    active_index(), user_gesture));
+                      ActiveTabChanged(old_contents, new_contents,
+                                       active_index(), user_gesture));
   }
 }
 
@@ -571,7 +572,7 @@ void TabStripModel::ExtendSelectionTo(int index) {
   int old_active = active_index();
   selection_model_.SetSelectionFromAnchorTo(index);
   // This may not have resulted in a change, but we assume it did.
-  NotifySelectionChanged(old_active);
+  NotifyActiveTabChanged(old_active);
 }
 
 void TabStripModel::ToggleSelectionAt(int index) {
@@ -592,13 +593,13 @@ void TabStripModel::ToggleSelectionAt(int index) {
     selection_model_.set_anchor(index);
     selection_model_.set_active(index);
   }
-  NotifySelectionChanged(old_active);
+  NotifyActiveTabChanged(old_active);
 }
 
 void TabStripModel::AddSelectionFromAnchorTo(int index) {
   int old_active = active_index();
   selection_model_.AddSelectionFromAnchorTo(index);
-  NotifySelectionChanged(old_active);
+  NotifyActiveTabChanged(old_active);
 }
 
 bool TabStripModel::IsTabSelected(int index) const {
@@ -612,7 +613,7 @@ void TabStripModel::SetSelectionFromModel(
   int old_active_index = active_index();
   selection_model_.Copy(source);
   // This may not have resulted in a change, but we assume it did.
-  NotifySelectionChanged(old_active_index);
+  NotifyActiveTabChanged(old_active_index);
 }
 
 void TabStripModel::AddTabContents(TabContentsWrapper* contents,
@@ -711,6 +712,10 @@ void TabStripModel::MoveTabPrevious() {
   MoveTabContentsAt(active_index(), new_index, true);
 }
 
+void TabStripModel::ActiveTabClicked(int index) {
+  FOR_EACH_OBSERVER(TabStripModelObserver, observers_, ActiveTabClicked(index));
+}
+
 // Context menu functions.
 bool TabStripModel::IsContextMenuCommandEnabled(
     int context_index, ContextMenuCommand command_id) const {
@@ -764,6 +769,7 @@ bool TabStripModel::IsContextMenuCommandEnabled(
           delegate_->CanBookmarkAllTabs();
 
     case CommandUseVerticalTabs:
+    case CommandUseCompactNavigationBar:
       return true;
 
     case CommandSelectByDomain:
@@ -782,6 +788,8 @@ bool TabStripModel::IsContextMenuCommandChecked(
   switch (command_id) {
     case CommandUseVerticalTabs:
       return delegate()->UseVerticalTabs();
+    case CommandUseCompactNavigationBar:
+      return delegate()->UseCompactNavigationBar();
     default:
       NOTREACHED();
       break;
@@ -794,14 +802,12 @@ void TabStripModel::ExecuteContextMenuCommand(
   DCHECK(command_id > CommandFirst && command_id < CommandLast);
   switch (command_id) {
     case CommandNewTab:
-      UserMetrics::RecordAction(UserMetricsAction("TabContextMenu_NewTab"),
-                                profile_);
+      UserMetrics::RecordAction(UserMetricsAction("TabContextMenu_NewTab"));
       delegate()->AddBlankTabAt(context_index + 1, true);
       break;
 
     case CommandReload: {
-      UserMetrics::RecordAction(UserMetricsAction("TabContextMenu_Reload"),
-                                profile_);
+      UserMetrics::RecordAction(UserMetricsAction("TabContextMenu_Reload"));
       std::vector<int> indices = GetIndicesForCommand(context_index);
       for (size_t i = 0; i < indices.size(); ++i) {
         TabContentsWrapper* tab = GetTabContentsAt(indices[i]);
@@ -814,8 +820,7 @@ void TabStripModel::ExecuteContextMenuCommand(
     }
 
     case CommandDuplicate: {
-      UserMetrics::RecordAction(UserMetricsAction("TabContextMenu_Duplicate"),
-                                profile_);
+      UserMetrics::RecordAction(UserMetricsAction("TabContextMenu_Duplicate"));
       std::vector<int> indices = GetIndicesForCommand(context_index);
       // Copy the TabContents off as the indices will change as tabs are
       // duplicated.
@@ -831,8 +836,7 @@ void TabStripModel::ExecuteContextMenuCommand(
     }
 
     case CommandCloseTab: {
-      UserMetrics::RecordAction(UserMetricsAction("TabContextMenu_CloseTab"),
-                                profile_);
+      UserMetrics::RecordAction(UserMetricsAction("TabContextMenu_CloseTab"));
       std::vector<int> indices = GetIndicesForCommand(context_index);
       // Copy the TabContents off as the indices will change as we remove
       // things.
@@ -851,8 +855,7 @@ void TabStripModel::ExecuteContextMenuCommand(
 
     case CommandCloseOtherTabs: {
       UserMetrics::RecordAction(
-          UserMetricsAction("TabContextMenu_CloseOtherTabs"),
-          profile_);
+          UserMetricsAction("TabContextMenu_CloseOtherTabs"));
       InternalCloseTabs(GetIndicesClosedByCommand(context_index, command_id),
                         CLOSE_CREATE_HISTORICAL_TAB);
       break;
@@ -860,24 +863,21 @@ void TabStripModel::ExecuteContextMenuCommand(
 
     case CommandCloseTabsToRight: {
       UserMetrics::RecordAction(
-          UserMetricsAction("TabContextMenu_CloseTabsToRight"),
-          profile_);
+          UserMetricsAction("TabContextMenu_CloseTabsToRight"));
       InternalCloseTabs(GetIndicesClosedByCommand(context_index, command_id),
                         CLOSE_CREATE_HISTORICAL_TAB);
       break;
     }
 
     case CommandRestoreTab: {
-      UserMetrics::RecordAction(UserMetricsAction("TabContextMenu_RestoreTab"),
-                                profile_);
+      UserMetrics::RecordAction(UserMetricsAction("TabContextMenu_RestoreTab"));
       delegate_->RestoreTab();
       break;
     }
 
     case CommandTogglePinned: {
       UserMetrics::RecordAction(
-          UserMetricsAction("TabContextMenu_TogglePinned"),
-          profile_);
+          UserMetricsAction("TabContextMenu_TogglePinned"));
       std::vector<int> indices = GetIndicesForCommand(context_index);
       bool pin = WillContextMenuPin(context_index);
       if (pin) {
@@ -898,8 +898,7 @@ void TabStripModel::ExecuteContextMenuCommand(
 
     case CommandBookmarkAllTabs: {
       UserMetrics::RecordAction(
-          UserMetricsAction("TabContextMenu_BookmarkAllTabs"),
-          profile_);
+          UserMetricsAction("TabContextMenu_BookmarkAllTabs"));
 
       delegate_->BookmarkAllTabs();
       break;
@@ -907,10 +906,17 @@ void TabStripModel::ExecuteContextMenuCommand(
 
     case CommandUseVerticalTabs: {
       UserMetrics::RecordAction(
-          UserMetricsAction("TabContextMenu_UseVerticalTabs"),
-          profile_);
+          UserMetricsAction("TabContextMenu_UseVerticalTabs"));
 
       delegate()->ToggleUseVerticalTabs();
+      break;
+    }
+
+    case CommandUseCompactNavigationBar: {
+      UserMetrics::RecordAction(
+          UserMetricsAction("TabContextMenu_CompactNavigationBar"));
+
+      delegate()->ToggleUseCompactNavigationBar();
       break;
     }
 
@@ -1039,6 +1045,9 @@ bool TabStripModel::ContextMenuCommandToBrowserCommand(int cmd_id,
     case CommandUseVerticalTabs:
       *browser_cmd = IDC_TOGGLE_VERTICAL_TABS;
       break;
+    case CommandUseCompactNavigationBar:
+      *browser_cmd = IDC_COMPACT_NAVBAR;
+      break;
     default:
       *browser_cmd = 0;
       return false;
@@ -1094,18 +1103,21 @@ std::vector<int> TabStripModel::GetIndicesForCommand(int index) const {
 
 bool TabStripModel::IsNewTabAtEndOfTabStrip(
     TabContentsWrapper* contents) const {
-  return LowerCaseEqualsASCII(contents->tab_contents()->GetURL().spec(),
-                              chrome::kChromeUINewTabURL) &&
+  const GURL& url = contents->tab_contents()->GetURL();
+  return web_ui_util::ChromeURLHostEquals(url, chrome::kChromeUINewTabHost) &&
       contents == GetContentsAt(count() - 1) &&
       contents->controller().entry_count() == 1;
 }
 
-bool TabStripModel::InternalCloseTabs(const std::vector<int>& indices,
+bool TabStripModel::InternalCloseTabs(const std::vector<int>& in_indices,
                                       uint32 close_types) {
-  if (indices.empty())
+  if (in_indices.empty())
     return true;
 
-  bool retval = true;
+  std::vector<int> indices(in_indices);
+  bool retval = delegate_->CanCloseContents(&indices);
+  if (indices.empty())
+    return retval;
 
   // Map the indices to TabContents, that way if deleting a tab deletes other
   // tabs we're ok. Crashes seem to indicate during tab deletion other tabs are
@@ -1122,11 +1134,6 @@ bool TabStripModel::InternalCloseTabs(const std::vector<int>& indices,
     // closing.
     std::map<RenderProcessHost*, size_t> processes;
     for (size_t i = 0; i < indices.size(); ++i) {
-      if (!delegate_->CanCloseContentsAt(indices[i])) {
-        retval = false;
-        continue;
-      }
-
       TabContentsWrapper* detached_contents = GetContentsAt(indices[i]);
       RenderProcessHost* process =
           detached_contents->tab_contents()->GetRenderProcessHost();
@@ -1156,11 +1163,6 @@ bool TabStripModel::InternalCloseTabs(const std::vector<int>& indices,
       continue;
 
     detached_contents->tab_contents()->OnCloseStarted();
-
-    if (!delegate_->CanCloseContentsAt(index)) {
-      retval = false;
-      continue;
-    }
 
     // Update the explicitly closed state. If the unload handlers cancel the
     // close the state is reset in Browser. We don't update the explicitly
@@ -1219,19 +1221,19 @@ void TabStripModel::NotifyTabSelectedIfChanged(TabContentsWrapper* old_contents,
   }
 
   FOR_EACH_OBSERVER(TabStripModelObserver, observers_,
-                    TabSelectedAt(last_selected_contents, new_contents,
-                                  active_index(), user_gesture));
+                    ActiveTabChanged(last_selected_contents, new_contents,
+                                     active_index(), user_gesture));
 }
 
-void TabStripModel::NotifySelectionChanged(int old_selected_index) {
+void TabStripModel::NotifyActiveTabChanged(int old_active_index) {
   TabContentsWrapper* old_tab =
-      old_selected_index == TabStripSelectionModel::kUnselectedIndex ?
-      NULL : GetTabContentsAt(old_selected_index);
+      old_active_index == TabStripSelectionModel::kUnselectedIndex ?
+      NULL : GetTabContentsAt(old_active_index);
   TabContentsWrapper* new_tab =
       active_index() == TabStripSelectionModel::kUnselectedIndex ?
       NULL : GetTabContentsAt(active_index());
   FOR_EACH_OBSERVER(TabStripModelObserver, observers_,
-                    TabSelectedAt(old_tab, new_tab, active_index(), true));
+                    ActiveTabChanged(old_tab, new_tab, active_index(), true));
 }
 
 void TabStripModel::SelectRelativeTab(bool next) {

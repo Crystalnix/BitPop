@@ -8,6 +8,7 @@
 #include "chrome/browser/themes/theme_service.h"
 #include "grit/app_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/favicon_size.h"
@@ -134,7 +135,7 @@ void TouchTab::PaintTabBackground(gfx::Canvas* canvas) {
 
 void TouchTab::PaintActiveTabBackground(gfx::Canvas* canvas) {
   int offset = GetMirroredX() + background_offset_.x();
-  ThemeProvider* tp = GetThemeProvider();
+  ui::ThemeProvider* tp = GetThemeProvider();
   if (!tp)
     NOTREACHED() << "Unable to get theme provider";
 
@@ -198,7 +199,7 @@ void TouchTab::PaintIcon(gfx::Canvas* canvas) {
     favicon_x += (data().favicon.width() - kFaviconSize) / 2;
 
   if (data().network_state != TabRendererData::NETWORK_STATE_NONE) {
-    ThemeProvider* tp = GetThemeProvider();
+    ui::ThemeProvider* tp = GetThemeProvider();
     SkBitmap frames(*tp->GetBitmapNamed(
         (data().network_state == TabRendererData::NETWORK_STATE_WAITING) ?
         IDR_THROBBER_WAITING : IDR_THROBBER));

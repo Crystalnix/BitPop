@@ -18,7 +18,6 @@
 #include "chrome/browser/search_engines/search_engine_type.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_model.h"
-#include "chrome/browser/ui/options/options_window.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/google_chrome_strings.h"
@@ -71,11 +70,11 @@ void ShowFirstRunDialog(Profile* profile,
           profile, randomize_search_engine_experiment));
   DCHECK(window);
 
-  window->SetIsAlwaysOnTop(true);
+  window->SetAlwaysOnTop(true);
   window->Show();
   views::AcceleratorHandler accelerator_handler;
   MessageLoopForUI::current()->Run(&accelerator_handler);
-  window->CloseWindow();
+  window->Close();
 }
 
 }  // namespace first_run

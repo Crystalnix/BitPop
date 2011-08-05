@@ -18,6 +18,7 @@
 #include "base/i18n/rtl.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
+#include "base/stringprintf.h"
 #include "base/string_number_conversions.h"
 #include "base/string_split.h"
 #include "base/sys_string_conversions.h"
@@ -319,7 +320,7 @@ bool CheckAndResolveLocale(const std::string& locale,
 // if "foo bar" is RTL. So this function prepends the necessary RLM in such
 // cases.
 void AdjustParagraphDirectionality(string16* paragraph) {
-#if defined(OS_LINUX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
   if (base::i18n::IsRTL() &&
       base::i18n::StringContainsStrongRTLChars(*paragraph)) {
     paragraph->insert(0, 1, static_cast<char16>(base::i18n::kRightToLeftMark));
@@ -602,7 +603,8 @@ static string16 GetStringF(int message_id,
     for (size_t i = 0; i < 9; ++i) {
       bool placeholder_should_exist = replacements.size() > i;
 
-      std::string placeholder = StringPrintf("$%d", static_cast<int>(i + 1));
+      std::string placeholder =
+          base::StringPrintf("$%d", static_cast<int>(i + 1));
       size_t pos = utf8_string.find(placeholder.c_str());
       if (placeholder_should_exist) {
         DCHECK_NE(std::string::npos, pos) <<
@@ -777,26 +779,6 @@ string16 TruncateString(const string16& string, size_t length) {
     }
   }
   return string.substr(0, index) + kElideString;
-}
-
-string16 ToLower(const string16& string) {
-  icu::UnicodeString lower_u_str(
-      icu::UnicodeString(FALSE, string.c_str(), string.size()).toLower(
-          icu::Locale::getDefault()));
-  string16 result;
-  lower_u_str.extract(0, lower_u_str.length(),
-                      WriteInto(&result, lower_u_str.length() + 1));
-  return result;
-}
-
-string16 ToUpper(const string16& string) {
-  icu::UnicodeString upper_u_str(
-      icu::UnicodeString(FALSE, string.c_str(), string.size()).toUpper(
-          icu::Locale::getDefault()));
-  string16 result;
-  upper_u_str.extract(0, upper_u_str.length(),
-                      WriteInto(&result, upper_u_str.length() + 1));
-  return result;
 }
 
 // Compares the character data stored in two different string16 strings by

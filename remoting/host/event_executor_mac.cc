@@ -26,26 +26,25 @@ using protocol::KeyEvent;
 // A class to generate events on Mac.
 class EventExecutorMac : public EventExecutor {
  public:
-  EventExecutorMac(MessageLoopForUI* message_loop, Capturer* capturer);
+  EventExecutorMac(MessageLoop* message_loop, Capturer* capturer);
   virtual ~EventExecutorMac() {}
 
   virtual void InjectKeyEvent(const KeyEvent* event, Task* done) OVERRIDE;
   virtual void InjectMouseEvent(const MouseEvent* event, Task* done) OVERRIDE;
 
  private:
-  MessageLoopForUI* message_loop_;
+  MessageLoop* message_loop_;
   Capturer* capturer_;
   int last_x_, last_y_;
-  int modifiers_, mouse_buttons_;
+  int mouse_buttons_;
 
   DISALLOW_COPY_AND_ASSIGN(EventExecutorMac);
 };
 
 EventExecutorMac::EventExecutorMac(
-    MessageLoopForUI* message_loop, Capturer* capturer)
+    MessageLoop* message_loop, Capturer* capturer)
     : message_loop_(message_loop),
-      capturer_(capturer), last_x_(0), last_y_(0), modifiers_(0),
-      mouse_buttons_(0) {
+      capturer_(capturer), last_x_(0), last_y_(0), mouse_buttons_(0) {
 }
 
 // Hard-coded mapping from Virtual Key codes to Mac KeySyms.
@@ -170,9 +169,9 @@ const int kUsVkeyToKeysym[256] = {
   /* XF86kVK_Mail */ -1, /* XF86kVK_AudioMedia */ -1, /* XF86kVK_Launch0 */ -1,
   /* XF86kVK_Launch1 */ -1,
   // 0xB8 - 0xBB
-  -1, -1, kVK_ANSI_Semicolon, kVK_ANSI_KeypadPlus,
+  -1, -1, kVK_ANSI_Semicolon, kVK_ANSI_Equal,
   // 0xBC - 0xBF
-  kVK_ANSI_Comma, kVK_ANSI_KeypadMinus, kVK_ANSI_Period, kVK_ANSI_Slash,
+  kVK_ANSI_Comma, kVK_ANSI_Minus, kVK_ANSI_Period, kVK_ANSI_Slash,
 
   // 0xC0 - 0xC3
   kVK_ANSI_Grave, -1, -1, -1,
@@ -214,42 +213,22 @@ const int kUsVkeyToKeysym[256] = {
 };
 
 void EventExecutorMac::InjectKeyEvent(const KeyEvent* event, Task* done) {
+  base::ScopedTaskRunner done_runner(done);
+
   int key_code = event->keycode();
   if (key_code >= 0 && key_code < 256) {
     int key_sym = kUsVkeyToKeysym[key_code];
     if (key_sym != -1) {
-      base::mac::ScopedCFTypeRef<CGEventRef> kbd_event(
-          CGEventCreateKeyboardEvent(0, kUsVkeyToKeysym[key_code],
-                                     event->pressed()));
-      int this_modifier = 0;
-      switch (key_sym) {
-        case kVK_Shift: case kVK_RightShift:
-          this_modifier = kCGEventFlagMaskShift;
-          break;
-        case kVK_Control: case kVK_RightControl:
-          this_modifier = kCGEventFlagMaskControl;
-          break;
-        case kVK_Command:
-          this_modifier = kCGEventFlagMaskCommand;
-          break;
-        case kVK_Option: case kVK_RightOption:
-          this_modifier = kCGEventFlagMaskAlternate;
-          break;
-      }
-      if (this_modifier && event->pressed()) {
-        modifiers_ |= this_modifier;
-      } else if (this_modifier && !event->pressed()) {
-        modifiers_ &= ~this_modifier;
-      }
-      CGEventSetFlags(kbd_event, modifiers_);
-      CGEventPost(kCGSessionEventTap, kbd_event);
+      // We use the deprecated event injection API because the new one doesn't
+      // work with switched-out sessions (curtain mode).
+      CGPostKeyboardEvent(0, key_sym, event->pressed());
     }
   }
-  done->Run();
-  delete done;
 }
 
 void EventExecutorMac::InjectMouseEvent(const MouseEvent* event, Task* done) {
+  base::ScopedTaskRunner done_runner(done);
+
   if (event->has_x() && event->has_y()) {
     // TODO(wez): Checking the validity of the MouseEvent should be done in core
     // cross-platform code, not here!
@@ -301,14 +280,11 @@ void EventExecutorMac::InjectMouseEvent(const MouseEvent* event, Task* done) {
     // CGEventCreateScrollWheelEvent() to inject scroll events.
     NOTIMPLEMENTED() << "No scroll wheel support yet.";
   }
-
-  done->Run();
-  delete done;
 }
 
 }  // namespace
 
-EventExecutor* EventExecutor::Create(MessageLoopForUI* message_loop,
+EventExecutor* EventExecutor::Create(MessageLoop* message_loop,
                                      Capturer* capturer) {
   return new EventExecutorMac(message_loop, capturer);
 }

@@ -87,6 +87,9 @@
             'installer/util/delete_reg_key_work_item_unittest.cc',
             'installer/util/delete_reg_value_work_item_unittest.cc',
             'installer/util/delete_tree_work_item_unittest.cc',
+            'installer/util/duplicate_tree_detector_unittest.cc',
+            'installer/util/fake_installation_state.h',
+            'installer/util/fake_product_state.h',
             'installer/util/google_chrome_distribution_unittest.cc',
             'installer/util/google_update_settings_unittest.cc',
             'installer/util/install_util_unittest.cc',
@@ -196,6 +199,7 @@
           'dependencies': [
             'installer_util',
             'installer_util_strings',
+            '<(DEPTH)/base/base.gyp:base',
             '<(DEPTH)/build/temp_gyp/googleurl.gyp:googleurl',
             '<(DEPTH)/build/util/build_util.gyp:lastchange',
             '<(DEPTH)/build/util/support/support.gyp:*',
@@ -389,6 +393,7 @@
           'installer/linux/internal/debian/changelog.template',
           'installer/linux/internal/debian/control.template',
           'installer/linux/internal/debian/debian.menu',
+          'installer/linux/internal/debian/expected_deps',
           'installer/linux/internal/debian/postinst',
           'installer/linux/internal/debian/postrm',
           'installer/linux/internal/debian/prerm',
@@ -424,11 +429,15 @@
             'packaging_files_binaries': [
               '<(PRODUCT_DIR)/libgcflashplayer.so',
               '<(PRODUCT_DIR)/plugin.vch',
+              '<(PRODUCT_DIR)/nacl_irt_x86_32.nexe',
             ],
           }],
           ['target_arch=="x64"', {
             'deb_arch': 'amd64',
             'rpm_arch': 'x86_64',
+            'packaging_files_binaries': [
+              '<(PRODUCT_DIR)/nacl_irt_x86_64.nexe',
+            ],
           }],
           ['target_arch=="arm"', {
             'deb_arch': 'arm',
@@ -890,6 +899,7 @@
                 ['branding=="Chrome" and buildtype=="Official"', {
                   'files': [
                     'app/theme/google_chrome/app_canary.icns',
+                    'app/theme/google_chrome/document_canary.icns',
                     'installer/mac/internal/chrome_canary_dmg_dsstore',
                     'installer/mac/internal/chrome_canary_dmg_icon.icns',
                     'installer/mac/internal/chrome_dmg_background.png',

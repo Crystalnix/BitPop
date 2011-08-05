@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,8 +12,8 @@ namespace browser {
 
 BrowserNonClientFrameView* CreateBrowserNonClientFrameView(
     BrowserFrame* frame, BrowserView* browser_view) {
-  if (browser_view->IsBrowserTypePopup())
-    return new PopupNonClientFrameView();
+  if (browser_view->IsBrowserTypePopup() || browser_view->IsBrowserTypePanel())
+    return new PopupNonClientFrameView(frame);
   else
     return new OpaqueBrowserFrameView(frame, browser_view);
 }

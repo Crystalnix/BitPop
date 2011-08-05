@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,71 +15,120 @@ static const int kAllSchemes =
     URLPattern::SCHEME_FTP |
     URLPattern::SCHEME_CHROMEUI;
 
-TEST(ExtensionUserScriptTest, Match1) {
+TEST(ExtensionUserScriptTest, Glob_HostString) {
   UserScript script;
   script.add_glob("*mail.google.com*");
   script.add_glob("*mail.yahoo.com*");
   script.add_glob("*mail.msn.com*");
-  EXPECT_TRUE(script.MatchesUrl(GURL("http://mail.google.com")));
-  EXPECT_TRUE(script.MatchesUrl(GURL("http://mail.google.com/foo")));
-  EXPECT_TRUE(script.MatchesUrl(GURL("https://mail.google.com/foo")));
-  EXPECT_TRUE(script.MatchesUrl(GURL("ftp://mail.google.com/foo")));
-  EXPECT_TRUE(script.MatchesUrl(GURL("http://woo.mail.google.com/foo")));
-  EXPECT_TRUE(script.MatchesUrl(GURL("http://mail.yahoo.com/bar")));
-  EXPECT_TRUE(script.MatchesUrl(GURL("http://mail.msn.com/baz")));
-  EXPECT_FALSE(script.MatchesUrl(GURL("http://www.hotmail.com")));
+  EXPECT_TRUE(script.MatchesURL(GURL("http://mail.google.com")));
+  EXPECT_TRUE(script.MatchesURL(GURL("http://mail.google.com/foo")));
+  EXPECT_TRUE(script.MatchesURL(GURL("https://mail.google.com/foo")));
+  EXPECT_TRUE(script.MatchesURL(GURL("ftp://mail.google.com/foo")));
+  EXPECT_TRUE(script.MatchesURL(GURL("http://woo.mail.google.com/foo")));
+  EXPECT_TRUE(script.MatchesURL(GURL("http://mail.yahoo.com/bar")));
+  EXPECT_TRUE(script.MatchesURL(GURL("http://mail.msn.com/baz")));
+  EXPECT_FALSE(script.MatchesURL(GURL("http://www.hotmail.com")));
 
   script.add_exclude_glob("*foo*");
-  EXPECT_TRUE(script.MatchesUrl(GURL("http://mail.google.com")));
-  EXPECT_FALSE(script.MatchesUrl(GURL("http://mail.google.com/foo")));
+  EXPECT_TRUE(script.MatchesURL(GURL("http://mail.google.com")));
+  EXPECT_FALSE(script.MatchesURL(GURL("http://mail.google.com/foo")));
 }
 
-TEST(ExtensionUserScriptTest, Match2) {
+TEST(ExtensionUserScriptTest, Glob_TrailingSlash) {
   UserScript script;
   script.add_glob("*mail.google.com/");
   // GURL normalizes the URL to have a trailing "/"
-  EXPECT_TRUE(script.MatchesUrl(GURL("http://mail.google.com")));
-  EXPECT_TRUE(script.MatchesUrl(GURL("http://mail.google.com/")));
-  EXPECT_FALSE(script.MatchesUrl(GURL("http://mail.google.com/foo")));
+  EXPECT_TRUE(script.MatchesURL(GURL("http://mail.google.com")));
+  EXPECT_TRUE(script.MatchesURL(GURL("http://mail.google.com/")));
+  EXPECT_FALSE(script.MatchesURL(GURL("http://mail.google.com/foo")));
 }
 
-TEST(ExtensionUserScriptTest, Match3) {
+TEST(ExtensionUserScriptTest, Glob_TrailingSlashStar) {
   UserScript script;
   script.add_glob("http://mail.google.com/*");
   // GURL normalizes the URL to have a trailing "/"
-  EXPECT_TRUE(script.MatchesUrl(GURL("http://mail.google.com")));
-  EXPECT_TRUE(script.MatchesUrl(GURL("http://mail.google.com/foo")));
-  EXPECT_FALSE(script.MatchesUrl(GURL("https://mail.google.com/foo")));
+  EXPECT_TRUE(script.MatchesURL(GURL("http://mail.google.com")));
+  EXPECT_TRUE(script.MatchesURL(GURL("http://mail.google.com/foo")));
+  EXPECT_FALSE(script.MatchesURL(GURL("https://mail.google.com/foo")));
 }
 
-TEST(ExtensionUserScriptTest, Match4) {
+TEST(ExtensionUserScriptTest, Glob_Star) {
   UserScript script;
   script.add_glob("*");
-  EXPECT_TRUE(script.MatchesUrl(GURL("http://foo.com/bar")));
-  EXPECT_TRUE(script.MatchesUrl(GURL("http://hot.com/dog")));
-  EXPECT_TRUE(script.MatchesUrl(GURL("https://hot.com/dog")));
-  EXPECT_TRUE(script.MatchesUrl(GURL("file:///foo/bar")));
+  EXPECT_TRUE(script.MatchesURL(GURL("http://foo.com/bar")));
+  EXPECT_TRUE(script.MatchesURL(GURL("http://hot.com/dog")));
+  EXPECT_TRUE(script.MatchesURL(GURL("https://hot.com/dog")));
+  EXPECT_TRUE(script.MatchesURL(GURL("file:///foo/bar")));
+  EXPECT_TRUE(script.MatchesURL(GURL("file://localhost/foo/bar")));
 }
 
-TEST(ExtensionUserScriptTest, Match5) {
+TEST(ExtensionUserScriptTest, Glob_StringAnywhere) {
   UserScript script;
   script.add_glob("*foo*");
-  EXPECT_TRUE(script.MatchesUrl(GURL("http://foo.com/bar")));
-  EXPECT_TRUE(script.MatchesUrl(GURL("http://baz.org/foo/bar")));
-  EXPECT_FALSE(script.MatchesUrl(GURL("http://baz.org")));
+  EXPECT_TRUE(script.MatchesURL(GURL("http://foo.com/bar")));
+  EXPECT_TRUE(script.MatchesURL(GURL("http://baz.org/foo/bar")));
+  EXPECT_FALSE(script.MatchesURL(GURL("http://baz.org")));
 }
 
-TEST(ExtensionUserScriptTest, Match6) {
+TEST(ExtensionUserScriptTest, UrlPattern) {
   URLPattern pattern(kAllSchemes);
   ASSERT_EQ(URLPattern::PARSE_SUCCESS,
             pattern.Parse("http://*/foo*", URLPattern::PARSE_STRICT));
 
   UserScript script;
   script.add_url_pattern(pattern);
-  EXPECT_TRUE(script.MatchesUrl(GURL("http://monkey.com/foobar")));
-  EXPECT_FALSE(script.MatchesUrl(GURL("http://monkey.com/hotdog")));
+  EXPECT_TRUE(script.MatchesURL(GURL("http://monkey.com/foobar")));
+  EXPECT_FALSE(script.MatchesURL(GURL("http://monkey.com/hotdog")));
 
   // NOTE: URLPattern is tested more extensively in url_pattern_unittest.cc.
+}
+
+TEST(ExtensionUserScriptTest, ExcludeUrlPattern) {
+  UserScript script;
+
+  URLPattern pattern(kAllSchemes);
+  ASSERT_EQ(URLPattern::PARSE_SUCCESS,
+            pattern.Parse("http://*.nytimes.com/*", URLPattern::PARSE_STRICT));
+  script.add_url_pattern(pattern);
+
+  URLPattern exclude(kAllSchemes);
+  ASSERT_EQ(URLPattern::PARSE_SUCCESS,
+            exclude.Parse("*://*/*business*", URLPattern::PARSE_STRICT));
+  script.add_exclude_url_pattern(exclude);
+
+  EXPECT_TRUE(script.MatchesURL(GURL("http://www.nytimes.com/health")));
+  EXPECT_FALSE(script.MatchesURL(GURL("http://www.nytimes.com/business")));
+  EXPECT_TRUE(script.MatchesURL(GURL("http://business.nytimes.com")));
+}
+
+TEST(ExtensionUserScriptTest, UrlPatternAndIncludeGlobs) {
+  UserScript script;
+
+  URLPattern pattern(kAllSchemes);
+  ASSERT_EQ(URLPattern::PARSE_SUCCESS,
+            pattern.Parse("http://*.nytimes.com/*", URLPattern::PARSE_STRICT));
+  script.add_url_pattern(pattern);
+
+  script.add_glob("*nytimes.com/???s/*");
+
+  EXPECT_TRUE(script.MatchesURL(GURL("http://www.nytimes.com/arts/1.html")));
+  EXPECT_TRUE(script.MatchesURL(GURL("http://www.nytimes.com/jobs/1.html")));
+  EXPECT_FALSE(script.MatchesURL(GURL("http://www.nytimes.com/sports/1.html")));
+}
+
+TEST(ExtensionUserScriptTest, UrlPatternAndExcludeGlobs) {
+  UserScript script;
+
+  URLPattern pattern(kAllSchemes);
+  ASSERT_EQ(URLPattern::PARSE_SUCCESS,
+            pattern.Parse("http://*.nytimes.com/*", URLPattern::PARSE_STRICT));
+  script.add_url_pattern(pattern);
+
+  script.add_exclude_glob("*science*");
+
+  EXPECT_TRUE(script.MatchesURL(GURL("http://www.nytimes.com")));
+  EXPECT_FALSE(script.MatchesURL(GURL("http://science.nytimes.com")));
+  EXPECT_FALSE(script.MatchesURL(GURL("http://www.nytimes.com/science")));
 }
 
 TEST(ExtensionUserScriptTest, UrlPatternGlobInteraction) {
@@ -95,23 +144,23 @@ TEST(ExtensionUserScriptTest, UrlPatternGlobInteraction) {
   script.add_glob("*bar*");
 
   // No match, because it doesn't match the glob.
-  EXPECT_FALSE(script.MatchesUrl(GURL("http://www.google.com/foo")));
+  EXPECT_FALSE(script.MatchesURL(GURL("http://www.google.com/foo")));
 
   script.add_exclude_glob("*baz*");
 
   // No match, because it matches the exclude glob.
-  EXPECT_FALSE(script.MatchesUrl(GURL("http://www.google.com/baz")));
+  EXPECT_FALSE(script.MatchesURL(GURL("http://www.google.com/baz")));
 
   // Match, because it matches the glob, doesn't match the exclude glob.
-  EXPECT_TRUE(script.MatchesUrl(GURL("http://www.google.com/bar")));
+  EXPECT_TRUE(script.MatchesURL(GURL("http://www.google.com/bar")));
 
   // Try with just a single exclude glob.
   script.clear_globs();
-  EXPECT_TRUE(script.MatchesUrl(GURL("http://www.google.com/foo")));
+  EXPECT_TRUE(script.MatchesURL(GURL("http://www.google.com/foo")));
 
   // Try with no globs or exclude globs.
   script.clear_exclude_globs();
-  EXPECT_TRUE(script.MatchesUrl(GURL("http://www.google.com/foo")));
+  EXPECT_TRUE(script.MatchesURL(GURL("http://www.google.com/foo")));
 }
 
 TEST(ExtensionUserScriptTest, Pickle) {

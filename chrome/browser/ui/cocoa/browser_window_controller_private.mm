@@ -28,6 +28,26 @@
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/browser/tab_contents/tab_contents_view.h"
 
+// Provide the forward-declarations of new 10.7 SDK symbols so they can be
+// called when building with the 10.5 SDK.
+#if !defined(MAC_OS_X_VERSION_10_7) || \
+    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
+
+@interface NSWindow (LionSDKDeclarations)
+- (void)toggleFullScreen:(id)sender;
+@end
+
+enum {
+  NSWindowCollectionBehaviorFullScreenPrimary = 1 << 7,
+  NSWindowCollectionBehaviorFullScreenAuxiliary = 1 << 8
+};
+
+enum {
+  NSWindowFullScreenButton = 7
+};
+
+#endif  // MAC_OS_X_VERSION_10_7
+
 namespace {
 
 // Space between the incognito badge and the right edge of the window.
@@ -40,22 +60,7 @@ const CGFloat kLocBarLeftRightInset = 1;
 const CGFloat kLocBarTopInset = 0;
 const CGFloat kLocBarBottomInset = 1;
 
-}  // end namespace
-
-// 10.7 adds public APIs for full-screen support. Provide the declaration so it
-// can be called below when building with the 10.5 SDK.
-#if !defined(MAC_OS_X_VERSION_10_7) || \
-MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
-
-@interface NSWindow (LionSDKDeclarations)
-- (void)toggleFullScreen:(id)sender;
-@end
-
-enum {
-  NSWindowFullScreenButton = 7
-};
-
-#endif  // MAC_OS_X_VERSION_10_7
+}  // namespace
 
 @implementation BrowserWindowController(Private)
 
@@ -299,18 +304,9 @@ willPositionSheet:(NSWindow*)sheet
 
   // Now lay out incognito badge together with the tab strip.
   if (incognitoBadge_.get()) {
-    // Avoid the full-screen button.
-    CGFloat extraPadding = 0;
-    if ([[self window] respondsToSelector:@selector(toggleFullScreen:)]) {
-      NSButton* fullscreenButton =
-          [[self window] standardWindowButton:NSWindowFullScreenButton];
-      if (fullscreenButton)
-        extraPadding += [fullscreenButton frame].size.width;
-    }
-
     // Actually place the badge *above* |maxY|, by +2 to miss the divider.
     NSPoint origin = NSMakePoint(width - NSWidth([incognitoBadge_ frame]) -
-                                     kIncognitoBadgeOffset - extraPadding,
+                                     kIncognitoBadgeOffset,
                                  maxY + 2);
     [incognitoBadge_ setFrameOrigin:origin];
     [incognitoBadge_ setHidden:NO];  // Make sure it's shown.
@@ -535,6 +531,10 @@ willPositionSheet:(NSWindow*)sheet
 
   barVisibilityUpdatesEnabled_ = NO;
   [fullscreenController_ cancelAnimationAndTimers];
+}
+
+- (void)setUpOSFullScreenButton {
+  // TOOD(rsesek): Properly implement Lion fullscreen <http://crbug.com/74065>.
 }
 
 @end  // @implementation BrowserWindowController(Private)

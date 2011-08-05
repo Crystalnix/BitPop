@@ -6,7 +6,7 @@
   'targets': [
     {
       'target_name': 'gtest',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': 'BFE8E2A7-3B3B-43B0-A994-3058B852DB8B',
       'sources': [
         'gtest/include/gtest/gtest-death-test.h',
@@ -62,7 +62,7 @@
             ],
           },
         }],
-        ['OS == "mac" or OS == "linux" or OS == "freebsd" or OS == "openbsd"', {
+        ['os_posix == 1', {
           'defines': [
             # gtest isn't able to figure out when RTTI is disabled for gcc
             # versions older than 4.3.2, and assumes it's enabled.  Our Mac
@@ -123,7 +123,7 @@
     },
     {
       'target_name': 'gtest_main',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         'gtest',
       ],

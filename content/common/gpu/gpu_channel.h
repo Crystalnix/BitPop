@@ -14,7 +14,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/process.h"
 #include "build/build_config.h"
+#include "gpu/command_buffer/service/surface_manager.h"
 #include "content/common/gpu/gpu_command_buffer_stub.h"
+#include "content/common/gpu/gpu_surface_stub.h"
 #include "content/common/message_router.h"
 #include "ipc/ipc_sync_channel.h"
 #include "ui/gfx/native_widget_types.h"
@@ -23,17 +25,22 @@
 class GpuChannelManager;
 struct GPUCreateCommandBufferConfig;
 class GpuWatchdog;
-class MessageLoop;
 class TransportTexture;
-	 
+
 namespace base {
+class MessageLoopProxy;
 class WaitableEvent;
+}
+
+namespace gfx {
+class GLSurface;
 }
 
 // Encapsulates an IPC channel between the GPU process and one renderer
 // process. On the renderer side there's a corresponding GpuChannelHost.
 class GpuChannel : public IPC::Channel::Listener,
                    public IPC::Message::Sender,
+                   public gpu::SurfaceManager,
                    public base::RefCountedThreadSafe<GpuChannel> {
  public:
   // Takes ownership of the renderer process handle.
@@ -42,7 +49,8 @@ class GpuChannel : public IPC::Channel::Listener,
              int renderer_id);
   virtual ~GpuChannel();
 
-  bool Init(MessageLoop* io_message_loop, base::WaitableEvent* shutdown_event);
+  bool Init(base::MessageLoopProxy* io_message_loop,
+            base::WaitableEvent* shutdown_event);
 
   // Get the GpuChannelManager that owns this channel.
   GpuChannelManager* gpu_channel_manager() const {
@@ -84,6 +92,12 @@ class GpuChannel : public IPC::Channel::Listener,
 
   void LoseAllContexts();
 
+  // Destroy channel and all contained contexts.
+  void DestroySoon();
+
+  // Look up a GLSurface by ID. In this case the ID is the IPC routing ID.
+  virtual gfx::GLSurface* LookupSurface(int surface_id);
+
   // Get the TransportTexture by ID.
   TransportTexture* GetTransportTexture(int32 route_id);
 
@@ -97,6 +111,8 @@ class GpuChannel : public IPC::Channel::Listener,
   void OnLatchCallback(int route_id, bool is_set_latch);
 
  private:
+  void OnDestroy();
+
   bool OnControlMessageReceived(const IPC::Message& msg);
 
   int GenerateRouteID();
@@ -111,11 +127,15 @@ class GpuChannel : public IPC::Channel::Listener,
       int32* route_id);
   void OnDestroyCommandBuffer(int32 route_id);
 
-  void OnCreateVideoDecoder(int32 context_route_id,
-                            int32 decoder_host_id);
+  void OnCreateOffscreenSurface(const gfx::Size& size,
+                                int* route_id);
+  void OnDestroySurface(int route_id);
+
+  void OnCreateVideoDecoder(int32 decoder_host_id,
+                            const std::vector<uint32>& configs);
   void OnDestroyVideoDecoder(int32 decoder_id);
   void OnCreateTransportTexture(int32 context_route_id, int32 host_id);
- 
+
   // The lifetime of objects of this class is managed by a GpuChannelManager.
   // The GpuChannelManager destroy all the GpuChannels that they own when they
   // are destroyed. So a raw pointer is safe.
@@ -138,6 +158,10 @@ class GpuChannel : public IPC::Channel::Listener,
 #if defined(ENABLE_GPU)
   typedef IDMap<GpuCommandBufferStub, IDMapOwnPointer> StubMap;
   StubMap stubs_;
+
+  typedef IDMap<GpuSurfaceStub, IDMapOwnPointer> SurfaceMap;
+  SurfaceMap surfaces_;
+
   std::set<int32> latched_routes_;
 #endif  // defined (ENABLE_GPU)
 

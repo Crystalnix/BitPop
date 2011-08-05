@@ -27,6 +27,8 @@
 #include "ppapi/c/ppp_messaging.h"
 #include "ppapi/c/private/ppb_instance_private.h"
 #include "ppapi/c/private/ppp_instance_private.h"
+#include "ppapi/thunk/enter.h"
+#include "ppapi/thunk/ppb_buffer_api.h"
 #include "printing/units.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
@@ -67,7 +69,7 @@
 #include "printing/metafile_impl.h"
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_WIN)
 #include "printing/metafile.h"
 #include "printing/metafile_skia_wrapper.h"
 #endif
@@ -78,6 +80,11 @@
 #include "ui/gfx/gdi_util.h"
 #endif
 
+#if defined(OS_MACOSX) && defined(USE_SKIA)
+#include "skia/ext/skia_utils_mac.h"
+#endif
+
+using ::ppapi::thunk::PPB_Buffer_API;
 using WebKit::WebBindings;
 using WebKit::WebCanvas;
 using WebKit::WebCursorInfo;
@@ -208,45 +215,22 @@ PP_Var ExecuteScript(PP_Instance instance_id,
 }
 
 const PPB_Instance ppb_instance = {
+  &BindGraphics,
+  &IsFullFrame
+};
+
+const PPB_Instance_0_4 ppb_instance_0_4 = {
   &GetWindowObject,
   &GetOwnerElementObject,
   &BindGraphics,
   &IsFullFrame,
-  &ExecuteScript,
+  &ExecuteScript
 };
 
 const PPB_Instance_Private ppb_instance_private = {
   &GetWindowObject,
   &GetOwnerElementObject,
   &ExecuteScript
-};
-
-void NumberOfFindResultsChanged(PP_Instance instance_id,
-                                int32_t total,
-                                PP_Bool final_result) {
-  PluginInstance* instance = ResourceTracker::Get()->GetInstance(instance_id);
-  if (!instance)
-    return;
-
-  DCHECK_NE(instance->find_identifier(), -1);
-  instance->delegate()->NumberOfFindResultsChanged(
-      instance->find_identifier(), total, PPBoolToBool(final_result));
-}
-
-void SelectedFindResultChanged(PP_Instance instance_id,
-                               int32_t index) {
-  PluginInstance* instance = ResourceTracker::Get()->GetInstance(instance_id);
-  if (!instance)
-    return;
-
-  DCHECK_NE(instance->find_identifier(), -1);
-  instance->delegate()->SelectedFindResultChanged(
-      instance->find_identifier(), index);
-}
-
-const PPB_Find_Dev ppb_find = {
-  &NumberOfFindResultsChanged,
-  &SelectedFindResultChanged,
 };
 
 PP_Bool IsFullscreen(PP_Instance instance_id) {
@@ -336,7 +320,7 @@ const PPB_Zoom_Dev ppb_zoom = {
 
 PluginInstance::PluginInstance(PluginDelegate* delegate,
                                PluginModule* module,
-                               const PPP_Instance* instance_interface)
+                               PPP_Instance_Combined* instance_interface)
     : delegate_(delegate),
       module_(module),
       instance_interface_(instance_interface),
@@ -353,9 +337,6 @@ PluginInstance::PluginInstance(PluginDelegate* delegate,
       plugin_selection_interface_(NULL),
       plugin_zoom_interface_(NULL),
       checked_for_plugin_messaging_interface_(false),
-#if defined(OS_LINUX)
-      canvas_(NULL),
-#endif  // defined(OS_LINUX)
       plugin_print_interface_(NULL),
       plugin_graphics_3d_interface_(NULL),
       always_on_top_(false),
@@ -388,19 +369,16 @@ PluginInstance::~PluginInstance() {
   module_->InstanceDeleted(this);
 
   ResourceTracker::Get()->InstanceDeleted(pp_instance_);
-#if defined(OS_LINUX)
-  ranges_.clear();
-#endif  // defined(OS_LINUX)
 }
 
 // static
-const PPB_Instance* PluginInstance::GetInterface() {
-  return &ppb_instance;
-}
-
-// static
-const PPB_Find_Dev* PluginInstance::GetFindInterface() {
-  return &ppb_find;
+const void* PluginInstance::GetInterface(const char* if_name) {
+  if (strcmp(if_name, PPB_INSTANCE_INTERFACE) == 0) {
+    return &ppb_instance;
+  } else if (strcmp(if_name, PPB_INSTANCE_INTERFACE_0_4) == 0) {
+    return &ppb_instance_0_4;
+  }
+  return NULL;
 }
 
 // static
@@ -532,20 +510,22 @@ PP_Var PluginInstance::GetOwnerElementObject() {
 }
 
 bool PluginInstance::BindGraphics(PP_Resource graphics_id) {
-  if (!graphics_id) {
+  if (bound_graphics_.get()) {
+    if (bound_graphics_2d()) {
+      bound_graphics_2d()->BindToInstance(NULL);
+    } else if (bound_graphics_.get()) {
+      bound_graphics_3d()->BindToInstance(false);
+    }
     // Special-case clearing the current device.
-    if (bound_graphics_.get()) {
-      if (bound_graphics_2d()) {
-        bound_graphics_2d()->BindToInstance(NULL);
-      } else if (bound_graphics_.get()) {
-        bound_graphics_3d()->BindToInstance(false);
-      }
+    if (!graphics_id) {
       setBackingTextureId(0);
       InvalidateRect(gfx::Rect());
     }
-    bound_graphics_ = NULL;
-    return true;
   }
+  bound_graphics_ = NULL;
+
+  if (!graphics_id)
+    return true;
 
   scoped_refptr<PPB_Graphics2D_Impl> graphics_2d =
       Resource::GetAs<PPB_Graphics2D_Impl>(graphics_id);
@@ -758,13 +738,15 @@ PP_Var PluginInstance::GetInstanceObject() {
   // Keep a reference on the stack. See NOTE above.
   scoped_refptr<PluginInstance> ref(this);
 
-  // Try the private interface first.  If it is not supported, we fall back to
-  // the primary PPP_Instance interface.
+  // Try the private interface first. If it is not supported, we fall back to
+  // looking in the older version of the PPP_Instance interface for
+  // GetInstanceObject. If all that fails, return an undefined Var.
   // TODO(dmichael): Remove support for PPP_Instance.GetInstanceObject
-  if (LoadPrivateInterface()) {
+  if (LoadPrivateInterface())
     return plugin_private_interface_->GetInstanceObject(pp_instance());
-  }
-  return instance_interface_->GetInstanceObject(pp_instance());
+  else if (instance_interface_->GetInstanceObject_0_4)
+    return instance_interface_->GetInstanceObject_0_4(pp_instance());
+  return PP_MakeUndefined();
 }
 
 void PluginInstance::ViewChanged(const gfx::Rect& position,
@@ -795,6 +777,7 @@ void PluginInstance::SetWebKitFocus(bool has_focus) {
   bool old_plugin_focus = PluginHasFocus();
   has_webkit_focus_ = has_focus;
   if (PluginHasFocus() != old_plugin_focus) {
+    delegate()->PluginFocusChanged(PluginHasFocus());
     instance_interface_->DidChangeFocus(pp_instance(),
                                         BoolToPPBool(PluginHasFocus()));
   }
@@ -939,6 +922,23 @@ bool PluginInstance::LoadFindInterface() {
   return !!plugin_find_interface_;
 }
 
+PluginInstance::PPP_Instance_Combined::PPP_Instance_Combined(
+    const PPP_Instance_0_5& instance_if)
+    : PPP_Instance_0_5(instance_if),
+      GetInstanceObject_0_4(NULL) {}
+
+PluginInstance::PPP_Instance_Combined::PPP_Instance_Combined(
+    const PPP_Instance_0_4& instance_if)
+    : PPP_Instance_0_5(),  // Zero-initialize.
+      GetInstanceObject_0_4(instance_if.GetInstanceObject) {
+  DidCreate = instance_if.DidCreate;
+  DidDestroy = instance_if.DidDestroy;
+  DidChangeView = instance_if.DidChangeView;
+  DidChangeFocus = instance_if.DidChangeFocus;
+  HandleInputEvent = instance_if.HandleInputEvent;
+  HandleDocumentLoad = instance_if.HandleDocumentLoad;
+}
+
 bool PluginInstance::LoadMessagingInterface() {
   if (!checked_for_plugin_messaging_interface_) {
     checked_for_plugin_messaging_interface_ = true;
@@ -968,6 +968,26 @@ bool PluginInstance::LoadSelectionInterface() {
   }
 
   return !!plugin_selection_interface_;
+}
+
+bool PluginInstance::LoadPrintInterface() {
+  if (!plugin_print_interface_.get()) {
+    // Try to get the most recent version first.  Fall back to older supported
+    // versions if necessary.
+    const PPP_Printing_Dev* print_if = static_cast<const PPP_Printing_Dev*>(
+        module_->GetPluginInterface(PPP_PRINTING_DEV_INTERFACE));
+    if (print_if) {
+      plugin_print_interface_.reset(new PPP_Printing_Dev_Combined(*print_if));
+    } else {
+      const PPP_Printing_Dev_0_3* print_if_0_3 =
+          static_cast<const PPP_Printing_Dev_0_3*>(
+              module_->GetPluginInterface(PPP_PRINTING_DEV_INTERFACE_0_3));
+      if (print_if_0_3)
+        plugin_print_interface_.reset(
+            new PPP_Printing_Dev_Combined(*print_if_0_3));
+    }
+  }
+  return !!plugin_print_interface_.get();
 }
 
 bool PluginInstance::LoadPrivateInterface() {
@@ -1005,35 +1025,49 @@ bool PluginInstance::GetPreferredPrintOutputFormat(
     PP_PrintOutputFormat_Dev* format) {
   // Keep a reference on the stack. See NOTE above.
   scoped_refptr<PluginInstance> ref(this);
-  if (!plugin_print_interface_) {
-    plugin_print_interface_ =
-        static_cast<const PPP_Printing_Dev*>(module_->GetPluginInterface(
-            PPP_PRINTING_DEV_INTERFACE));
-  }
-  if (!plugin_print_interface_)
+  if (!LoadPrintInterface())
     return false;
-  uint32_t format_count = 0;
-  PP_PrintOutputFormat_Dev* supported_formats =
-      plugin_print_interface_->QuerySupportedFormats(pp_instance(),
-                                                     &format_count);
-  if (!supported_formats)
-    return false;
-
-  bool found_supported_format = false;
-  for (uint32_t index = 0; index < format_count; index++) {
-    if (supported_formats[index] == PP_PRINTOUTPUTFORMAT_PDF) {
-      // If we found PDF, we are done.
-      found_supported_format = true;
+  if (plugin_print_interface_->QuerySupportedFormats) {
+    // If the most recent version of the QuerySupportedFormats functions is
+    // available, use it.
+    uint32_t supported_formats =
+        plugin_print_interface_->QuerySupportedFormats(pp_instance());
+    if (supported_formats & PP_PRINTOUTPUTFORMAT_PDF) {
       *format = PP_PRINTOUTPUTFORMAT_PDF;
-      break;
-    } else if (supported_formats[index] == PP_PRINTOUTPUTFORMAT_RASTER) {
-      // We found raster. Keep looking.
-      found_supported_format = true;
+      return true;
+    } else if (supported_formats & PP_PRINTOUTPUTFORMAT_RASTER) {
       *format = PP_PRINTOUTPUTFORMAT_RASTER;
+      return true;
     }
+    return false;
+  } else if (plugin_print_interface_->QuerySupportedFormats_0_3) {
+    // If we couldn't use the latest version of the function, but the 0.3
+    // version exists, we can use it.
+    uint32_t format_count = 0;
+    PP_PrintOutputFormat_Dev_0_3* supported_formats =
+        plugin_print_interface_->QuerySupportedFormats_0_3(pp_instance(),
+                                                           &format_count);
+    if (!supported_formats)
+      return false;
+
+    bool found_supported_format = false;
+    for (uint32_t index = 0; index < format_count; index++) {
+      if (supported_formats[index] == PP_PRINTOUTPUTFORMAT_PDF_DEPRECATED) {
+        // If we found PDF, we are done.
+        found_supported_format = true;
+        *format = PP_PRINTOUTPUTFORMAT_PDF;
+        break;
+      } else if (supported_formats[index] ==
+                 PP_PRINTOUTPUTFORMAT_RASTER_DEPRECATED) {
+        // We found raster. Keep looking.
+        found_supported_format = true;
+        *format = PP_PRINTOUTPUTFORMAT_RASTER;
+      }
+    }
+    PluginModule::GetCore()->MemFree(supported_formats);
+    return found_supported_format;
   }
-  PluginModule::GetCore()->MemFree(supported_formats);
-  return found_supported_format;
+  return false;
 }
 
 bool PluginInstance::SupportsPrintInterface() {
@@ -1053,35 +1087,66 @@ int PluginInstance::PrintBegin(const gfx::Rect& printable_area,
     return 0;
   }
 
+  int num_pages = 0;
   PP_PrintSettings_Dev print_settings;
   RectToPPRect(printable_area, &print_settings.printable_area);
   print_settings.dpi = printer_dpi;
   print_settings.orientation = PP_PRINTORIENTATION_NORMAL;
   print_settings.grayscale = PP_FALSE;
   print_settings.format = format;
-  int num_pages = plugin_print_interface_->Begin(pp_instance(),
-                                                 &print_settings);
+  if (plugin_print_interface_->Begin) {
+    // If we have the most current version of Begin, use it.
+    num_pages = plugin_print_interface_->Begin(pp_instance(),
+                                               &print_settings);
+  } else if (plugin_print_interface_->Begin_0_3) {
+    // Fall back to the 0.3 version of Begin if necessary, and convert the
+    // output format.
+    PP_PrintSettings_Dev_0_3 print_settings_0_3;
+    RectToPPRect(printable_area, &print_settings_0_3.printable_area);
+    print_settings_0_3.dpi = printer_dpi;
+    print_settings_0_3.orientation = PP_PRINTORIENTATION_NORMAL;
+    print_settings_0_3.grayscale = PP_FALSE;
+    switch (format) {
+      case PP_PRINTOUTPUTFORMAT_RASTER:
+        print_settings_0_3.format = PP_PRINTOUTPUTFORMAT_RASTER_DEPRECATED;
+        break;
+      case PP_PRINTOUTPUTFORMAT_PDF:
+        print_settings_0_3.format = PP_PRINTOUTPUTFORMAT_PDF_DEPRECATED;
+        break;
+      case PP_PRINTOUTPUTFORMAT_POSTSCRIPT:
+        print_settings_0_3.format = PP_PRINTOUTPUTFORMAT_POSTSCRIPT_DEPRECATED;
+        break;
+      default:
+        return 0;
+    }
+    num_pages = plugin_print_interface_->Begin_0_3(pp_instance(),
+                                                   &print_settings_0_3);
+  }
   if (!num_pages)
     return 0;
   current_print_settings_ = print_settings;
-#if defined(OS_LINUX)
+#if WEBKIT_USING_SKIA
   canvas_ = NULL;
   ranges_.clear();
-#endif  // defined(OS_LINUX)
+#endif  // WEBKIT_USING_SKIA
   return num_pages;
 }
 
 bool PluginInstance::PrintPage(int page_number, WebKit::WebCanvas* canvas) {
-  DCHECK(plugin_print_interface_);
+  DCHECK(plugin_print_interface_.get());
   PP_PrintPageNumberRange_Dev page_range;
   page_range.first_page_number = page_range.last_page_number = page_number;
-#if defined(OS_LINUX)
-  ranges_.push_back(page_range);
-  canvas_ = canvas;
-  return true;
-#else
-  return PrintPageHelper(&page_range, 1, canvas);
-#endif  // defined(OS_LINUX)
+#if WEBKIT_USING_SKIA
+  // The canvas only has a metafile on it for print preview.
+  if (printing::MetafileSkiaWrapper::GetMetafileFromCanvas(canvas)) {
+    ranges_.push_back(page_range);
+    canvas_ = canvas;
+    return true;
+  } else
+#endif  // WEBKIT_USING_SKIA
+  {
+    return PrintPageHelper(&page_range, 1, canvas);
+  }
 }
 
 bool PluginInstance::PrintPageHelper(PP_PrintPageNumberRange_Dev* page_ranges,
@@ -1110,16 +1175,15 @@ bool PluginInstance::PrintPageHelper(PP_PrintPageNumberRange_Dev* page_ranges,
 void PluginInstance::PrintEnd() {
   // Keep a reference on the stack. See NOTE above.
   scoped_refptr<PluginInstance> ref(this);
-#if defined(OS_LINUX)
-  // This hack is here because all pages need to be written to PDF at once.
+#if WEBKIT_USING_SKIA
   if (!ranges_.empty())
-    PrintPageHelper(&(ranges_.front()), ranges_.size(), canvas_);
+    PrintPageHelper(&(ranges_.front()), ranges_.size(), canvas_.get());
   canvas_ = NULL;
   ranges_.clear();
-#endif  // defined(OS_LINUX)
+#endif  // WEBKIT_USING_SKIA
 
-  DCHECK(plugin_print_interface_);
-  if (plugin_print_interface_)
+  DCHECK(plugin_print_interface_.get());
+  if (plugin_print_interface_.get())
     plugin_print_interface_->End(pp_instance());
 
   memset(&current_print_settings_, 0, sizeof(current_print_settings_));
@@ -1213,9 +1277,12 @@ PluginDelegate::PlatformContext3D* PluginInstance::CreateContext3D() {
 
 bool PluginInstance::PrintPDFOutput(PP_Resource print_output,
                                     WebKit::WebCanvas* canvas) {
-  scoped_refptr<PPB_Buffer_Impl> buffer(
-      Resource::GetAs<PPB_Buffer_Impl>(print_output));
-  if (!buffer.get() || !buffer->is_mapped() || !buffer->size()) {
+  ::ppapi::thunk::EnterResourceNoLock<PPB_Buffer_API> enter(print_output, true);
+  if (enter.failed())
+    return false;
+
+  BufferAutoMapper mapper(enter.object());
+  if (!mapper.data() || !mapper.size()) {
     NOTREACHED();
     return false;
   }
@@ -1237,54 +1304,68 @@ bool PluginInstance::PrintPDFOutput(PP_Resource print_output,
   // (NativeMetafile and PreviewMetafile must have compatible formats,
   // i.e. both PDF for this to work).
   printing::Metafile* metafile =
-    printing::MetafileSkiaWrapper::GetMetafileFromCanvas(canvas);
+      printing::MetafileSkiaWrapper::GetMetafileFromCanvas(canvas);
   DCHECK(metafile != NULL);
   if (metafile)
-    ret = metafile->InitFromData(buffer->mapped_buffer(), buffer->size());
+    ret = metafile->InitFromData(mapper.data(), mapper.size());
 #elif defined(OS_MACOSX)
   printing::NativeMetafile metafile;
   // Create a PDF metafile and render from there into the passed in context.
-  if (metafile.InitFromData(buffer->mapped_buffer(), buffer->size())) {
+  if (metafile.InitFromData(mapper.data(), mapper.size())) {
     // Flip the transform.
-    CGContextSaveGState(canvas);
-    CGContextTranslateCTM(canvas, 0,
+#if defined(USE_SKIA)
+    gfx::SkiaBitLocker bit_locker(canvas);
+    CGContextRef cgContext = bit_locker.cgContext();
+#else
+    CGContextRef cgContext = canvas;
+#endif
+    CGContextSaveGState(cgContext);
+    CGContextTranslateCTM(cgContext, 0,
                           current_print_settings_.printable_area.size.height);
-    CGContextScaleCTM(canvas, 1.0, -1.0);
+    CGContextScaleCTM(cgContext, 1.0, -1.0);
     CGRect page_rect;
     page_rect.origin.x = current_print_settings_.printable_area.point.x;
     page_rect.origin.y = current_print_settings_.printable_area.point.y;
     page_rect.size.width = current_print_settings_.printable_area.size.width;
     page_rect.size.height = current_print_settings_.printable_area.size.height;
 
-    ret = metafile.RenderPage(1, canvas, page_rect, true, false, true, true);
-    CGContextRestoreGState(canvas);
+    ret = metafile.RenderPage(1, cgContext, page_rect, true, false, true, true);
+    CGContextRestoreGState(cgContext);
   }
 #elif defined(OS_WIN)
-  // On Windows, we now need to render the PDF to the DC that backs the
-  // supplied canvas.
-  HDC dc = skia::BeginPlatformPaint(canvas);
-  gfx::Size size_in_pixels;
-  size_in_pixels.set_width(
-      printing::ConvertUnit(current_print_settings_.printable_area.size.width,
-                            static_cast<int>(printing::kPointsPerInch),
-                            current_print_settings_.dpi));
-  size_in_pixels.set_height(
-      printing::ConvertUnit(current_print_settings_.printable_area.size.height,
-                            static_cast<int>(printing::kPointsPerInch),
-                            current_print_settings_.dpi));
-  // We need to render using the actual printer DPI (rendering to a smaller
-  // set of pixels leads to a blurry output). However, we need to counter the
-  // scaling up that will happen in the browser.
-  XFORM xform = {0};
-  xform.eM11 = xform.eM22 = static_cast<float>(printing::kPointsPerInch) /
-      static_cast<float>(current_print_settings_.dpi);
-  ModifyWorldTransform(dc, &xform, MWT_LEFTMULTIPLY);
+  printing::Metafile* metafile =
+    printing::MetafileSkiaWrapper::GetMetafileFromCanvas(canvas);
+  if (metafile) {
+    // We only have a metafile when doing print preview, so we just want to
+    // pass the PDF off to preview.
+    ret = metafile->InitFromData(mapper.data(), mapper.size());
+  } else {
+    // On Windows, we now need to render the PDF to the DC that backs the
+    // supplied canvas.
+    HDC dc = skia::BeginPlatformPaint(canvas);
+    gfx::Size size_in_pixels;
+    size_in_pixels.set_width(printing::ConvertUnit(
+        current_print_settings_.printable_area.size.width,
+        static_cast<int>(printing::kPointsPerInch),
+        current_print_settings_.dpi));
+    size_in_pixels.set_height(printing::ConvertUnit(
+        current_print_settings_.printable_area.size.height,
+        static_cast<int>(printing::kPointsPerInch),
+        current_print_settings_.dpi));
+    // We need to render using the actual printer DPI (rendering to a smaller
+    // set of pixels leads to a blurry output). However, we need to counter the
+    // scaling up that will happen in the browser.
+    XFORM xform = {0};
+    xform.eM11 = xform.eM22 = static_cast<float>(printing::kPointsPerInch) /
+        static_cast<float>(current_print_settings_.dpi);
+    ModifyWorldTransform(dc, &xform, MWT_LEFTMULTIPLY);
 
-  ret = render_proc(buffer->mapped_buffer(), buffer->size(), 0, dc,
-                    current_print_settings_.dpi, current_print_settings_.dpi,
-                    0, 0, size_in_pixels.width(),
-                    size_in_pixels.height(), true, false, true, true);
-  skia::EndPlatformPaint(canvas);
+    ret = render_proc(static_cast<unsigned char*>(mapper.data()), mapper.size(),
+                      0, dc, current_print_settings_.dpi,
+                      current_print_settings_.dpi, 0, 0, size_in_pixels.width(),
+                      size_in_pixels.height(), true, false, true, true);
+    skia::EndPlatformPaint(canvas);
+  }
 #endif  // defined(OS_WIN)
 
   return ret;
@@ -1333,16 +1414,16 @@ bool PluginInstance::PrintRasterOutput(PP_Resource print_output,
     draw_to_canvas = false;
   }
 #endif  // defined(OS_WIN)
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(USE_SKIA)
   draw_to_canvas = false;
   DrawSkBitmapToCanvas(*bitmap, canvas, dest_rect_gfx,
                        current_print_settings_.printable_area.size.height);
   // See comments in the header file.
   last_printed_page_ = image;
-#else  // defined(OS_MACOSX)
+#else  // defined(OS_MACOSX) && !defined(USE_SKIA)
   if (draw_to_canvas)
     canvas->drawBitmapRect(*bitmap, &src_rect, dest_rect);
-#endif  // defined(OS_MACOSX)
+#endif  // defined(OS_MACOSX) && !defined(USE_SKIA)
   return true;
 }
 
@@ -1371,7 +1452,8 @@ bool PluginInstance::DrawJPEGToPlatformDC(
     return false;
   }
 
-  HDC dc = skia::BeginPlatformPaint(canvas);
+  skia::ScopedPlatformPaint scoped_platform_paint(canvas);
+  HDC dc = scoped_platform_paint.GetPlatformSurface();
   // TODO(sanjeevr): This is a temporary hack. If we output a JPEG
   // to the EMF, the EnumEnhMetaFile call fails in the browser
   // process. The failure also happens if we output nothing here.
@@ -1390,12 +1472,11 @@ bool PluginInstance::DrawJPEGToPlatformDC(
                 &compressed_image.front(),
                 reinterpret_cast<const BITMAPINFO*>(&bmi),
                 DIB_RGB_COLORS, SRCCOPY);
-  skia::EndPlatformPaint(canvas);
   return true;
 }
 #endif  // OS_WIN
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(USE_SKIA)
 void PluginInstance::DrawSkBitmapToCanvas(
     const SkBitmap& bitmap, WebKit::WebCanvas* canvas,
     const gfx::Rect& dest_rect,
@@ -1428,7 +1509,7 @@ void PluginInstance::DrawSkBitmapToCanvas(
   CGContextDrawImage(canvas, bounds, image);
   CGContextRestoreGState(canvas);
 }
-#endif  // defined(OS_MACOSX)
+#endif  // defined(OS_MACOSX) && !defined(USE_SKIA)
 
 PPB_Graphics2D_Impl* PluginInstance::bound_graphics_2d() const {
   if (bound_graphics_.get() == NULL)

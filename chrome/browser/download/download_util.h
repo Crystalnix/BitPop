@@ -12,19 +12,17 @@
 
 #include "base/basictypes.h"
 #include "base/file_path.h"
+#include "base/memory/ref_counted.h"
 #include "base/string16.h"
+#include "chrome/browser/download/download_process_handle.h"
 #include "ui/gfx/native_widget_types.h"
 
 #if defined(TOOLKIT_VIEWS)
 #include "views/view.h"
 #endif
 
-namespace gfx {
-class Canvas;
-class Image;
-}
-
 class BaseDownloadItemModel;
+class CrxInstaller;
 class DictionaryValue;
 class DownloadItem;
 class DownloadManager;
@@ -36,8 +34,13 @@ class SkBitmap;
 struct DownloadCreateInfo;
 struct DownloadSaveInfo;
 
-namespace net {
-class URLRequestContextGetter;
+namespace content {
+class ResourceContext;
+}
+
+namespace gfx {
+class Canvas;
+class Image;
 }
 
 namespace download_util {
@@ -60,10 +63,17 @@ void GenerateExtension(const FilePath& file_name,
                        FilePath::StringType* generated_extension);
 
 // Create a file name based on the response from the server.
-void GenerateFileNameFromInfo(DownloadCreateInfo* info,
-                              FilePath* generated_name);
+void GenerateFileNameFromRequest(const GURL& url,
+                                 const std::string& content_disposition,
+                                 const std::string& referrer_charset,
+                                 const std::string& mime_type,
+                                 FilePath* generated_name);
 
-// Create a file name based on the response from the server.
+void GenerateFileNameFromSuggestedName(const GURL& url,
+                                       const std::string& suggested_name,
+                                       const std::string& mime_type,
+                                       FilePath* generated_name);
+
 void GenerateFileName(const GURL& url,
                       const std::string& content_disposition,
                       const std::string& referrer_charset,
@@ -75,10 +85,13 @@ void GenerateFileName(const GURL& url,
 // full path to a file.
 void GenerateSafeFileName(const std::string& mime_type, FilePath* file_name);
 
-// Opens downloaded Chrome extension file (*.crx).
-void OpenChromeExtension(Profile* profile,
-                         DownloadManager* download_manager,
-                         const DownloadItem& download_item);
+// Start installing a downloaded item item as a CRX (extension, theme, app,
+// ...).  The installer does work on the file thread, so the installation
+// is not complete when this function returns.  Returns the object managing
+// the installation.
+scoped_refptr<CrxInstaller> OpenChromeExtension(
+    Profile* profile,
+    const DownloadItem& download_item);
 
 // Download progress animations ------------------------------------------------
 
@@ -238,13 +251,14 @@ void DownloadUrl(const GURL& url,
                  ResourceDispatcherHost* rdh,
                  int render_process_host_id,
                  int render_view_id,
-                 net::URLRequestContextGetter* request_context_getter);
+                 const content::ResourceContext* context);
 
 // Tells the resource dispatcher host to cancel a download request.
 // Must be called on the IO thread.
+// |process_handle| is passed by value because it is ultimately passed to
+// other threads, and this way we don't have to worry about object lifetimes.
 void CancelDownloadRequest(ResourceDispatcherHost* rdh,
-                           int render_process_id,
-                           int request_id);
+                           DownloadProcessHandle process_handle);
 
 // Sends a notification on downloads being initiated
 // Must be called on the UI thread.
@@ -262,12 +276,6 @@ void EraseUniqueDownloadFiles(const FilePath& path_prefix);
 
 // Returns a .crdownload intermediate path for the |suggested_path|.
 FilePath GetCrDownloadPath(const FilePath& suggested_path);
-
-// Returns true if this download should show the "dangerous file" warning.
-// Various factors are considered, such as the type of the file, whether a
-// user action initiated the download, and whether the user has explictly
-// marked the file type as "auto open".
-bool IsDangerous(DownloadCreateInfo* info, Profile* profile, bool auto_open);
 
 }  // namespace download_util
 

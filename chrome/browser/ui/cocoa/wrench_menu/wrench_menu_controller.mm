@@ -6,12 +6,14 @@
 
 #include "base/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/metrics/user_metrics.h"
+#import "chrome/browser/app_controller_mac.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
+#import "chrome/browser/ui/cocoa/bookmarks/bookmark_menu_bridge.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
 #import "chrome/browser/ui/cocoa/wrench_menu/menu_tracked_root_view.h"
 #include "chrome/browser/ui/toolbar/wrench_menu_model.h"
+#include "content/browser/user_metrics.h"
 #include "content/common/notification_observer.h"
 #include "content/common/notification_service.h"
 #include "content/common/notification_source.h"
@@ -103,15 +105,29 @@ class ZoomLevelObserver : public NotificationObserver {
   [menu insertItem:customItem.get() atIndex:index];
 }
 
-- (NSMenu*)menu {
-  NSMenu* menu = [super menu];
-  if (![menu delegate]) {
-    [menu setDelegate:self];
+- (NSMenu*)bookmarkSubMenu {
+  NSString* title = l10n_util::GetNSStringWithFixup(IDS_BOOKMARKS_MENU);
+  return [[[self menu] itemWithTitle:title] submenu];
+}
+
+- (void)updateBookmarkSubMenu {
+  NSMenu* bookmarkMenu = [self bookmarkSubMenu];
+  DCHECK(bookmarkMenu != NULL);
+
+  if (!bookmarkMenuBridge_.get()) {
+    bookmarkMenuBridge_.reset(
+        new BookmarkMenuBridge([self wrenchMenuModel]->browser()->profile(),
+                               bookmarkMenu));
   }
-  return menu;
+  DCHECK(bookmarkMenuBridge_.get() != NULL);
+
+  if (bookmarkMenuBridge_.get() && bookmarkMenu)
+    bookmarkMenuBridge_->UpdateSubMenu(bookmarkMenu);
 }
 
 - (void)menuWillOpen:(NSMenu*)menu {
+  [super menuWillOpen:menu];
+
   NSString* title = base::SysUTF16ToNSString(
       [self wrenchMenuModel]->GetLabelForCommandId(IDC_ZOOM_PERCENT_DISPLAY));
   [[zoomItem_ viewWithTag:IDC_ZOOM_PERCENT_DISPLAY] setTitle:title];
@@ -121,6 +137,8 @@ class ZoomLevelObserver : public NotificationObserver {
       [NSImage imageNamed:NSImageNameExitFullScreenTemplate] :
           [NSImage imageNamed:NSImageNameEnterFullScreenTemplate];
   [zoomFullScreen_ setImage:icon];
+
+  [self updateBookmarkSubMenu];
 }
 
 // Used to dispatch commands from the Wrench menu. The custom items within the

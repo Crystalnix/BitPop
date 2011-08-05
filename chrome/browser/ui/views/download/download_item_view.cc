@@ -18,6 +18,7 @@
 #include "chrome/browser/download/download_item_model.h"
 #include "chrome/browser/download/download_util.h"
 #include "chrome/browser/themes/theme_service.h"
+#include "chrome/browser/ui/views/download/download_shelf_context_menu_view.h"
 #include "chrome/browser/ui/views/download/download_shelf_view.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -31,11 +32,9 @@
 #include "ui/gfx/image.h"
 #include "unicode/uchar.h"
 #include "views/controls/button/native_button.h"
-#include "views/controls/menu/menu_2.h"
+#include "views/controls/label.h"
 #include "views/widget/root_view.h"
 #include "views/widget/widget.h"
-
-using base::TimeDelta;
 
 // TODO(paulg): These may need to be adjusted when download progress
 //              animation is added, and also possibly to take into account
@@ -78,42 +77,6 @@ static const int kDisabledOnOpenDuration = 3000;
 // creating a "muted" version of title text for both dark-on-light and
 // light-on-dark themes.
 static const double kDownloadItemLuminanceMod = 0.8;
-
-// DownloadShelfContextMenuWin -------------------------------------------------
-
-class DownloadShelfContextMenuWin : public DownloadShelfContextMenu {
- public:
-  explicit DownloadShelfContextMenuWin(BaseDownloadItemModel* model)
-      : DownloadShelfContextMenu(model) {
-    DCHECK(model);
-  }
-
-  void Run(const gfx::Point& point) {
-    if (download_->IsComplete())
-      menu_.reset(new views::Menu2(GetFinishedMenuModel()));
-    else
-      menu_.reset(new views::Menu2(GetInProgressMenuModel()));
-
-    // The menu's alignment is determined based on the UI layout.
-    views::Menu2::Alignment alignment;
-    if (base::i18n::IsRTL())
-      alignment = views::Menu2::ALIGN_TOPRIGHT;
-    else
-      alignment = views::Menu2::ALIGN_TOPLEFT;
-    menu_->RunMenuAt(point, alignment);
-  }
-
-  // This method runs when the caller has been deleted and we should not attempt
-  // to access |download_|.
-  void Stop() {
-    download_ = NULL;
-  }
-
- private:
-  scoped_ptr<views::Menu2> menu_;
-};
-
-// DownloadItemView ------------------------------------------------------------
 
 DownloadItemView::DownloadItemView(DownloadItem* download,
     DownloadShelfView* parent,
@@ -267,7 +230,7 @@ DownloadItemView::DownloadItemView(DownloadItem* download,
 
     // Extract the file extension (if any).
     FilePath filename(download->target_name());
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
     string16 extension = WideToUTF16(base::SysNativeMBToWide(
         filename.Extension()));
 #else
@@ -277,7 +240,7 @@ DownloadItemView::DownloadItemView(DownloadItem* download,
     // Remove leading '.'
     if (extension.length() > 0)
       extension = extension.substr(1);
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
     string16 rootname = WideToUTF16(base::SysNativeMBToWide(
         filename.RemoveExtension().value()));
 #else
@@ -292,14 +255,14 @@ DownloadItemView::DownloadItemView(DownloadItem* download,
     // The dangerous download label text and icon are different
     // under different cases.
     string16 dangerous_label;
-    if (download->danger_type() == DownloadItem::DANGEROUS_URL) {
+    if (download->GetDangerType() == DownloadItem::DANGEROUS_URL) {
       // Safebrowsing shows the download URL leads to malicious file.
       warning_icon_ = rb.GetBitmapNamed(IDR_SAFEBROWSING_WARNING);
       dangerous_label =
           l10n_util::GetStringUTF16(IDS_PROMPT_UNSAFE_DOWNLOAD_URL);
     } else {
       // The download file has dangerous file type (e.g.: an executable).
-      DCHECK(download->danger_type() == DownloadItem::DANGEROUS_FILE);
+      DCHECK(download->GetDangerType() == DownloadItem::DANGEROUS_FILE);
       warning_icon_ = rb.GetBitmapNamed(IDR_WARNING);
       if (download->is_extension_install()) {
         dangerous_label =
@@ -354,7 +317,7 @@ void DownloadItemView::StartDownloadProgress() {
   if (progress_timer_.IsRunning())
     return;
   progress_timer_.Start(
-      TimeDelta::FromMilliseconds(download_util::kProgressRateMs), this,
+      base::TimeDelta::FromMilliseconds(download_util::kProgressRateMs), this,
       &DownloadItemView::UpdateDownloadProgress);
 }
 
@@ -385,6 +348,7 @@ void DownloadItemView::OnDownloadUpdated(DownloadItem* download) {
   switch (download_->state()) {
     case DownloadItem::IN_PROGRESS:
       download_->is_paused() ? StopDownloadProgress() : StartDownloadProgress();
+      LoadIconIfItemPathChanged();
       break;
     case DownloadItem::INTERRUPTED:
       StopDownloadProgress();
@@ -642,7 +606,8 @@ void DownloadItemView::ShowContextMenu(const gfx::Point& p,
   // matter where the user pressed. To force RootView to recalculate the
   // mouse target during the mouse press we explicitly set the mouse handler
   // to NULL.
-  GetRootView()->SetMouseHandler(NULL);
+  static_cast<views::internal::RootView*>(GetWidget()->GetRootView())->
+      SetMouseHandler(NULL);
 
   // If |is_mouse_gesture| is false, |p| is ignored. The menu is shown aligned
   // to drop down arrow button.
@@ -660,7 +625,7 @@ void DownloadItemView::ShowContextMenu(const gfx::Point& p,
   views::View::ConvertPointToScreen(this, &point);
 
   if (!context_menu_.get())
-    context_menu_.reset(new DownloadShelfContextMenuWin(model_.get()));
+    context_menu_.reset(new DownloadShelfContextMenuView(model_.get()));
   // When we call the Run method on the menu, it runs an inner message loop
   // that might causes us to be deleted.
   bool deleted = false;
@@ -672,7 +637,7 @@ void DownloadItemView::ShowContextMenu(const gfx::Point& p,
 
   // If the menu action was to remove the download, this view will also be
   // invalid so we must not access 'this' in this case.
-  if (context_menu_->download()) {
+  if (context_menu_->download_item()) {
     drop_down_pressed_ = false;
     // Showing the menu blocks. Here we revert the state.
     SetState(NORMAL, NORMAL);
@@ -966,9 +931,18 @@ void DownloadItemView::OpenDownload() {
 
 void DownloadItemView::LoadIcon() {
   IconManager* im = g_browser_process->icon_manager();
-  im->LoadIcon(download_->GetUserVerifiedFilePath(),
+  last_download_item_path_ = download_->GetUserVerifiedFilePath();
+  im->LoadIcon(last_download_item_path_,
                IconLoader::SMALL, &icon_consumer_,
                NewCallback(this, &DownloadItemView::OnExtractIconComplete));
+}
+
+void DownloadItemView::LoadIconIfItemPathChanged() {
+  FilePath current_download_path = download_->GetUserVerifiedFilePath();
+  if (last_download_item_path_ == current_download_path)
+    return;
+
+  LoadIcon();
 }
 
 // Load an icon for the file type we're downloading, and animate any in progress
@@ -1066,9 +1040,9 @@ void DownloadItemView::SizeLabelToMinWidth() {
   if (dangerous_download_label_sized_)
     return;
 
-  std::wstring text = dangerous_download_label_->GetText();
+  string16 text = WideToUTF16(dangerous_download_label_->GetText());
   TrimWhitespace(text, TRIM_ALL, &text);
-  DCHECK_EQ(std::wstring::npos, text.find(L"\n"));
+  DCHECK_EQ(string16::npos, text.find('\n'));
 
   // Make the label big so that GetPreferredSize() is not constrained by the
   // current width.
@@ -1076,24 +1050,23 @@ void DownloadItemView::SizeLabelToMinWidth() {
 
   gfx::Size size;
   int min_width = -1;
-  string16 text16 = WideToUTF16(text);
   // Using BREAK_WORD can work in most cases, but it can also break
   // lines where it should not. Using BREAK_LINE is safer although
   // slower for Chinese/Japanese. This is not perf-critical at all, though.
-  base::BreakIterator iter(&text16, base::BreakIterator::BREAK_LINE);
+  base::i18n::BreakIterator iter(text, base::i18n::BreakIterator::BREAK_LINE);
   bool status = iter.Init();
   DCHECK(status);
 
-  string16 current_text = text16;
-  string16 prev_text = text16;
+  string16 current_text = text;
+  string16 prev_text = text;
   while (iter.Advance()) {
     size_t pos = iter.pos();
-    if (pos >= text16.length())
+    if (pos >= text.length())
       break;
     // This can be a low surrogate codepoint, but u_isUWhiteSpace will
     // return false and inserting a new line after a surrogate pair
     // is perfectly ok.
-    char16 line_end_char = text16[pos - 1];
+    char16 line_end_char = text[pos - 1];
     if (u_isUWhiteSpace(line_end_char))
       current_text.replace(pos - 1, 1, 1, char16('\n'));
     else
@@ -1114,7 +1087,7 @@ void DownloadItemView::SizeLabelToMinWidth() {
 
     // Restore the string.
     prev_text = current_text;
-    current_text = text16;
+    current_text = text;
   }
 
   // If we have a line with no line breaking opportunity (which is very

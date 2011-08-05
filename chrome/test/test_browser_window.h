@@ -59,9 +59,7 @@ class TestBrowserWindow : public BrowserWindow {
       TabContentsWrapper* tab_contents) {}
   virtual void ShowCreateChromeAppShortcutsDialog(Profile* profile,
                                                   const Extension* app) {}
-#if defined(TOOLKIT_VIEWS)
-  virtual void ToggleCompactNavigationBar() {}
-#endif  // defined(TOOLKIT_VIEWS)
+  virtual void ToggleUseCompactNavigationBar() {}
 
   virtual bool IsBookmarkBarVisible() const;
   virtual bool IsBookmarkBarAnimating() const;
@@ -101,6 +99,8 @@ class TestBrowserWindow : public BrowserWindow {
   virtual void ShowInstant(TabContentsWrapper* preview_contents) {}
   virtual void HideInstant(bool instant_is_active) {}
   virtual gfx::Rect GetInstantBounds();
+  virtual WindowOpenDisposition GetDispositionForPopupBounds(
+      const gfx::Rect& bounds);
 
 #if defined(OS_CHROMEOS)
   virtual void ShowKeyboardOverlay(gfx::NativeWindow owning_window) {}

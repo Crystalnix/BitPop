@@ -8,6 +8,7 @@
 
 #include "base/logging.h"
 #include "chrome/browser/sync/js_backend.h"
+#include "chrome/browser/sync/js_event_details.h"
 #include "chrome/browser/sync/js_event_handler.h"
 
 namespace browser_sync {
@@ -76,18 +77,19 @@ void JsEventHandlerList::ProcessMessage(
 }
 
 void JsEventHandlerList::RouteJsEvent(const std::string& name,
-                                      const JsArgList& args,
-                                      const JsEventHandler* target) {
-  if (target) {
-    JsEventHandler* non_const_target(const_cast<JsEventHandler*>(target));
-    if (handlers_.HasObserver(non_const_target)) {
-      non_const_target->HandleJsEvent(name, args);
-    } else {
-      VLOG(1) << "Unknown target; dropping event " << name
-              << " with args " << args.ToString();
-    }
+                                      const JsEventDetails& details) {
+  FOR_EACH_OBSERVER(JsEventHandler, handlers_, HandleJsEvent(name, details));
+}
+
+void JsEventHandlerList::RouteJsMessageReply(const std::string& name,
+                                             const JsArgList& args,
+                                             const JsEventHandler* target) {
+  JsEventHandler* non_const_target(const_cast<JsEventHandler*>(target));
+  if (handlers_.HasObserver(non_const_target)) {
+    non_const_target->HandleJsMessageReply(name, args);
   } else {
-    FOR_EACH_OBSERVER(JsEventHandler, handlers_, HandleJsEvent(name, args));
+    VLOG(1) << "Unknown target; dropping message reply " << name
+            << " with args " << args.ToString();
   }
 }
 

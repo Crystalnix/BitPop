@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,8 @@
 #include "content/browser/tab_contents/test_tab_contents.h"
 #include "content/common/page_transition_types.h"
 #include "content/common/view_messages.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebDragOperation.h"
+#include "webkit/glue/webdropdata.h"
 
 class RenderViewHostTest : public RenderViewHostTestHarness {
 };
@@ -48,13 +50,102 @@ TEST_F(RenderViewHostTest, ResetUnloadOnReload) {
   NavigateAndCommit(url1);
   controller().LoadURL(url2, GURL(), PageTransition::LINK);
   // Simulate the ClosePage call which is normally sent by the net::URLRequest.
-  rvh()->ClosePage(true, 0, 0);
-  // Needed so that navigations are not suspended on the RVH. Normally handled
-  // by way of ViewHostMsg_ShouldClose_ACK.
-  contents()->render_manager()->ShouldClosePage(true, true);
+  rvh()->ClosePage();
+  // Needed so that navigations are not suspended on the RVH.
+  rvh()->SendShouldCloseACK(true);
   contents()->Stop();
   controller().Reload(false);
   EXPECT_FALSE(rvh()->is_waiting_for_unload_ack());
+}
+
+class MockDraggingRenderViewHostDelegateView
+    : public RenderViewHostDelegate::View {
+ public:
+  virtual ~MockDraggingRenderViewHostDelegateView() {}
+  virtual void CreateNewWindow(
+      int route_id,
+      const ViewHostMsg_CreateWindow_Params& params) {}
+  virtual void CreateNewWidget(int route_id,
+                               WebKit::WebPopupType popup_type) {}
+  virtual void CreateNewFullscreenWidget(int route_id) {}
+  virtual void ShowCreatedWindow(int route_id,
+                                 WindowOpenDisposition disposition,
+                                 const gfx::Rect& initial_pos,
+                                 bool user_gesture) {}
+  virtual void ShowCreatedWidget(int route_id,
+                                 const gfx::Rect& initial_pos) {}
+  virtual void ShowCreatedFullscreenWidget(int route_id) {}
+  virtual void ShowContextMenu(const ContextMenuParams& params) {}
+  virtual void ShowPopupMenu(const gfx::Rect& bounds,
+                             int item_height,
+                             double item_font_size,
+                             int selected_item,
+                             const std::vector<WebMenuItem>& items,
+                             bool right_aligned) {}
+  virtual void StartDragging(const WebDropData& drop_data,
+                             WebKit::WebDragOperationsMask allowed_ops,
+                             const SkBitmap& image,
+                             const gfx::Point& image_offset) {
+    drag_url_ = drop_data.url;
+    html_base_url_ = drop_data.html_base_url;
+  }
+  virtual void UpdateDragCursor(WebKit::WebDragOperation operation) {}
+  virtual void GotFocus() {}
+  virtual void TakeFocus(bool reverse) {}
+  virtual void LostCapture() {}
+  virtual void Activate() {}
+  virtual void Deactivate() {}
+  virtual bool PreHandleKeyboardEvent(const NativeWebKeyboardEvent& event,
+                                      bool* is_keyboard_shortcut) {
+    return false;
+  }
+  virtual void HandleKeyboardEvent(const NativeWebKeyboardEvent& event) {}
+  virtual void HandleMouseMove() {}
+  virtual void HandleMouseDown() {}
+  virtual void HandleMouseLeave() {}
+  virtual void HandleMouseUp() {}
+  virtual void HandleMouseActivate() {}
+  virtual void UpdatePreferredSize(const gfx::Size& pref_size) {}
+
+  GURL drag_url() {
+    return drag_url_;
+  }
+
+  GURL html_base_url() {
+    return html_base_url_;
+  }
+
+ private:
+  GURL drag_url_;
+  GURL html_base_url_;
+};
+
+TEST_F(RenderViewHostTest, StartDragging) {
+  TestTabContents* tab_contents = contents();
+  MockDraggingRenderViewHostDelegateView view_delegate;
+  tab_contents->set_view_delegate(&view_delegate);
+
+  WebDropData drop_data;
+  GURL file_url = GURL("file:///home/user/secrets.txt");
+  drop_data.url = file_url;
+  drop_data.html_base_url = file_url;
+  rvh()->TestOnMsgStartDragging(drop_data);
+  EXPECT_TRUE(view_delegate.drag_url().is_empty());
+  EXPECT_TRUE(view_delegate.html_base_url().is_empty());
+
+  GURL http_url = GURL("http://www.domain.com/index.html");
+  drop_data.url = http_url;
+  drop_data.html_base_url = http_url;
+  rvh()->TestOnMsgStartDragging(drop_data);
+  EXPECT_EQ(http_url, view_delegate.drag_url());
+  EXPECT_EQ(http_url, view_delegate.html_base_url());
+
+  GURL https_url = GURL("https://www.domain.com/index.html");
+  drop_data.url = https_url;
+  drop_data.html_base_url = https_url;
+  rvh()->TestOnMsgStartDragging(drop_data);
+  EXPECT_EQ(https_url, view_delegate.drag_url());
+  EXPECT_EQ(https_url, view_delegate.html_base_url());
 }
 
 // The test that follow trigger DCHECKS in debug build.

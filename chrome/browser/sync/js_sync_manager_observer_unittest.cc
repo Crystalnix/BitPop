@@ -10,6 +10,7 @@
 #include "base/values.h"
 #include "chrome/browser/sync/engine/syncapi.h"
 #include "chrome/browser/sync/js_arg_list.h"
+#include "chrome/browser/sync/js_event_details.h"
 #include "chrome/browser/sync/js_test_util.h"
 #include "chrome/browser/sync/sessions/session_state.h"
 #include "chrome/browser/sync/syncable/model_type.h"
@@ -35,23 +36,18 @@ TEST_F(JsSyncManagerObserverTest, NoArgNotifiations) {
 
   EXPECT_CALL(mock_router_,
               RouteJsEvent("onInitializationComplete",
-                           HasArgs(JsArgList()), NULL));
-  EXPECT_CALL(mock_router_,
-              RouteJsEvent("onPassphraseFailed",
-                           HasArgs(JsArgList()), NULL));
-
+                           HasDetails(JsEventDetails())));
   EXPECT_CALL(mock_router_,
               RouteJsEvent("onStopSyncingPermanently",
-                           HasArgs(JsArgList()), NULL));
+                           HasDetails(JsEventDetails())));
   EXPECT_CALL(mock_router_,
               RouteJsEvent("onClearServerDataSucceeded",
-                           HasArgs(JsArgList()), NULL));
+                           HasDetails(JsEventDetails())));
   EXPECT_CALL(mock_router_,
               RouteJsEvent("onClearServerDataFailed",
-                           HasArgs(JsArgList()), NULL));
+                           HasDetails(JsEventDetails())));
 
   sync_manager_observer_.OnInitializationComplete();
-  sync_manager_observer_.OnPassphraseFailed();
   sync_manager_observer_.OnStopSyncingPermanently();
   sync_manager_observer_.OnClearServerDataSucceeded();
   sync_manager_observer_.OnClearServerDataFailed();
@@ -62,13 +58,13 @@ TEST_F(JsSyncManagerObserverTest, OnChangesComplete) {
 
   for (int i = syncable::FIRST_REAL_MODEL_TYPE;
        i < syncable::MODEL_TYPE_COUNT; ++i) {
-    const std::string& model_type_str =
-        syncable::ModelTypeToString(syncable::ModelTypeFromInt(i));
-    ListValue expected_args;
-    expected_args.Append(Value::CreateStringValue(model_type_str));
+    DictionaryValue expected_details;
+    expected_details.SetString(
+        "modelType",
+        syncable::ModelTypeToString(syncable::ModelTypeFromInt(i)));
     EXPECT_CALL(mock_router_,
                 RouteJsEvent("onChangesComplete",
-                             HasArgsAsList(expected_args), NULL));
+                             HasDetailsAsDictionary(expected_details)));
   }
 
   for (int i = syncable::FIRST_REAL_MODEL_TYPE;
@@ -88,27 +84,29 @@ TEST_F(JsSyncManagerObserverTest, OnSyncCycleCompleted) {
                                          false,
                                          true,
                                          100,
+                                         8,
                                          5,
                                          false,
-                                         sessions::SyncSourceInfo());
-  ListValue expected_args;
-  expected_args.Append(snapshot.ToValue());
+                                         sessions::SyncSourceInfo(),
+                                         0);
+  DictionaryValue expected_details;
+  expected_details.Set("snapshot", snapshot.ToValue());
 
   EXPECT_CALL(mock_router_,
               RouteJsEvent("onSyncCycleCompleted",
-                           HasArgsAsList(expected_args), NULL));
+                           HasDetailsAsDictionary(expected_details)));
 
   sync_manager_observer_.OnSyncCycleCompleted(&snapshot);
 }
 
 TEST_F(JsSyncManagerObserverTest, OnAuthError) {
   GoogleServiceAuthError error(GoogleServiceAuthError::TWO_FACTOR);
-  ListValue expected_args;
-  expected_args.Append(error.ToValue());
+  DictionaryValue expected_details;
+  expected_details.Set("authError", error.ToValue());
 
   EXPECT_CALL(mock_router_,
               RouteJsEvent("onAuthError",
-                           HasArgsAsList(expected_args), NULL));
+                           HasDetailsAsDictionary(expected_details)));
 
   sync_manager_observer_.OnAuthError(error);
 }
@@ -116,42 +114,73 @@ TEST_F(JsSyncManagerObserverTest, OnAuthError) {
 TEST_F(JsSyncManagerObserverTest, OnPassphraseRequired) {
   InSequence dummy;
 
-  ListValue true_args, false_args;
-  true_args.Append(Value::CreateBooleanValue(true));
-  false_args.Append(Value::CreateBooleanValue(false));
+  DictionaryValue reason_passphrase_not_required_details;
+  DictionaryValue reason_encryption_details;
+  DictionaryValue reason_decryption_details;
+  DictionaryValue reason_set_passphrase_failed_details;
+
+  reason_passphrase_not_required_details.SetString(
+      "reason",
+      sync_api::PassphraseRequiredReasonToString(
+          sync_api::REASON_PASSPHRASE_NOT_REQUIRED));
+  reason_encryption_details.SetString(
+      "reason",
+      sync_api::PassphraseRequiredReasonToString(sync_api::REASON_ENCRYPTION));
+  reason_decryption_details.SetString(
+      "reason",
+      sync_api::PassphraseRequiredReasonToString(sync_api::REASON_DECRYPTION));
+  reason_set_passphrase_failed_details.SetString(
+      "reason",
+      sync_api::PassphraseRequiredReasonToString(
+          sync_api::REASON_SET_PASSPHRASE_FAILED));
 
   EXPECT_CALL(mock_router_,
               RouteJsEvent("onPassphraseRequired",
-                           HasArgsAsList(false_args), NULL));
+                           HasDetailsAsDictionary(
+                               reason_passphrase_not_required_details)));
   EXPECT_CALL(mock_router_,
               RouteJsEvent("onPassphraseRequired",
-                           HasArgsAsList(true_args), NULL));
+                           HasDetailsAsDictionary(reason_encryption_details)));
+  EXPECT_CALL(mock_router_,
+              RouteJsEvent("onPassphraseRequired",
+                           HasDetailsAsDictionary(reason_decryption_details)));
+  EXPECT_CALL(mock_router_,
+              RouteJsEvent("onPassphraseRequired",
+                           HasDetailsAsDictionary(
+                               reason_set_passphrase_failed_details)));
 
-  sync_manager_observer_.OnPassphraseRequired(false);
-  sync_manager_observer_.OnPassphraseRequired(true);
+  sync_manager_observer_.OnPassphraseRequired(
+      sync_api::REASON_PASSPHRASE_NOT_REQUIRED);
+  sync_manager_observer_.OnPassphraseRequired(sync_api::REASON_ENCRYPTION);
+  sync_manager_observer_.OnPassphraseRequired(sync_api::REASON_DECRYPTION);
+  sync_manager_observer_.OnPassphraseRequired(
+      sync_api::REASON_SET_PASSPHRASE_FAILED);
 }
 
 TEST_F(JsSyncManagerObserverTest, SensitiveNotifiations) {
-  ListValue redacted_args;
-  redacted_args.Append(Value::CreateStringValue("<redacted>"));
+  DictionaryValue redacted_token_details;
+  redacted_token_details.SetString("token", "<redacted>");
+  DictionaryValue redacted_bootstrap_token_details;
+  redacted_bootstrap_token_details.SetString("bootstrapToken", "<redacted>");
 
   EXPECT_CALL(mock_router_,
               RouteJsEvent("onUpdatedToken",
-                           HasArgsAsList(redacted_args), NULL));
+                           HasDetailsAsDictionary(redacted_token_details)));
   EXPECT_CALL(mock_router_,
-              RouteJsEvent("onPassphraseAccepted",
-                           HasArgsAsList(redacted_args), NULL));
+              RouteJsEvent(
+                  "onPassphraseAccepted",
+                  HasDetailsAsDictionary(redacted_bootstrap_token_details)));
 
   sync_manager_observer_.OnUpdatedToken("sensitive_token");
   sync_manager_observer_.OnPassphraseAccepted("sensitive_token");
 }
 
 TEST_F(JsSyncManagerObserverTest, OnEncryptionComplete) {
-  ListValue expected_args;
+  DictionaryValue expected_details;
   ListValue* encrypted_type_values = new ListValue();
+  expected_details.Set("encryptedTypes", encrypted_type_values);
   syncable::ModelTypeSet encrypted_types;
 
-  expected_args.Append(encrypted_type_values);
   for (int i = syncable::FIRST_REAL_MODEL_TYPE;
        i < syncable::MODEL_TYPE_COUNT; ++i) {
     syncable::ModelType type = syncable::ModelTypeFromInt(i);
@@ -162,17 +191,17 @@ TEST_F(JsSyncManagerObserverTest, OnEncryptionComplete) {
 
   EXPECT_CALL(mock_router_,
               RouteJsEvent("onEncryptionComplete",
-                           HasArgsAsList(expected_args), NULL));
+                           HasDetailsAsDictionary(expected_details)));
 
   sync_manager_observer_.OnEncryptionComplete(encrypted_types);
 }
 
 TEST_F(JsSyncManagerObserverTest, OnMigrationNeededForTypes) {
-  ListValue expected_args;
+  DictionaryValue expected_details;
   ListValue* type_values = new ListValue();
+  expected_details.Set("types", type_values);
   syncable::ModelTypeSet types;
 
-  expected_args.Append(type_values);
   for (int i = syncable::FIRST_REAL_MODEL_TYPE;
        i < syncable::MODEL_TYPE_COUNT; ++i) {
     syncable::ModelType type = syncable::ModelTypeFromInt(i);
@@ -183,7 +212,7 @@ TEST_F(JsSyncManagerObserverTest, OnMigrationNeededForTypes) {
 
   EXPECT_CALL(mock_router_,
               RouteJsEvent("onMigrationNeededForTypes",
-                           HasArgsAsList(expected_args), NULL));
+                           HasDetailsAsDictionary(expected_details)));
 
   sync_manager_observer_.OnMigrationNeededForTypes(types);
 }
@@ -251,17 +280,17 @@ TEST_F(JsSyncManagerObserverTest, OnChangesApplied) {
        i < syncable::MODEL_TYPE_COUNT; ++i) {
     const std::string& model_type_str =
         syncable::ModelTypeToString(syncable::ModelTypeFromInt(i));
-    ListValue expected_args;
-    expected_args.Append(Value::CreateStringValue(model_type_str));
+    DictionaryValue expected_details;
+    expected_details.SetString("modelType", model_type_str);
     ListValue* expected_changes = new ListValue();
-    expected_args.Append(expected_changes);
+    expected_details.Set("changes", expected_changes);
     for (int j = i; j < syncable::MODEL_TYPE_COUNT; ++j) {
       sync_api::ReadTransaction trans(test_user_share.user_share());
       expected_changes->Append(changes[j].ToValue(&trans));
     }
     EXPECT_CALL(mock_router_,
                 RouteJsEvent("onChangesApplied",
-                             HasArgsAsList(expected_args), NULL));
+                             HasDetailsAsDictionary(expected_details)));
   }
 
   // Fire OnChangesApplied() for each data type.

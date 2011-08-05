@@ -50,6 +50,7 @@ class BackgroundView : public views::View,
   };
 
   BackgroundView();
+  virtual ~BackgroundView();
 
   // Initializes the background view. It backgroun_url is given (non empty),
   // it creates a DOMView background area that renders a webpage.
@@ -102,13 +103,12 @@ class BackgroundView : public views::View,
 
  protected:
   // Overridden from views::View:
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual void ChildPreferredSizeChanged(View* child) OVERRIDE;
   virtual void OnLocaleChanged() OVERRIDE;
 
   // Overridden from StatusAreaHost:
-  virtual Profile* GetProfile() const OVERRIDE { return NULL; }
+  virtual Profile* GetProfile() const OVERRIDE;
   virtual void ExecuteBrowserCommand(int id) const OVERRIDE {}
   virtual bool ShouldOpenButtonOptions(
       const views::View* button_view) const OVERRIDE;
@@ -148,7 +148,7 @@ class BackgroundView : public views::View,
       BootTimesLoader::Handle handle, BootTimesLoader::BootTimes boot_times);
 
   // policy::CloudPolicySubsystem::Observer methods:
-  void OnPolicyStateChanged(
+  virtual void OnPolicyStateChanged(
       policy::CloudPolicySubsystem::PolicySubsystemState state,
       policy::CloudPolicySubsystem::ErrorDetails error_details);
 
@@ -168,11 +168,6 @@ class BackgroundView : public views::View,
   BootTimesLoader boot_times_loader_;
   // Used to request the boot times.
   CancelableRequestConsumer boot_times_consumer_;
-
-  // Has Paint been invoked once? The value of this is passed to the window
-  // manager.
-  // TODO(sky): nuke this when the wm knows when chrome has painted.
-  bool did_paint_;
 
   // True if running official BUILD.
   bool is_official_build_;

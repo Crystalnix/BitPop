@@ -30,6 +30,7 @@ MODE_TRANSITIONS[SYMBOL_MODE + NUMBER_MODE] = KEY_MODE;
  */
 function transitionMode(transition) {
   currentMode = MODE_TRANSITIONS[currentMode + transition];
+  setMode(currentMode);
 }
 
 /**
@@ -174,8 +175,8 @@ Key.prototype = {
 
     this.sizeElement(mode, height);
 
-    this.modeElements_[mode].onclick =
-        sendKeyFunction(this.modes_[mode].keyIdentifier);
+    setupKeyEventHandlers(this.modeElements_[mode],
+                          sendKeyFunction(this.modes_[mode].keyIdentifier));
 
     return this.modeElements_[mode];
   }
@@ -212,7 +213,8 @@ SvgKey.prototype = {
     img.className = 'image-key ' + this.className_;
     this.modeElements_[mode].appendChild(img);
 
-    this.modeElements_[mode].onclick = sendKeyFunction(this.keyId_);
+    setupKeyEventHandlers(this.modeElements_[mode],
+                          sendKeyFunction(this.keyId_));
 
     this.sizeElement(mode, height);
 
@@ -245,7 +247,8 @@ SpecialKey.prototype = {
     this.modeElements_[mode].textContent = this.content_;
     this.modeElements_[mode].className = 'key';
 
-    this.modeElements_[mode].onclick = sendKeyFunction(this.keyId_);
+    setupKeyEventHandlers(this.modeElements_[mode],
+                          sendKeyFunction(this.keyId_));
 
     this.sizeElement(mode, height);
 
@@ -298,10 +301,10 @@ ShiftKey.prototype = {
 
     this.sizeElement(mode, height);
 
-    this.modeElements_[mode].onclick = function() {
-      transitionMode(SHIFT_MODE);
-      setMode(currentMode);
-    };
+    setupKeyEventHandlers(this.modeElements_[mode],
+                          function() {
+                            transitionMode(SHIFT_MODE);
+                          });
     return this.modeElements_[mode];
   },
 };
@@ -338,10 +341,10 @@ SymbolKey.prototype = {
 
     this.sizeElement(mode, height);
 
-    this.modeElements_[mode].onclick = function() {
-      transitionMode(NUMBER_MODE);
-      setMode(currentMode);
-    };
+    setupKeyEventHandlers(this.modeElements_[mode],
+                          function() {
+                            transitionMode(NUMBER_MODE);
+                          });
 
     return this.modeElements_[mode];
   }
@@ -369,12 +372,13 @@ DotComKey.prototype = {
 
     this.sizeElement(mode, height);
 
-    this.modeElements_[mode].onclick = function() {
-      sendKey('.');
-      sendKey('c');
-      sendKey('o');
-      sendKey('m');
-    };
+    setupKeyEventHandlers(this.modeElements_[mode],
+                          function() {
+                            sendKey('.');
+                            sendKey('c');
+                            sendKey('o');
+                            sendKey('m');
+                          });
 
     return this.modeElements_[mode];
   }
@@ -409,7 +413,7 @@ HideKeyboardKey.prototype = {
     this.sizeElement(mode, height);
 
     this.modeElements_[mode].onclick = function() {
-      // TODO(bryeung): need a way to cancel the keyboard
+      chrome.experimental.input.hideKeyboard();
     };
 
     return this.modeElements_[mode];
@@ -574,7 +578,7 @@ var allRows = [];  // Populated during start()
  */
 function getRowHeight() {
   var x = window.innerWidth;
-  var y = window.innerHeight;
+  var y = window.innerHeight - (imeui ? IME_HEIGHT - 2 : 0);
   return (x > kKeyboardAspect * y) ?
       (height = Math.floor(y / 4)) :
       (height = Math.floor(x / (kKeyboardAspect * 4)));
@@ -609,14 +613,27 @@ function sendKey(key) {
   }
 
   var keyEvent = {'type': 'keydown', 'keyIdentifier': key};
-  if (currentMode == SHIFT_MODE)
-    keyEvent['shiftKey'] = true;
-
   chrome.experimental.input.sendKeyboardEvent(keyEvent);
   keyEvent['type'] = 'keyup';
   chrome.experimental.input.sendKeyboardEvent(keyEvent);
 
-  // TODO(bryeung): deactivate shift after a successful keypress
+  if (currentMode == SHIFT_MODE) {
+    transitionMode(SHIFT_MODE);
+  }
+}
+
+/**
+ * Setup event handlers for the keys.
+ * @param {BaseKey} key The key to setup event handlers for.
+ * @param {fn} handler The event handler to use for the key.
+ * @return {void}
+ */
+function setupKeyEventHandlers(key, handler) {
+  key.onclick = function(evt) {
+    handler();
+    evt.preventDefault()
+  };
+  key.ontouchstart = key.onclick;
 }
 
 /**
@@ -625,7 +642,9 @@ function sendKey(key) {
  * @return {void}
  */
 function sendKeyFunction(key) {
-  return function() { sendKey(key); }
+  return function() {
+    sendKey(key);
+  }
 }
 
 /**
@@ -644,6 +663,8 @@ window.onresize = function() {
   for (var i = 0; i < allRows.length; ++i) {
     allRows[i].resize(height);
   }
+
+  updateIme();
 }
 
 /**
@@ -652,6 +673,9 @@ window.onresize = function() {
  */
 window.onload = function() {
   var body = document.getElementById('b');
+
+  initIme(body);
+
   for (var i = 0; i < KEYS.length; ++i) {
     allRows.push(new Row(i, KEYS[i]));
   }
@@ -663,6 +687,5 @@ window.onload = function() {
 
   window.onresize();
 }
-
 // TODO(bryeung): would be nice to leave less gutter (without causing
 // rendering issues with floated divs wrapping at some sizes).

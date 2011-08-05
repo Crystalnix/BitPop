@@ -26,7 +26,7 @@
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_id.h"
-#include "chrome/common/net/url_fetcher.h"
+#include "content/common/url_fetcher.h"
 
 class Profile;
 class Value;
@@ -72,7 +72,7 @@ class SearchProvider : public AutocompleteProvider,
                                   const GURL& url,
                                   const net::URLRequestStatus& status,
                                   int response_code,
-                                  const ResponseCookies& cookies,
+                                  const net::ResponseCookies& cookies,
                                   const std::string& data);
 
   // ID used in creating URLFetcher for default provider's suggest results.
@@ -82,7 +82,7 @@ class SearchProvider : public AutocompleteProvider,
   static const int kKeywordProviderURLFetcherID;
 
  private:
-  ~SearchProvider();
+  virtual ~SearchProvider();
 
   // Manages the providers (TemplateURLs) used by SearchProvider. Two providers
   // may be used:

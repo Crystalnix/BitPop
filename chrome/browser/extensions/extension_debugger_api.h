@@ -17,6 +17,7 @@
 
 class DictionaryValue;
 class ExtensionDevToolsClientHost;
+class TabContents;
 
 class DebuggerFunction : public AsyncExtensionFunction {
  protected:
@@ -34,7 +35,7 @@ class DebuggerFunction : public AsyncExtensionFunction {
 class AttachDebuggerFunction : public DebuggerFunction {
  public:
   AttachDebuggerFunction();
-  ~AttachDebuggerFunction();
+  virtual ~AttachDebuggerFunction();
   virtual bool RunImpl();
   DECLARE_EXTENSION_FUNCTION_NAME("experimental.debugger.attach")
 };
@@ -43,7 +44,7 @@ class AttachDebuggerFunction : public DebuggerFunction {
 class DetachDebuggerFunction : public DebuggerFunction {
  public:
   DetachDebuggerFunction();
-  ~DetachDebuggerFunction();
+  virtual ~DetachDebuggerFunction();
   virtual bool RunImpl();
   DECLARE_EXTENSION_FUNCTION_NAME("experimental.debugger.detach")
 };
@@ -52,7 +53,7 @@ class DetachDebuggerFunction : public DebuggerFunction {
 class SendRequestDebuggerFunction : public DebuggerFunction {
  public:
   SendRequestDebuggerFunction();
-  ~SendRequestDebuggerFunction();
+  virtual ~SendRequestDebuggerFunction();
   virtual bool RunImpl();
 
   void SendResponseBody(DictionaryValue* dictionary);

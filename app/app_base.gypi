@@ -3,65 +3,17 @@
 # found in the LICENSE file.
 
 {
-  'target_defaults': {
-    'variables': {
-      'app_base_target': 0,
-    },
-    'target_conditions': [
-      # This part is shared between the targets defined below. Only files and
-      # settings relevant for building the Win64 target should be added here.
-      # All the rest should be added to the 'app_base' target below.
-      ['app_base_target==1', {
-        'sources': [
-            # Used both for Chrome and for Win64 NaCl loader
-            '../ui/base/models/tree_model.cc',
-            '../ui/base/models/tree_model.h',
-            '../ui/base/models/tree_node_iterator.h',
-            '../ui/base/models/tree_node_model.h',
-            '../ui/base/system_monitor/system_monitor.cc',
-            '../ui/base/system_monitor/system_monitor.h',
-            '../ui/base/system_monitor/system_monitor_mac.mm',
-            '../ui/base/system_monitor/system_monitor_posix.cc',
-            '../ui/base/system_monitor/system_monitor_win.cc',
-            '../ui/base/ui_base_paths.h',
-            '../ui/base/ui_base_paths.cc',
-            '../ui/base/ui_base_switches.h',
-            '../ui/base/ui_base_switches.cc',
-            'app_paths.h',
-            'app_paths.cc',
-        ],
-        'conditions': [
-          ['OS!="linux" and OS!="freebsd" and OS!="openbsd"', {
-            'sources!': [
-              '../ui/base/dragdrop/gtk_dnd_util.cc',
-              '../ui/base/dragdrop/gtk_dnd_util.h',
-              '../ui/base/gtk/gtk_signal.h',
-              '../ui/base/gtk/gtk_signal_registrar.cc',
-              '../ui/base/gtk/gtk_signal_registrar.h',
-              '../ui/base/gtk/gtk_windowing.cc',
-              '../ui/base/gtk/gtk_windowing.h',
-              '../ui/base/x/x11_util.cc',
-              '../ui/base/x/x11_util.h',
-              '../ui/base/x/x11_util_internal.h',
-            ],
-          }],
-        ],
-      }],
-    ],
-  },
   'targets': [
     {
       'target_name': 'app_base',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '4631946D-7D5F-44BD-A5A8-504C0A7033BE',
-      'variables': {
-        'app_base_target': 1,
-      },
       'dependencies': [
         # app resources and ui_strings should be shared with the 64-bit
         # target, but it doesn't work due to a bug in gyp
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
+        '../base/base.gyp:base_static',
         '../ui/ui.gyp:ui_gfx',
         '../net/net.gyp:net',
         '../skia/skia.gyp:skia',
@@ -73,41 +25,12 @@
         '../ui/base/strings/ui_strings.gyp:ui_strings',
         '<(libjpeg_gyp_path):libjpeg',
       ],
-      # TODO(gregoryd): The direct_dependent_settings should be shared with
-      # the 64-bit target, but it doesn't work due to a bug in gyp
-      'direct_dependent_settings': {
-        'include_dirs': [
-          '..',
-        ],
-      },
+      'export_dependent_settings': [
+        '../base/base.gyp:base',
+        '../base/base.gyp:base_static',
+      ],
       'sources': [
         # Files that are not required for Win64 Native Client loader
-        '../ui/base/animation/animation.cc',
-        '../ui/base/animation/animation.h',
-        '../ui/base/animation/animation_container.cc',
-        '../ui/base/animation/animation_container.h',
-        '../ui/base/animation/animation_container_element.h',
-        '../ui/base/animation/animation_container_observer.h',
-        '../ui/base/animation/animation_delegate.h',
-        '../ui/base/animation/linear_animation.cc',
-        '../ui/base/animation/linear_animation.h',
-        '../ui/base/animation/multi_animation.cc',
-        '../ui/base/animation/multi_animation.h',
-        '../ui/base/animation/slide_animation.cc',
-        '../ui/base/animation/slide_animation.h',
-        '../ui/base/animation/throb_animation.cc',
-        '../ui/base/animation/throb_animation.h',
-        '../ui/base/animation/tween.cc',
-        '../ui/base/animation/tween.h',
-        '../ui/base/clipboard/clipboard.cc',
-        '../ui/base/clipboard/clipboard.h',
-        '../ui/base/clipboard/clipboard_linux.cc',
-        '../ui/base/clipboard/clipboard_mac.mm',
-        '../ui/base/clipboard/clipboard_util_win.cc',
-        '../ui/base/clipboard/clipboard_util_win.h',
-        '../ui/base/clipboard/clipboard_win.cc',
-        '../ui/base/clipboard/scoped_clipboard_writer.cc',
-        '../ui/base/clipboard/scoped_clipboard_writer.h',
         '../ui/base/dragdrop/drag_drop_types_gtk.cc',
         '../ui/base/dragdrop/drag_drop_types_win.cc',
         '../ui/base/dragdrop/drag_drop_types.h',
@@ -170,6 +93,10 @@
         '../ui/base/models/table_model.cc',
         '../ui/base/models/table_model.h',
         '../ui/base/models/table_model_observer.h',
+        '../ui/base/models/tree_model.cc',
+        '../ui/base/models/tree_model.h',
+        '../ui/base/models/tree_node_iterator.h',
+        '../ui/base/models/tree_node_model.h',
         '../ui/base/resource/data_pack.cc',
         '../ui/base/resource/data_pack.h',
         '../ui/base/resource/resource_bundle.cc',
@@ -182,6 +109,10 @@
         '../ui/base/text/text_elider.h',
         '../ui/base/theme_provider.cc',
         '../ui/base/theme_provider.h',
+        '../ui/base/ui_base_paths.h',
+        '../ui/base/ui_base_paths.cc',
+        '../ui/base/ui_base_switches.h',
+        '../ui/base/ui_base_switches.cc',
         '../ui/base/view_prop.cc',
         '../ui/base/view_prop.h',
         '../ui/base/win/hwnd_util.cc',
@@ -193,6 +124,8 @@
         '../ui/base/x/x11_util.cc',
         '../ui/base/x/x11_util.h',
         '../ui/base/x/x11_util_internal.h',
+        'app_paths.h',
+        'app_paths.cc',
         'mac/nsimage_cache.h',
         'mac/nsimage_cache.mm',
         'mac/scoped_nsdisable_screen_updates.h',
@@ -216,7 +149,7 @@
         'win/shell.h',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['toolkit_uses_gtk==1', {
           'dependencies': [
             # font_gtk.cc uses fontconfig.
             # TODO(evanm): I think this is wrong; it should just use GTK.
@@ -250,6 +183,19 @@
               ],
             }],
           ],
+        }, {  # toolkit_uses_gtk==0
+          'sources!': [
+            '../ui/base/dragdrop/gtk_dnd_util.cc',
+            '../ui/base/dragdrop/gtk_dnd_util.h',
+            '../ui/base/gtk/gtk_signal.h',
+            '../ui/base/gtk/gtk_signal_registrar.cc',
+            '../ui/base/gtk/gtk_signal_registrar.h',
+            '../ui/base/gtk/gtk_windowing.cc',
+            '../ui/base/gtk/gtk_windowing.h',
+            '../ui/base/x/x11_util.cc',
+            '../ui/base/x/x11_util.h',
+            '../ui/base/x/x11_util_internal.h',
+          ],
         }],
         ['OS!="win"', {
           'sources!': [
@@ -268,7 +214,7 @@
             ['exclude', '^win/*'],
           ],
         }],
-        ['OS=="linux"', {
+        ['use_x11==1', {
           'sources!': [
             '../ui/base/keycodes/keyboard_code_conversion_mac.mm',
             '../ui/base/keycodes/keyboard_code_conversion_mac.h',
@@ -324,38 +270,21 @@
       'targets': [
         {
           'target_name': 'app_base_nacl_win64',
-          'type': '<(library)',
-          'msvs_guid': '4987C6F9-B230-48E5-BF91-418EAE69AD90',
-          'dependencies': [
-            # app resources and ui_strings should be shared with the 32-bit
-            # target, but it doesn't work due to a bug in gyp
-            'app_resources',
-            '../base/base.gyp:base_nacl_win64',
-            '../ui/base/strings/ui_strings.gyp:ui_strings',
-          ],
-          'variables': {
-            'app_base_target': 1,
-          },
+          'type': 'static_library',
           'defines': [
             '<@(nacl_win64_defines)',
           ],
-          # TODO(gregoryd): The direct_dependent_settings should be shared with
-          # the 32-bit target, but it doesn't work due to a bug in gyp
-          'direct_dependent_settings': {
-            'include_dirs': [
-              '..',
-            ],
-          },
           'sources': [
             '../ui/base/resource/resource_bundle_dummy.cc',
+            '../ui/base/ui_base_paths.h',
+            '../ui/base/ui_base_paths.cc',
+            '../ui/base/ui_base_switches.h',
+            '../ui/base/ui_base_switches.cc',
+            'app_paths.h',
+            'app_paths.cc',
           ],
           'include_dirs': [
-            '../skia/config/win',
-            '../third_party/icu/public/common',
-            '../third_party/icu/public/i18n',
-            '../third_party/npapi',
-            '../third_party/skia/include/config',
-            '../third_party/skia/include/core',
+            '..',
           ],
           'configurations': {
             'Common_Base': {

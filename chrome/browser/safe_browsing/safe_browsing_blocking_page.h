@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -33,7 +33,7 @@
 #include <vector>
 
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
-#include "content/browser/tab_contents/interstitial_page.h"
+#include "chrome/browser/tab_contents/chrome_interstitial_page.h"
 #include "googleurl/src/gurl.h"
 
 class DictionaryValue;
@@ -42,7 +42,7 @@ class SafeBrowsingBlockingPageFactory;
 class MalwareDetails;
 class TabContents;
 
-class SafeBrowsingBlockingPage : public InterstitialPage {
+class SafeBrowsingBlockingPage : public ChromeInterstitialPage {
  public:
   typedef std::vector<SafeBrowsingService::UnsafeResource> UnsafeResourceList;
   typedef std::map<TabContents*, UnsafeResourceList> UnsafeResourceMap;
@@ -64,7 +64,7 @@ class SafeBrowsingBlockingPage : public InterstitialPage {
     factory_ = factory;
   }
 
-  // InterstitialPage method:
+  // ChromeInterstitialPage method:
   virtual std::string GetHTMLContents();
   virtual void SetReportingPreference(bool report);
   virtual void Proceed();
@@ -73,13 +73,19 @@ class SafeBrowsingBlockingPage : public InterstitialPage {
  protected:
   friend class SafeBrowsingBlockingPageTest;
 
-  // InterstitialPage method:
+  // ChromeInterstitialPage method:
   virtual void CommandReceived(const std::string& command);
 
   // Don't instanciate this class directly, use ShowBlockingPage instead.
   SafeBrowsingBlockingPage(SafeBrowsingService* service,
                            TabContents* tab_contents,
                            const UnsafeResourceList& unsafe_resources);
+
+  // After a malware interstitial where the user opted-in to the
+  // report but clicked "proceed anyway", we delay the call to
+  // MalwareDetails::FinishCollection() by this much time (in
+  // milliseconds), in order to get data from the blocked resource itself.
+  int64 malware_details_proceed_delay_ms_;
 
  private:
   enum BlockingPageEvent {
@@ -115,7 +121,7 @@ class SafeBrowsingBlockingPage : public InterstitialPage {
   // pending malware details object, we look at the user's
   // preferences, and if the option to send malware details is
   // enabled, the report is scheduled to be sent on the |sb_service_|.
-  void FinishMalwareDetails();
+  void FinishMalwareDetails(int64 delay_ms);
 
   // A list of SafeBrowsingService::UnsafeResource for a tab that the user
   // should be warned about.  They are queued when displaying more than one
@@ -128,18 +134,22 @@ class SafeBrowsingBlockingPage : public InterstitialPage {
                                         const UnsafeResourceList& resources,
                                         bool proceed);
 
-  // Returns true if the passed |unsafe_resources| is for the main page.
-  static bool IsMainPage(const UnsafeResourceList& unsafe_resources);
+  // Returns true if the passed |unsafe_resources| is blocking the load of
+  // the main page.
+  static bool IsMainPageLoadBlocked(
+      const UnsafeResourceList& unsafe_resources);
 
- private:
   friend class SafeBrowsingBlockingPageFactoryImpl;
 
   // For reporting back user actions.
   SafeBrowsingService* sb_service_;
   MessageLoop* report_loop_;
 
-  // Whether the flagged resource is the main page (or a sub-resource is false).
-  bool is_main_frame_;
+  // True if the interstitial is blocking the main page because it is on one
+  // of our lists.  False if a subresource is being blocked, or in the case of
+  // client-side detection where the interstitial is shown after page load
+  // finishes.
+  bool is_main_frame_load_blocked_;
 
   // The index of a navigation entry that should be removed when DontProceed()
   // is invoked, -1 if not entry should be removed.

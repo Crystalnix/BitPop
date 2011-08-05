@@ -13,6 +13,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/string16.h"
 #include "net/base/cert_type.h"
+#include "net/base/net_api.h"
 
 namespace net {
 
@@ -29,7 +30,7 @@ typedef std::vector<scoped_refptr<X509Certificate> > CertificateList;
 // for all operations that manipulate the underlying system
 // certificate store.
 
-class CertDatabase {
+class NET_API CertDatabase {
  public:
 
   // A CertDatabase::Observer will be notified on certificate database changes.
@@ -37,7 +38,7 @@ class CertDatabase {
   // a certificate is changed.  Observers can register themselves
   // via CertDatabase::AddObserver, and can un-register with
   // CertDatabase::RemoveObserver.
-  class Observer {
+  class NET_API Observer {
    public:
     virtual ~Observer() {}
 
@@ -57,7 +58,7 @@ class CertDatabase {
   };
 
   // Stores per-certificate error codes for import failures.
-  struct ImportCertFailure {
+  struct NET_API ImportCertFailure {
    public:
     ImportCertFailure(X509Certificate* cert, int err);
     ~ImportCertFailure();
@@ -112,11 +113,14 @@ class CertDatabase {
   void ListModules(CryptoModuleList* modules, bool need_rw) const;
 
   // Import certificates and private keys from PKCS #12 blob into the module.
+  // If |is_extractable| is false, mark the private key as being unextractable
+  // from the module.
   // Returns OK or a network error code such as ERR_PKCS12_IMPORT_BAD_PASSWORD
   // or ERR_PKCS12_IMPORT_ERROR.
   int ImportFromPKCS12(CryptoModule* module,
                        const std::string& data,
-                       const string16& password);
+                       const string16& password,
+                       bool is_extractable);
 
   // Export the given certificates and private keys into a PKCS #12 blob,
   // storing into |output|.

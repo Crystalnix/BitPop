@@ -51,6 +51,8 @@ class BrowserWindowGtk : public BrowserWindow,
   explicit BrowserWindowGtk(Browser* browser);
   virtual ~BrowserWindowGtk();
 
+  // Separating initialization from constructor allows invocation of virtual
+  // functions during initialization.
   virtual void Init();
 
   // Overridden from BrowserWindow
@@ -125,11 +127,14 @@ class BrowserWindowGtk : public BrowserWindow,
   virtual void Cut();
   virtual void Copy();
   virtual void Paste();
-  virtual void ToggleTabStripMode() {}
+  virtual void ToggleTabStripMode();
+  virtual void ToggleUseCompactNavigationBar();
   virtual void PrepareForInstant();
   virtual void ShowInstant(TabContentsWrapper* preview);
   virtual void HideInstant(bool instant_is_active);
   virtual gfx::Rect GetInstantBounds();
+  virtual WindowOpenDisposition GetDispositionForPopupBounds(
+      const gfx::Rect& bounds);
 
   // Overridden from NotificationObserver:
   virtual void Observe(NotificationType type,
@@ -138,10 +143,10 @@ class BrowserWindowGtk : public BrowserWindow,
 
   // Overridden from TabStripModelObserver:
   virtual void TabDetachedAt(TabContentsWrapper* contents, int index);
-  virtual void TabSelectedAt(TabContentsWrapper* old_contents,
-                             TabContentsWrapper* new_contents,
-                             int index,
-                             bool user_gesture);
+  virtual void ActiveTabChanged(TabContentsWrapper* old_contents,
+                                TabContentsWrapper* new_contents,
+                                int index,
+                                bool user_gesture);
 
   // Overridden from ActiveWindowWatcher::Observer.
   virtual void ActiveWindowChanged(GdkWindow* active_window);
@@ -223,6 +228,26 @@ class BrowserWindowGtk : public BrowserWindow,
 
  protected:
   virtual void DestroyBrowser();
+
+  // Checks to see if the mouse pointer at |x|, |y| is over the border of the
+  // custom frame (a spot that should trigger a window resize). Returns true if
+  // it should and sets |edge|.
+  virtual bool GetWindowEdge(int x, int y, GdkWindowEdge* edge);
+
+  virtual bool HandleTitleBarLeftMousePress(GdkEventButton* event,
+                                            guint32 last_click_time,
+                                            gfx::Point last_click_position);
+
+  // Save the window position in the prefs.
+  virtual void SaveWindowPosition();
+
+  // Sets the default size for the window and the way the user is allowed to
+  // resize it.
+  virtual void SetGeometryHints();
+
+  // Returns |true| if we should use the custom frame.
+  virtual bool UseCustomFrame();
+
   // Top level window.
   GtkWindow* window_;
   // GtkAlignment that holds the interior components of the chromium window.
@@ -256,10 +281,6 @@ class BrowserWindowGtk : public BrowserWindow,
   // Show or hide the bookmark bar.
   void MaybeShowBookmarkBar(bool animate);
 
-  // Sets the default size for the window and the the way the user is allowed to
-  // resize it.
-  void SetGeometryHints();
-
   // Connect to signals on |window_|.
   void ConnectHandlersToSignals();
 
@@ -284,9 +305,6 @@ class BrowserWindowGtk : public BrowserWindow,
   // Must be called once at startup.
   // Triggers relayout of the content.
   void UpdateCustomFrame();
-
-  // Save the window position in the prefs.
-  void SaveWindowPosition();
 
   // Set the bounds of the current window. If |exterior| is true, set the size
   // of the window itself, otherwise set the bounds of the web contents.
@@ -399,14 +417,6 @@ class BrowserWindowGtk : public BrowserWindow,
   // Whether we should draw the tab background instead of the theme_frame
   // background because this window is a popup.
   bool UsingCustomPopupFrame() const;
-
-  // Checks to see if the mouse pointer at |x|, |y| is over the border of the
-  // custom frame (a spot that should trigger a window resize). Returns true if
-  // it should and sets |edge|.
-  bool GetWindowEdge(int x, int y, GdkWindowEdge* edge);
-
-  // Returns |true| if we should use the custom frame.
-  bool UseCustomFrame();
 
   // Returns |true| if the window bounds match the monitor size.
   bool BoundsMatchMonitorSize();

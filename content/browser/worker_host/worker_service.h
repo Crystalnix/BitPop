@@ -10,6 +10,7 @@
 #include "base/memory/singleton.h"
 #include "base/threading/non_thread_safe.h"
 #include "content/browser/worker_host/worker_process_host.h"
+#include "content/common/notification_registrar.h"
 #include "googleurl/src/gurl.h"
 
 namespace content {
@@ -34,7 +35,7 @@ class WorkerService {
   void LookupSharedWorker(const ViewHostMsg_CreateWorker_Params& params,
                           int route_id,
                           WorkerMessageFilter* filter,
-                          bool incognito,
+                          const content::ResourceContext* resource_context,
                           bool* exists,
                           bool* url_error);
   void CancelCreateDedicatedWorker(int route_id, WorkerMessageFilter* filter);
@@ -102,14 +103,22 @@ class WorkerService {
 
   // APIs for manipulating our set of pending shared worker instances.
   WorkerProcessHost::WorkerInstance* CreatePendingInstance(
-      const GURL& url, const string16& name, bool incognito);
+      const GURL& url,
+      const string16& name,
+      const content::ResourceContext* resource_context);
   WorkerProcessHost::WorkerInstance* FindPendingInstance(
-      const GURL& url, const string16& name, bool incognito);
+      const GURL& url,
+      const string16& name,
+      const content::ResourceContext* resource_context);
   void RemovePendingInstances(
-      const GURL& url, const string16& name, bool incognito);
+      const GURL& url,
+      const string16& name,
+      const content::ResourceContext* resource_context);
 
   WorkerProcessHost::WorkerInstance* FindSharedWorkerInstance(
-      const GURL& url, const string16& name, bool incognito);
+      const GURL& url,
+      const string16& name,
+      const content::ResourceContext* resource_context);
 
   NotificationRegistrar registrar_;
   int next_worker_route_id_;

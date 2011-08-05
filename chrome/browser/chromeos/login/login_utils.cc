@@ -27,9 +27,9 @@
 #include "chrome/browser/chromeos/login/cookie_fetcher.h"
 #include "chrome/browser/chromeos/login/google_authenticator.h"
 #include "chrome/browser/chromeos/login/language_switch_menu.h"
+#include "chrome/browser/chromeos/login/login_display_host.h"
 #include "chrome/browser/chromeos/login/ownership_service.h"
 #include "chrome/browser/chromeos/login/parallel_authenticator.h"
-#include "chrome/browser/chromeos/login/user_image_downloader.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/proxy_config_service.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -54,9 +54,9 @@
 #include "googleurl/src/gurl.h"
 #include "net/base/cookie_store.h"
 #include "net/proxy/proxy_config_service.h"
+#include "net/proxy/proxy_service.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "views/widget/widget_gtk.h"
 #include "ui/gfx/gl/gl_switches.h"
 
 namespace chromeos {
@@ -104,7 +104,7 @@ class ResetDefaultProxyConfigServiceTask : public Task {
 }  // namespace
 
 class LoginUtilsImpl : public LoginUtils,
-                       public ProfileManager::Observer {
+                       public ProfileManagerObserver {
  public:
   LoginUtilsImpl()
       : background_view_(NULL) {
@@ -149,7 +149,7 @@ class LoginUtilsImpl : public LoginUtils,
   // Gets the current background view.
   virtual chromeos::BackgroundView* GetBackgroundView();
 
-  // ProfileManager::Observer implementation:
+  // ProfileManagerObserver implementation:
   virtual void OnProfileCreated(Profile* profile);
 
  protected:
@@ -324,7 +324,7 @@ void LoginUtilsImpl::OnProfileCreated(Profile* profile) {
   }
 
   // Enable/disable plugins based on user preferences.
-  PluginUpdater::GetInstance()->UpdatePluginGroupsStateFromPrefs(profile);
+  PluginUpdater::GetInstance()->SetProfile(profile);
   btl->AddLoginTimeMarker("PluginsStateUpdated", false);
 
   // We suck. This is a hack since we do not have the enterprise feature
@@ -577,12 +577,9 @@ void LoginUtils::Set(LoginUtils* mock) {
   LoginUtilsWrapper::GetInstance()->reset(mock);
 }
 
-void LoginUtils::DoBrowserLaunch(Profile* profile) {
+void LoginUtils::DoBrowserLaunch(Profile* profile,
+                                 LoginDisplayHost* login_host) {
   BootTimesLoader::Get()->AddLoginTimeMarker("BrowserLaunched", false);
-
-  // Update command line in case loose values were added.
-  CommandLine::ForCurrentProcess()->InitFromArgv(
-      CommandLine::ForCurrentProcess()->argv());
 
   VLOG(1) << "Launching browser...";
   BrowserInit browser_init;
@@ -592,6 +589,14 @@ void LoginUtils::DoBrowserLaunch(Profile* profile) {
                              FilePath(),
                              true,
                              &return_code);
+
+  // Mark login host for deletion after browser starts.  This
+  // guarantees that the message loop will be referenced by the
+  // browser before it is dereferenced by the login host.
+  if (login_host) {
+    login_host->OnSessionStart();
+    login_host = NULL;
+  }
 }
 
 }  // namespace chromeos

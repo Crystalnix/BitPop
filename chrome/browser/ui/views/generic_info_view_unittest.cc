@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/message_loop.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/ui/views/generic_info_view.h"
 #include "grit/chromium_strings.h"
@@ -10,24 +11,12 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "views/controls/label.h"
 #include "views/controls/textfield/textfield.h"
-#include "views/widget/root_view.h"
 #include "views/window/window.h"
-
-#if defined(OS_WIN)
-#include "views/widget/widget_win.h"
-#endif
 
 // This class is only used on windows for now.
 #if defined(OS_WIN)
 
-using namespace views;
-
 class GenericInfoViewTest : public testing::Test {
- public:
-  Widget* CreateWidget() {
-    return views::Widget::CreateWidget(
-        Widget::CreateParams(Widget::CreateParams::TYPE_POPUP));
-  }
  private:
   MessageLoopForUI message_loop_;
 };
@@ -36,9 +25,11 @@ TEST_F(GenericInfoViewTest, GenericInfoView) {
   const string16 kName = ASCIIToUTF16("Name");
   const string16 kValue = ASCIIToUTF16("Value");
 
-  Widget* widget = CreateWidget();
-  widget->Init(NULL, gfx::Rect(0, 0, 100, 100));
-  RootView* root_view = widget->GetRootView();
+  views::Widget* widget = new views::Widget;
+  views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
+  params.bounds = gfx::Rect(0, 0, 100, 100);
+  widget->Init(params);
+  views::View* root_view = widget->GetRootView();
 
   GenericInfoView* view1 = new GenericInfoView(1);
   root_view->AddChildView(view1);

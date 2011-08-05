@@ -8,6 +8,7 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "ppapi/c/pp_resource.h"
+#include "ppapi/shared_impl/resource_object_base.h"
 #include "webkit/plugins/ppapi/resource_tracker.h"
 
 namespace webkit {
@@ -32,6 +33,7 @@ namespace ppapi {
   F(PPB_Graphics2D_Impl) \
   F(PPB_Graphics3D_Impl) \
   F(PPB_ImageData_Impl) \
+  F(PPB_LayerCompositor_Impl) \
   F(PPB_Scrollbar_Impl) \
   F(PPB_Surface3D_Impl) \
   F(PPB_Transport_Impl) \
@@ -39,6 +41,7 @@ namespace ppapi {
   F(PPB_URLRequestInfo_Impl) \
   F(PPB_URLResponseInfo_Impl) \
   F(PPB_VideoDecoder_Impl) \
+  F(PPB_VideoLayer_Impl) \
   F(PPB_Widget_Impl) \
   F(PrivateFontFile)
 
@@ -47,7 +50,8 @@ namespace ppapi {
 FOR_ALL_RESOURCES(DECLARE_RESOURCE_CLASS)
 #undef DECLARE_RESOURCE_CLASS
 
-class Resource : public base::RefCountedThreadSafe<Resource> {
+class Resource : public base::RefCountedThreadSafe<Resource>,
+                 public ::ppapi::ResourceObjectBase {
  public:
   explicit Resource(PluginInstance* instance);
   virtual ~Resource();
@@ -63,6 +67,12 @@ class Resource : public base::RefCountedThreadSafe<Resource> {
   // non-NULL except if the instance is destroyed and some code internal to the
   // PPAPI implementation is keeping a reference for some reason.
   PluginInstance* instance() const { return instance_; }
+
+  // Clears the instance pointer when the associated PluginInstance will be
+  // destroyed.
+  //
+  // If you override this, be sure to call the base class' implementation.
+  virtual void ClearInstance() { instance_ = NULL; }
 
   // Cast the resource into a specified type. This will return NULL if the
   // resource does not match the specified type. Specializations of this
@@ -107,16 +117,8 @@ class Resource : public base::RefCountedThreadSafe<Resource> {
   // stay alive if there are other references held by the PPAPI implementation
   // (possibly for callbacks and things).
   //
-  // When the plugin instance is deleted, all resources associated with that
-  // plugin will have their plugin references force-deleted and this function
-  // will be called with instance_destroyed as true. If the plugin normally
-  // Release()s a reference before the instance is destroyed,
-  // instance_destroyed will be false. It's possible in some rare cases for the
-  // plugin to get a new reference to the object in this latter case, if it's
-  // stored internal to the PPAPI implementation and returned by some function.
-  //
   // If you override this, be sure to call the base class' implementation.
-  virtual void LastPluginRefWasDeleted(bool instance_destroyed);
+  virtual void LastPluginRefWasDeleted();
 
  private:
   // Type-specific getters for individual resource types. These will return

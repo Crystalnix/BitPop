@@ -12,13 +12,13 @@
 #include "net/base/ssl_config_service.h"
 
 namespace net {
-class ClientSocket;
 class ClientSocketFactory;
 class ClientSocketHandle;
 class HostPortPair;
 class NetLog;
 class SSLClientSocket;
 class SSLHostInfo;
+class StreamSocket;
 class URLRequestContextGetter;
 }
 
@@ -36,8 +36,8 @@ class XmppClientSocketFactory : public ResolvingClientSocketFactory {
   virtual ~XmppClientSocketFactory();
 
   // ResolvingClientSocketFactory implementation.
-  virtual net::ClientSocket* CreateTransportClientSocket(
-      const net::HostPortPair& host_and_port, net::NetLog* net_log);
+  virtual net::StreamSocket* CreateTransportClientSocket(
+      const net::HostPortPair& host_and_port);
 
   virtual net::SSLClientSocket* CreateSSLClientSocket(
       net::ClientSocketHandle* transport_socket,

@@ -19,12 +19,10 @@
  */
 function ProxyErrorHandler() {
   // Handle proxy error events.
-  chrome.experimental.proxy.onProxyError.addListener(
-      this.handleError_.bind(this));
+  chrome.proxy.onProxyError.addListener(this.handleError_.bind(this));
 
   // Handle message events from popup.
-  chrome.extension.onRequest.addListener(
-      this.handleOnRequest_.bind(this));
+  chrome.extension.onRequest.addListener(this.handleOnRequest_.bind(this));
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -78,7 +76,7 @@ ProxyErrorHandler.prototype = {
     chrome.browserAction.setBadgeBackgroundColor({color: color});
     chrome.browserAction.setBadgeText({text: 'X'});
     chrome.browserAction.setTitle({
-      'title': chrome.i18n.getMessage('errorPopupTitle', details.error)
+      title: chrome.i18n.getMessage('errorPopupTitle', details.error)
     });
 
     // Store the error for display in the popup.
@@ -100,6 +98,7 @@ ProxyErrorHandler.prototype = {
    * Clears last handled error.
    */
   clearErrorDetails: function() {
+    chrome.browserAction.setBadgeText({text: ''});
     this.lastError_ = null;
   }
 }

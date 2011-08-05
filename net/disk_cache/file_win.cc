@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include "base/file_path.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop.h"
+#include "net/base/net_errors.h"
 #include "net/disk_cache/disk_cache.h"
 
 namespace {
@@ -42,7 +43,7 @@ void CompletionHandler::OnIOCompleted(MessageLoopForIO::IOContext* context,
 
   if (error) {
     DCHECK(!actual_bytes);
-    actual_bytes = static_cast<DWORD>(-1);
+    actual_bytes = static_cast<DWORD>(net::ERR_CACHE_READ_FAILURE);
     NOTREACHED();
   }
 
@@ -182,7 +183,7 @@ bool File::Read(void* buffer, size_t buffer_len, size_t offset,
 
   // The operation completed already. We'll be called back anyway.
   *completed = (actual == size);
-  DCHECK(actual == size);
+  DCHECK_EQ(size, actual);
   data->callback_ = NULL;
   data->file_ = NULL;  // There is no reason to hold on to this anymore.
   return *completed;
@@ -222,7 +223,7 @@ bool File::AsyncWrite(const void* buffer, size_t buffer_len, size_t offset,
 
   // The operation completed already. We'll be called back anyway.
   *completed = (actual == size);
-  DCHECK(actual == size);
+  DCHECK_EQ(size, actual);
   data->callback_ = NULL;
   data->file_ = NULL;  // There is no reason to hold on to this anymore.
   return *completed;

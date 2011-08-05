@@ -13,6 +13,7 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/sync/protocol/nigori_specifics.pb.h"
+#include "chrome/browser/sync/syncable/model_type.h"
 #include "chrome/browser/sync/util/nigori.h"
 
 namespace browser_sync {
@@ -44,6 +45,14 @@ class Cryptographer {
  public:
   Cryptographer();
   ~Cryptographer();
+
+  // When update on cryptographer is called this enum tells if the
+  // cryptographer was succesfully able to update using the nigori node or if
+  // it needs a key to decrypt the nigori node.
+  enum UpdateResult {
+    SUCCESS,
+    NEEDS_PASSPHRASE
+  };
 
   // |restored_bootstrap_token| can be provided via this method to bootstrap
   // Cryptographer instance into the ready state (is_ready will be true).
@@ -103,8 +112,11 @@ class Cryptographer {
   // successfully decrypted and installed.
   bool DecryptPendingKeys(const KeyParams& params);
 
+  bool is_initialized() const { return !nigoris_.empty() && default_nigori_; }
+
   // Returns whether this Cryptographer is ready to encrypt and decrypt data.
-  bool is_ready() const { return !nigoris_.empty() && default_nigori_; }
+  bool is_ready() const { return is_initialized() &&
+                          has_pending_keys() == false; }
 
   // Returns whether there is a pending set of keys that needs to be decrypted.
   bool has_pending_keys() const { return NULL != pending_keys_.get(); }
@@ -113,6 +125,10 @@ class Cryptographer {
   // Cryptographer instance to bootstrap itself.  Returns false if such a token
   // can't be created (i.e. if this Cryptograhper doesn't have valid keys).
   bool GetBootstrapToken(std::string* token) const;
+
+  UpdateResult Update(const sync_pb::NigoriSpecifics& nigori);
+  void SetEncryptedTypes(const sync_pb::NigoriSpecifics& nigori);
+  syncable::ModelTypeSet GetEncryptedTypes() const;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(CryptographerTest, PackUnpack);
@@ -135,6 +151,8 @@ class Cryptographer {
   NigoriMap::value_type* default_nigori_;  // The Nigori used for encryption.
 
   scoped_ptr<sync_pb::EncryptedData> pending_keys_;
+
+  syncable::ModelTypeSet encrypted_types_;
 
   DISALLOW_COPY_AND_ASSIGN(Cryptographer);
 };

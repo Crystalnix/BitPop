@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -94,16 +94,20 @@ bool SSLHostInfo::ParseInner(const std::string& data) {
     state->certs.push_back(der_cert);
   }
 
+  // Ignore obsolete members of the State structure.
   std::string throwaway_string;
   bool throwaway_bool;
+  // This was state->server_hello.
   if (!p.ReadString(&iter, &throwaway_string))
     return false;
 
+  // This was state->npn_valid.
   if (!p.ReadBool(&iter, &throwaway_bool))
     return false;
 
   if (throwaway_bool) {
     int throwaway_int;
+    // These were state->npn_status and state->npn_protocol.
     if (!p.ReadInt(&iter, &throwaway_int) ||
         !p.ReadString(&iter, &throwaway_string)) {
       return false;
@@ -161,6 +165,8 @@ std::string SSLHostInfo::Serialize() const {
       return "";
   }
 
+  // Write dummy values for obsolete members of the State structure:
+  // state->server_hello and state->npn_valid.
   if (!p.WriteString("") ||
       !p.WriteBool(false)) {
     return "";
@@ -187,6 +193,12 @@ void SSLHostInfo::VerifyCallback(int rv) {
   DCHECK(!verification_start_time_.is_null());
   base::TimeTicks now = base::TimeTicks::Now();
   const base::TimeDelta duration = now - verification_start_time();
+  bool is_google = hostname_ == "google.com" ||
+                   (hostname_.size() > 11 &&
+                    hostname_.rfind(".google.com") == hostname_.size() - 11);
+  if (is_google) {
+    UMA_HISTOGRAM_TIMES("Net.SSLHostInfoVerificationTimeMs_Google", duration);
+  }
   UMA_HISTOGRAM_TIMES("Net.SSLHostInfoVerificationTimeMs", duration);
   VLOG(1) << "Verification took " << duration.InMilliseconds() << "ms";
   verification_end_time_ = now;

@@ -137,16 +137,19 @@ var CardSlider = (function() {
       this.scrollClearTimeout_ = null;
       this.container_.addEventListener('mousewheel',
                                        this.onMouseWheel_.bind(this));
-      this.container_.addEventListener(TouchHandler.EventType.TOUCH_START,
-                                       this.onTouchStart_.bind(this));
-      this.container_.addEventListener(TouchHandler.EventType.DRAG_START,
-                                       this.onDragStart_.bind(this));
-      this.container_.addEventListener(TouchHandler.EventType.DRAG_MOVE,
-                                       this.onDragMove_.bind(this));
-      this.container_.addEventListener(TouchHandler.EventType.DRAG_END,
-                                       this.onDragEnd_.bind(this));
 
-      this.touchHandler_.enable(/* opt_capture */ false);
+      if (document.documentElement.getAttribute('touchui')) {
+        this.container_.addEventListener(TouchHandler.EventType.TOUCH_START,
+                                         this.onTouchStart_.bind(this));
+        this.container_.addEventListener(TouchHandler.EventType.DRAG_START,
+                                         this.onDragStart_.bind(this));
+        this.container_.addEventListener(TouchHandler.EventType.DRAG_MOVE,
+                                         this.onDragMove_.bind(this));
+        this.container_.addEventListener(TouchHandler.EventType.DRAG_END,
+                                         this.onDragEnd_.bind(this));
+
+        this.touchHandler_.enable(/* opt_capture */ false);
+      }
     },
 
     /**
@@ -210,7 +213,8 @@ var CardSlider = (function() {
 
       var scrollAmountPerPage = -120;
       this.mouseWheelScrollAmount_ += e.wheelDeltaX;
-      if (Math.abs(this.mouseWheelScrollAmount_) >= -scrollAmountPerPage) {
+      if (Math.abs(this.mouseWheelScrollAmount_) >=
+          Math.abs(scrollAmountPerPage)) {
         var pagesToScroll = this.mouseWheelScrollAmount_ / scrollAmountPerPage;
         pagesToScroll =
             (pagesToScroll > 0 ? Math.floor : Math.ceil)(pagesToScroll);
@@ -240,6 +244,85 @@ var CardSlider = (function() {
     clearMouseWheelScroll_: function() {
       this.mouseWheelScrollAmount_ = 0;
     },
+
+    /**
+     * Selects a new card, ensuring that it is a valid index, transforming the
+     * view and possibly calling the change card callback.
+     * @param {number} newCardIndex Index of card to show.
+     * @param {boolean=} opt_animate If true will animate transition from
+     *     current position to new position.
+     */
+    selectCard: function(newCardIndex, opt_animate) {
+      var isChangingCard = newCardIndex >= 0 &&
+          newCardIndex < this.cards_.length &&
+          newCardIndex != this.currentCard;
+      if (isChangingCard) {
+        // If we have a new card index and it is valid then update the left
+        // position and current card index.
+        this.currentCard_ = newCardIndex;
+      }
+
+      this.transformToCurrentCard_(opt_animate);
+
+      if (isChangingCard) {
+        var event = document.createEvent('Event');
+        event.initEvent(CardSlider.EventType.CARD_CHANGED, true, true);
+        event.cardSlider = this;
+        this.container_.dispatchEvent(event);
+      }
+    },
+
+    /**
+     * Selects a card from the stack. Passes through to selectCard.
+     * @param {Node} newCard The card that should be selected.
+     * @param {boolean=} opt_animate Whether to animate.
+     */
+    selectCardByValue: function(newCard, opt_animate) {
+      for (var i = 0; i < this.cards_.length; i++) {
+        if (newCard == this.cards_[i]) {
+          this.selectCard(i, opt_animate);
+          return;
+        }
+      }
+      assert(false);
+    },
+
+    /**
+     * Centers the view on the card denoted by this.currentCard. Can either
+     * animate to that card or snap to it.
+     * @param {boolean=} opt_animate If true will animate transition from
+     *     current position to new position.
+     * @private
+     */
+    transformToCurrentCard_: function(opt_animate) {
+      this.currentLeft_ = -this.currentCard * this.cardWidth_;
+
+      // Animate to the current card, which will either transition if the
+      // current card is new, or reset the existing card if we didn't drag
+      // enough to change cards.
+      var transition = '';
+      if (opt_animate) {
+        transition = '-webkit-transform ' + CardSlider.TRANSITION_TIME_ +
+                     'ms ease-in-out';
+      }
+      this.container_.style.WebkitTransition = transition;
+      this.translateTo_(this.currentLeft_);
+    },
+
+    /**
+     * Moves the view to the specified position.
+     * @param {number} x Horizontal position to move to.
+     * @private
+     */
+    translateTo_: function(x) {
+      // We use a webkitTransform to slide because this is GPU accelerated on
+      // Chrome and iOS.  Once Chrome does GPU acceleration on the position
+      // fixed-layout elements we could simply set the element's position to
+      // fixed and modify 'left' instead.
+      this.container_.style.WebkitTransform = 'translate3d(' + x + 'px, 0, 0)';
+    },
+
+    /* Touch ******************************************************************/
 
     /**
      * Clear any transition that is in progress and enable dragging for the
@@ -280,19 +363,6 @@ var CardSlider = (function() {
     },
 
     /**
-     * Moves the view to the specified position.
-     * @param {number} x Horizontal position to move to.
-     * @private
-     */
-    translateTo_: function(x) {
-      // We use a webkitTransform to slide because this is GPU accelerated on
-      // Chrome and iOS.  Once Chrome does GPU acceleration on the position
-      // fixed-layout elements we could simply set the element's position to
-      // fixed and modify 'left' instead.
-      this.container_.style.WebkitTransform = 'translate3d(' + x + 'px, 0, 0)';
-    },
-
-    /**
      * On drag end events we may want to transition to another card, depending
      * on the ending position of the drag and the velocity of the drag.
      * @param {!TouchHandler.Event} e The TouchHandler event.
@@ -326,54 +396,7 @@ var CardSlider = (function() {
       this.transformToCurrentCard_(true);
     },
 
-    /**
-     * Selects a new card, ensuring that it is a valid index, transforming the
-     * view and possibly calling the change card callback.
-     * @param {number} newCardIndex Index of card to show.
-     * @param {boolean=} opt_animate If true will animate transition from
-     *     current position to new position.
-     */
-    selectCard: function(newCardIndex, opt_animate) {
-      var isChangingCard = newCardIndex >= 0 &&
-          newCardIndex < this.cards_.length &&
-          newCardIndex != this.currentCard;
-      if (isChangingCard) {
-        // If we have a new card index and it is valid then update the left
-        // position and current card index.
-        this.currentCard_ = newCardIndex;
-      }
 
-      this.transformToCurrentCard_(opt_animate);
-
-      if (isChangingCard) {
-        var event = document.createEvent('Event');
-        event.initEvent(CardSlider.EventType.CARD_CHANGED, true, true);
-        event.cardSlider = this;
-        this.container_.dispatchEvent(event);
-      }
-    },
-
-    /**
-     * Centers the view on the card denoted by this.currentCard. Can either
-     * animate to that card or snap to it.
-     * @param {boolean=} opt_animate If true will animate transition from
-     *     current position to new position.
-     * @private
-     */
-    transformToCurrentCard_: function(opt_animate) {
-      this.currentLeft_ = -this.currentCard * this.cardWidth_;
-
-      // Animate to the current card, which will either transition if the
-      // current card is new, or reset the existing card if we didn't drag
-      // enough to change cards.
-      var transition = '';
-      if (opt_animate) {
-        transition = '-webkit-transform ' + CardSlider.TRANSITION_TIME_ +
-                     'ms ease-in-out';
-      }
-      this.container_.style.WebkitTransition = transition;
-      this.translateTo_(this.currentLeft_);
-    }
   };
 
   return CardSlider;

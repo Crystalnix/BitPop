@@ -13,9 +13,8 @@
 #include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/models/combobox_model.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "views/controls/button/image_button.h"
-#include "views/controls/button/native_button.h"
 #include "views/controls/label.h"
 #include "views/controls/textfield/textfield.h"
 #include "views/layout/grid_layout.h"
@@ -46,31 +45,24 @@ string16 ProviderTypeToString(chromeos::VirtualNetwork::ProviderType type) {
 
 namespace chromeos {
 
-int VPNConfigView::ProviderTypeComboboxModel::GetItemCount() {
-  // TODO(stevenjb): Include OpenVPN option once enabled.
-  return VirtualNetwork::PROVIDER_TYPE_L2TP_IPSEC_USER_CERT + 1;
-  // return VirtualNetwork::PROVIDER_TYPE_MAX;
-}
-
-string16 VPNConfigView::ProviderTypeComboboxModel::GetItemAt(int index) {
-  VirtualNetwork::ProviderType type =
-      static_cast<VirtualNetwork::ProviderType>(index);
-  return ProviderTypeToString(type);
-}
-
-VPNConfigView::UserCertComboboxModel::UserCertComboboxModel() {
-  // TODO(jamescook): populate user_certs_. chromium-os:14111
-}
-
-int VPNConfigView::UserCertComboboxModel::GetItemCount() {
-  return static_cast<int>(user_certs_.size());
-}
-
-string16 VPNConfigView::UserCertComboboxModel::GetItemAt(int index) {
-  if (index >= 0 && index < static_cast<int>(user_certs_.size()))
-    return ASCIIToUTF16(user_certs_[index]);
-  return string16();
-}
+class ProviderTypeComboboxModel : public ui::ComboboxModel {
+ public:
+  ProviderTypeComboboxModel() {}
+  virtual ~ProviderTypeComboboxModel() {}
+  virtual int GetItemCount() {
+    // TODO(stevenjb): Include OpenVPN option once enabled.
+    // TODO(stevenjb): Include IPsec + User cert option once enabled.
+    return VirtualNetwork::PROVIDER_TYPE_L2TP_IPSEC_PSK + 1;
+    // return VirtualNetwork::PROVIDER_TYPE_MAX;
+  }
+  virtual string16 GetItemAt(int index) {
+    VirtualNetwork::ProviderType type =
+        static_cast<VirtualNetwork::ProviderType>(index);
+    return ProviderTypeToString(type);
+  }
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ProviderTypeComboboxModel);
+};
 
 VPNConfigView::VPNConfigView(NetworkConfigView* parent, VirtualNetwork* vpn)
     : ChildNetworkConfigView(parent, vpn) {
@@ -94,16 +86,11 @@ string16 VPNConfigView::GetTitle() {
 }
 
 bool VPNConfigView::CanLogin() {
-  static const size_t kMinPassphraseLen = 0;  // TODO(stevenjb): min length?
+  // TODO(stevenjb): min kMinPassphraseLen length?
   if (service_path_.empty() &&
       (GetService().empty() || GetServer().empty()))
     return false;
-  if (provider_type_ == VirtualNetwork::PROVIDER_TYPE_L2TP_IPSEC_PSK &&
-      psk_passphrase_textfield_->text().length() < kMinPassphraseLen)
-    return false;
   if (GetUsername().empty())
-    return false;
-  if (user_passphrase_textfield_->text().length() < kMinPassphraseLen)
     return false;
   return true;
 }
@@ -135,7 +122,7 @@ void VPNConfigView::ContentsChanged(views::Textfield* sender,
                                     const string16& new_contents) {
   if (sender == server_textfield_ && !service_text_modified_) {
     // Set the service name to the server name up to '.', unless it has
-    // been explicityly set by the user.
+    // been explicitly set by the user.
     string16 server = server_textfield_->text();
     string16::size_type n = server.find_first_of(L'.');
     service_name_from_server_ = server.substr(0, n);
@@ -171,8 +158,7 @@ void VPNConfigView::ItemChanged(views::Combobox* combo_box,
   if (combo_box == provider_type_combobox_) {
     provider_type_ = static_cast<VirtualNetwork::ProviderType>(new_index);
     EnableControls();
-  } else if (combo_box == user_cert_combobox_) {
-    // Nothing to do for now.
+    UpdateErrorLabel();
   } else {
     NOTREACHED();
   }
@@ -191,8 +177,10 @@ bool VPNConfigView::Login() {
                                          GetUserPassphrase());
         break;
       case VirtualNetwork::PROVIDER_TYPE_L2TP_IPSEC_USER_CERT:
+        LOG(WARNING) << "Unsupported provider type: " << provider_type_;
+        break;
       case VirtualNetwork::PROVIDER_TYPE_OPEN_VPN:
-        // TODO(stevenjb): Add support for OpenVPN and user certs.
+        // TODO(stevenjb): Add support for OpenVPN.
         LOG(WARNING) << "Unsupported provider type: " << provider_type_;
         break;
       case VirtualNetwork::PROVIDER_TYPE_MAX:
@@ -210,11 +198,10 @@ bool VPNConfigView::Login() {
         vpn->SetPSKPassphrase(GetPSKPassphrase());
         break;
       case VirtualNetwork::PROVIDER_TYPE_L2TP_IPSEC_USER_CERT:
+        LOG(WARNING) << "Unsupported provider type: " << provider_type_;
+        break;
       case VirtualNetwork::PROVIDER_TYPE_OPEN_VPN: {
-        const std::string user_cert = UTF16ToUTF8(
-            user_cert_combobox_->model()->GetItemAt(
-                user_cert_combobox_->selected_item()));
-        vpn->SetUserCert(user_cert);
+        LOG(WARNING) << "OpenVPN not yet supported.";
         break;
       }
       case VirtualNetwork::PROVIDER_TYPE_MAX:
@@ -234,7 +221,15 @@ void VPNConfigView::Cancel() {
 }
 
 void VPNConfigView::InitFocus() {
-  // TODO(jamescook): Put focus in a more reasonable widget.
+  // Put focus in the first editable field.
+  if (server_textfield_)
+    server_textfield_->RequestFocus();
+  else if (service_textfield_)
+    service_textfield_->RequestFocus();
+  else if (provider_type_combobox_)
+    provider_type_combobox_->RequestFocus();
+  else if (psk_passphrase_textfield_ && psk_passphrase_textfield_->IsEnabled())
+    psk_passphrase_textfield_->RequestFocus();
 }
 
 const std::string VPNConfigView::GetTextFromField(
@@ -366,25 +361,6 @@ void VPNConfigView::Init(VirtualNetwork* vpn) {
   layout->AddView(psk_passphrase_textfield_);
   layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
 
-  // User certificate label and input.
-  layout->StartRow(0, column_view_set_id);
-  user_cert_label_ = new views::Label(UTF16ToWide(l10n_util::GetStringUTF16(
-      IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_VPN_USER_CERT)));
-  layout->AddView(user_cert_label_);
-  user_cert_combobox_ = new views::Combobox(new UserCertComboboxModel());
-  user_cert_combobox_->set_listener(this);
-  if (vpn && !vpn->user_cert().empty()) {
-    string16 user_cert = UTF8ToUTF16(vpn->user_cert());
-    for (int i = 0; i < user_cert_combobox_->model()->GetItemCount(); ++i) {
-      if (user_cert_combobox_->model()->GetItemAt(i) == user_cert) {
-        user_cert_combobox_->SetSelectedItem(i);
-        break;
-      }
-    }
-  }
-  layout->AddView(user_cert_combobox_);
-  layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
-
   // Username label and input.
   layout->StartRow(0, column_view_set_id);
   layout->AddView(new views::Label(UTF16ToWide(l10n_util::GetStringUTF16(
@@ -429,18 +405,10 @@ void VPNConfigView::EnableControls() {
     case VirtualNetwork::PROVIDER_TYPE_L2TP_IPSEC_PSK:
       psk_passphrase_label_->SetEnabled(true);
       psk_passphrase_textfield_->SetEnabled(true);
-      user_cert_label_->SetEnabled(false);
-      user_cert_combobox_->SetEnabled(false);
-      break;
-    case VirtualNetwork::PROVIDER_TYPE_L2TP_IPSEC_USER_CERT:
-    case VirtualNetwork::PROVIDER_TYPE_OPEN_VPN:
-      psk_passphrase_label_->SetEnabled(false);
-      psk_passphrase_textfield_->SetEnabled(false);
-      user_cert_label_->SetEnabled(true);
-      user_cert_combobox_->SetEnabled(true);
       break;
     default:
       NOTREACHED();
+      break;
   }
 }
 

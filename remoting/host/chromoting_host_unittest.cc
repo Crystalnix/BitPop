@@ -82,21 +82,21 @@ class ChromotingHostTest : public testing::Test {
         .Times(AnyNumber());
 
     Capturer* capturer = new CapturerFake();
-    host_stub_ = new MockHostStub();
-    host_stub2_ = new MockHostStub();
     event_executor_ = new MockEventExecutor();
-    event_executor2_ = new MockEventExecutor();
     curtain_ = new MockCurtain();
     DesktopEnvironment* desktop =
         new DesktopEnvironment(capturer, event_executor_, curtain_);
-    host_ = ChromotingHost::Create(&context_, config_, desktop);
+    MockAccessVerifier* access_verifier = new MockAccessVerifier();
+
+    host_ = ChromotingHost::Create(&context_, config_,
+                                   desktop, access_verifier);
     credentials_.set_type(protocol::PASSWORD);
     credentials_.set_username("user");
     credentials_.set_credential("password");
     connection_ = new MockConnectionToClient(
-        &message_loop_, &handler_, host_stub_, event_executor_);
+        &message_loop_, &handler_, &host_stub_, event_executor_);
     connection2_ = new MockConnectionToClient(
-        &message_loop_, &handler_, host_stub2_, event_executor2_);
+        &message_loop_, &handler_, &host_stub2_, &event_executor2_);
     session_ = new MockSession();
     session2_ = new MockSession();
     session_config_.reset(SessionConfig::CreateDefault());
@@ -160,14 +160,8 @@ class ChromotingHostTest : public testing::Test {
 
     context_.network_message_loop()->PostTask(
         FROM_HERE,
-        NewRunnableMethod(host_.get(),
-                          &ChromotingHost::AddClient,
-                          client));
-    context_.network_message_loop()->PostTask(
-        FROM_HERE,
-        NewRunnableMethod(host_.get(),
-                          &ChromotingHost::OnClientConnected,
-                          connection));
+        NewRunnableFunction(&ChromotingHostTest::AddClientToHost,
+                            host_, client));
     context_.network_message_loop()->PostTask(
         FROM_HERE,
         NewRunnableMethod(client.get(),
@@ -185,6 +179,11 @@ class ChromotingHostTest : public testing::Test {
                           connection_));
   }
 
+  static void AddClientToHost(scoped_refptr<ChromotingHost> host,
+                              scoped_refptr<ClientSession> session) {
+    host->clients_.push_back(session);
+  }
+
  protected:
   MessageLoop message_loop_;
   MockConnectionToClientEventHandler handler_;
@@ -197,16 +196,18 @@ class ChromotingHostTest : public testing::Test {
   scoped_ptr<SessionConfig> session_config_;
   MockVideoStub video_stub_;
   MockClientStub client_stub_;
-  MockHostStub* host_stub_;
-  MockEventExecutor* event_executor_;
-  MockCurtain* curtain_;
+  MockHostStub host_stub_;
   scoped_refptr<MockConnectionToClient> connection2_;
   scoped_refptr<MockSession> session2_;
   scoped_ptr<SessionConfig> session_config2_;
   MockVideoStub video_stub2_;
   MockClientStub client_stub2_;
-  MockHostStub* host_stub2_;
-  MockEventExecutor* event_executor2_;
+  MockHostStub host_stub2_;
+  MockEventExecutor event_executor2_;
+
+  // Owned by |host_|.
+  MockEventExecutor* event_executor_;
+  MockCurtain* curtain_;
 };
 
 TEST_F(ChromotingHostTest, StartAndShutdown) {
@@ -403,4 +404,38 @@ TEST_F(ChromotingHostTest, CurtainModeFailSecond) {
   message_loop_.Run();
 }
 
+ACTION_P(SetBool, var) { *var = true; }
+
+TEST_F(ChromotingHostTest, CurtainModeMe2Mom) {
+  host_->Start(NewRunnableFunction(&PostQuitTask, &message_loop_));
+  host_->set_me2mom(true);
+
+  EXPECT_CALL(client_stub_, BeginSessionResponse(_, _))
+      .WillOnce(RunDoneTask());
+
+  // When the video packet is received we first shutdown ChromotingHost
+  // then execute the done task.
+  bool curtain_activated = false;
+  {
+    InSequence s;
+    // Can't just expect Times(0) because if it fails then the host will
+    // not be shut down and the message loop will never exit.
+    EXPECT_CALL(*curtain_, EnableCurtainMode(_))
+        .Times(AnyNumber())
+        .WillRepeatedly(SetBool(&curtain_activated));
+    EXPECT_CALL(video_stub_, ProcessVideoPacket(_, _))
+        .WillOnce(DoAll(
+            InvokeWithoutArgs(host_.get(), &ChromotingHost::Shutdown),
+            RunDoneTask()))
+        .RetiresOnSaturation();
+    EXPECT_CALL(video_stub_, ProcessVideoPacket(_, _))
+        .Times(AnyNumber());
+    EXPECT_CALL(*connection_.get(), Disconnect())
+        .RetiresOnSaturation();
+  }
+  SimulateClientConnection(0, true);
+  message_loop_.Run();
+  host_->set_me2mom(false);
+  EXPECT_THAT(curtain_activated, false);
+}
 }  // namespace remoting

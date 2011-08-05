@@ -8,8 +8,8 @@
   },
   'targets': [
     {
-      'target_name': 'net_base',
-      'type': '<(library)',
+      'target_name': 'net',
+      'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
@@ -30,6 +30,7 @@
         'base/address_list_net_log_param.cc',
         'base/address_list_net_log_param.h',
         'base/asn1_util.cc',
+        'base/asn1_util.h',
         'base/auth.cc',
         'base/auth.h',
         'base/backoff_entry.cc',
@@ -57,7 +58,6 @@
         'base/cookie_monster.cc',
         'base/cookie_monster.h',
         'base/cookie_options.h',
-        'base/cookie_policy.h',
         'base/cookie_store.cc',
         'base/cookie_store.h',
         'base/crypto_module.h',
@@ -127,6 +127,7 @@
         # TODO(eroman): move this into its own test-support target.
         'base/mock_host_resolver.cc',
         'base/mock_host_resolver.h',
+        'base/net_api.h',
         'base/net_error_list.h',
         'base/net_errors.cc',
         'base/net_errors.h',
@@ -138,8 +139,6 @@
         'base/net_log_source_type_list.h',
         'base/net_module.cc',
         'base/net_module.h',
-        'base/net_switches.cc',
-        'base/net_switches.h',
         'base/net_util.cc',
         'base/net_util.h',
         'base/net_util_posix.cc',
@@ -220,156 +219,6 @@
         'base/x509_cert_types_mac.cc',
         'base/x509_openssl_util.cc',
         'base/x509_openssl_util.h',
-        'third_party/mozilla_security_manager/nsKeygenHandler.cpp',
-        'third_party/mozilla_security_manager/nsKeygenHandler.h',
-        'third_party/mozilla_security_manager/nsNSSCertificateDB.cpp',
-        'third_party/mozilla_security_manager/nsNSSCertificateDB.h',
-        'third_party/mozilla_security_manager/nsNSSCertTrust.cpp',
-        'third_party/mozilla_security_manager/nsNSSCertTrust.h',
-        'third_party/mozilla_security_manager/nsPKCS12Blob.cpp',
-        'third_party/mozilla_security_manager/nsPKCS12Blob.h',
-      ],
-      'export_dependent_settings': [
-        '../base/base.gyp:base',
-      ],
-      'actions': [
-        {
-          'action_name': 'ssl_false_start_blacklist',
-          'inputs': [
-            '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)ssl_false_start_blacklist_process<(EXECUTABLE_SUFFIX)',
-            'base/ssl_false_start_blacklist.txt',
-          ],
-          'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/net/base/ssl_false_start_blacklist_data.cc',
-          ],
-          'action':
-            ['<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)ssl_false_start_blacklist_process<(EXECUTABLE_SUFFIX)',
-             'base/ssl_false_start_blacklist.txt',
-              '<(SHARED_INTERMEDIATE_DIR)/net/base/ssl_false_start_blacklist_data.cc',
-            ],
-          'message': 'Generating SSL False Start blacklist',
-          'process_outputs_as_sources': 1,
-        },
-      ],
-      'conditions': [
-        [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd"', {
-            'dependencies': [
-              '../build/linux/system.gyp:gconf',
-              '../build/linux/system.gyp:gdk',
-              '../build/linux/system.gyp:libresolv',
-            ],
-            'conditions': [
-              ['use_openssl==1', {
-                'dependencies': [
-                  '../third_party/openssl/openssl.gyp:openssl',
-                ],
-              }, {  # else: not using openssl. Use NSS.
-                'dependencies': [
-                  '../build/linux/system.gyp:nss',
-                ],
-              }],
-            ],
-          },
-          {  # else: OS is not in the above list
-            'sources!': [
-              'base/cert_database_nss.cc',
-              'base/crypto_module_nss.cc',
-              'base/keygen_handler_nss.cc',
-              'base/test_root_certs_nss.cc',
-              'base/x509_certificate_nss.cc',
-              'third_party/mozilla_security_manager/nsKeygenHandler.cpp',
-              'third_party/mozilla_security_manager/nsKeygenHandler.h',
-              'third_party/mozilla_security_manager/nsNSSCertificateDB.cpp',
-              'third_party/mozilla_security_manager/nsNSSCertificateDB.h',
-              'third_party/mozilla_security_manager/nsNSSCertTrust.cpp',
-              'third_party/mozilla_security_manager/nsNSSCertTrust.h',
-              'third_party/mozilla_security_manager/nsPKCS12Blob.cpp',
-              'third_party/mozilla_security_manager/nsPKCS12Blob.h',
-            ],
-          },
-        ],
-        [ 'use_openssl==1', {
-            'sources!': [
-              'base/cert_database_nss.cc',
-              'base/crypto_module_nss.cc',
-              'base/dnssec_keyset.cc',
-              'base/dnssec_keyset.h',
-              'base/keygen_handler_nss.cc',
-              'base/nss_memio.c',
-              'base/nss_memio.h',
-              'base/test_root_certs_nss.cc',
-              'base/x509_certificate_nss.cc',
-              'third_party/mozilla_security_manager/nsKeygenHandler.cpp',
-              'third_party/mozilla_security_manager/nsKeygenHandler.h',
-              'third_party/mozilla_security_manager/nsNSSCertificateDB.cpp',
-              'third_party/mozilla_security_manager/nsNSSCertificateDB.h',
-              'third_party/mozilla_security_manager/nsNSSCertTrust.cpp',
-              'third_party/mozilla_security_manager/nsNSSCertTrust.h',
-              'third_party/mozilla_security_manager/nsPKCS12Blob.cpp',
-              'third_party/mozilla_security_manager/nsPKCS12Blob.h',
-            ],
-          },
-          {  # else: not using openssl.
-            'sources!': [
-              'base/cert_database_openssl.cc',
-              'base/crypto_module_openssl.cc',
-              'base/keygen_handler_openssl.cc',
-              'base/openssl_memory_private_key_store.cc',
-              'base/openssl_private_key_store.h',
-              'base/test_root_certs_openssl.cc',
-              'base/x509_certificate_openssl.cc',
-              'base/x509_openssl_util.cc',
-              'base/x509_openssl_util.h',
-             ],
-          },
-        ],
-        [ 'OS == "win"', {
-            'dependencies': [
-              '../third_party/nss/nss.gyp:nss',
-              'tld_cleanup',
-            ],
-          },
-          {  # else: OS != "win"
-            'dependencies': [
-              '../third_party/libevent/libevent.gyp:libevent',
-            ],
-            'sources!': [
-              'base/winsock_init.cc',
-              'base/winsock_util.cc',
-            ],
-          },
-        ],
-        [ 'OS == "mac"', {
-            'dependencies': [
-              '../third_party/nss/nss.gyp:nss',
-            ],
-            'link_settings': {
-              'libraries': [
-                '$(SDKROOT)/System/Library/Frameworks/Security.framework',
-                '$(SDKROOT)/System/Library/Frameworks/SystemConfiguration.framework',
-                '$(SDKROOT)/usr/lib/libresolv.dylib',
-              ]
-            },
-          },
-        ],
-      ],
-    },
-    {
-      'target_name': 'net',
-      'type': '<(library)',
-      'dependencies': [
-        '../base/base.gyp:base',
-        '../base/base.gyp:base_i18n',
-        '../build/temp_gyp/googleurl.gyp:googleurl',
-        '../crypto/crypto.gyp:crypto',
-        '../sdch/sdch.gyp:sdch',
-        '../third_party/icu/icu.gyp:icui18n',
-        '../third_party/icu/icu.gyp:icuuc',
-        '../third_party/zlib/zlib.gyp:zlib',
-        'net_base',
-        'net_resources',
-      ],
-      'sources': [
         'disk_cache/addr.cc',
         'disk_cache/addr.h',
         'disk_cache/backend_impl.cc',
@@ -500,6 +349,8 @@
         'http/http_cache_transaction.h',
         'http/http_chunked_decoder.cc',
         'http/http_chunked_decoder.h',
+        'http/http_mac_signature.cc',
+        'http/http_mac_signature.h',
         'http/http_net_log_params.cc',
         'http/http_net_log_params.h',
         'http/http_network_layer.cc',
@@ -556,10 +407,22 @@
         'http/proxy_client_socket.h',
         'ocsp/nss_ocsp.cc',
         'ocsp/nss_ocsp.h',
+        'proxy/dhcp_proxy_script_fetcher.cc',
+        'proxy/dhcp_proxy_script_fetcher.h',
+        'proxy/dhcp_proxy_script_fetcher_factory.cc',
+        'proxy/dhcp_proxy_script_fetcher_factory.h',
+        'proxy/dhcp_proxy_script_adapter_fetcher_win.cc',
+        'proxy/dhcp_proxy_script_adapter_fetcher_win.h',
+        'proxy/dhcp_proxy_script_fetcher_win.cc',
+        'proxy/dhcp_proxy_script_fetcher_win.h',
+        'proxy/dhcpcsvc_init_win.cc',
+        'proxy/dhcpcsvc_init_win.h',
         'proxy/init_proxy_resolver.cc',
         'proxy/init_proxy_resolver.h',
         'proxy/multi_threaded_proxy_resolver.cc',
         'proxy/multi_threaded_proxy_resolver.h',
+        'proxy/network_delegate_error_observer.cc',
+        'proxy/network_delegate_error_observer.h',
         'proxy/polling_proxy_config_service.cc',
         'proxy/polling_proxy_config_service.h',
         'proxy/proxy_bypass_rules.cc',
@@ -580,6 +443,7 @@
         'proxy/proxy_list.cc',
         'proxy/proxy_list.h',
         'proxy/proxy_resolver.h',
+        'proxy/proxy_resolver_error_observer.h',
         'proxy/proxy_resolver_js_bindings.cc',
         'proxy/proxy_resolver_js_bindings.h',
         'proxy/proxy_resolver_mac.cc',
@@ -603,8 +467,6 @@
         'proxy/proxy_service.h',
         'proxy/sync_host_resolver_bridge.cc',
         'proxy/sync_host_resolver_bridge.h',
-        'socket/client_socket.cc',
-        'socket/client_socket.h',
         'socket/client_socket_factory.cc',
         'socket/client_socket_factory.h',
         'socket/client_socket_handle.cc',
@@ -649,6 +511,8 @@
         'socket/ssl_server_socket_openssl.cc',
         'socket/ssl_host_info.cc',
         'socket/ssl_host_info.h',
+        'socket/stream_socket.cc',
+        'socket/stream_socket.h',
         'socket/tcp_client_socket.cc',
         'socket/tcp_client_socket.h',
         'socket/tcp_client_socket_libevent.cc',
@@ -692,6 +556,14 @@
         'spdy/spdy_settings_storage.h',
         'spdy/spdy_stream.cc',
         'spdy/spdy_stream.h',
+        'third_party/mozilla_security_manager/nsKeygenHandler.cpp',
+        'third_party/mozilla_security_manager/nsKeygenHandler.h',
+        'third_party/mozilla_security_manager/nsNSSCertificateDB.cpp',
+        'third_party/mozilla_security_manager/nsNSSCertificateDB.h',
+        'third_party/mozilla_security_manager/nsNSSCertTrust.cpp',
+        'third_party/mozilla_security_manager/nsNSSCertTrust.h',
+        'third_party/mozilla_security_manager/nsPKCS12Blob.cpp',
+        'third_party/mozilla_security_manager/nsPKCS12Blob.h',
         'udp/datagram_client_socket.h',
         'udp/datagram_server_socket.h',
         'udp/datagram_socket.h',
@@ -732,10 +604,10 @@
         'url_request/url_request_http_job.h',
         'url_request/url_request_job.cc',
         'url_request/url_request_job.h',
+        'url_request/url_request_job_factory.cc',
+        'url_request/url_request_job_factory.h',
         'url_request/url_request_job_manager.cc',
         'url_request/url_request_job_manager.h',
-        'url_request/url_request_job_tracker.cc',
-        'url_request/url_request_job_tracker.h',
         'url_request/url_request_netlog_params.cc',
         'url_request/url_request_netlog_params.h',
         'url_request/url_request_redirect_job.cc',
@@ -775,6 +647,25 @@
       'export_dependent_settings': [
         '../base/base.gyp:base',
       ],
+      'actions': [
+        {
+          'action_name': 'ssl_false_start_blacklist',
+          'inputs': [
+            '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)ssl_false_start_blacklist_process<(EXECUTABLE_SUFFIX)',
+            'base/ssl_false_start_blacklist.txt',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/net/base/ssl_false_start_blacklist_data.cc',
+          ],
+          'action':
+            ['<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)ssl_false_start_blacklist_process<(EXECUTABLE_SUFFIX)',
+             'base/ssl_false_start_blacklist.txt',
+              '<(SHARED_INTERMEDIATE_DIR)/net/base/ssl_false_start_blacklist_data.cc',
+            ],
+          'message': 'Generating SSL False Start blacklist',
+          'process_outputs_as_sources': 1,
+        },
+      ],
       'conditions': [
         ['javascript_engine=="v8"', {
           'dependencies': [
@@ -789,6 +680,15 @@
         }],
         ['use_openssl==1', {
             'sources!': [
+              'base/cert_database_nss.cc',
+              'base/crypto_module_nss.cc',
+              'base/dnssec_keyset.cc',
+              'base/dnssec_keyset.h',
+              'base/keygen_handler_nss.cc',
+              'base/nss_memio.c',
+              'base/nss_memio.h',
+              'base/test_root_certs_nss.cc',
+              'base/x509_certificate_nss.cc',
               'ocsp/nss_ocsp.cc',
               'ocsp/nss_ocsp.h',
               'socket/dns_cert_provenance_check.cc',
@@ -799,20 +699,39 @@
               'socket/ssl_client_socket_nss.h',
               'socket/ssl_server_socket_nss.cc',
               'socket/ssl_server_socket_nss.h',
+              'third_party/mozilla_security_manager/nsKeygenHandler.cpp',
+              'third_party/mozilla_security_manager/nsKeygenHandler.h',
+              'third_party/mozilla_security_manager/nsNSSCertificateDB.cpp',
+              'third_party/mozilla_security_manager/nsNSSCertificateDB.h',
+              'third_party/mozilla_security_manager/nsNSSCertTrust.cpp',
+              'third_party/mozilla_security_manager/nsNSSCertTrust.h',
+              'third_party/mozilla_security_manager/nsPKCS12Blob.cpp',
+              'third_party/mozilla_security_manager/nsPKCS12Blob.h',
             ],
           },
           {  # else !use_openssl: remove the unneeded files
             'sources!': [
+              'base/cert_database_openssl.cc',
+              'base/crypto_module_openssl.cc',
+              'base/keygen_handler_openssl.cc',
+              'base/openssl_memory_private_key_store.cc',
+              'base/openssl_private_key_store.h',
+              'base/test_root_certs_openssl.cc',
+              'base/x509_certificate_openssl.cc',
+              'base/x509_openssl_util.cc',
+              'base/x509_openssl_util.h',
               'socket/ssl_client_socket_openssl.cc',
               'socket/ssl_client_socket_openssl.h',
               'socket/ssl_server_socket_openssl.cc',
             ],
           },
         ],
-        [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd"', {
+        [ 'toolkit_uses_gtk == 1', {
             'dependencies': [
               '../build/linux/system.gyp:gconf',
               '../build/linux/system.gyp:gdk',
+              '../build/linux/system.gyp:gio',
+              '../build/linux/system.gyp:libresolv',
             ],
             'conditions': [
               ['use_openssl==1', {
@@ -822,15 +741,28 @@
               },
               {  # else use_openssl==0, use NSS
                 'dependencies': [
-                  '../build/linux/system.gyp:nss',
+                  '../build/linux/system.gyp:ssl',
                 ],
               }],
             ],
           },
           {  # else: OS is not in the above list
             'sources!': [
+              'base/cert_database_nss.cc',
+              'base/crypto_module_nss.cc',
+              'base/keygen_handler_nss.cc',
+              'base/test_root_certs_nss.cc',
+              'base/x509_certificate_nss.cc',
               'ocsp/nss_ocsp.cc',
               'ocsp/nss_ocsp.h',
+              'third_party/mozilla_security_manager/nsKeygenHandler.cpp',
+              'third_party/mozilla_security_manager/nsKeygenHandler.h',
+              'third_party/mozilla_security_manager/nsNSSCertificateDB.cpp',
+              'third_party/mozilla_security_manager/nsNSSCertificateDB.h',
+              'third_party/mozilla_security_manager/nsNSSCertTrust.cpp',
+              'third_party/mozilla_security_manager/nsNSSCertTrust.h',
+              'third_party/mozilla_security_manager/nsPKCS12Blob.cpp',
+              'third_party/mozilla_security_manager/nsPKCS12Blob.h',
             ],
           },
         ],
@@ -838,8 +770,11 @@
             'sources!': [
               'http/http_auth_handler_ntlm_portable.cc',
               'socket/tcp_client_socket_libevent.cc',
+              'socket/tcp_client_socket_libevent.h',
               'socket/tcp_server_socket_libevent.cc',
+              'socket/tcp_server_socket_libevent.h',
               'udp/udp_socket_libevent.cc',
+              'udp/udp_socket_libevent.h',
             ],
             'dependencies': [
               '../third_party/nss/nss.gyp:nss',
@@ -852,7 +787,12 @@
               '../third_party/libevent/libevent.gyp:libevent',
             ],
             'sources!': [
+              'base/winsock_init.cc',
+              'base/winsock_init.h',
+              'base/winsock_util.cc',
+              'base/winsock_util.h',
               'proxy/proxy_resolver_winhttp.cc',
+              'proxy/proxy_resolver_winhttp.h',
             ],
           },
         ],
@@ -865,6 +805,7 @@
               'libraries': [
                 '$(SDKROOT)/System/Library/Frameworks/Security.framework',
                 '$(SDKROOT)/System/Library/Frameworks/SystemConfiguration.framework',
+                '$(SDKROOT)/usr/lib/libresolv.dylib',
               ]
             },
           },
@@ -879,6 +820,8 @@
         'net_test_support',
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
+        '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../crypto/crypto.gyp:crypto',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
@@ -967,6 +910,7 @@
         'http/http_byte_range_unittest.cc',
         'http/http_cache_unittest.cc',
         'http/http_chunked_decoder_unittest.cc',
+        'http/http_mac_signature_unittest.cc',
         'http/http_network_layer_unittest.cc',
         'http/http_network_transaction_unittest.cc',
         'http/http_proxy_client_socket_pool_unittest.cc',
@@ -985,8 +929,12 @@
         'http/mock_sspi_library_win.h',
         'http/mock_sspi_library_win.cc',
         'http/url_security_manager_unittest.cc',
+        'proxy/dhcp_proxy_script_adapter_fetcher_win_unittest.cc',
+        'proxy/dhcp_proxy_script_fetcher_factory_unittest.cc',
+        'proxy/dhcp_proxy_script_fetcher_win_unittest.cc',
         'proxy/init_proxy_resolver_unittest.cc',
         'proxy/multi_threaded_proxy_resolver_unittest.cc',
+        'proxy/network_delegate_error_observer_unittest.cc',
         'proxy/proxy_bypass_rules_unittest.cc',
         'proxy/proxy_config_service_linux_unittest.cc',
         'proxy/proxy_config_service_win_unittest.cc',
@@ -1006,6 +954,7 @@
         'socket/ssl_client_socket_unittest.cc',
         'socket/ssl_client_socket_pool_unittest.cc',
         'socket/ssl_server_socket_unittest.cc',
+        'socket/tcp_client_socket_unittest.cc',
         'socket/tcp_server_socket_unittest.cc',
         'socket/transport_client_socket_pool_unittest.cc',
         'socket/transport_client_socket_unittest.cc',
@@ -1028,7 +977,7 @@
         'tools/dump_cache/url_utilities.cc',
         'tools/dump_cache/url_utilities_unittest.cc',
         'udp/udp_socket_unittest.cc',
-        'url_request/url_request_job_tracker_unittest.cc',
+        'url_request/url_request_job_factory_unittest.cc',
         'url_request/url_request_throttler_unittest.cc',
         'url_request/url_request_unittest.cc',
         'url_request/view_cache_helper_unittest.cc',
@@ -1047,10 +996,10 @@
              'proxy/proxy_config_service_linux_unittest.cc',
           ],
         }],
-        [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd"', {
+        [ 'toolkit_uses_gtk == 1', {
             'dependencies': [
               '../build/linux/system.gyp:gtk',
-              '../build/linux/system.gyp:nss',
+              '../build/linux/system.gyp:ssl',
             ],
           },
           {  # else: OS is not in the above list
@@ -1059,7 +1008,7 @@
             ],
           }
         ],
-        [ 'OS == "linux"', {
+        [ 'os_posix == 1 and OS != "mac"', {
           'conditions': [
             ['linux_use_tcmalloc==1', {
               'dependencies': [
@@ -1077,11 +1026,6 @@
               'base/dnssec_unittest.cc',
             ],
           },
-          { # else, remove openssl specific tests
-            'sources!': [
-              'base/x509_openssl_util_unittest.cc',
-            ],
-          }
         ],
         [ 'OS == "win"', {
             'sources!': [
@@ -1105,6 +1049,7 @@
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
         '../base/base.gyp:test_support_perf',
+        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../testing/gtest.gyp:gtest',
       ],
       'msvs_guid': 'AAC78796-B9A2-4CD9-BF89-09B03E92BF73',
@@ -1169,6 +1114,7 @@
         'net',
         'net_test_support',
         '../base/base.gyp:base',
+        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../testing/gtest.gyp:gtest',
       ],
       'msvs_guid': '506F2468-6B1D-48E2-A67C-9D9C6BAC0EC5',
@@ -1178,7 +1124,7 @@
     },
     {
       'target_name': 'net_test_support',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         'net',
         '../base/base.gyp:base',
@@ -1198,6 +1144,8 @@
         'disk_cache/disk_cache_test_util.h',
         'proxy/mock_proxy_resolver.cc',
         'proxy/mock_proxy_resolver.h',
+        'proxy/mock_proxy_script_fetcher.cc',
+        'proxy/mock_proxy_script_fetcher.h',
         'proxy/proxy_config_service_common_unittest.cc',
         'proxy/proxy_config_service_common_unittest.h',
         'socket/socket_test_util.cc',
@@ -1219,7 +1167,7 @@
             '../third_party/protobuf/protobuf.gyp:py_proto',
           ],
         }],
-        ['OS == "linux" or OS == "freebsd" or OS == "openbsd"', {
+        ['os_posix == 1 and OS != "mac"', {
           'conditions': [
             ['use_openssl==1', {
               'dependencies': [
@@ -1227,12 +1175,12 @@
               ],
             }, {
               'dependencies': [
-                '../build/linux/system.gyp:nss',
+                '../build/linux/system.gyp:ssl',
               ],
             }],
           ],
         }],
-        ['OS == "linux"', {
+        ['os_posix == 1 and OS != "mac"', {
           'conditions': [
             ['linux_use_tcmalloc==1', {
               'dependencies': [
@@ -1267,6 +1215,8 @@
       'dependencies': [
         'net',
         '../base/base.gyp:base',
+        '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../testing/gtest.gyp:gtest',
       ],
       'msvs_guid': 'DABB8796-B9A2-4CD9-BF89-09B03E92B123',
@@ -1280,6 +1230,7 @@
       'dependencies': [
         'net',
         '../base/base.gyp:base',
+        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../testing/gtest.gyp:gtest',
       ],
       'msvs_guid': 'DABB8796-B9A2-4CD9-BF89-09B03E92B124',
@@ -1299,7 +1250,7 @@
     },
     {
       'target_name': 'http_server',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         'net',
         '../base/base.gyp:base',
@@ -1317,7 +1268,8 @@
       'target_name': 'dnssec_chain_verify',
       'type': 'executable',
       'dependencies': [
-        'net_base',
+        'net',
+        '../base/base.gyp:base',
       ],
       'sources': [
         'tools/dnssec_chain_verify/dnssec_chain_verify.cc',
@@ -1336,7 +1288,7 @@
     },
   ],
   'conditions': [
-     ['OS=="linux"', {
+     ['os_posix == 1 and OS != "mac"', {
        'targets': [
          {
            'target_name': 'flip_in_mem_edsm_server',
@@ -1381,7 +1333,6 @@
              'tools/flip_server/loadtime_measurement.h',
              'tools/flip_server/mem_cache.h',
              'tools/flip_server/mem_cache.cc',
-             'tools/flip_server/porting.txt',
              'tools/flip_server/output_ordering.cc',
              'tools/flip_server/output_ordering.h',
              'tools/flip_server/ring_buffer.cc',
@@ -1402,9 +1353,59 @@
              'tools/flip_server/streamer_interface.cc',
              'tools/flip_server/streamer_interface.h',
              'tools/flip_server/string_piece_utils.h',
-             'tools/flip_server/thread.h',
-             'tools/flip_server/url_to_filename_encoder.h',
-             'tools/flip_server/url_utilities.h',
+           ],
+         },
+         {
+           'target_name': 'curvecp',
+           'type': 'static_library',
+           'dependencies': [
+             '../base/base.gyp:base',
+             'net.gyp:net',
+           ],
+           'sources': [
+             'curvecp/circular_buffer.cc',
+             'curvecp/circular_buffer.h',
+             'curvecp/client_packetizer.cc',
+             'curvecp/client_packetizer.h',
+             'curvecp/connection_key.cc',
+             'curvecp/connection_key.h',
+             'curvecp/curvecp_client_socket.cc',
+             'curvecp/curvecp_client_socket.h',
+             'curvecp/curvecp_server_socket.cc',
+             'curvecp/curvecp_server_socket.h',
+             'curvecp/messenger.h',
+             'curvecp/messenger.cc',
+             'curvecp/packetizer.h',
+             'curvecp/protocol.cc',
+             'curvecp/protocol.h',
+             'curvecp/received_block_list.cc',
+             'curvecp/received_block_list.h',
+             'curvecp/rtt_and_send_rate_calculator.cc',
+             'curvecp/rtt_and_send_rate_calculator.h',
+             'curvecp/sent_block_list.cc',
+             'curvecp/sent_block_list.h',
+             'curvecp/server_messenger.cc',
+             'curvecp/server_messenger.h',
+             'curvecp/server_packetizer.cc',
+             'curvecp/server_packetizer.h',
+           ],
+         },
+         {
+           'target_name': 'curvecp_unittests',
+           'type': 'executable',
+           'dependencies': [
+             '../base/base.gyp:base',
+             'net.gyp:curvecp',
+             'net.gyp:net',
+             'net_test_support',
+             '../testing/gmock.gyp:gmock',
+             '../testing/gtest.gyp:gtest',
+             '../third_party/zlib/zlib.gyp:zlib',
+           ],
+           'sources': [
+             'curvecp/curvecp_transfer_unittest.cc',
+             'curvecp/test_client.cc',
+             'curvecp/test_server.cc',
            ],
          },
        ]

@@ -28,6 +28,7 @@
 #include "ipc/ipc_message.h"
 
 class ChromeNetLog;
+class ChromeResourceDispatcherHostObserver;
 class CommandLine;
 class DevToolsHttpProtocolHandler;
 class DevToolsProtocolHandler;
@@ -54,11 +55,13 @@ class BrowserProcessImpl : public BrowserProcess,
   virtual base::Thread* db_thread();
   virtual base::Thread* process_launcher_thread();
   virtual base::Thread* cache_thread();
-  virtual base::Thread* gpu_thread();
 #if defined(USE_X11)
   virtual base::Thread* background_x11_thread();
 #endif
   virtual WatchDogThread* watchdog_thread();
+#if defined(OS_CHROMEOS)
+  virtual base::Thread* web_socket_proxy_thread();
+#endif
   virtual ProfileManager* profile_manager();
   virtual PrefService* local_state();
   virtual DevToolsManager* devtools_manager();
@@ -85,6 +88,7 @@ class BrowserProcessImpl : public BrowserProcess,
   virtual bool IsShuttingDown();
   virtual printing::PrintJobManager* print_job_manager();
   virtual printing::PrintPreviewTabController* print_preview_tab_controller();
+  virtual printing::BackgroundPrintingManager* background_printing_manager();
   virtual GoogleURLTracker* google_url_tracker();
   virtual IntranetRedirectDetector* intranet_redirect_detector();
   virtual const std::string& GetApplicationLocale();
@@ -92,6 +96,8 @@ class BrowserProcessImpl : public BrowserProcess,
   virtual DownloadStatusUpdater* download_status_updater();
   virtual base::WaitableEvent* shutdown_event();
   virtual TabCloseableStateWatcher* tab_closeable_state_watcher();
+  virtual BackgroundModeManager* background_mode_manager();
+  virtual StatusTray* status_tray();
   virtual safe_browsing::ClientSideDetectionService*
       safe_browsing_detection_service();
   virtual bool plugin_finder_disabled() const;
@@ -106,6 +112,8 @@ class BrowserProcessImpl : public BrowserProcess,
 #endif
 
   virtual ChromeNetLog* net_log();
+
+  virtual prerender::PrerenderTracker* prerender_tracker();
 
 #if defined(IPC_MESSAGE_LOG_ENABLED)
   virtual void SetIPCLoggingEnabled(bool enable);
@@ -129,6 +137,9 @@ class BrowserProcessImpl : public BrowserProcess,
   void CreateCacheThread();
   void CreateGpuThread();
   void CreateWatchdogThread();
+#if defined(OS_CHROMEOS)
+  void CreateWebSocketProxyThread();
+#endif
   void CreateTemplateURLModel();
   void CreateProfileManager();
   void CreateWebDataService();
@@ -143,11 +154,15 @@ class BrowserProcessImpl : public BrowserProcess,
   void CreateStatusTrayManager();
   void CreateTabCloseableStateWatcher();
   void CreatePrintPreviewTabController();
+  void CreateBackgroundPrintingManager();
   void CreateSafeBrowsingDetectionService();
+  void CreateStatusTray();
+  void CreateBackgroundModeManager();
 
   bool IsSafeBrowsingDetectionServiceEnabled();
 
   void ApplyDisabledSchemesPolicy();
+  void ApplyAllowCrossOriginAuthPromptPolicy();
 
 #if defined(IPC_MESSAGE_LOG_ENABLED)
   void SetIPCLoggingEnabledForChildProcesses(bool enabled);
@@ -178,11 +193,13 @@ class BrowserProcessImpl : public BrowserProcess,
   bool created_cache_thread_;
   scoped_ptr<base::Thread> cache_thread_;
 
-  bool created_gpu_thread_;
-  scoped_ptr<base::Thread> gpu_thread_;
-
   bool created_watchdog_thread_;
   scoped_ptr<WatchDogThread> watchdog_thread_;
+
+#if defined(OS_CHROMEOS)
+  bool created_web_socket_proxy_thread_;
+  scoped_ptr<base::Thread> web_socket_proxy_thread_;
+#endif
 
   bool created_profile_manager_;
   scoped_ptr<ProfileManager> profile_manager_;
@@ -212,6 +229,8 @@ class BrowserProcessImpl : public BrowserProcess,
   scoped_refptr<printing::PrintPreviewTabController>
       print_preview_tab_controller_;
 
+  scoped_ptr<printing::BackgroundPrintingManager> background_printing_manager_;
+
   scoped_ptr<ui::Clipboard> clipboard_;
 
   // Manager for desktop notification UI.
@@ -226,6 +245,10 @@ class BrowserProcessImpl : public BrowserProcess,
   scoped_ptr<NotificationService> main_notification_service_;
 
   scoped_ptr<TabCloseableStateWatcher> tab_closeable_state_watcher_;
+
+  scoped_ptr<BackgroundModeManager> background_mode_manager_;
+
+  scoped_ptr<StatusTray> status_tray_;
 
   bool created_safe_browsing_detection_service_;
   scoped_ptr<safe_browsing::ClientSideDetectionService>
@@ -261,14 +284,18 @@ class BrowserProcessImpl : public BrowserProcess,
   // Lives here so can safely log events on shutdown.
   scoped_ptr<ChromeNetLog> net_log_;
 
+  // Ordered before resource_dispatcher_host_observer_ due to destruction
+  // ordering.
+  scoped_ptr<prerender::PrerenderTracker> prerender_tracker_;
+
+  scoped_ptr<ChromeResourceDispatcherHostObserver>
+      resource_dispatcher_host_observer_;
+
   NotificationRegistrar notification_registrar_;
   scoped_refptr<PluginDataRemover> plugin_data_remover_;
 
   // Monitors the state of the 'DisablePluginFinder' policy.
   BooleanPrefMember plugin_finder_disabled_pref_;
-
-  // Monitors the list of disabled schemes policy.
-  ListPrefMember disabled_schemes_pref_;
 
 #if (defined(OS_WIN) || defined(OS_LINUX)) && !defined(OS_CHROMEOS)
   base::RepeatingTimer<BrowserProcessImpl> autoupdate_timer_;

@@ -9,26 +9,26 @@
 #include <deque>
 #include <map>
 #include <set>
+#include <stack>
 #include <string>
 #include <vector>
 
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/memory/weak_ptr.h"
+#include "base/scoped_temp_dir.h"
 #include "base/task.h"
 #include "base/time.h"
 #include "base/timer.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/common/extensions/update_manifest.h"
-#include "chrome/common/net/url_fetcher.h"
+#include "content/common/url_fetcher.h"
 #include "googleurl/src/gurl.h"
 
 class Extension;
 class ExtensionPrefs;
 class ExtensionUpdaterTest;
-class ExtensionUpdaterFileHandler;
 class PrefService;
 class Profile;
 class SafeManifestParser;
@@ -165,7 +165,8 @@ class ManifestFetchesBuilder {
 // updater->Start();
 // ....
 // updater->Stop();
-class ExtensionUpdater : public URLFetcher::Delegate {
+class ExtensionUpdater : public URLFetcher::Delegate,
+                         public NotificationObserver {
  public:
   // Holds a pointer to the passed |service|, using it for querying installed
   // extensions and installing updated ones. The |frequency_seconds| parameter
@@ -222,6 +223,20 @@ class ExtensionUpdater : public URLFetcher::Delegate {
     std::string version;
   };
 
+  // FetchedCRXFile holds information about a CRX file we fetched to disk,
+  // but have not yet installed.
+  struct FetchedCRXFile {
+    FetchedCRXFile();
+    FetchedCRXFile(const std::string& id,
+                   const FilePath& path,
+                   const GURL& download_url);
+    ~FetchedCRXFile();
+
+    std::string id;
+    FilePath path;
+    GURL download_url;
+  };
+
   // These are needed for unit testing, to help identify the correct mock
   // URLFetcher objects.
   static const int kManifestFetcherId = 1;
@@ -236,22 +251,18 @@ class ExtensionUpdater : public URLFetcher::Delegate {
   base::TimeDelta DetermineFirstCheckDelay();
 
   // URLFetcher::Delegate interface.
-  virtual void OnURLFetchComplete(const URLFetcher* source,
-                                  const GURL& url,
-                                  const net::URLRequestStatus& status,
-                                  int response_code,
-                                  const ResponseCookies& cookies,
-                                  const std::string& data);
+  virtual void OnURLFetchComplete(const URLFetcher* source);
 
   // These do the actual work when a URL fetch completes.
   virtual void OnManifestFetchComplete(const GURL& url,
                                        const net::URLRequestStatus& status,
                                        int response_code,
                                        const std::string& data);
-  virtual void OnCRXFetchComplete(const GURL& url,
+
+  virtual void OnCRXFetchComplete(const URLFetcher* source,
+                                  const GURL& url,
                                   const net::URLRequestStatus& status,
-                                  int response_code,
-                                  const std::string& data);
+                                  int response_code);
 
   // Called when a crx file has been written into a temp file, and is ready
   // to be installed.
@@ -315,6 +326,16 @@ class ExtensionUpdater : public URLFetcher::Delegate {
   // Removes a set of ids from in_progress_ids_.
   void RemoveFromInProgress(const std::set<std::string>& ids);
 
+  // If a CRX file has been fetched but not installed, and no install is
+  // currently running, start installing.  Returns true if an install was
+  // started.
+  bool MaybeInstallCRXFile();
+
+  // NotificationObserver implementation.
+  virtual void Observe(NotificationType type,
+                       const NotificationSource& source,
+                       const NotificationDetails& details);
+
   // Whether Start() has been called but not Stop().
   bool alive_;
 
@@ -348,12 +369,20 @@ class ExtensionUpdater : public URLFetcher::Delegate {
   ExtensionPrefs* extension_prefs_;
   PrefService* prefs_;
   Profile* profile_;
-
-  scoped_refptr<ExtensionUpdaterFileHandler> file_handler_;
   bool blacklist_checks_enabled_;
 
   // The ids of extensions that have in-progress update checks.
   std::set<std::string> in_progress_ids_;
+
+  // Observes CRX installs we initiate.
+  NotificationRegistrar registrar_;
+
+  // True when a CrxInstaller is doing an install.  Used in MaybeUpdateCrxFile()
+  // to keep more than one install from running at once.
+  bool crx_install_is_running_;
+
+  // Fetched CRX files waiting to be installed.
+  std::stack<FetchedCRXFile> fetched_crx_files_;
 
   FRIEND_TEST(ExtensionUpdaterTest, TestStartUpdateCheckMemory);
   FRIEND_TEST(ExtensionUpdaterTest, TestAfterStopBehavior);

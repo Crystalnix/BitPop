@@ -10,8 +10,8 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/waitable_event.h"
-#include "chrome/common/net/url_fetcher.h"
 #include "chrome/common/net/gaia/gaia_authenticator.h"
+#include "content/common/url_fetcher.h"
 
 namespace base {
 class MessageLoopProxy;
@@ -28,14 +28,14 @@ class ServiceGaiaAuthenticator
                            const std::string& service_id,
                            const std::string& gaia_url,
                            base::MessageLoopProxy* io_message_loop_proxy);
-  ~ServiceGaiaAuthenticator();
+  virtual ~ServiceGaiaAuthenticator();
 
   // URLFetcher::Delegate implementation.
   virtual void OnURLFetchComplete(const URLFetcher *source,
                                   const GURL &url,
                                   const net::URLRequestStatus &status,
                                   int response_code,
-                                  const ResponseCookies &cookies,
+                                  const net::ResponseCookies &cookies,
                                   const std::string &data);
 
  protected:

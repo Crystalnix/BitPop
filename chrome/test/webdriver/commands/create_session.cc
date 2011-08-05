@@ -7,6 +7,7 @@
 #include <sstream>
 #include <string>
 
+#include "base/command_line.h"
 #include "base/file_path.h"
 #include "base/stringprintf.h"
 #include "base/values.h"
@@ -15,11 +16,9 @@
 #include "chrome/test/webdriver/commands/response.h"
 #include "chrome/test/webdriver/session.h"
 #include "chrome/test/webdriver/session_manager.h"
+#include "chrome/test/webdriver/webdriver_error.h"
 
 namespace webdriver {
-
-// The minimum supported version of Chrome for this version of ChromeDriver.
-const int kMinSupportedChromeVersion = 12;
 
 CreateSession::CreateSession(const std::vector<std::string>& path_segments,
                              const DictionaryValue* const parameters)
@@ -30,55 +29,76 @@ CreateSession::~CreateSession() {}
 bool CreateSession::DoesPost() { return true; }
 
 void CreateSession::ExecutePost(Response* const response) {
-  SessionManager* session_manager = SessionManager::GetInstance();
+  DictionaryValue *capabilities = NULL;
+  if (!GetDictionaryParameter("desiredCapabilities", &capabilities)) {
+    response->SetError(new Error(
+        kBadRequest, "Missing or invalid 'desiredCapabilities'"));
+    return;
+  }
+
+  CommandLine command_line_options(CommandLine::NO_PROGRAM);
+  ListValue* switches = NULL;
+  const char* kCustomSwitchesKey = "chrome.switches";
+  if (capabilities->GetListWithoutPathExpansion(kCustomSwitchesKey,
+                                                &switches)) {
+    for (size_t i = 0; i < switches->GetSize(); ++i) {
+      std::string switch_string;
+      if (!switches->GetString(i, &switch_string)) {
+        response->SetError(new Error(
+            kBadRequest, "Custom switch is not a string"));
+        return;
+      }
+      size_t separator_index = switch_string.find("=");
+      if (separator_index != std::string::npos) {
+        CommandLine::StringType switch_string_native;
+        if (!switches->GetString(i, &switch_string_native)) {
+          response->SetError(new Error(
+              kBadRequest, "Custom switch is not a string"));
+          return;
+        }
+        command_line_options.AppendSwitchNative(
+            switch_string.substr(0, separator_index),
+            switch_string_native.substr(separator_index + 1));
+      } else {
+        command_line_options.AppendSwitch(switch_string);
+      }
+    }
+  } else if (capabilities->HasKey(kCustomSwitchesKey)) {
+    response->SetError(new Error(
+        kBadRequest, "Custom switches must be a list"));
+    return;
+  }
+
+  FilePath browser_exe;
+  FilePath::StringType path;
+  if (capabilities->GetStringWithoutPathExpansion("chrome.binary", &path))
+    browser_exe = FilePath(path);
 
   // Session manages its own liftime, so do not call delete.
   Session* session = new Session();
-  ErrorCode code = session->Init(session_manager->chrome_dir());
-
-  if (code == kBrowserCouldNotBeFound) {
-    SET_WEBDRIVER_ERROR(response,
-                        "Chrome could not be found.",
-                        kUnknownError);
-    return;
-  } else if (code == kBrowserFailedToStart) {
-    std::string error_msg = base::StringPrintf(
-        "Chrome could not be started successfully. "
-            "Please update ChromeDriver and ensure you are using Chrome %d+.",
-        kMinSupportedChromeVersion);
-    SET_WEBDRIVER_ERROR(response, error_msg, kUnknownError);
-    return;
-  } else if (code == kIncompatibleBrowserVersion) {
-    std::string error_msg = base::StringPrintf(
-        "Version of Chrome is incompatible with version of ChromeDriver. "
-            "Please update ChromeDriver and ensure you are using Chrome %d+.",
-        kMinSupportedChromeVersion);
-    SET_WEBDRIVER_ERROR(response, error_msg, kUnknownError);
-    return;
-  } else if (code != kSuccess) {
-    std::string error_msg = base::StringPrintf(
-        "Unknown error while initializing session. "
-            "Ensure ChromeDriver is up-to-date and Chrome is version %d+.",
-        kMinSupportedChromeVersion);
-    SET_WEBDRIVER_ERROR(response, error_msg, kUnknownError);
+  Error* error = session->Init(browser_exe, command_line_options);
+  if (error) {
+    response->SetError(error);
     return;
   }
 
-  DictionaryValue* capabilities = NULL;
   bool native_events_required = false;
-  if (GetDictionaryParameter("desiredCapabilities", &capabilities)) {
-   capabilities->GetBoolean("chrome.nativeEvents", &native_events_required);
-   session->set_use_native_events(native_events_required);
+  Value* native_events_value = NULL;
+  if (capabilities->GetWithoutPathExpansion(
+          "chrome.nativeEvents", &native_events_value)) {
+    if (native_events_value->GetAsBoolean(&native_events_required)) {
+      session->set_use_native_events(native_events_required);
+    }
   }
-
   bool screenshot_on_error = false;
-  if (GetDictionaryParameter("desiredCapabilities", &capabilities)) {
-    capabilities->GetBoolean("takeScreenshotOnError", &screenshot_on_error);
+  if (capabilities->GetBoolean(
+          "takeScreenshotOnError", &screenshot_on_error)) {
     session->set_screenshot_on_error(screenshot_on_error);
   }
 
   VLOG(1) << "Created session " << session->id();
   std::ostringstream stream;
+  SessionManager* session_manager = SessionManager::GetInstance();
   stream << "http://" << session_manager->GetAddress() << "/session/"
          << session->id();
   response->SetStatus(kSeeOther);

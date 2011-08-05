@@ -110,22 +110,14 @@ void RenderViewTest::SetUp() {
   WebKit::initialize(&webkitclient_);
   WebScriptController::registerExtension(BaseJsV8Extension::Get());
   WebScriptController::registerExtension(JsonSchemaJsV8Extension::Get());
-  WebScriptController::registerExtension(EventBindings::Get());
+  WebScriptController::registerExtension(EventBindings::Get(
+      extension_dispatcher_));
   WebScriptController::registerExtension(ExtensionApiTestV8Extension::Get());
   WebScriptController::registerExtension(ExtensionProcessBindings::Get(
       extension_dispatcher_));
-  WebScriptController::registerExtension(RendererExtensionBindings::Get());
+  WebScriptController::registerExtension(RendererExtensionBindings::Get(
+      extension_dispatcher_));
   EventBindings::SetRenderThread(&render_thread_);
-
-  // TODO(aa): Should some of this go to some other inheriting class?
-  std::vector<std::string> names;
-  ExtensionFunctionDispatcher::GetAllFunctionNames(&names);
-  ExtensionProcessBindings::SetFunctionNames(names);
-
-  std::set<std::string> all_permissions;
-  for (size_t i = 0; i < Extension::kNumPermissions; ++i)
-    all_permissions.insert(Extension::kPermissions[i].name);
-  ExtensionProcessBindings::SetAPIPermissions("", all_permissions);
 
   mock_process_.reset(new MockRenderProcess);
 
@@ -265,42 +257,6 @@ void RenderViewTest::SendNativeKeyEvent(
   input_message->WriteData(reinterpret_cast<const char*>(&key_event),
                            sizeof(WebKit::WebKeyboardEvent));
   view_->OnMessageReceived(*input_message);
-}
-
-void RenderViewTest::VerifyPageCount(int count) {
-#if defined(OS_CHROMEOS)
-  // The DidGetPrintedPagesCount message isn't sent on ChromeOS. Right now we
-  // always print all pages, and there are checks to that effect built into
-  // the print code.
-#else
-  const IPC::Message* page_cnt_msg =
-      render_thread_.sink().GetUniqueMessageMatching(
-          PrintHostMsg_DidGetPrintedPagesCount::ID);
-  ASSERT_TRUE(page_cnt_msg);
-  PrintHostMsg_DidGetPrintedPagesCount::Param post_page_count_param;
-  PrintHostMsg_DidGetPrintedPagesCount::Read(page_cnt_msg,
-                                             &post_page_count_param);
-  EXPECT_EQ(count, post_page_count_param.b);
-#endif  // defined(OS_CHROMEOS)
-}
-
-void RenderViewTest::VerifyPagesPrinted(bool printed) {
-#if defined(OS_CHROMEOS)
-  bool did_print_msg = (NULL != render_thread_.sink().GetUniqueMessageMatching(
-      PrintHostMsg_TempFileForPrintingWritten::ID));
-  ASSERT_EQ(printed, did_print_msg);
-#else
-  const IPC::Message* print_msg =
-      render_thread_.sink().GetUniqueMessageMatching(
-          PrintHostMsg_DidPrintPage::ID);
-  bool did_print_msg = (NULL != print_msg);
-  ASSERT_EQ(printed, did_print_msg);
-  if (printed) {
-    PrintHostMsg_DidPrintPage::Param post_did_print_page_param;
-    PrintHostMsg_DidPrintPage::Read(print_msg, &post_did_print_page_param);
-    EXPECT_EQ(0, post_did_print_page_param.a.page_number);
-  }
-#endif  // defined(OS_CHROMEOS)
 }
 
 const char* const kGetCoordinatesScript =

@@ -14,10 +14,10 @@
 #include "base/lazy_instance.h"
 #include "base/task.h"
 #include "chrome/browser/prefs/pref_change_registrar.h"
-#include "chrome/common/net/url_fetcher.h"
 #include "chrome/common/translate_errors.h"
 #include "content/common/notification_observer.h"
 #include "content/common/notification_registrar.h"
+#include "content/common/url_fetcher.h"
 
 template <typename T> struct DefaultSingletonTraits;
 class GURL;
@@ -68,7 +68,7 @@ class TranslateManager : public NotificationObserver,
                                   const GURL& url,
                                   const net::URLRequestStatus& status,
                                   int response_code,
-                                  const ResponseCookies& cookies,
+                                  const net::ResponseCookies& cookies,
                                   const std::string& data);
 
   // Used by unit-tests to override the default delay after which the translate

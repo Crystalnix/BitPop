@@ -10,7 +10,7 @@
   'targets': [
     {
       'target_name': 'allocator',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': 'C564F145-9172-42C3-BFCB-60FDEA124321',
       'include_dirs': [
         '.',
@@ -309,7 +309,7 @@
             '<(tcmalloc_dir)/src/debugallocation.cc',
           ],
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['OS=="linux" or OS=="freebsd" or OS=="solaris"', {
           'sources!': [
             '<(tcmalloc_dir)/src/system-alloc.h',
             '<(tcmalloc_dir)/src/windows/port.cc',
@@ -338,6 +338,7 @@
               # Do the same for heap leak checker.
               '-Wl,-u_Z21InitialMallocHook_NewPKvj,-u_Z22InitialMallocHook_MMapPKvS0_jiiix,-u_Z22InitialMallocHook_SbrkPKvi',
               '-Wl,-u_Z21InitialMallocHook_NewPKvm,-u_Z22InitialMallocHook_MMapPKvS0_miiil,-u_Z22InitialMallocHook_SbrkPKvl',
+              '-Wl,-u_ZN15HeapLeakChecker12IgnoreObjectEPKv,-u_ZN15HeapLeakChecker14UnIgnoreObjectEPKv',
           ]},
         }],
         [ 'linux_use_debugallocation==1', {

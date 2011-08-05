@@ -25,16 +25,20 @@
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/net/gaia/gaia_auth_fetcher_unittest.h"
-#include "chrome/common/net/url_fetcher.h"
 #include "chrome/test/testing_profile.h"
 #include "content/browser/browser_thread.h"
+#include "content/common/url_fetcher.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_errors.h"
 #include "net/url_request/url_request_status.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using namespace file_util;
+using file_util::CloseFile;
+using file_util::CreateAndOpenTemporaryFile;
+using file_util::CreateAndOpenTemporaryFileInDir;
+using file_util::Delete;
+using file_util::WriteFile;
 using ::testing::AnyNumber;
 using ::testing::DoAll;
 using ::testing::Eq;

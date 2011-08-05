@@ -2,31 +2,121 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/file_util.h"
+#include "chrome/common/chrome_switches.h"
+#include "chrome/common/print_messages.h"
 #include "chrome/renderer/print_web_view_helper.h"
 #include "chrome/test/render_view_test.h"
-#include "printing/image.h"
+#include "printing/print_job_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 
+#if defined(OS_WIN) || defined(OS_MACOSX)
+#include "base/file_util.h"
+#include "printing/image.h"
+
 using WebKit::WebFrame;
 using WebKit::WebString;
-using WebKit::WebView;
+#endif
 
 namespace {
 
+// A simple web page.
+const char kHelloWorldHTML[] = "<body><p>Hello World!</p></body>";
+
+// A simple webpage that prints itself.
 const char kPrintWithJSHTML[] =
     "<body>Hello<script>window.print()</script>World</body>";
 
+// A web page to simulate the print preview page.
+const char kPrintPreviewHTML[] =
+    "<body><p id=\"pdf-viewer\">Hello World!</p></body>";
+
+void CreatePrintSettingsDictionary(DictionaryValue* dict) {
+  dict->SetBoolean(printing::kSettingLandscape, false);
+  dict->SetBoolean(printing::kSettingCollate, false);
+  dict->SetBoolean(printing::kSettingColor, false);
+  dict->SetBoolean(printing::kSettingPrintToPDF, true);
+  dict->SetInteger(printing::kSettingDuplexMode, printing::SIMPLEX);
+  dict->SetInteger(printing::kSettingCopies, 1);
+  dict->SetString(printing::kSettingDeviceName, "dummy");
+}
+
 }  // namespace
+
+class PrintWebViewHelperTestBase : public RenderViewTest {
+ public:
+  PrintWebViewHelperTestBase() {}
+  ~PrintWebViewHelperTestBase() {}
+
+ protected:
+  // The renderer should be done calculating the number of rendered pages
+  // according to the specified settings defined in the mock render thread.
+  // Verify the page count is correct.
+  void VerifyPageCount(int count) {
+#if defined(OS_CHROMEOS)
+    // The DidGetPrintedPagesCount message isn't sent on ChromeOS. Right now we
+    // always print all pages, and there are checks to that effect built into
+    // the print code.
+#else
+    const IPC::Message* page_cnt_msg =
+        render_thread_.sink().GetUniqueMessageMatching(
+            PrintHostMsg_DidGetPrintedPagesCount::ID);
+    ASSERT_TRUE(page_cnt_msg);
+    PrintHostMsg_DidGetPrintedPagesCount::Param post_page_count_param;
+    PrintHostMsg_DidGetPrintedPagesCount::Read(page_cnt_msg,
+                                               &post_page_count_param);
+    EXPECT_EQ(count, post_page_count_param.b);
+#endif  // defined(OS_CHROMEOS)
+  }
+
+  // Verifies whether the pages printed or not.
+  void VerifyPagesPrinted(bool printed) {
+#if defined(OS_CHROMEOS)
+    bool did_print_msg = (render_thread_.sink().GetUniqueMessageMatching(
+        PrintHostMsg_TempFileForPrintingWritten::ID) != NULL);
+    ASSERT_EQ(printed, did_print_msg);
+#else
+    const IPC::Message* print_msg =
+        render_thread_.sink().GetUniqueMessageMatching(
+            PrintHostMsg_DidPrintPage::ID);
+    bool did_print_msg = (NULL != print_msg);
+    ASSERT_EQ(printed, did_print_msg);
+    if (printed) {
+      PrintHostMsg_DidPrintPage::Param post_did_print_page_param;
+      PrintHostMsg_DidPrintPage::Read(print_msg, &post_did_print_page_param);
+      EXPECT_EQ(0, post_did_print_page_param.a.page_number);
+    }
+#endif  // defined(OS_CHROMEOS)
+  }
+
+  DISALLOW_COPY_AND_ASSIGN(PrintWebViewHelperTestBase);
+};
+
+class PrintWebViewHelperTest : public PrintWebViewHelperTestBase {
+ public:
+  PrintWebViewHelperTest() {}
+  virtual ~PrintWebViewHelperTest() {}
+
+  virtual void SetUp() {
+    // Append the print preview switch before creating the PrintWebViewHelper.
+#if defined(GOOGLE_CHROME_BUILD) && !defined(OS_CHROMEOS) && !defined(OS_MACOSX)
+    CommandLine::ForCurrentProcess()->AppendSwitch(
+        switches::kDisablePrintPreview);
+#endif
+
+    RenderViewTest::SetUp();
+  }
+
+ protected:
+  DISALLOW_COPY_AND_ASSIGN(PrintWebViewHelperTest);
+};
 
 // Tests that printing pages work and sending and receiving messages through
 // that channel all works.
-TEST_F(RenderViewTest, OnPrintPages) {
-  // Lets simulate a print pages with Hello world.
-  LoadHTML("<body><p>Hello World!</p></body>");
+TEST_F(PrintWebViewHelperTest, OnPrintPages) {
+  LoadHTML(kHelloWorldHTML);
   PrintWebViewHelper::Get(view_)->OnPrintPages();
 
   VerifyPageCount(1);
@@ -34,7 +124,7 @@ TEST_F(RenderViewTest, OnPrintPages) {
 }
 
 // Duplicate of OnPrintPagesTest only using javascript to print.
-TEST_F(RenderViewTest, PrintWithJavascript) {
+TEST_F(PrintWebViewHelperTest, PrintWithJavascript) {
   // HTML contains a call to window.print()
   LoadHTML(kPrintWithJSHTML);
 
@@ -44,7 +134,7 @@ TEST_F(RenderViewTest, PrintWithJavascript) {
 
 // Tests that the renderer blocks window.print() calls if they occur too
 // frequently.
-TEST_F(RenderViewTest, BlockScriptInitiatedPrinting) {
+TEST_F(PrintWebViewHelperTest, BlockScriptInitiatedPrinting) {
   // Pretend user will cancel printing.
   render_thread_.set_print_dialog_user_response(false);
   // Try to print with window.print() a few times.
@@ -71,7 +161,7 @@ TEST_F(RenderViewTest, BlockScriptInitiatedPrinting) {
 // to rip out and replace most of the IPC code if we ever plan to improve
 // printing, and the comment below by sverrir suggests that it doesn't do much
 // for us anyway.
-TEST_F(RenderViewTest, PrintWithIframe) {
+TEST_F(PrintWebViewHelperTest, PrintWithIframe) {
   // Document that populates an iframe.
   const char html[] =
       "<html><body>Lorem Ipsum:"
@@ -150,7 +240,7 @@ const TestPageData kTestPages[] = {
 // hooking up Cairo to read a pdf stream, or accessing the cairo surface in the
 // metafile directly.
 #if defined(OS_WIN) || defined(OS_MACOSX)
-TEST_F(RenderViewTest, PrintLayoutTest) {
+TEST_F(PrintWebViewHelperTest, PrintLayoutTest) {
   bool baseline = false;
 
   EXPECT_TRUE(render_thread_.printer() != NULL);
@@ -201,3 +291,108 @@ TEST_F(RenderViewTest, PrintLayoutTest) {
   }
 }
 #endif
+
+// These print preview tests do not work on Chrome OS yet.
+#if !defined(OS_CHROMEOS)
+class PrintWebViewHelperPreviewTest : public PrintWebViewHelperTestBase {
+ public:
+  PrintWebViewHelperPreviewTest() {}
+  virtual ~PrintWebViewHelperPreviewTest() {}
+
+  virtual void SetUp() {
+    // Append the print preview switch before creating the PrintWebViewHelper.
+#if !defined(GOOGLE_CHROME_BUILD) || defined(OS_MACOSX)
+    CommandLine::ForCurrentProcess()->AppendSwitch(
+        switches::kEnablePrintPreview);
+#endif
+
+    RenderViewTest::SetUp();
+  }
+
+ protected:
+  void VerifyPrintPreviewFailed(bool did_fail) {
+    bool print_preview_failed = (render_thread_.sink().GetUniqueMessageMatching(
+        PrintHostMsg_PrintPreviewFailed::ID) != NULL);
+    EXPECT_EQ(did_fail, print_preview_failed);
+  }
+
+  void VerifyPrintPreviewGenerated(bool generated_preview) {
+    const IPC::Message* preview_msg =
+        render_thread_.sink().GetUniqueMessageMatching(
+            PrintHostMsg_PagesReadyForPreview::ID);
+    bool did_get_preview_msg = (NULL != preview_msg);
+    ASSERT_EQ(generated_preview, did_get_preview_msg);
+    if (did_get_preview_msg) {
+      PrintHostMsg_PagesReadyForPreview::Param preview_param;
+      PrintHostMsg_PagesReadyForPreview::Read(preview_msg, &preview_param);
+      EXPECT_NE(0, preview_param.a.document_cookie);
+      EXPECT_NE(0, preview_param.a.expected_pages_count);
+      EXPECT_NE(0U, preview_param.a.data_size);
+    }
+  }
+
+  void VerifyPrintFailed(bool did_fail) {
+    bool print_failed = (render_thread_.sink().GetUniqueMessageMatching(
+        PrintHostMsg_PrintingFailed::ID) != NULL);
+    EXPECT_EQ(did_fail, print_failed);
+  }
+
+  DISALLOW_COPY_AND_ASSIGN(PrintWebViewHelperPreviewTest);
+};
+
+// Tests that print preview work and sending and receiving messages through
+// that channel all works.
+TEST_F(PrintWebViewHelperPreviewTest, OnPrintPreview) {
+  LoadHTML(kHelloWorldHTML);
+
+  // Fill in some dummy values.
+  DictionaryValue dict;
+  CreatePrintSettingsDictionary(&dict);
+  PrintWebViewHelper::Get(view_)->OnPrintPreview(dict);
+
+  VerifyPrintPreviewFailed(false);
+  VerifyPrintPreviewGenerated(true);
+  VerifyPagesPrinted(false);
+}
+
+// Tests that print preview fails and receiving error messages through
+// that channel all works.
+TEST_F(PrintWebViewHelperPreviewTest, OnPrintPreviewFail) {
+  LoadHTML(kHelloWorldHTML);
+
+  // An empty dictionary should fail.
+  DictionaryValue empty_dict;
+  PrintWebViewHelper::Get(view_)->OnPrintPreview(empty_dict);
+
+  VerifyPrintPreviewFailed(true);
+  VerifyPrintPreviewGenerated(false);
+  VerifyPagesPrinted(false);
+}
+
+// Tests that printing from print preview works and sending and receiving
+// messages through that channel all works.
+TEST_F(PrintWebViewHelperPreviewTest, OnPrintForPrintPreview) {
+  LoadHTML(kPrintPreviewHTML);
+
+  // Fill in some dummy values.
+  DictionaryValue dict;
+  CreatePrintSettingsDictionary(&dict);
+  PrintWebViewHelper::Get(view_)->OnPrintForPrintPreview(dict);
+
+  VerifyPrintFailed(false);
+  VerifyPagesPrinted(true);
+}
+
+// Tests that printing from print preview fails and receiving error messages
+// through that channel all works.
+TEST_F(PrintWebViewHelperPreviewTest, OnPrintForPrintPreviewFail) {
+  LoadHTML(kPrintPreviewHTML);
+
+  // An empty dictionary should fail.
+  DictionaryValue empty_dict;
+  PrintWebViewHelper::Get(view_)->OnPrintForPrintPreview(empty_dict);
+
+  VerifyPrintFailed(true);
+  VerifyPagesPrinted(false);
+}
+#endif  // !defined(OS_CHROMEOS)

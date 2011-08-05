@@ -18,6 +18,7 @@
 #include "content/browser/browser_thread.h"
 
 class FilePath;
+class PrefModelAssociator;
 class PrefNotifier;
 class PrefStore;
 
@@ -56,6 +57,7 @@ class PrefValueStore {
                  PrefStore* recommended_platform_prefs,
                  PrefStore* recommended_cloud_prefs,
                  PrefStore* default_prefs,
+                 PrefModelAssociator* pref_sync_associator,
                  PrefNotifier* pref_notifier);
   virtual ~PrefValueStore();
 
@@ -69,6 +71,7 @@ class PrefValueStore {
                                      PrefStore* recommended_platform_prefs,
                                      PrefStore* recommended_cloud_prefs,
                                      PrefStore* default_prefs,
+                                     PrefModelAssociator* pref_sync_associator,
                                      PrefNotifier* pref_notifier);
 
   // Gets the value for the given preference name that has the specified value
@@ -152,7 +155,7 @@ class PrefValueStore {
    private:
     // PrefStore::Observer implementation.
     virtual void OnPrefValueChanged(const std::string& key);
-    virtual void OnInitializationCompleted();
+    virtual void OnInitializationCompleted(bool succeeded);
 
     // PrefValueStore this keeper is part of.
     PrefValueStore* pref_value_store_;
@@ -211,7 +214,7 @@ class PrefValueStore {
   void OnPrefValueChanged(PrefStoreType type, const std::string& key);
 
   // Handle the event that the store for |type| has completed initialization.
-  void OnInitializationCompleted(PrefStoreType type);
+  void OnInitializationCompleted(PrefStoreType type, bool succeeded);
 
   // Initializes a pref store keeper. Sets up a PrefStoreKeeper that will take
   // ownership of the passed |pref_store|.
@@ -233,6 +236,9 @@ class PrefValueStore {
   // Keeps the PrefStore references in order of precedence.
   PrefStoreKeeper pref_stores_[PREF_STORE_TYPE_MAX + 1];
 
+  // The associator for syncing preferences.
+  PrefModelAssociator* pref_sync_associator_;
+
   // Used for generating PREF_CHANGED and PREF_INITIALIZATION_COMPLETED
   // notifications. This is a weak reference, since the notifier is owned by the
   // corresponding PrefService.
@@ -240,6 +246,9 @@ class PrefValueStore {
 
   // A mapping of preference names to their registered types.
   PrefTypeMap pref_types_;
+
+  // True if not all of the PrefStores were initialized successfully.
+  bool initialization_failed_;
 
   DISALLOW_COPY_AND_ASSIGN(PrefValueStore);
 };

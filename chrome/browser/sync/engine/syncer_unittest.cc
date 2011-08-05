@@ -14,6 +14,7 @@
 
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/stringprintf.h"
 #include "base/string_number_conversions.h"
 #include "build/build_config.h"
 #include "chrome/browser/sync/engine/conflict_resolver.h"
@@ -26,6 +27,7 @@
 #include "chrome/browser/sync/engine/syncer_util.h"
 #include "chrome/browser/sync/engine/syncproto.h"
 #include "chrome/browser/sync/protocol/sync.pb.h"
+#include "chrome/browser/sync/protocol/bookmark_specifics.pb.h"
 #include "chrome/browser/sync/sessions/sync_session_context.h"
 #include "chrome/browser/sync/syncable/directory_manager.h"
 #include "chrome/browser/sync/syncable/model_type.h"
@@ -163,7 +165,7 @@ class SyncerTest : public testing::Test,
 
   bool SyncShareAsDelegate() {
     scoped_ptr<SyncSession> session(MakeSession());
-    syncer_->SyncShare(session.get());
+    syncer_->SyncShare(session.get(), SYNCER_BEGIN, SYNCER_END);
     return session->HasMoreToSync();
   }
 
@@ -234,13 +236,13 @@ class SyncerTest : public testing::Test,
   void SyncRepeatedlyToTriggerConflictResolution(SyncSession* session) {
     // We should trigger after less than 6 syncs, but extra does no harm.
     for (int i = 0 ; i < 6 ; ++i)
-      syncer_->SyncShare(session);
+      syncer_->SyncShare(session, SYNCER_BEGIN, SYNCER_END);
   }
   void SyncRepeatedlyToTriggerStuckSignal(SyncSession* session) {
     // We should trigger after less than 10 syncs, but we want to avoid brittle
     // tests.
     for (int i = 0 ; i < 12 ; ++i)
-      syncer_->SyncShare(session);
+      syncer_->SyncShare(session, SYNCER_BEGIN, SYNCER_END);
   }
   sync_pb::EntitySpecifics DefaultBookmarkSpecifics() {
     sync_pb::EntitySpecifics result;
@@ -603,7 +605,7 @@ TEST_F(SyncerTest, TestGetUnsyncedAndSimpleCommit) {
   }
 
   StatusController* status = session_->status_controller();
-  syncer_->SyncShare(session_.get());
+  syncer_->SyncShare(session_.get(), SYNCER_BEGIN, SYNCER_END);
   EXPECT_TRUE(2 == status->unsynced_handles().size());
   ASSERT_TRUE(2 == mock_server_->committed_ids().size());
   // If this test starts failing, be aware other sort orders could be valid.
@@ -651,7 +653,7 @@ TEST_F(SyncerTest, TestPurgeWhileUnsynced) {
   dir->PurgeEntriesWithTypeIn(types_to_purge);
 
   StatusController* status = session_->status_controller();
-  syncer_->SyncShare(session_.get());
+  syncer_->SyncShare(session_.get(), SYNCER_BEGIN, SYNCER_END);
   EXPECT_EQ(2U, status->unsynced_handles().size());
   ASSERT_EQ(2U, mock_server_->committed_ids().size());
   // If this test starts failing, be aware other sort orders could be valid.
@@ -690,7 +692,7 @@ TEST_F(SyncerTest, TestPurgeWhileUnapplied) {
   types_to_purge.insert(syncable::BOOKMARKS);
   dir->PurgeEntriesWithTypeIn(types_to_purge);
 
-  syncer_->SyncShare(session_.get());
+  syncer_->SyncShare(session_.get(), SYNCER_BEGIN, SYNCER_END);
   dir->SaveChanges();
   {
     ReadTransaction rt(dir, __FILE__, __LINE__);
@@ -896,7 +898,7 @@ TEST_F(SyncerTest, TestCommitListOrderingWithNesting) {
     }
   }
 
-  syncer_->SyncShare(session_.get());
+  syncer_->SyncShare(session_.get(), SYNCER_BEGIN, SYNCER_END);
   EXPECT_TRUE(6 == session_->status_controller()->unsynced_handles().size());
   ASSERT_TRUE(6 == mock_server_->committed_ids().size());
   // This test will NOT unroll deletes because SERVER_PARENT_ID is not set.
@@ -966,7 +968,7 @@ TEST_F(SyncerTest, TestCommitListOrderingWithNewItems) {
     child.Put(syncable::BASE_VERSION, 1);
   }
 
-  syncer_->SyncShare(session_.get());
+  syncer_->SyncShare(session_.get(), SYNCER_BEGIN, SYNCER_END);
   EXPECT_TRUE(6 == session_->status_controller()->unsynced_handles().size());
   ASSERT_TRUE(6 == mock_server_->committed_ids().size());
   // If this test starts failing, be aware other sort orders could be valid.
@@ -1008,7 +1010,7 @@ TEST_F(SyncerTest, TestCommitListOrderingCounterexample) {
     child2.Put(syncable::BASE_VERSION, 1);
   }
 
-  syncer_->SyncShare(session_.get());
+  syncer_->SyncShare(session_.get(), SYNCER_BEGIN, SYNCER_END);
   EXPECT_TRUE(3 == session_->status_controller()->unsynced_handles().size());
   ASSERT_TRUE(3 == mock_server_->committed_ids().size());
   // If this test starts failing, be aware other sort orders could be valid.
@@ -1057,7 +1059,7 @@ TEST_F(SyncerTest, TestCommitListOrderingAndNewParent) {
     child.Put(syncable::BASE_VERSION, 1);
   }
 
-  syncer_->SyncShare(session_.get());
+  syncer_->SyncShare(session_.get(), SYNCER_BEGIN, SYNCER_END);
   EXPECT_TRUE(3 == session_->status_controller()->unsynced_handles().size());
   ASSERT_TRUE(3 == mock_server_->committed_ids().size());
   // If this test starts failing, be aware other sort orders could be valid.
@@ -1132,7 +1134,7 @@ TEST_F(SyncerTest, TestCommitListOrderingAndNewParentAndChild) {
     meta_handle_b = child.Get(syncable::META_HANDLE);
   }
 
-  syncer_->SyncShare(session_.get());
+  syncer_->SyncShare(session_.get(), SYNCER_BEGIN, SYNCER_END);
   EXPECT_TRUE(3 == session_->status_controller()->unsynced_handles().size());
   ASSERT_TRUE(3 == mock_server_->committed_ids().size());
   // If this test starts failing, be aware other sort orders could be valid.
@@ -1234,7 +1236,7 @@ TEST_F(SyncerTest, IllegalAndLegalUpdates) {
   // until an item with the server ID "-80" arrives.
   mock_server_->AddUpdateDirectory(3, -80, "bad_parent", 10, 10);
 
-  syncer_->SyncShare(session_.get());
+  syncer_->SyncShare(session_.get(), SYNCER_BEGIN, SYNCER_END);
   StatusController* status = session_->status_controller();
 
   // Id 3 should be in conflict now.
@@ -1252,7 +1254,7 @@ TEST_F(SyncerTest, IllegalAndLegalUpdates) {
   mock_server_->AddUpdateDirectory(100, 9, "bad_parent_child2", 10, 10);
   mock_server_->AddUpdateDirectory(10, 0, "dir_to_bookmark", 10, 10);
 
-  syncer_->SyncShare(session_.get());
+  syncer_->SyncShare(session_.get(), SYNCER_BEGIN, SYNCER_END);
   // The three items with an unresolved parent should be unapplied (3, 9, 100).
   // The name clash should also still be in conflict.
   EXPECT_EQ(3, status->TotalNumConflictingItems());
@@ -1293,11 +1295,11 @@ TEST_F(SyncerTest, IllegalAndLegalUpdates) {
 
   // Flip the is_dir bit: should fail verify & be dropped.
   mock_server_->AddUpdateBookmark(10, 0, "dir_to_bookmark", 20, 20);
-  syncer_->SyncShare(session_.get());
+  syncer_->SyncShare(session_.get(), SYNCER_BEGIN, SYNCER_END);
 
   // Version number older than last known: should fail verify & be dropped.
   mock_server_->AddUpdateDirectory(4, 0, "old_version", 10, 10);
-  syncer_->SyncShare(session_.get());
+  syncer_->SyncShare(session_.get(), SYNCER_BEGIN, SYNCER_END);
   {
     ReadTransaction trans(dir, __FILE__, __LINE__);
 
@@ -2033,8 +2035,8 @@ TEST_F(SyncerTest, UnappliedUpdateDuringCommit) {
     entry.Put(SERVER_SPECIFICS, DefaultBookmarkSpecifics());
     entry.Put(IS_DEL, false);
   }
-  syncer_->SyncShare(session_.get());
-  syncer_->SyncShare(session_.get());
+  syncer_->SyncShare(session_.get(), SYNCER_BEGIN, SYNCER_END);
+  syncer_->SyncShare(session_.get(), SYNCER_BEGIN, SYNCER_END);
   EXPECT_TRUE(0 == session_->status_controller()->TotalNumConflictingItems());
   saw_syncer_event_ = false;
 }
@@ -2064,7 +2066,7 @@ TEST_F(SyncerTest, DeletingEntryInFolder) {
     entry.Put(IS_UNSYNCED, true);
     existing_metahandle = entry.Get(META_HANDLE);
   }
-  syncer_->SyncShare(session_.get());
+  syncer_->SyncShare(session_.get(), SYNCER_BEGIN, SYNCER_END);
   {
     WriteTransaction trans(dir, UNITTEST, __FILE__, __LINE__);
     MutableEntry newfolder(&trans, CREATE, trans.root_id(), "new");
@@ -2082,7 +2084,7 @@ TEST_F(SyncerTest, DeletingEntryInFolder) {
     newfolder.Put(IS_DEL, true);
     existing.Put(IS_DEL, true);
   }
-  syncer_->SyncShare(session_.get());
+  syncer_->SyncShare(session_.get(), SYNCER_BEGIN, SYNCER_END);
   StatusController* status(session_->status_controller());
   EXPECT_TRUE(0 == status->error_counters().num_conflicting_commits);
 }
@@ -2188,7 +2190,7 @@ TEST_F(SyncerTest, CommitManyItemsInOneGo) {
   {
     WriteTransaction trans(dir, UNITTEST, __FILE__, __LINE__);
     for (uint32 i = 0; i < items_to_commit; i++) {
-      string nameutf8 = StringPrintf("%d", i);
+      string nameutf8 = base::StringPrintf("%d", i);
       string name(nameutf8.begin(), nameutf8.end());
       MutableEntry e(&trans, CREATE, trans.root_id(), name);
       e.Put(IS_UNSYNCED, true);
@@ -3581,7 +3583,7 @@ TEST_F(SyncerTest, OneBajillionUpdates) {
     mock_server_->AddUpdateDirectory(item_id, parent_id, "dude", 1, 1);
   }
 
-  syncer_->SyncShare(session_.get());
+  syncer_->SyncShare(session_.get(), SYNCER_BEGIN, SYNCER_END);
   EXPECT_FALSE(session_->status_controller()->syncer_status().syncer_stuck);
 }
 
@@ -3600,7 +3602,7 @@ TEST_F(SyncerTest, LongChangelistWithApplicationConflict) {
   mock_server_->AddUpdateDirectory(stuck_entry_id,
       folder_id, "stuck", 1, 1);
   mock_server_->SetChangesRemaining(depth - 1);
-  syncer_->SyncShare(session_.get());
+  syncer_->SyncShare(session_.get(), SYNCER_BEGIN, SYNCER_END);
 
   // Buffer up a very long series of downloads.
   // We should never be stuck (conflict resolution shouldn't
@@ -3611,7 +3613,7 @@ TEST_F(SyncerTest, LongChangelistWithApplicationConflict) {
     mock_server_->SetChangesRemaining(depth - i);
   }
 
-  syncer_->SyncShare(session_.get());
+  syncer_->SyncShare(session_.get(), SYNCER_BEGIN, SYNCER_END);
   EXPECT_FALSE(session_->status_controller()->syncer_status().syncer_stuck);
 
   // Ensure our folder hasn't somehow applied.
@@ -3726,24 +3728,6 @@ TEST_F(SyncerTest, TestMoveSanitizedNamedFolder) {
   // We use the same sync ts as before so our times match up.
   mock_server_->AddUpdateDirectory(2, 1, ":::", 2, 2);
   SyncShareAsDelegate();
-}
-
-TEST(SortedCollectionsIntersect, SortedCollectionsIntersectTest) {
-  int negative[] = {-3, -2, -1};
-  int straddle[] = {-1, 0, 1};
-  int positive[] = {1, 2, 3};
-  EXPECT_TRUE(SortedCollectionsIntersect(negative, negative + 3,
-                                         straddle, straddle + 3));
-  EXPECT_FALSE(SortedCollectionsIntersect(negative, negative + 3,
-                                          positive, positive + 3));
-  EXPECT_TRUE(SortedCollectionsIntersect(straddle, straddle + 3,
-                                         positive, positive + 3));
-  EXPECT_FALSE(SortedCollectionsIntersect(straddle + 2, straddle + 3,
-                                          positive, positive));
-  EXPECT_FALSE(SortedCollectionsIntersect(straddle, straddle + 3,
-                                          positive + 1, positive + 1));
-  EXPECT_TRUE(SortedCollectionsIntersect(straddle, straddle + 3,
-                                         positive, positive + 1));
 }
 
 // Don't crash when this occurs.

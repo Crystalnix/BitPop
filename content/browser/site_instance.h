@@ -50,6 +50,9 @@ class BrowsingInstance;
 class SiteInstance : public base::RefCounted<SiteInstance>,
                      public NotificationObserver {
  public:
+  // Returns a unique ID for this SiteInstance.
+  int32 id() { return id_; }
+
   // Get the BrowsingInstance to which this SiteInstance belongs.
   BrowsingInstance* browsing_instance() { return browsing_instance_; }
 
@@ -101,6 +104,11 @@ class SiteInstance : public base::RefCounted<SiteInstance>,
   // TODO(creis): This may be an argument to build a pass_refptr<T> class, as
   // Darin suggests.
   SiteInstance* GetRelatedSiteInstance(const GURL& url);
+
+  // Returns whether this SiteInstance has a process that is the wrong type for
+  // the given URL.  If so, the browser should force a process swap when
+  // navigating to the URL.
+  bool HasWrongProcessForURL(const GURL& url) const;
 
   // Factory method to create a new SiteInstance.  This will create a new
   // new BrowsingInstance, so it should only be used when creating a new tab
@@ -161,6 +169,12 @@ class SiteInstance : public base::RefCounted<SiteInstance>,
   virtual void Observe(NotificationType type,
                        const NotificationSource& source,
                        const NotificationDetails& details);
+
+  // The next available SiteInstance ID.
+  static int32 next_site_instance_id_;
+
+  // A unique ID for this SiteInstance.
+  int32 id_;
 
   NotificationRegistrar registrar_;
 

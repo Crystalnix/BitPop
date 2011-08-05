@@ -12,7 +12,7 @@
         {
           'target_name': 'libevent',
           'product_name': 'event',
-          'type': '<(library)',
+          'type': 'static_library',
           'sources': [
             'buffer.c',
             'evbuffer.c',
@@ -50,7 +50,7 @@
                 ],
               },
             }],
-            [ 'OS == "mac" or OS == "freebsd" or OS == "openbsd" or OS == "solaris"', {
+            [ 'OS == "mac" or OS == "freebsd" or OS == "openbsd"', {
               'sources': [ 'kqueue.c' ],
               'include_dirs': [ 'mac' ]
             }],

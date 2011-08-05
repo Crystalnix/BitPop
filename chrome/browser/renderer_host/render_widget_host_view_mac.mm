@@ -6,6 +6,7 @@
 
 #include "chrome/browser/renderer_host/render_widget_host_view_mac.h"
 
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/mac/scoped_cftyperef.h"
 #import "base/mac/scoped_nsautorelease_pool.h"
@@ -15,23 +16,25 @@
 #include "base/sys_info.h"
 #include "base/sys_string_conversions.h"
 #import "chrome/browser/accessibility/browser_accessibility_cocoa.h"
-#include "chrome/browser/accessibility/browser_accessibility_state.h"
 #include "chrome/browser/browser_trial.h"
-#include "chrome/browser/gpu_process_host_ui_shim.h"
 #import "chrome/browser/renderer_host/accelerated_plugin_view_mac.h"
+#import "chrome/browser/renderer_host/text_input_client_mac.h"
 #include "chrome/browser/spellchecker_platform_engine.h"
 #import "chrome/browser/ui/cocoa/rwhvm_editcommand_helper.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
 #include "chrome/common/render_messages.h"
+#include "chrome/common/spellcheck_messages.h"
 #include "content/browser/browser_thread.h"
-#include "content/browser/gpu_process_host.h"
+#include "content/browser/gpu/gpu_process_host.h"
+#include "content/browser/gpu/gpu_process_host_ui_shim.h"
 #include "content/browser/plugin_process_host.h"
 #include "content/browser/renderer_host/backing_store_mac.h"
 #include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/renderer_host/render_view_host.h"
+#include "content/browser/renderer_host/render_view_host_observer.h"
 #include "content/browser/renderer_host/render_widget_host.h"
 #include "content/common/edit_command.h"
-#include "content/common/gpu_messages.h"
+#include "content/common/gpu/gpu_messages.h"
 #include "content/common/native_web_keyboard_event.h"
 #include "content/common/plugin_messages.h"
 #include "content/common/view_messages.h"
@@ -59,10 +62,14 @@ static inline int ToWebKitModifiers(NSUInteger flags) {
   return modifiers;
 }
 
-@interface RenderWidgetHostViewCocoa (Private)
+// Private methods:
+@interface RenderWidgetHostViewCocoa ()
+@property(nonatomic, assign) NSRange selectedRange;
+@property(nonatomic, assign) NSRange markedRange;
+
 + (BOOL)shouldAutohideCursorForEvent:(NSEvent*)event;
 - (id)initWithRenderWidgetHostViewMac:(RenderWidgetHostViewMac*)r;
-- (void)keyEvent:(NSEvent *)theEvent wasKeyEquivalent:(BOOL)equiv;
+- (void)keyEvent:(NSEvent*)theEvent wasKeyEquivalent:(BOOL)equiv;
 - (void)cancelChildPopups;
 - (void)checkForPluginImeCancellation;
 @end
@@ -169,6 +176,35 @@ NSWindow* ApparentWindowForView(NSView* view) {
   return enclosing_window;
 }
 
+// Filters the message sent to RenderViewHost to know if spellchecking is
+// enabled or not for the currently focused element.
+class SpellCheckRenderViewObserver : public RenderViewHostObserver {
+ public:
+  SpellCheckRenderViewObserver(RenderViewHost* host,
+                               RenderWidgetHostViewMac* view)
+    : RenderViewHostObserver(host),
+      view_(view) {
+  }
+
+ private:
+  // RenderViewHostObserver implementation.
+  virtual bool OnMessageReceived(const IPC::Message& message) {
+    bool handled = true;
+    IPC_BEGIN_MESSAGE_MAP(SpellCheckRenderViewObserver, message)
+      IPC_MESSAGE_HANDLER(SpellCheckHostMsg_ToggleSpellCheck,
+                          OnToggleSpellCheck)
+      IPC_MESSAGE_UNHANDLED(handled = false)
+    IPC_END_MESSAGE_MAP()
+    return handled;
+  }
+
+  void OnToggleSpellCheck(bool enabled, bool checked) {
+    view_->ToggleSpellCheck(enabled, checked);
+  }
+
+  RenderWidgetHostViewMac* view_;
+};
+
 }  // namespace
 
 // RenderWidgetHostView --------------------------------------------------------
@@ -196,7 +232,9 @@ RenderWidgetHostViewMac::RenderWidgetHostViewMac(RenderWidgetHost* widget)
     : render_widget_host_(widget),
       about_to_validate_and_paint_(false),
       call_set_needs_display_in_rect_pending_(false),
-      text_input_type_(WebKit::WebTextInputTypeNone),
+      text_input_type_(ui::TEXT_INPUT_TYPE_NONE),
+      spellcheck_enabled_(false),
+      spellcheck_checked_(false),
       is_loading_(false),
       is_hidden_(false),
       shutdown_factory_(this),
@@ -209,10 +247,9 @@ RenderWidgetHostViewMac::RenderWidgetHostViewMac(RenderWidgetHost* widget)
                   initWithRenderWidgetHostViewMac:this] autorelease];
   render_widget_host_->set_view(this);
 
-  // Turn on accessibility only if VoiceOver is running.
-  if (IsVoiceOverRunning()) {
-    BrowserAccessibilityState::GetInstance()->OnScreenReaderDetected();
-    render_widget_host_->EnableRendererAccessibility();
+  if (render_widget_host_->IsRenderView()) {
+    new SpellCheckRenderViewObserver(
+        static_cast<RenderViewHost*>(widget), this);
   }
 }
 
@@ -341,6 +378,7 @@ gfx::NativeView RenderWidgetHostViewMac::GetNativeView() {
 
 void RenderWidgetHostViewMac::MovePluginWindows(
     const std::vector<webkit::npapi::WebPluginGeometry>& moves) {
+  TRACE_EVENT0("browser", "RenderWidgetHostViewMac::MovePluginWindows");
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   // Handle movement of accelerated plugins, which are the only "windowed"
   // plugins that exist on the Mac.
@@ -429,10 +467,10 @@ gfx::Rect RenderWidgetHostViewMac::GetViewBounds() const {
 
 void RenderWidgetHostViewMac::UpdateCursor(const WebCursor& cursor) {
   current_cursor_ = cursor;
-  UpdateCursorIfOverSelf();
+  UpdateCursorIfNecessary();
 }
 
-void RenderWidgetHostViewMac::UpdateCursorIfOverSelf() {
+void RenderWidgetHostViewMac::UpdateCursorIfNecessary() {
   // Do something special (as Win Chromium does) for arrow cursor while loading
   // a page? TODO(avi): decide
   // Can we synchronize to the event stream? Switch to -[NSWindow
@@ -441,40 +479,45 @@ void RenderWidgetHostViewMac::UpdateCursorIfOverSelf() {
   if ([event window] != [cocoa_view_ window])
     return;
 
-  NSPoint event_location = [event locationInWindow];
-  NSPoint local_point = [cocoa_view_ convertPoint:event_location fromView:nil];
-
-  if (!NSPointInRect(local_point, [cocoa_view_ bounds]))
-    return;
-
   NSCursor* ns_cursor = current_cursor_.GetCursor();
   [ns_cursor set];
 }
 
 void RenderWidgetHostViewMac::SetIsLoading(bool is_loading) {
   is_loading_ = is_loading;
-  UpdateCursorIfOverSelf();
+  // If we ever decide to show the waiting cursor while the page is loading
+  // like Chrome does on Windows, call |UpdateCursorIfNecessary()| here.
 }
 
 void RenderWidgetHostViewMac::ImeUpdateTextInputState(
-    WebKit::WebTextInputType type,
+    ui::TextInputType type,
+    bool can_compose_inline,
     const gfx::Rect& caret_rect) {
+  // TODO(kinaba): currently, can_compose_inline is ignored and always treated
+  // as true. We need to support "can_compose_inline=false" for PPAPI plugins
+  // that may want to avoid drawing composition-text by themselves and pass
+  // the responsibility to the browser.
   if (text_input_type_ != type) {
     text_input_type_ = type;
-    if (HasFocus())
+    if (HasFocus()) {
       SetTextInputActive(true);
-  }
 
-  // We need to convert the coordinate of the cursor rectangle sent from the
-  // renderer and save it. Our input method backend uses a coordinate system
-  // whose origin is the upper-left corner of this view. On the other hand,
-  // Cocoa uses a coordinate system whose origin is the lower-left corner of
-  // this view. So, we convert the cursor rectangle and save it.
-  [cocoa_view_ setCaretRect:[cocoa_view_ flipRectToNSRect:caret_rect]];
+      // Let AppKit cache the new input context to make IMEs happy.
+      // See http://crbug.com/73039.
+      [NSApp updateWindows];
+    }
+  }
 }
 
 void RenderWidgetHostViewMac::ImeCancelComposition() {
   [cocoa_view_ cancelComposition];
+}
+
+void RenderWidgetHostViewMac::ImeCompositionRangeChanged(
+    const ui::Range& range) {
+  // The RangeChanged message is only sent with valid values. The current
+  // caret position (start == end) will be sent if there is no IME range.
+  [cocoa_view_ setMarkedRange:range.ToNSRange()];
 }
 
 void RenderWidgetHostViewMac::DidUpdateBackingStore(
@@ -532,7 +575,6 @@ void RenderWidgetHostViewMac::DidUpdateBackingStore(
 void RenderWidgetHostViewMac::RenderViewGone(base::TerminationStatus status,
                                              int error_code) {
   // TODO(darin): keep this around, and draw sad-tab into it.
-  UpdateCursorIfOverSelf();
   Destroy();
 }
 
@@ -594,8 +636,10 @@ void RenderWidgetHostViewMac::SetTooltipText(const std::wstring& tooltip_text) {
 // RenderWidgetHostViewCocoa uses the stored selection text,
 // which implements NSServicesRequests protocol.
 //
-void RenderWidgetHostViewMac::SelectionChanged(const std::string& text) {
+void RenderWidgetHostViewMac::SelectionChanged(const std::string& text,
+                                               const ui::Range& range) {
   selected_text_ = text;
+  [cocoa_view_ setSelectedRange:range.ToNSRange()];
 }
 
 bool RenderWidgetHostViewMac::IsPopup() const {
@@ -771,6 +815,8 @@ void RenderWidgetHostViewMac::AcceleratedSurfaceBuffersSwapped(
     int32 route_id,
     int gpu_host_id,
     uint64 swap_buffers_count) {
+  TRACE_EVENT0("browser",
+      "RenderWidgetHostViewMac::AcceleratedSurfaceBuffersSwapped");
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   AcceleratedPluginView* view = ViewForPluginWindowHandle(window);
   DCHECK(view);
@@ -822,6 +868,8 @@ void RenderWidgetHostViewMac::AcknowledgeSwapBuffers(
     int32 route_id,
     int gpu_host_id,
     uint64 swap_buffers_count) {
+  TRACE_EVENT1("gpu", "RenderWidgetHostViewMac::AcknowledgeSwapBuffers",
+      "swap_buffers_count", swap_buffers_count);
   // Called on the display link thread. Hand actual work off to the IO thread,
   // because |GpuProcessHost::Get()| can only be called there.
   // Currently, this is never called for plugins.
@@ -857,6 +905,11 @@ void RenderWidgetHostViewMac::AcknowledgeSwapBuffers(
   }
 }
 
+void RenderWidgetHostViewMac::ToggleSpellCheck(bool enabled, bool checked) {
+  spellcheck_enabled_ = enabled;
+  spellcheck_checked_ = checked;
+}
+
 void RenderWidgetHostViewMac::GpuRenderingStateDidChange() {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (GetRenderWidgetHost()->is_accelerated_compositing_active()) {
@@ -878,6 +931,8 @@ void RenderWidgetHostViewMac::DrawAcceleratedSurfaceInstance(
       CGLContextObj context,
       gfx::PluginWindowHandle plugin_handle,
       NSSize size) {
+  TRACE_EVENT0("browser",
+      "RenderWidgetHostViewMac::DrawAcceleratedSurfaceInstance");
   // Called on the display link thread.
   CGLSetCurrentContext(context);
 
@@ -907,12 +962,6 @@ void RenderWidgetHostViewMac::ShutdownHost() {
   // Do not touch any members at this point, |this| has been deleted.
 }
 
-bool RenderWidgetHostViewMac::IsVoiceOverRunning() {
-  NSUserDefaults* user_defaults = [NSUserDefaults standardUserDefaults];
-  [user_defaults addSuiteNamed:@"com.apple.universalaccess"];
-  return 1 == [user_defaults integerForKey:@"voiceOverOnOffKey"];
-}
-
 gfx::Rect RenderWidgetHostViewMac::GetViewCocoaBounds() const {
   return gfx::Rect(NSRectToCGRect([cocoa_view_ bounds]));
 }
@@ -930,8 +979,10 @@ gfx::Rect RenderWidgetHostViewMac::GetRootWindowRect() {
 }
 
 void RenderWidgetHostViewMac::SetActive(bool active) {
-  if (render_widget_host_)
-    render_widget_host_->SetActive(active);
+  if (render_widget_host_) {
+    render_widget_host_->Send(new ViewMsg_SetActive(
+        render_widget_host_->routing_id(), active));
+  }
   if (HasFocus())
     SetTextInputActive(active);
   if (!active)
@@ -983,12 +1034,12 @@ void RenderWidgetHostViewMac::OnAccessibilityNotifications(
 
 void RenderWidgetHostViewMac::SetTextInputActive(bool active) {
   if (active) {
-    if (text_input_type_ == WebKit::WebTextInputTypePassword)
+    if (text_input_type_ == ui::TEXT_INPUT_TYPE_PASSWORD)
       EnablePasswordInput();
     else
       DisablePasswordInput();
   } else {
-    if (text_input_type_ == WebKit::WebTextInputTypePassword)
+    if (text_input_type_ == ui::TEXT_INPUT_TYPE_PASSWORD)
       DisablePasswordInput();
   }
 }
@@ -997,7 +1048,8 @@ void RenderWidgetHostViewMac::SetTextInputActive(bool active) {
 
 @implementation RenderWidgetHostViewCocoa
 
-@synthesize caretRect = caretRect_;
+@synthesize selectedRange = selectedRange_;
+@synthesize markedRange = markedRange_;
 
 - (id)initWithRenderWidgetHostViewMac:(RenderWidgetHostViewMac*)r {
   self = [super initWithFrame:NSZeroRect];
@@ -1260,8 +1312,10 @@ void RenderWidgetHostViewMac::SetTextInputActive(bool active) {
     if (hasEditCommands_ && !hasMarkedText_)
       delayEventUntilAfterImeCompostion = YES;
   } else {
-    if (!editCommands_.empty())
-      widgetHost->ForwardEditCommandsForNextKeyEvent(editCommands_);
+    if (!editCommands_.empty()) {
+      widgetHost->Send(new ViewMsg_SetEditCommandsForNextKeyEvent(
+          widgetHost->routing_id(), editCommands_));
+    }
     widgetHost->ForwardKeyboardEvent(event);
   }
 
@@ -1324,8 +1378,10 @@ void RenderWidgetHostViewMac::SetTextInputActive(bool active) {
     // a key event with |skip_in_browser| == true won't be handled by browser,
     // thus it won't destroy the widget.
 
-    if (!editCommands_.empty())
-      widgetHost->ForwardEditCommandsForNextKeyEvent(editCommands_);
+    if (!editCommands_.empty()) {
+      widgetHost->Send(new ViewMsg_SetEditCommandsForNextKeyEvent(
+        widgetHost->routing_id(), editCommands_));
+    }
     widgetHost->ForwardKeyboardEvent(event);
 
     // Calling ForwardKeyboardEvent() could have destroyed the widget. When the
@@ -1651,31 +1707,13 @@ void RenderWidgetHostViewMac::SetTextInputActive(bool active) {
   }
 
   if (action == @selector(toggleContinuousSpellChecking:)) {
-    RenderViewHost::CommandState state;
-    state.is_enabled = false;
-    state.checked_state = RENDER_VIEW_COMMAND_CHECKED_STATE_UNCHECKED;
-    if (renderWidgetHostView_->render_widget_host_->IsRenderView()) {
-      state = static_cast<RenderViewHost*>(
-          renderWidgetHostView_->render_widget_host_)->
-              GetStateForCommand(RENDER_VIEW_COMMAND_TOGGLE_SPELL_CHECK);
-    }
     if ([(id)item respondsToSelector:@selector(setState:)]) {
       NSCellStateValue checked_state =
-          RENDER_VIEW_COMMAND_CHECKED_STATE_UNCHECKED;
-      switch (state.checked_state) {
-        case RENDER_VIEW_COMMAND_CHECKED_STATE_UNCHECKED:
-          checked_state = NSOffState;
-          break;
-        case RENDER_VIEW_COMMAND_CHECKED_STATE_CHECKED:
-          checked_state = NSOnState;
-          break;
-        case RENDER_VIEW_COMMAND_CHECKED_STATE_MIXED:
-          checked_state = NSMixedState;
-          break;
-      }
+          renderWidgetHostView_->spellcheck_checked_ ?
+              NSOnState : NSOffState;
       [(id)item setState:checked_state];
     }
-    return state.is_enabled;
+    return renderWidgetHostView_->spellcheck_enabled_;
   }
 
   return editCommand_helper_->IsMenuItemEnabled(action, self);
@@ -1781,8 +1819,9 @@ void RenderWidgetHostViewMac::SetTextInputActive(bool active) {
 }
 
 - (void)doDefaultAction:(int32)accessibilityObjectId {
-  renderWidgetHostView_->render_widget_host_->
-      AccessibilityDoDefaultAction(accessibilityObjectId);
+  RenderWidgetHost* rwh = renderWidgetHostView_->render_widget_host_;
+  rwh->Send(new ViewMsg_AccessibilityDoDefaultAction(
+      rwh->routing_id(), accessibilityObjectId));
 }
 
 // Convert a web accessibility's location in web coordinates into a cocoa
@@ -1801,9 +1840,32 @@ void RenderWidgetHostViewMac::SetTextInputActive(bool active) {
 - (void)setAccessibilityFocus:(BOOL)focus
               accessibilityId:(int32)accessibilityObjectId {
   if (focus) {
-    renderWidgetHostView_->render_widget_host_->
-        SetAccessibilityFocus(accessibilityObjectId);
+    RenderWidgetHost* rwh = renderWidgetHostView_->render_widget_host_;
+    rwh->Send(new ViewMsg_SetAccessibilityFocus(
+        rwh->routing_id(), accessibilityObjectId));
   }
+}
+
+- (void)performShowMenuAction:(BrowserAccessibilityCocoa*)accessibility {
+  // Performs a right click copying WebKit's
+  // accessibilityPerformShowMenuAction.
+  NSPoint location = [self accessibilityPointInScreen:accessibility];
+  location = [[self window] convertScreenToBase:location];
+  location.x += [accessibility size].width/2;
+  location.y += [accessibility size].height/2;
+
+  NSEvent* fakeRightClick = [NSEvent
+                           mouseEventWithType:NSRightMouseDown
+                                     location:location
+                                modifierFlags:nil
+                                    timestamp:0
+                                 windowNumber:[[self window] windowNumber]
+                                      context:[NSGraphicsContext currentContext]
+                                  eventNumber:0
+                                   clickCount:1
+                                     pressure:0];
+
+  [self mouseEvent:fakeRightClick];
 }
 
 // Spellchecking methods
@@ -1832,7 +1894,9 @@ void RenderWidgetHostViewMac::SetTextInputActive(bool active) {
 // This is also called from the Edit -> Spelling -> Check Spelling menu item.
 - (void)checkSpelling:(id)sender {
   RenderWidgetHostViewMac* thisHostView = [self renderWidgetHostViewMac];
-  thisHostView->GetRenderWidgetHost()->AdvanceToNextMisspelling();
+  RenderWidgetHost* widget = thisHostView->GetRenderWidgetHost();
+  widget->Send(new SpellCheckMsg_AdvanceToNextMisspelling(
+      widget->routing_id()));
 }
 
 // This message is sent by the spelling panel whenever a word is ignored.
@@ -1848,15 +1912,14 @@ void RenderWidgetHostViewMac::SetTextInputActive(bool active) {
 
 - (void)showGuessPanel:(id)sender {
   RenderWidgetHostViewMac* thisHostView = [self renderWidgetHostViewMac];
-  thisHostView->GetRenderWidgetHost()->ToggleSpellPanel(
-      SpellCheckerPlatform::SpellingPanelVisible());
+  RenderWidgetHost* widget = thisHostView->GetRenderWidgetHost();
+  widget->Send(new SpellCheckMsg_ToggleSpellPanel(
+      widget->routing_id(), SpellCheckerPlatform::SpellingPanelVisible()));
 }
 
 - (void)toggleContinuousSpellChecking:(id)sender {
-  if (renderWidgetHostView_->render_widget_host_->IsRenderView()) {
-    static_cast<RenderViewHost*>(renderWidgetHostView_->render_widget_host_)->
-      ToggleSpellCheck();
-  }
+  RenderWidgetHost* widget = renderWidgetHostView_->render_widget_host_;
+  widget->Send(new SpellCheckMsg_ToggleSpellCheck(widget->routing_id()));
 }
 
 // END Spellchecking methods
@@ -2121,31 +2184,34 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
 }
 
 - (NSUInteger)characterIndexForPoint:(NSPoint)thePoint {
-  NOTIMPLEMENTED();
-  return NSNotFound;
+  DCHECK([self window]);
+  // |thePoint| is in screen coordinates, but needs to be converted to WebKit
+  // coordinates (upper left origin). Scroll offsets will be taken care of in
+  // the renderer.
+  thePoint = [[self window] convertScreenToBase:thePoint];
+  thePoint = [self convertPoint:thePoint fromView:nil];
+  thePoint.y = NSHeight([self frame]) - thePoint.y;
+
+  NSUInteger point =
+      TextInputClientMac::GetInstance()->GetCharacterIndexAtPoint(
+          renderWidgetHostView_->render_widget_host_,
+          gfx::Point(thePoint.x, thePoint.y));
+  return point;
 }
 
 - (NSRect)firstRectForCharacterRange:(NSRange)theRange {
-  // An input method requests a cursor rectangle to display its candidate
-  // window.
-  // Calculate the screen coordinate of the cursor rectangle saved in
-  // RenderWidgetHostViewMac::ImeUpdateTextInputState() and send it to the
-  // input method.
-  // Since this window may be moved since we receive the cursor rectangle last
-  // time we sent the cursor rectangle to the input method, so we should map
-  // from the view coordinate to the screen coordinate every time when an input
-  // method need it.
-  NSRect resultRect = [self convertRect:caretRect_ toView:nil];
-  NSWindow* window = [self window];
-  if (window)
-    resultRect.origin = [window convertBaseToScreen:resultRect.origin];
+  NSRect rect = TextInputClientMac::GetInstance()->GetFirstRectForRange(
+      renderWidgetHostView_->render_widget_host_, theRange);
 
-  return resultRect;
-}
-
-- (NSRange)selectedRange {
-  // Return the selected range saved in the setMarkedText method.
-  return hasMarkedText_ ? selectedRange_ : NSMakeRange(NSNotFound, 0);
+  // The returned rectangle is in WebKit coordinates (upper left origin), so
+  // flip the coordinate system and then convert it into screen coordinates for
+  // return.
+  NSRect viewFrame = [self frame];
+  rect.origin.y = NSHeight(viewFrame) - rect.origin.y;
+  rect.origin.y -= rect.size.height;
+  rect = [self convertRectToBase:rect];
+  rect.origin = [[self window] convertBaseToScreen:rect.origin];
+  return rect;
 }
 
 - (NSRange)markedRange {
@@ -2158,12 +2224,11 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
   return hasMarkedText_ ? markedRange_ : NSMakeRange(NSNotFound, 0);
 }
 
-- (NSAttributedString *)attributedSubstringFromRange:(NSRange)range {
-  // TODO(hbono): Even though many input method works without implementing
-  // this method, we need to save a copy of the string in the setMarkedText
-  // method and create a NSAttributedString with the given range.
-  // http://crbug.com/37715
-  return nil;
+- (NSAttributedString*)attributedSubstringFromRange:(NSRange)range {
+  NSAttributedString* str =
+      TextInputClientMac::GetInstance()->GetAttributedSubstringFromRange(
+          renderWidgetHostView_->render_widget_host_, range);
+  return str;
 }
 
 - (NSInteger)conversationIdentifier {
@@ -2178,8 +2243,8 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
     return [[ComplexTextInputPanel sharedComplexTextInputPanel] inputContext];
 
   switch(renderWidgetHostView_->text_input_type_) {
-    case WebKit::WebTextInputTypeNone:
-    case WebKit::WebTextInputTypePassword:
+    case ui::TEXT_INPUT_TYPE_NONE:
+    case ui::TEXT_INPUT_TYPE_PASSWORD:
       return nil;
     default:
       return [super inputContext];
@@ -2222,7 +2287,7 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
   NSString* im_text = isAttributedString ? [string string] : string;
   int length = [im_text length];
 
-  markedRange_ = NSMakeRange(0, length);
+  // |markedRange_| will get set on a callback from ImeSetComposition().
   selectedRange_ = newSelRange;
   markedText_ = base::SysNSStringToUTF16(im_text);
   hasMarkedText_ = (length > 0);
@@ -2270,7 +2335,8 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
     if (!StartsWithASCII(command, "insert", false))
       editCommands_.push_back(EditCommand(command, ""));
   } else {
-    renderWidgetHostView_->render_widget_host_->ForwardEditCommand(command, "");
+    RenderWidgetHost* rwh = renderWidgetHostView_->render_widget_host_;
+    rwh->Send(new ViewMsg_ExecuteEditCommand(rwh->routing_id(), command, ""));
   }
 }
 
@@ -2376,8 +2442,9 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
 
 - (void)pasteAsPlainText:(id)sender {
   if (renderWidgetHostView_->render_widget_host_->IsRenderView()) {
-    static_cast<RenderViewHost*>(renderWidgetHostView_->render_widget_host_)->
-      ForwardEditCommand("PasteAndMatchStyle", "");
+      RenderWidgetHost* rwh = renderWidgetHostView_->render_widget_host_;
+    rwh->Send(new ViewMsg_ExecuteEditCommand(
+        rwh->routing_id(), "PasteAndMatchStyle", ""));
   }
 }
 
@@ -2468,7 +2535,7 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
   BOOL returnTypeIsString = [returnType isEqual:NSStringPboardType];
   BOOL hasText = !renderWidgetHostView_->selected_text().empty();
   BOOL takesText =
-      renderWidgetHostView_->text_input_type_ != WebKit::WebTextInputTypeNone;
+      renderWidgetHostView_->text_input_type_ != ui::TEXT_INPUT_TYPE_NONE;
 
   if (sendTypeIsString && hasText && !returnType) {
     requestor = self;
@@ -2481,6 +2548,20 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
                                       returnType:returnType];
   }
   return requestor;
+}
+
+- (void)viewWillStartLiveResize {
+  [super viewWillStartLiveResize];
+  RenderWidgetHost* widget = renderWidgetHostView_->render_widget_host_;
+  if (widget)
+    widget->Send(new ViewMsg_SetInLiveResize(widget->routing_id(), true));
+}
+
+- (void)viewDidEndLiveResize {
+  [super viewDidEndLiveResize];
+  RenderWidgetHost* widget = renderWidgetHostView_->render_widget_host_;
+  if (widget)
+    widget->Send(new ViewMsg_SetInLiveResize(widget->routing_id(), false));
 }
 
 @end

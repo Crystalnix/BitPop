@@ -19,6 +19,7 @@
 #include "chrome/browser/ui/views/window.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/common/chrome_switches.h"
+#include "content/browser/browser_thread.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "net/base/escape.h"
@@ -26,7 +27,8 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/skbitmap_operations.h"
-#include "views/controls/menu/menu_2.h"
+#include "views/controls/menu/menu_item_view.h"
+#include "views/controls/menu/submenu_view.h"
 #include "views/window/window.h"
 
 namespace {
@@ -45,9 +47,156 @@ std::string EscapeAmpersands(const std::string& input) {
   return str;
 }
 
+// Offsets for views menu ids (main menu and submenu ids use the same
+// namespace).
+const int kMainIndexOffset = 1000;
+const int kVPNIndexOffset  = 2000;
+const int kMoreIndexOffset = 3000;
+
+// Default minimum width in pixels of the menu to prevent unnecessary
+// resizing as networks are updated.
+const int kDefaultMinimumWidth = 280;
+
+// Menu item margins.
+const int kTopMargin = 5;
+const int kBottomMargin = 7;
+
 }  // namespace
 
 namespace chromeos {
+
+class NetworkMenuModel : public views::MenuDelegate {
+ public:
+  struct NetworkInfo {
+    NetworkInfo();
+    ~NetworkInfo();
+
+    // "ethernet" | "wifi" | "cellular" | "other".
+    std::string network_type;
+    // "connected" | "connecting" | "disconnected" | "error".
+    std::string status;
+    // status message or error message, empty if unknown status.
+    std::string message;
+    // IP address (if network is active, empty otherwise)
+    std::string ip_address;
+    // Remembered passphrase.
+    std::string passphrase;
+    // true if the network requires a passphrase.
+    bool need_passphrase;
+    // true if the network is currently remembered.
+    bool remembered;
+    // true if the network is auto connect (meaningful for Wifi only).
+    bool auto_connect;
+  };
+
+  explicit NetworkMenuModel(NetworkMenu* owner);
+  virtual ~NetworkMenuModel();
+
+  // Connect or reconnect to the network at |index|.
+  // If remember >= 0, set the favorite state of the network.
+  void ConnectToNetworkAt(int index,
+                          const std::string& passphrase,
+                          const std::string& ssid,
+                          int remember) const;
+
+  // Called by NetworkMenu::RunMenu to initialize list of menu items.
+  virtual void InitMenuItems(bool is_browser_mode,
+                             bool should_open_button_options) = 0;
+
+  // PopulateMenu() clears and reinstalls the menu items defined in this
+  // instance by calling PopulateMenuItem() on each one.  Subclasses override
+  // PopulateMenuItem(), transform command_id into the correct range for
+  // the menu, and call the base class PopulateMenuItem().
+  virtual void PopulateMenu(views::MenuItemView* menu);
+  virtual void PopulateMenuItem(views::MenuItemView* menu,
+                                int index,
+                                int command_id);
+
+  // Menu item field accessors.
+  int GetItemCount() const;
+  ui::MenuModel::ItemType GetTypeAt(int index) const;
+  string16 GetLabelAt(int index) const;
+  const gfx::Font* GetLabelFontAt(int index) const;
+  bool IsItemCheckedAt(int index) const;
+  bool GetIconAt(int index, SkBitmap* icon);
+  bool IsEnabledAt(int index) const;
+  NetworkMenuModel* GetSubmenuModelAt(int index) const;
+  void ActivatedAt(int index);
+
+ protected:
+  enum MenuItemFlags {
+    FLAG_NONE              = 0,
+    FLAG_DISABLED          = 1 << 0,
+    FLAG_TOGGLE_ETHERNET   = 1 << 1,
+    FLAG_TOGGLE_WIFI       = 1 << 2,
+    FLAG_TOGGLE_CELLULAR   = 1 << 3,
+    FLAG_TOGGLE_OFFLINE    = 1 << 4,
+    FLAG_ASSOCIATED        = 1 << 5,
+    FLAG_ETHERNET          = 1 << 6,
+    FLAG_WIFI              = 1 << 7,
+    FLAG_CELLULAR          = 1 << 8,
+    FLAG_OPTIONS           = 1 << 9,
+    FLAG_ADD_WIFI          = 1 << 10,
+    FLAG_ADD_CELLULAR      = 1 << 11,
+    FLAG_VPN               = 1 << 12,
+    FLAG_ADD_VPN           = 1 << 13,
+    FLAG_DISCONNECT_VPN    = 1 << 14,
+    FLAG_VIEW_ACCOUNT      = 1 << 15,
+  };
+
+  struct MenuItem {
+    MenuItem()
+        : type(ui::MenuModel::TYPE_SEPARATOR),
+          sub_menu_model(NULL),
+          flags(0) {}
+    MenuItem(ui::MenuModel::ItemType type, string16 label, SkBitmap icon,
+             const std::string& service_path, int flags)
+        : type(type),
+          label(label),
+          icon(icon),
+          service_path(service_path),
+          sub_menu_model(NULL),
+          flags(flags) {}
+    MenuItem(ui::MenuModel::ItemType type, string16 label, SkBitmap icon,
+             NetworkMenuModel* sub_menu_model, int flags)
+        : type(type),
+          label(label),
+          icon(icon),
+          sub_menu_model(sub_menu_model),
+          flags(flags) {}
+
+    ui::MenuModel::ItemType type;
+    string16 label;
+    SkBitmap icon;
+    std::string service_path;
+    NetworkMenuModel* sub_menu_model;  // Weak.
+    int flags;
+  };
+  typedef std::vector<MenuItem> MenuItemVector;
+
+  // Our menu items.
+  MenuItemVector menu_items_;
+
+  NetworkMenu* owner_;  // Weak pointer to NetworkMenu that owns this MenuModel.
+
+  // Top up URL of the current carrier on empty string if there's none.
+  std::string top_up_url_;
+
+  // Carrier ID which top up URL is initialized for.
+  // Used to update top up URL only when cellular carrier has changed.
+  std::string carrier_id_;
+
+ private:
+  // Show a NetworkConfigView modal dialog instance.
+  void ShowNetworkConfigView(NetworkConfigView* view) const;
+
+  void ActivateCellular(const CellularNetwork* cellular) const;
+  void ShowOther(ConnectionType type) const;
+  void ShowOtherCellular() const;
+
+  DISALLOW_COPY_AND_ASSIGN(NetworkMenuModel);
+};
+
 
 class MoreMenuModel : public NetworkMenuModel {
  public:
@@ -56,7 +205,10 @@ class MoreMenuModel : public NetworkMenuModel {
 
   // NetworkMenuModel implementation.
   virtual void InitMenuItems(bool is_browser_mode,
-                             bool should_open_button_options);
+                             bool should_open_button_options) OVERRIDE;
+  virtual void PopulateMenuItem(views::MenuItemView* menu,
+                                int index,
+                                int command_id) OVERRIDE;
 
  private:
   friend class MainMenuModel;
@@ -70,7 +222,10 @@ class VPNMenuModel : public NetworkMenuModel {
 
   // NetworkMenuModel implementation.
   virtual void InitMenuItems(bool is_browser_mode,
-                             bool should_open_button_options);
+                             bool should_open_button_options) OVERRIDE;
+  virtual void PopulateMenuItem(views::MenuItemView* menu,
+                                int index,
+                                int command_id) OVERRIDE;
 
   static SkBitmap IconForDisplay(const Network* network);
 
@@ -85,7 +240,16 @@ class MainMenuModel : public NetworkMenuModel {
 
   // NetworkMenuModel implementation.
   virtual void InitMenuItems(bool is_browser_mode,
-                             bool should_open_button_options);
+                             bool should_open_button_options) OVERRIDE;
+  virtual void PopulateMenuItem(views::MenuItemView* menu,
+                                int index,
+                                int command_id) OVERRIDE;
+
+  // views::MenuDelegate implementation.
+  virtual const gfx::Font& GetLabelFont(int id) const OVERRIDE;
+  virtual bool IsItemChecked(int id) const OVERRIDE;
+  virtual bool IsCommandEnabled(int id) const OVERRIDE;
+  virtual void ExecuteCommand(int id) OVERRIDE;
 
  private:
   scoped_ptr<NetworkMenuModel> vpn_menu_model_;
@@ -95,9 +259,77 @@ class MainMenuModel : public NetworkMenuModel {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
+// NetworkMenuModel::NetworkInfo
+
+NetworkMenuModel::NetworkInfo::NetworkInfo()
+    : need_passphrase(false), remembered(true), auto_connect(true) {
+}
+
+NetworkMenuModel::NetworkInfo::~NetworkInfo() {}
+
+////////////////////////////////////////////////////////////////////////////////
 // NetworkMenuModel, public methods:
 
-bool NetworkMenuModel::ConnectToNetworkAt(int index,
+NetworkMenuModel::NetworkMenuModel(NetworkMenu* owner) : owner_(owner) {}
+
+NetworkMenuModel::~NetworkMenuModel() {}
+
+void NetworkMenuModel::PopulateMenu(views::MenuItemView* menu) {
+  if (menu->HasSubmenu()) {
+    const int old_count = menu->GetSubmenu()->child_count();
+    for (int i = 0; i < old_count; ++i)
+      menu->RemoveMenuItemAt(0);
+  }
+
+  const int menu_items_count = GetItemCount();
+  for (int i = 0; i < menu_items_count; ++i)
+    PopulateMenuItem(menu, i, i);
+}
+
+void NetworkMenuModel::PopulateMenuItem(
+    views::MenuItemView* menu,
+    int index,
+    int command_id) {
+  DCHECK_GT(GetItemCount(), index);
+  switch (GetTypeAt(index)) {
+    case ui::MenuModel::TYPE_SEPARATOR:
+      menu->AppendSeparator();
+      break;
+    case ui::MenuModel::TYPE_COMMAND: {
+      views::MenuItemView* item = NULL;
+      SkBitmap icon;
+      if (GetIconAt(index, &icon)) {
+        item = menu->AppendMenuItemWithIcon(command_id,
+                                            UTF16ToWide(GetLabelAt(index)),
+                                            icon);
+      } else {
+        item = menu->AppendMenuItemWithLabel(command_id,
+                                             UTF16ToWide(GetLabelAt(index)));
+      }
+      item->set_margins(kTopMargin, kBottomMargin);
+      break;
+    }
+    case ui::MenuModel::TYPE_SUBMENU: {
+      views::MenuItemView* submenu = NULL;
+      SkBitmap icon;
+      if (GetIconAt(index, &icon)) {
+        submenu = menu->AppendSubMenuWithIcon(command_id,
+                                              UTF16ToWide(GetLabelAt(index)),
+                                              icon);
+      } else {
+        submenu = menu->AppendSubMenu(command_id,
+                                      UTF16ToWide(GetLabelAt(index)));
+      }
+      submenu->set_margins(kTopMargin, kBottomMargin);
+      GetSubmenuModelAt(index)->PopulateMenu(submenu);
+      break;
+    }
+    default:
+      NOTREACHED();
+  }
+}
+
+void NetworkMenuModel::ConnectToNetworkAt(int index,
                                           const std::string& passphrase,
                                           const std::string& ssid,
                                           int auto_connect) const {
@@ -113,17 +345,13 @@ bool NetworkMenuModel::ConnectToNetworkAt(int index,
       if (wifi->connecting_or_connected()) {
         // Show the config settings for the active network.
         owner_->ShowTabbedNetworkSettings(wifi);
-        return true;
-      }
-      if (wifi->IsPassphraseRequired()) {
+      } else if (wifi->IsPassphraseRequired()) {
         // Show the connection UI if we require a passphrase.
         ShowNetworkConfigView(new NetworkConfigView(wifi));
-        return true;
       } else {
         cros->ConnectToWifiNetwork(wifi);
         // Connection failures are responsible for updating the UI, including
         // reopening dialogs.
-        return true;
       }
     } else {
       // If we are attempting to connect to a network that no longer exists,
@@ -140,15 +368,14 @@ bool NetworkMenuModel::ConnectToNetworkAt(int index,
            cellular->activation_state() != ACTIVATION_STATE_UNKNOWN) ||
           cellular->needs_new_plan()) {
         ActivateCellular(cellular);
-        return true;
       } else if (cellular->connecting_or_connected()) {
         // Cellular network is connecting or connected,
         // so we show the config settings for the cellular network.
         owner_->ShowTabbedNetworkSettings(cellular);
-        return true;
+      } else {
+        // Clicked on a disconnected cellular network, so connect to it.
+        cros->ConnectToCellularNetwork(cellular);
       }
-      // Clicked on a disconnected cellular network, so connect to it.
-      cros->ConnectToCellularNetwork(cellular);
     } else {
       // If we are attempting to connect to a network that no longer exists,
       // display a notification.
@@ -170,17 +397,14 @@ bool NetworkMenuModel::ConnectToNetworkAt(int index,
         // Show the config settings for the connected network.
         if (cros->connected_network())
           owner_->ShowTabbedNetworkSettings(cros->connected_network());
-        return true;
-      }
+      } else if (vpn->NeedMoreInfoToConnect()) {
       // Show the connection UI if info for a field is missing.
-      if (vpn->NeedMoreInfoToConnect()) {
         ShowNetworkConfigView(new NetworkConfigView(vpn));
-        return true;
+      } else {
+        cros->ConnectToVirtualNetwork(vpn);
+        // Connection failures are responsible for updating the UI, including
+        // reopening dialogs.
       }
-      cros->ConnectToVirtualNetwork(vpn);
-      // Connection failures are responsible for updating the UI, including
-      // reopening dialogs.
-      return true;
     } else {
       // If we are attempting to connect to a network that no longer exists,
       // display a notification.
@@ -188,7 +412,6 @@ bool NetworkMenuModel::ConnectToNetworkAt(int index,
       // TODO(stevenjb): Show notification.
     }
   }
-  return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -229,7 +452,7 @@ bool NetworkMenuModel::IsEnabledAt(int index) const {
   return !(menu_items_[index].flags & FLAG_DISABLED);
 }
 
-ui::MenuModel* NetworkMenuModel::GetSubmenuModelAt(int index) const {
+NetworkMenuModel* NetworkMenuModel::GetSubmenuModelAt(int index) const {
   return menu_items_[index].sub_menu_model;
 }
 
@@ -287,10 +510,9 @@ void NetworkMenuModel::ActivatedAt(int index) {
 // Meanwhile, if MenuUI::IsEnabled() is true, always show the settings UI,
 // otherwise show NetworkConfigView only to get passwords when not connected.
 void NetworkMenuModel::ShowNetworkConfigView(NetworkConfigView* view) const {
-  view->set_browser_mode(owner_->IsBrowserMode());
   views::Window* window = browser::CreateViewsWindow(
       owner_->GetNativeWindow(), gfx::Rect(), view);
-  window->SetIsAlwaysOnTop(true);
+  window->SetAlwaysOnTop(true);
   window->Show();
 }
 
@@ -396,14 +618,14 @@ void MainMenuModel::InitMenuItems(bool is_browser_mode,
         }
       }
 
-      const SkBitmap* icon = NetworkMenu::IconForNetworkStrength(
-          wifi_networks[i], true);
+      const SkBitmap* icon =
+          NetworkMenu::IconForNetworkStrength(wifi_networks[i]);
       const SkBitmap* badge = wifi_networks[i]->encrypted() ?
           rb.GetBitmapNamed(IDR_STATUSBAR_NETWORK_SECURE) : NULL;
       int flag = FLAG_WIFI;
-      // If a network is not connectable from login/oobe, we disable it.
-      // We do not allow configuring a network (e.g. 802.1x) from login/oobe.
-      if (!owner_->IsBrowserMode() && !wifi_networks[i]->connectable())
+      // If a network is not connectable (e.g. it requires certificates and
+      // the user is not logged in), we disable it.
+      if (!cros->CanConnectToNetwork(wifi_networks[i]))
         flag |= FLAG_DISABLED;
       if (active_wifi
           && wifi_networks[i]->service_path() == active_wifi->service_path())
@@ -418,7 +640,7 @@ void MainMenuModel::InitMenuItems(bool is_browser_mode,
     menu_items_.push_back(MenuItem(
         ui::MenuModel::TYPE_COMMAND,
         l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_OTHER_WIFI_NETWORKS),
-        *rb.GetBitmapNamed(IDR_STATUSBAR_NETWORK_BARS0_BLACK),
+        *rb.GetBitmapNamed(IDR_STATUSBAR_NETWORK_ARCS4),
         std::string(), FLAG_ADD_WIFI));
   }
 
@@ -469,12 +691,12 @@ void MainMenuModel::InitMenuItems(bool is_browser_mode,
         }
       }
 
-      const SkBitmap* icon = NetworkMenu::IconForNetworkStrength(
-          cell_networks[i], true);
-      const SkBitmap* badge = NetworkMenu::BadgeForNetworkTechnology(
-          cell_networks[i]);
-      const SkBitmap* roaming_badge = NetworkMenu::BadgeForRoamingStatus(
-          cell_networks[i]);
+      const SkBitmap* icon =
+          NetworkMenu::IconForNetworkStrength(cell_networks[i]);
+      const SkBitmap* badge =
+          NetworkMenu::BadgeForNetworkTechnology(cell_networks[i]);
+      const SkBitmap* roaming_badge =
+          NetworkMenu::BadgeForRoamingStatus(cell_networks[i]);
       int flag = FLAG_CELLULAR;
       bool isActive = active_cellular &&
           cell_networks[i]->service_path() == active_cellular->service_path() &&
@@ -521,8 +743,8 @@ void MainMenuModel::InitMenuItems(bool is_browser_mode,
           // Ignoring deal restrictions, use any carrier information available.
           const ServicesCustomizationDocument::CarrierDeal* deal =
               customization->GetCarrierDeal(carrier_id, false);
-          if (deal && !deal->top_up_url.empty())
-            top_up_url_ = deal->top_up_url;
+          if (deal && !deal->top_up_url().empty())
+            top_up_url_ = deal->top_up_url();
         }
         if (!top_up_url_.empty()) {
           menu_items_.push_back(MenuItem(
@@ -542,7 +764,7 @@ void MainMenuModel::InitMenuItems(bool is_browser_mode,
             ui::MenuModel::TYPE_COMMAND,
             l10n_util::GetStringUTF16(
                 IDS_OPTIONS_SETTINGS_OTHER_CELLULAR_NETWORKS),
-            *rb.GetBitmapNamed(IDR_STATUSBAR_NETWORK_BARS0_BLACK),
+            *rb.GetBitmapNamed(IDR_STATUSBAR_NETWORK_BARS0),
             std::string(), FLAG_ADD_CELLULAR));
       }
     }
@@ -556,8 +778,9 @@ void MainMenuModel::InitMenuItems(bool is_browser_mode,
         SkBitmap(), std::string(), FLAG_DISABLED));
   }
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableVPN)) {
-    // If there's a connected network, add submenu for Private Networks.
+  // If we are logged in and there is a connected network,
+  // add submenu for Private Networks.
+  if (is_browser_mode) {
     const Network* connected_network = cros->connected_network();
     if (connected_network) {
       menu_items_.push_back(MenuItem());  // Separator
@@ -608,8 +831,13 @@ void MainMenuModel::InitMenuItems(bool is_browser_mode,
         id = IDS_STATUSBAR_NETWORK_DEVICE_ENABLE;
       label = l10n_util::GetStringFUTF16(id,
           l10n_util::GetStringUTF16(IDS_STATUSBAR_NETWORK_DEVICE_CELLULAR));
+      SkBitmap icon;
+      if (is_locked) {
+        icon = NetworkMenu::IconForDisplay(
+            rb.GetBitmapNamed(IDR_STATUSBAR_NETWORK_SECURE), NULL);
+      }
       menu_items_.push_back(MenuItem(ui::MenuModel::TYPE_COMMAND, label,
-          SkBitmap(), std::string(), FLAG_TOGGLE_CELLULAR));
+          icon, std::string(), FLAG_TOGGLE_CELLULAR));
     }
   }
 
@@ -636,10 +864,72 @@ void MainMenuModel::InitMenuItems(bool is_browser_mode,
     if (!more_menu_model_->menu_items_.empty()) {
       menu_items_.push_back(MenuItem(
           ui::MenuModel::TYPE_SUBMENU,
-          l10n_util::GetStringUTF16(IDS_LANGUAGES_MORE),
+          l10n_util::GetStringUTF16(IDS_STATUSBAR_NETWORK_MORE),
           SkBitmap(), more_menu_model_.get(), FLAG_NONE));
     }
   }
+}
+
+void MainMenuModel::PopulateMenuItem(
+      views::MenuItemView* menu,
+      int index,
+      int command_id) {
+  NetworkMenuModel::PopulateMenuItem(menu, index,
+                                     command_id + kMainIndexOffset);
+}
+
+// views::MenuDelegate implementation.
+
+const gfx::Font& MainMenuModel::GetLabelFont(int id) const {
+  DCHECK_GT(kMoreIndexOffset, kVPNIndexOffset);
+  DCHECK_GT(kVPNIndexOffset, kMainIndexOffset);
+  const gfx::Font* font = NULL;
+  if (id >= kMoreIndexOffset)
+    font = more_menu_model_->GetLabelFontAt(id - kMoreIndexOffset);
+  else if (id >= kVPNIndexOffset)
+    font = vpn_menu_model_->GetLabelFontAt(id - kVPNIndexOffset);
+  else if (id >= kMainIndexOffset)
+    font = GetLabelFontAt(id - kMainIndexOffset);
+
+  return font ? *font : views::MenuDelegate::GetLabelFont(id);
+}
+
+
+bool MainMenuModel::IsItemChecked(int id) const {
+  DCHECK_GT(kMoreIndexOffset, kVPNIndexOffset);
+  DCHECK_GT(kVPNIndexOffset, kMainIndexOffset);
+  if (id >= kMoreIndexOffset)
+    return more_menu_model_->IsItemCheckedAt(id - kMoreIndexOffset);
+  else if (id >= kVPNIndexOffset)
+    return vpn_menu_model_->IsItemCheckedAt(id - kVPNIndexOffset);
+  else if (id >= kMainIndexOffset)
+    return IsItemCheckedAt(id - kMainIndexOffset);
+
+  return views::MenuDelegate::IsItemChecked(id);
+}
+
+bool MainMenuModel::IsCommandEnabled(int id) const {
+  DCHECK_GT(kMoreIndexOffset, kVPNIndexOffset);
+  DCHECK_GT(kVPNIndexOffset, kMainIndexOffset);
+  if (id >= kMoreIndexOffset)
+    return more_menu_model_->IsEnabledAt(id - kMoreIndexOffset);
+  else if (id >= kVPNIndexOffset)
+    return vpn_menu_model_->IsEnabledAt(id - kVPNIndexOffset);
+  else if (id >= kMainIndexOffset)
+    return IsEnabledAt(id - kMainIndexOffset);
+
+  return views::MenuDelegate::IsCommandEnabled(id);
+}
+
+void MainMenuModel::ExecuteCommand(int id) {
+  DCHECK_GT(kMoreIndexOffset, kVPNIndexOffset);
+  DCHECK_GT(kVPNIndexOffset, kMainIndexOffset);
+  if (id >= kMoreIndexOffset)
+    more_menu_model_->ActivatedAt(id - kMoreIndexOffset);
+  else if (id >= kVPNIndexOffset)
+    vpn_menu_model_->ActivatedAt(id - kVPNIndexOffset);
+  else if (id >= kMainIndexOffset)
+    ActivatedAt(id - kMainIndexOffset);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -689,7 +979,7 @@ void VPNMenuModel::InitMenuItems(bool is_browser_mode,
     }
 
     int flag = FLAG_VPN;
-    if (!vpn->connectable())
+    if (!cros->CanConnectToNetwork(vpn))
       flag |= FLAG_DISABLED;
     if (active_vpn && vpn->service_path() == active_vpn->service_path())
       flag |= FLAG_ASSOCIATED;
@@ -714,6 +1004,14 @@ void VPNMenuModel::InitMenuItems(bool is_browser_mode,
   }
 }
 
+void VPNMenuModel::PopulateMenuItem(
+      views::MenuItemView* menu,
+      int index,
+      int command_id) {
+  NetworkMenuModel::PopulateMenuItem(menu, index,
+                                     command_id + kVPNIndexOffset);
+}
+
 // static
 SkBitmap VPNMenuModel::IconForDisplay(const Network* network) {
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
@@ -725,18 +1023,23 @@ SkBitmap VPNMenuModel::IconForDisplay(const Network* network) {
   const SkBitmap* bottom_left_badge =
       NetworkMenu::BadgeForPrivateNetworkStatus(NULL);
 
+  // We should always have an underlying network for VPN, but if we ever don't
+  // (presumably an edge case), just return an empty icon.
+  if (!network)
+    return SkBitmap();
+
   switch (network->type()) {
     case TYPE_ETHERNET :
       icon = rb.GetBitmapNamed(IDR_STATUSBAR_WIRED_BLACK);
       break;
     case TYPE_WIFI :
       icon = NetworkMenu::IconForNetworkStrength(
-          static_cast<const WifiNetwork*>(network), true);
+          static_cast<const WifiNetwork*>(network));
       break;
     case TYPE_CELLULAR : {
       const CellularNetwork* cellular =
           static_cast<const CellularNetwork*>(network);
-      icon = NetworkMenu::IconForNetworkStrength(cellular, true);
+      icon = NetworkMenu::IconForNetworkStrength(cellular);
       bottom_right_badge = NetworkMenu::BadgeForNetworkTechnology(cellular);
       top_left_badge = NetworkMenu::BadgeForRoamingStatus(cellular);
       break;
@@ -748,6 +1051,20 @@ SkBitmap VPNMenuModel::IconForDisplay(const Network* network) {
 
   return NetworkMenu::IconForDisplay(icon, bottom_right_badge, top_left_badge,
                                      bottom_left_badge);
+}
+
+// static
+ConnectionType NetworkMenu::TypeForNetwork(const Network* network) {
+  NetworkLibrary* cros = CrosLibrary::Get()->GetNetworkLibrary();
+  if (network)
+    return network->type() == TYPE_CELLULAR ? TYPE_CELLULAR : TYPE_WIFI;
+
+  // This way if both wifi and cell are connecting we'll use wifi.
+  if (cros->wifi_connecting())
+    return TYPE_WIFI;
+  if (cros->cellular_connecting())
+    return TYPE_CELLULAR;
+  return TYPE_WIFI;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -823,6 +1140,14 @@ void MoreMenuModel::InitMenuItems(
       address_items.begin(), address_items.end());
 }
 
+void MoreMenuModel::PopulateMenuItem(
+      views::MenuItemView* menu,
+      int index,
+      int command_id) {
+  NetworkMenuModel::PopulateMenuItem(menu, index,
+                                     command_id + kMoreIndexOffset);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // NetworkMenu
 
@@ -838,13 +1163,6 @@ const int NetworkMenu::kBarsImages[kNumBarsImages] = {
   IDR_STATUSBAR_NETWORK_BARS3,
   IDR_STATUSBAR_NETWORK_BARS4,
 };
-// static
-const int NetworkMenu::kBarsImagesBlack[kNumBarsImages] = {
-  IDR_STATUSBAR_NETWORK_BARS1_BLACK,
-  IDR_STATUSBAR_NETWORK_BARS2_BLACK,
-  IDR_STATUSBAR_NETWORK_BARS3_BLACK,
-  IDR_STATUSBAR_NETWORK_BARS4_BLACK,
-};
 
 // static
 const int NetworkMenu::kBarsImagesOrange[kNumBarsImages] = {
@@ -853,25 +1171,34 @@ const int NetworkMenu::kBarsImagesOrange[kNumBarsImages] = {
   IDR_STATUSBAR_NETWORK_BARS3_ORANGE,
   IDR_STATUSBAR_NETWORK_BARS4_ORANGE,
 };
-#if 0
+
 // static
-const int NetworkMenu::kBarsImagesVLowData[kNumBarsImages] = {
-  IDR_STATUSBAR_NETWORK_BARS1_RED,
-  IDR_STATUSBAR_NETWORK_BARS2_RED,
-  IDR_STATUSBAR_NETWORK_BARS3_RED,
-  IDR_STATUSBAR_NETWORK_BARS4_RED,
+SkBitmap NetworkMenu::kBarsImagesAnimating[kNumBarsImages];
+
+// static
+const int NetworkMenu::kNumArcsImages = 7;
+
+// NOTE: Use an array rather than just calculating a resource number to avoid
+// creating implicit ordering dependencies on the resource values.
+// static
+const int NetworkMenu::kArcsImages[kNumArcsImages] = {
+  IDR_STATUSBAR_NETWORK_ARCS1,
+  IDR_STATUSBAR_NETWORK_ARCS2,
+  IDR_STATUSBAR_NETWORK_ARCS3,
+  IDR_STATUSBAR_NETWORK_ARCS4,
+  IDR_STATUSBAR_NETWORK_ARCS5,
+  IDR_STATUSBAR_NETWORK_ARCS6,
+  IDR_STATUSBAR_NETWORK_ARCS7,
 };
-#endif
 
 // static
-SkBitmap NetworkMenu::kAnimatingImages[kNumBarsImages];
+SkBitmap NetworkMenu::kArcsImagesAnimating[kNumArcsImages];
 
-// static
-SkBitmap NetworkMenu::kAnimatingImagesBlack[kNumBarsImages];
-
-NetworkMenu::NetworkMenu() : min_width_(-1) {
+NetworkMenu::NetworkMenu() : min_width_(kDefaultMinimumWidth) {
   main_menu_model_.reset(new MainMenuModel(this));
-  network_menu_.reset(new views::Menu2(main_menu_model_.get()));
+  network_menu_.reset(new views::MenuItemView(main_menu_model_.get()));
+  network_menu_->set_has_icons(true);
+  network_menu_->set_menu_position(views::MenuItemView::POSITION_BELOW_BOUNDS);
 }
 
 NetworkMenu::~NetworkMenu() {
@@ -879,64 +1206,124 @@ NetworkMenu::~NetworkMenu() {
 
 void NetworkMenu::SetFirstLevelMenuWidth(int width) {
   min_width_ = width;
-  // This actually has no effect since menu is rebuilt before showing.
-  network_menu_->SetMinimumWidth(width);
 }
 
 void NetworkMenu::CancelMenu() {
-  network_menu_->CancelMenu();
+  network_menu_->Cancel();
 }
 
 void NetworkMenu::UpdateMenu() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
   refreshing_menu_ = true;
   main_menu_model_->InitMenuItems(IsBrowserMode(), ShouldOpenButtonOptions());
-  network_menu_->Rebuild();
+  main_menu_model_->PopulateMenu(network_menu_.get());
+  network_menu_->ChildrenChanged();
   refreshing_menu_ = false;
 }
 
 // static
-const SkBitmap* NetworkMenu::IconForNetworkStrength(const WifiNetwork* wifi,
-                                                    bool black) {
+const SkBitmap* NetworkMenu::IconForNetworkStrength(const WifiNetwork* wifi) {
   DCHECK(wifi);
   if (wifi->strength() == 0) {
     return ResourceBundle::GetSharedInstance().GetBitmapNamed(
-        black ? IDR_STATUSBAR_NETWORK_BARS0_BLACK :
-                IDR_STATUSBAR_NETWORK_BARS0);
+        IDR_STATUSBAR_NETWORK_ARCS0);
   }
   int index = static_cast<int>(wifi->strength() / 100.0 *
-      nextafter(static_cast<float>(kNumBarsImages), 0));
-  index = std::max(std::min(index, kNumBarsImages - 1), 0);
-  const int* images = black ? kBarsImagesBlack : kBarsImages;
-  return ResourceBundle::GetSharedInstance().GetBitmapNamed(images[index]);
+      nextafter(static_cast<float>(kNumArcsImages), 0));
+  index = std::max(std::min(index, kNumArcsImages - 1), 0);
+  return ResourceBundle::GetSharedInstance().GetBitmapNamed(kArcsImages[index]);
 }
 
 // static
 const SkBitmap* NetworkMenu::IconForNetworkStrength(
-    const CellularNetwork* cellular, bool black) {
+    const CellularNetwork* cellular) {
   DCHECK(cellular);
   // If no data, then we show 0 bars.
   if (cellular->strength() == 0 ||
       cellular->data_left() == CellularNetwork::DATA_NONE) {
     return ResourceBundle::GetSharedInstance().GetBitmapNamed(
-        black ? IDR_STATUSBAR_NETWORK_BARS0_BLACK :
-                IDR_STATUSBAR_NETWORK_BARS0);
+        IDR_STATUSBAR_NETWORK_BARS0);
   }
   int index = static_cast<int>(cellular->strength() / 100.0 *
       nextafter(static_cast<float>(kNumBarsImages), 0));
   index = std::max(std::min(index, kNumBarsImages - 1), 0);
-  const int* images = black ? kBarsImagesBlack : kBarsImages;
-  return ResourceBundle::GetSharedInstance().GetBitmapNamed(images[index]);
+  return ResourceBundle::GetSharedInstance().GetBitmapNamed(kBarsImages[index]);
+}
+
+// static
+SkBitmap NetworkMenu::IconForNetwork(const Network* network) {
+  DCHECK(network);
+
+  chromeos::NetworkLibrary* cros =
+      chromeos::CrosLibrary::Get()->GetNetworkLibrary();
+  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+
+  const SkBitmap* icon;
+  const SkBitmap* bottom_right_badge = NULL;
+  const SkBitmap* bottom_left_badge = NULL;
+
+  switch (network->type()) {
+    case TYPE_ETHERNET: {
+      icon = rb.GetBitmapNamed(IDR_STATUSBAR_WIRED_BLACK);
+      if (!network->connecting() && !network->connected())
+        bottom_right_badge =
+            rb.GetBitmapNamed(IDR_STATUSBAR_NETWORK_DISCONNECTED);
+      bottom_left_badge = BadgeForPrivateNetworkStatus(network);
+      return IconForDisplay(
+          icon, bottom_right_badge, NULL, bottom_left_badge);
+    }
+    case TYPE_WIFI: {
+      const WifiNetwork* wifi = static_cast<const WifiNetwork*>(network);
+      icon = IconForNetworkStrength(wifi);
+      if (wifi->encrypted())
+        bottom_right_badge = rb.GetBitmapNamed(IDR_STATUSBAR_NETWORK_SECURE);
+      bottom_left_badge = BadgeForPrivateNetworkStatus(wifi);
+      return IconForDisplay(
+          icon, bottom_right_badge, NULL, bottom_left_badge);
+    }
+    case TYPE_CELLULAR: {
+      const CellularNetwork* cellular =
+          static_cast<const CellularNetwork*>(network);
+      icon = IconForNetworkStrength(cellular);
+      bottom_right_badge = BadgeForNetworkTechnology(cellular);
+      const SkBitmap* roaming_badge = BadgeForRoamingStatus(cellular);
+      bottom_left_badge = BadgeForPrivateNetworkStatus(cellular);
+      return IconForDisplay(
+          icon, bottom_right_badge, roaming_badge, bottom_left_badge);
+    }
+    case TYPE_VPN: {
+      return VPNMenuModel::IconForDisplay(cros->connected_network());
+    }
+    default:
+      LOG(WARNING) << "Request for icon for unsupported type: "
+                   << network->type();
+      icon = ResourceBundle::GetSharedInstance().GetBitmapNamed(
+          IDR_STATUSBAR_NETWORK_BARS0);
+      return *icon;
+  }
 }
 
 // static
 const SkBitmap* NetworkMenu::IconForNetworkConnecting(double animation_value,
-                                                      bool black) {
+                                                      ConnectionType type) {
   // Fade bars a bit and show the different bar states.
-  const int* source_image_ids = black ? kBarsImagesBlack : kBarsImages;
-  SkBitmap* images = black ? kAnimatingImagesBlack : kAnimatingImages;
+  int image_count;
+  const int* source_image_ids;
+  SkBitmap* images;
+
+  if (type == TYPE_WIFI) {
+    image_count = kNumArcsImages;
+    source_image_ids = kArcsImages;
+    images = kArcsImagesAnimating;
+  } else {
+    image_count = kNumBarsImages;
+    source_image_ids = kBarsImages;
+    images = kBarsImagesAnimating;
+  }
   int index = static_cast<int>(animation_value *
-      nextafter(static_cast<float>(kNumBarsImages), 0));
-  index = std::max(std::min(index, kNumBarsImages - 1), 0);
+      nextafter(static_cast<float>(image_count), 0));
+  index = std::max(std::min(index, image_count - 1), 0);
 
   // Lazily cache images.
   if (images[index].empty()) {
@@ -1024,6 +1411,9 @@ const SkBitmap* NetworkMenu::BadgeForNetworkTechnology(
     case NETWORK_TECHNOLOGY_LTE_ADVANCED:
       id = IDR_STATUSBAR_NETWORK_LTE_ADVANCED;
       break;
+    case NETWORK_TECHNOLOGY_GSM:
+      id = IDR_STATUSBAR_NETWORK_GPRS;
+      break;
     case NETWORK_TECHNOLOGY_UNKNOWN:
       break;
   }
@@ -1110,24 +1500,26 @@ void NetworkMenu::ShowTabbedNetworkSettings(const Network* network) const {
 // NetworkMenu, views::ViewMenuDelegate implementation:
 
 void NetworkMenu::RunMenu(views::View* source, const gfx::Point& pt) {
-  refreshing_menu_ = true;
   NetworkLibrary* cros = CrosLibrary::Get()->GetNetworkLibrary();
   cros->RequestNetworkScan();
 
-  // Build initial menu items. They will be updated when UpdateMenu is
-  // called from NetworkChanged.
-  main_menu_model_->InitMenuItems(IsBrowserMode(), ShouldOpenButtonOptions());
-  network_menu_->Rebuild();
+  UpdateMenu();
 
-  // Restore menu width, if it was set up.
-  // NOTE: width isn't checked for correctness here since all width-related
-  // logic implemented inside |network_menu_|.
-  if (min_width_ != -1)
-    network_menu_->SetMinimumWidth(min_width_);
-  refreshing_menu_ = false;
-  network_menu_->RunMenuAt(pt, views::Menu2::ALIGN_TOPRIGHT);
+  // TODO(rhashimoto): Remove this workaround when WebUI provides a
+  // top-level widget on the ChromeOS login screen that is a window.
+  // The current BackgroundView class for the ChromeOS login screen
+  // creates a owning Widget that has a native GtkWindow but is not a
+  // Window.  This makes it impossible to get the NativeWindow via
+  // the views API.  This workaround casts the top-level NativeWidget
+  // to a NativeWindow that we can pass to MenuItemView::RunMenuAt().
+  gfx::NativeWindow window = GTK_WINDOW(source->GetWidget()->GetNativeView());
+
+  gfx::Point screen_loc;
+  views::View::ConvertPointToScreen(source, &screen_loc);
+  gfx::Rect bounds(screen_loc, source->size());
+  network_menu_->GetSubmenu()->set_minimum_preferred_width(min_width_);
+  network_menu_->RunMenuAt(window, GetMenuButton(), bounds,
+      views::MenuItemView::TOPRIGHT, true);
 }
 
 }  // namespace chromeos
-
-

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -75,7 +75,7 @@ var chrome = chrome || {};
   };
 
   chrome.test.runNextTest = function() {
-    chrome.test.assertEq(pendingCallbacks, 0);
+    chrome.test.assertEq(0, pendingCallbacks);
     lastTest = currentTest;
     currentTest = chrome.test.tests.shift();
     if (!currentTest) {
@@ -123,6 +123,12 @@ var chrome = chrome || {};
   };
 
   chrome.test.checkDeepEq = function(expected, actual) {
+    var expected_defined = typeof(expected) != 'undefined';
+    var actual_defined = typeof(actual) != 'undefined';
+    if (!expected_defined && !actual_defined)
+      return true;
+    if (expected_defined != actual_defined)
+      return false;
     for (var p in expected) {
       var eq = true;
       switch (typeof(expected[p])) {

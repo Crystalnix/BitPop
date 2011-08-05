@@ -145,8 +145,10 @@ void DiscardInitialNavigationHistory() {
 }
 
 void RegisterUserPrefs(PrefService* user_prefs) {
-  user_prefs->RegisterListPref(prefs::kDnsPrefetchingStartupList);
-  user_prefs->RegisterListPref(prefs::kDnsPrefetchingHostReferralList);
+  user_prefs->RegisterListPref(prefs::kDnsPrefetchingStartupList,
+                               PrefService::UNSYNCABLE_PREF);
+  user_prefs->RegisterListPref(prefs::kDnsPrefetchingHostReferralList,
+                               PrefService::UNSYNCABLE_PREF);
 }
 
 // When enabled, we use the following instance to service all requests in the
@@ -414,8 +416,10 @@ static void InitNetworkPredictor(TimeDelta max_dns_queue_delay,
   int current_version =
       local_state->GetInteger(prefs::kMultipleProfilePrefMigration);
   if ((current_version & browser::DNS_PREFS) == 0) {
-    local_state->RegisterListPref(prefs::kDnsStartupPrefetchList);
-    local_state->RegisterListPref(prefs::kDnsHostReferralList);
+    local_state->RegisterListPref(prefs::kDnsStartupPrefetchList,
+                                  PrefService::UNSYNCABLE_PREF);
+    local_state->RegisterListPref(prefs::kDnsHostReferralList,
+                                  PrefService::UNSYNCABLE_PREF);
     local_state->ClearPref(prefs::kDnsStartupPrefetchList);
     local_state->ClearPref(prefs::kDnsHostReferralList);
     local_state->SetInteger(prefs::kMultipleProfilePrefMigration,
@@ -567,12 +571,12 @@ PredictorInit::PredictorInit(PrefService* user_prefs,
   // latency of page loads.
   base::FieldTrial::Probability kDivisor = 1000;
   // For each option (i.e., non-default), we have a fixed probability.
-  base::FieldTrial::Probability kProbabilityPerGroup = 100;  // 10% probability.
+  base::FieldTrial::Probability kProbabilityPerGroup = 1;  // 0.1% probability.
 
   // After June 30, 2011 builds, it will always be in default group
   // (default_enabled_prefetch).
   trial_ = new base::FieldTrial("DnsImpact", kDivisor,
-                                "default_enabled_prefetch", 2011, 6, 30);
+                                "default_enabled_prefetch", 2011, 10, 30);
 
   // First option is to disable prefetching completely.
   int disabled_prefetch = trial_->AppendGroup("disabled_prefetch",

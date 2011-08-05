@@ -19,6 +19,7 @@
 #include "content/browser/tab_contents/navigation_entry.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -26,6 +27,7 @@
 #include "views/background.h"
 #include "views/controls/button/image_button.h"
 #include "views/controls/image_view.h"
+#include "views/controls/link.h"
 
 // Max number of download views we'll contain. Any time a view is added and
 // we already have this many download views, one is removed.
@@ -105,7 +107,7 @@ void DownloadShelfView::Init() {
 
   show_all_view_ = new views::Link(
       UTF16ToWide(l10n_util::GetStringUTF16(IDS_SHOW_ALL_DOWNLOADS)));
-  show_all_view_->SetController(this);
+  show_all_view_->set_listener(this);
   AddChildView(show_all_view_);
 
   close_button_ = new views::ImageButton(this);
@@ -359,7 +361,7 @@ void DownloadShelfView::OnThemeChanged() {
   UpdateButtonColors();
 }
 
-void DownloadShelfView::LinkActivated(views::Link* source, int event_flags) {
+void DownloadShelfView::LinkClicked(views::Link* source, int event_flags) {
   browser_->ShowDownloadsTab();
 }
 

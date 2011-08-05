@@ -7,6 +7,7 @@
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
+#include "base/stringprintf.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
@@ -347,6 +348,19 @@ TEST_F(ExtensionManifestTest, InvalidContentScriptMatchPattern) {
               URLPattern::PARSE_ERROR_HAS_COLON)));
 }
 
+TEST_F(ExtensionManifestTest, ExcludeMatchPatterns) {
+  LoadAndExpectSuccess("exclude_matches.json");
+  LoadAndExpectSuccess("exclude_matches_empty.json");
+
+  LoadAndExpectError("exclude_matches_not_list.json",
+                     "Invalid value for 'content_scripts[0].exclude_matches'.");
+
+  LoadAndExpectError("exclude_matches_invalid_host.json",
+                     "Invalid value for "
+                     "'content_scripts[0].exclude_matches[0]': "
+                     "Invalid host wildcard.");
+}
+
 TEST_F(ExtensionManifestTest, ExperimentalPermission) {
   LoadAndExpectError("experimental.json", errors::kExperimentalFlagRequired);
   CommandLine old_command_line = *CommandLine::ForCurrentProcess();
@@ -487,6 +501,8 @@ TEST_F(ExtensionManifestTest, ParseHomepageURLs) {
                      extension_manifest_errors::kInvalidHomepageURL);
   LoadAndExpectError("homepage_invalid.json",
                      extension_manifest_errors::kInvalidHomepageURL);
+  LoadAndExpectError("homepage_bad_schema.json",
+                     extension_manifest_errors::kInvalidHomepageURL);
 }
 
 TEST_F(ExtensionManifestTest, GetHomepageURL) {
@@ -511,7 +527,7 @@ TEST_F(ExtensionManifestTest, DefaultPathForExtent) {
 
   ASSERT_EQ(1u, extension->web_extent().patterns().size());
   EXPECT_EQ("/*", extension->web_extent().patterns()[0].path());
-  EXPECT_TRUE(extension->web_extent().ContainsURL(
+  EXPECT_TRUE(extension->web_extent().MatchesURL(
       GURL("http://www.google.com/monkey")));
 }
 
@@ -604,7 +620,7 @@ TEST_F(ExtensionManifestTest, FileBrowserHandlers) {
       extension->file_browser_handlers()->at(0).get();
   EXPECT_EQ(action->title(), "Default title");
   EXPECT_EQ(action->icon_path(), "icon.png");
-  const FileBrowserHandler::PatternList& patterns = action->file_url_patterns();
+  const URLPatternList& patterns = action->file_url_patterns();
   ASSERT_EQ(patterns.size(), 1U);
   ASSERT_TRUE(action->MatchesURL(
       GURL("filesystem:chrome-extension://foo/local/test.txt")));

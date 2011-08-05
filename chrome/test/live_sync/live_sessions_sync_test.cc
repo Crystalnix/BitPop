@@ -6,6 +6,7 @@
 
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_service.h"
+#include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/glue/session_model_associator.h"
 #include "chrome/test/ui_test_utils.h"
@@ -32,7 +33,7 @@ TestSessionService::TestSessionService(SessionService* service,
 void TestSessionService::SetUp() {
   ASSERT_TRUE(service()) << "SetUp() called without setting SessionService";
   ASSERT_TRUE(profile_);
-  service()->SetWindowType(window_id_, Browser::TYPE_NORMAL);
+  service()->SetWindowType(window_id_, Browser::TYPE_TABBED);
   service()->SetWindowBounds(window_id_, window_bounds_, false);
 }
 
@@ -104,7 +105,7 @@ LiveSessionsSyncTest::LiveSessionsSyncTest(TestType test_type)
 LiveSessionsSyncTest::~LiveSessionsSyncTest() {}
 
 SessionService* LiveSessionsSyncTest::GetSessionService(int index) {
-  return GetProfile(index)->GetSessionService();
+  return SessionServiceFactory::GetForProfile(GetProfile(index));
 }
 
 TestSessionService* LiveSessionsSyncTest::GetHelper(int index) {
@@ -136,8 +137,7 @@ bool LiveSessionsSyncTest::SetupClients() {
 }
 
 TabContents* LiveSessionsSyncTest::OpenTab(int index, GURL url) {
-  TabContents* tab =
-      GetBrowser(index)->
+  TabContents* tab = GetBrowser(index)->
       AddSelectedTabWithURL(url, PageTransition::START_PAGE)->tab_contents();
 
   // Wait for the page to finish loading.
@@ -219,7 +219,7 @@ void LiveSessionsSyncTest::SortSessionWindows(
             LiveSessionsSyncTest::CompareSessionWindows);
 }
 
-//static
+// static
 bool LiveSessionsSyncTest::CompareForeignSessions(
     const ForeignSession* lhs,
     const ForeignSession* rhs) {

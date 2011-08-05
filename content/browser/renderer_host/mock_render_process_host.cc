@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,8 +23,10 @@ MockRenderProcessHost::~MockRenderProcessHost() {
     factory_->Remove(this);
 }
 
-bool MockRenderProcessHost::Init(
-    bool is_accessibility_enabled, bool is_extensions_process) {
+void MockRenderProcessHost::EnableSendQueue() {
+}
+
+bool MockRenderProcessHost::Init(bool is_accessibility_enabled) {
   return true;
 }
 
@@ -36,8 +38,8 @@ int MockRenderProcessHost::GetNextRoutingID() {
 void MockRenderProcessHost::CancelResourceRequests(int render_widget_id) {
 }
 
-void MockRenderProcessHost::CrossSiteClosePageACK(
-    const ViewMsg_ClosePage_Params& params) {
+void MockRenderProcessHost::CrossSiteSwapOutACK(
+    const ViewMsg_SwapOut_Params& params) {
 }
 
 bool MockRenderProcessHost::WaitForUpdateMsg(int render_widget_id,
@@ -56,22 +58,13 @@ void MockRenderProcessHost::WidgetRestored() {
 void MockRenderProcessHost::WidgetHidden() {
 }
 
-void MockRenderProcessHost::ViewCreated() {
+int MockRenderProcessHost::VisibleWidgetCount() const {
+  return 1;
 }
 
 void MockRenderProcessHost::AddWord(const string16& word) {
 }
 
-void MockRenderProcessHost::SendVisitedLinkTable(
-    base::SharedMemory* table_memory) {
-}
-
-void MockRenderProcessHost::AddVisitedLinks(
-    const VisitedLinkCommon::Fingerprints& links) {
-}
-
-void MockRenderProcessHost::ResetVisitedLinks() {
-}
 
 bool MockRenderProcessHost::FastShutdownIfPossible() {
   // We aren't actually going to do anything, but set |fast_shutdown_started_|

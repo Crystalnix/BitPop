@@ -63,6 +63,7 @@
 #include "grit/locale_settings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
+#include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
 
 // ORGANIZATION: This is a big file. It is (in principle) organized as follows
@@ -156,18 +157,8 @@
     MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
 
 @interface NSWindow (LionSDKDeclarations)
-- (void)toggleFullScreen:(id)sender;
 - (void)setRestorable:(BOOL)flag;
 @end
-
-enum {
-  NSWindowCollectionBehaviorFullScreenPrimary = 1 << 7,
-  NSWindowCollectionBehaviorFullScreenAuxiliary = 1 << 8
-};
-
-enum {
-  NSWindowFullScreenButton = 7
-};
 
 #endif  // MAC_OS_X_VERSION_10_7
 
@@ -189,7 +180,7 @@ enum {
 }
 
 - (void)drawRect:(NSRect)rect {
-  [NSGraphicsContext saveGraphicsState];
+  gfx::ScopedNSGraphicsContextSaveGState scopedGState;
 
   scoped_nsobject<NSShadow> shadow([[NSShadow alloc] init]);
   [shadow.get() setShadowColor:[NSColor colorWithCalibratedWhite:0.0
@@ -203,7 +194,6 @@ enum {
                  operation:NSCompositeSourceOver
                   fraction:1.0
               neverFlipped:YES];
-  [NSGraphicsContext restoreGraphicsState];
 }
 
 - (void)setImage:(NSImage*)image {
@@ -284,8 +274,8 @@ enum {
 
     // When we are given x/y coordinates of 0 on a created popup window, assume
     // none were given by the window.open() command.
-    if (browser_->type() & Browser::TYPE_POPUP &&
-        windowRect.x() == 0 && windowRect.y() == 0) {
+    if ((browser_->is_type_popup() || browser_->is_type_panel()) &&
+         windowRect.x() == 0 && windowRect.y() == 0) {
       gfx::Size size = windowRect.size();
       windowRect.set_origin(WindowSizer::GetDefaultPopupOrigin(size));
     }
@@ -381,7 +371,7 @@ enum {
     // out, measure the current content area size and grow if needed.  The
     // window has not been placed onscreen yet, so this extra resize will not
     // cause visible jank.
-    if (browser_->type() & Browser::TYPE_POPUP) {
+    if (browser_->is_type_popup() || browser_->is_type_panel()) {
       CGFloat deltaH = desiredContentRect.height() -
                        NSHeight([[self tabContentArea] frame]);
       // Do not shrink the window, as that may break minimum size invariants.
@@ -417,20 +407,7 @@ enum {
     if ([self hasToolbar])  // Do not create the buttons in popups.
       [toolbarController_ createBrowserActionButtons];
 
-    // For versions of Mac OS that provide an "enter fullscreen" button, make
-    // one appear (in a rather hacky manner). http://crbug.com/74065 : When
-    // switching the fullscreen implementation to the new API, revisit how much
-    // of this hacky code is necessary.
-    if ([window respondsToSelector:@selector(toggleFullScreen:)]) {
-      NSWindowCollectionBehavior behavior = [window collectionBehavior];
-      behavior |= NSWindowCollectionBehaviorFullScreenPrimary;
-      [window setCollectionBehavior:behavior];
-
-      NSButton* fullscreenButton =
-          [window standardWindowButton:NSWindowFullScreenButton];
-      [fullscreenButton setAction:@selector(enterFullscreen:)];
-      [fullscreenButton setTarget:self];
-    }
+    [self setUpOSFullScreenButton];
 
     // We are done initializing now.
     initializing_ = NO;
@@ -1225,8 +1202,8 @@ enum {
   browser_->tabstrip_model()->DetachTabContentsAt(index);
 }
 
-- (NSView*)selectedTabView {
-  return [tabStripController_ selectedTabView];
+- (NSView*)activeTabView {
+  return [tabStripController_ activeTabView];
 }
 
 - (void)setIsLoading:(BOOL)isLoading force:(BOOL)force {
@@ -1239,7 +1216,7 @@ enum {
 }
 
 - (void)focusTabContents {
-  [[self window] makeFirstResponder:[tabStripController_ selectedTabView]];
+  [[self window] makeFirstResponder:[tabStripController_ activeTabView]];
 }
 
 - (void)layoutTabs {
@@ -1305,7 +1282,7 @@ enum {
   tabRect.size.height = [TabStripController defaultTabHeight];
 
   // And make sure we use the correct frame in the new view.
-  [[controller tabStripController] setFrameOfSelectedTab:tabRect];
+  [[controller tabStripController] setFrameOfActiveTab:tabRect];
   return controller;
 }
 
@@ -1420,7 +1397,7 @@ enum {
   return !browser_->tabstrip_model()->empty();
 }
 
-- (NSString*)selectedTabTitle {
+- (NSString*)activeTabTitle {
   TabContents* contents = browser_->GetSelectedTabContents();
   return base::SysUTF16ToNSString(contents->GetTitle());
 }
@@ -1477,7 +1454,7 @@ enum {
 }
 
 // TabStripControllerDelegate protocol.
-- (void)onSelectTabWithContents:(TabContents*)contents {
+- (void)onActivateTabWithContents:(TabContents*)contents {
   // Update various elements that are interested in knowing the current
   // TabContents.
 
@@ -1495,7 +1472,10 @@ enum {
   // applicable)?
   [self updateBookmarkBarVisibilityWithAnimation:NO];
 
-  [infoBarContainerController_ changeTabContents:contents];
+  TabContentsWrapper* wrapper =
+      TabContentsWrapper::GetCurrentWrapperForContents(contents);
+  // Without the .get(), xcode fails.
+  [infoBarContainerController_.get() changeTabContents:wrapper];
 
   // Update devTools and sidebar contents after size for all views is set.
   [sidebarController_ ensureContentsVisible];
@@ -1503,14 +1483,14 @@ enum {
 }
 
 - (void)onReplaceTabWithContents:(TabContents*)contents {
-  // This is only called when instant results are committed.  Simply remove the
-  // preview view; the tab strip controller will reinstall the view as the
-  // active view.
+  // Simply remove the preview view if it exists; the tab strip
+  // controller will reinstall the view as the active view.
   [previewableContentsController_ hidePreview];
   [self updateBookmarkBarVisibilityWithAnimation:NO];
 }
 
-- (void)onSelectedTabChange:(TabStripModelObserver::TabChangeType)change {
+- (void)onTabChanged:(TabStripModelObserver::TabChangeType)change
+        withContents:(TabContents*)contents {
   // Update titles if this is the currently selected tab and if it isn't just
   // the loading state which changed.
   if (change != TabStripModelObserver::LOADING_ONLY)
@@ -1526,7 +1506,9 @@ enum {
 }
 
 - (void)onTabDetachedWithContents:(TabContents*)contents {
-  [infoBarContainerController_ tabDetachedWithContents:contents];
+  TabContentsWrapper* wrapper =
+      TabContentsWrapper::GetCurrentWrapperForContents(contents);
+  [infoBarContainerController_ tabDetachedWithContents:wrapper];
 }
 
 - (void)userChangedTheme {
@@ -1544,11 +1526,10 @@ enum {
   if (browser_->profile()->IsOffTheRecord())
     style |= THEMED_INCOGNITO;
 
-  Browser::Type type = browser_->type();
-  if (type == Browser::TYPE_POPUP)
-    style |= THEMED_POPUP;
-  else if (type == Browser::TYPE_DEVTOOLS)
+  if (browser_->is_devtools())
     style |= THEMED_DEVTOOLS;
+  if (browser_->is_type_popup())
+    style |= THEMED_POPUP;
 
   return style;
 }
@@ -2057,6 +2038,10 @@ willAnimateFromState:(bookmarks::VisualState)oldState
   // We're done moving focus, so re-enable bar visibility changes.
   [self enableBarVisibilityUpdates];
 
+  // This needs to be done when leaving full-screen mode to ensure that the
+  // button's action is set properly.
+  [self setUpOSFullScreenButton];
+
   // Fade back in.
   if (didFadeOut) {
     CGDisplayFade(token, kFadeDurationSeconds / 2, kCGDisplayBlendSolidColor,
@@ -2195,8 +2180,8 @@ willAnimateFromState:(bookmarks::VisualState)oldState
   return [self supportsWindowFeature:Browser::FEATURE_BOOKMARKBAR];
 }
 
-- (BOOL)isNormalWindow {
-  return browser_->type() == Browser::TYPE_NORMAL;
+- (BOOL)isTabbedWindow {
+  return browser_->is_type_tabbed();
 }
 
 @end  // @implementation BrowserWindowController(WindowType)

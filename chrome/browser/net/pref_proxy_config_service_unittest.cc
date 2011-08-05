@@ -177,7 +177,7 @@ TEST_F(PrefProxyConfigServiceTest, Observers) {
                                              CONFIG_VALID)).Times(1);
   pref_service_->SetManagedPref(
       prefs::kProxy,
-      ProxyConfigDictionary::CreatePacScript(kFixedPacUrl));
+      ProxyConfigDictionary::CreatePacScript(kFixedPacUrl, false));
   loop_.RunAllPending();
   Mock::VerifyAndClearExpectations(&observer);
 
@@ -242,7 +242,7 @@ TEST_F(PrefProxyConfigServiceTest, Fallback) {
                                    CONFIG_VALID)).Times(1);
   pref_service_->SetManagedPref(
       prefs::kProxy,
-      ProxyConfigDictionary::CreatePacScript(kFixedPacUrl));
+      ProxyConfigDictionary::CreatePacScript(kFixedPacUrl, false));
   loop_.RunAllPending();
   Mock::VerifyAndClearExpectations(&observer);
   EXPECT_EQ(CONFIG_VALID,
@@ -261,6 +261,22 @@ TEST_F(PrefProxyConfigServiceTest, Fallback) {
   EXPECT_TRUE(actual_config.Equals(recommended_config));
 
   proxy_config_service_->RemoveObserver(&observer);
+}
+
+TEST_F(PrefProxyConfigServiceTest, ExplicitSystemSettings) {
+  pref_service_->SetRecommendedPref(
+      prefs::kProxy,
+      ProxyConfigDictionary::CreateAutoDetect());
+  pref_service_->SetUserPref(
+      prefs::kProxy,
+      ProxyConfigDictionary::CreateSystem());
+  loop_.RunAllPending();
+
+  // Test if we actually use the system setting, which is |kFixedPacUrl|.
+  net::ProxyConfig actual_config;
+  EXPECT_EQ(net::ProxyConfigService::CONFIG_VALID,
+            proxy_config_service_->GetLatestProxyConfig(&actual_config));
+  EXPECT_EQ(GURL(kFixedPacUrl), actual_config.pac_url());
 }
 
 // Test parameter object for testing command line proxy configuration.

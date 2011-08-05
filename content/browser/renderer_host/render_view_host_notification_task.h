@@ -11,7 +11,7 @@
 #define CONTENT_BROWSER_RENDERER_HOST_RENDER_VIEW_HOST_NOTIFICATION_TASK_H_
 #pragma once
 
-#include "base/callback.h"
+#include "base/callback_old.h"
 #include "base/task.h"
 #include "content/browser/browser_thread.h"
 #include "content/browser/renderer_host/render_view_host.h"
@@ -70,33 +70,6 @@ inline void CallRenderViewHostHelper(int render_process_id, int render_view_id,
                                                          params));
 }
 
-// For proxying calls to RenderViewHostDelegate::ContentSettings
-
-class RenderViewHostToContentSettingsDelegate {
- public:
-  typedef RenderViewHostDelegate::ContentSettings MappedType;
-  static MappedType* Map(RenderViewHost* rvh) {
-    return rvh ? rvh->delegate()->GetContentSettingsDelegate() : NULL;
-  }
-};
-
-template <typename Method, typename Params>
-inline void CallRenderViewHostContentSettingsDelegateHelper(
-    int render_process_id,
-    int render_view_id,
-    Method method,
-    const Params& params) {
-
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      new RenderViewHostNotificationTask<
-          Method, Params, RenderViewHostToContentSettingsDelegate>(
-              render_process_id,
-              render_view_id,
-              method,
-              params));
-}
-
 // For proxying calls to RenderViewHostDelegate::RendererManagement
 
 class RenderViewHostToRendererManagementDelegate {
@@ -117,32 +90,6 @@ inline void CallRenderViewHostRendererManagementDelegateHelper(
       BrowserThread::UI, FROM_HERE,
       new RenderViewHostNotificationTask<
           Method, Params, RenderViewHostToRendererManagementDelegate>(
-              render_process_id,
-              render_view_id,
-              method,
-              params));
-}
-
-// For proxying calls to RenderViewHostDelegate::SSL
-
-class RenderViewHostToSSLDelegate {
- public:
-  typedef RenderViewHostDelegate::SSL MappedType;
-  static MappedType* Map(RenderViewHost* rvh) {
-    return rvh ? rvh->delegate()->GetSSLDelegate() : NULL;
-  }
-};
-
-template <typename Method, typename Params>
-inline void CallRenderViewHostSSLDelegateHelper(
-    int render_process_id,
-    int render_view_id,
-    Method method,
-    const Params& params) {
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      new RenderViewHostNotificationTask<
-          Method, Params, RenderViewHostToSSLDelegate>(
               render_process_id,
               render_view_id,
               method,
@@ -188,84 +135,6 @@ inline void CallRenderViewHost(int render_process_id,
 }
 
 // ----------------------------------------------------------------------------
-// Proxy calls to the specified RenderViewHost's ContentSettings delegate.
-
-template <typename Method>
-inline void CallRenderViewHostContentSettingsDelegate(int render_process_id,
-                                                      int render_view_id,
-                                                      Method method) {
-  internal::CallRenderViewHostContentSettingsDelegateHelper(render_process_id,
-                                                            render_view_id,
-                                                            method,
-                                                            MakeTuple());
-}
-
-template <typename Method, typename A>
-inline void CallRenderViewHostContentSettingsDelegate(int render_process_id,
-                                                      int render_view_id,
-                                                      Method method,
-                                                      const A& a) {
-  internal::CallRenderViewHostContentSettingsDelegateHelper(render_process_id,
-                                                            render_view_id,
-                                                            method,
-                                                            MakeTuple(a));
-        }
-
-template <typename Method, typename A, typename B>
-inline void CallRenderViewHostContentSettingsDelegate(int render_process_id,
-                                                      int render_view_id,
-                                                      Method method,
-                                                      const A& a,
-                                                      const B& b) {
-  internal::CallRenderViewHostContentSettingsDelegateHelper(render_process_id,
-                                                            render_view_id,
-                                                            method,
-                                                            MakeTuple(a, b));
-}
-
-template <typename Method, typename A, typename B, typename C>
-inline void CallRenderViewHostContentSettingsDelegate(int render_process_id,
-                                                      int render_view_id,
-                                                      Method method,
-                                                      const A& a,
-                                                      const B& b,
-                                                      const C& c) {
-  internal::CallRenderViewHostContentSettingsDelegateHelper(render_process_id,
-                                                            render_view_id,
-                                                            method,
-                                                            MakeTuple(a, b, c));
-}
-
-template <typename Method, typename A, typename B, typename C, typename D>
-inline void CallRenderViewHostContentSettingsDelegate(int render_process_id,
-                                                      int render_view_id,
-                                                      Method method,
-                                                      const A& a,
-                                                      const B& b,
-                                                      const C& c,
-                                                      const D& d) {
-  internal::CallRenderViewHostContentSettingsDelegateHelper(
-      render_process_id,
-      render_view_id,
-      method,
-      MakeTuple(a, b, c, d));
-}
-
-template <typename Method,
-          typename A, typename B, typename C, typename D, typename E>
-inline void CallRenderViewHostContentSettingsDelegate(int render_process_id,
-                                                      int render_view_id,
-                                                      Method method,
-                                                      const A& a,
-                                                      const B& b,
-                                                      const C& c,
-                                                      const D& d,
-                                                      const E& e) {
-  internal::CallRenderViewHostContentSettingsDelegateHelper(
-      render_process_id, render_view_id, method, MakeTuple(a, b, c, d, e));
-}
-
-// ----------------------------------------------------------------------------
 // Proxy calls to the specified RenderViewHost's RendererManagement delegate.
 
 template <typename Method>
@@ -298,34 +167,6 @@ inline void CallRenderViewHostRendererManagementDelegate(int render_process_id,
                                                          const A& a,
                                                          const B& b) {
   internal::CallRenderViewHostRendererManagementDelegateHelper(
-      render_process_id,
-      render_view_id,
-      method,
-      MakeTuple(a, b));
-}
-
-// ----------------------------------------------------------------------------
-// Proxy calls to the specified RenderViewHost's SSL delegate.
-
-template <typename Method, typename A>
-inline void CallRenderViewHostSSLDelegate(int render_process_id,
-                                          int render_view_id,
-                                          Method method,
-                                          const A& a) {
-  internal::CallRenderViewHostSSLDelegateHelper(
-      render_process_id,
-      render_view_id,
-      method,
-      MakeTuple(a));
-}
-
-template <typename Method, typename A, typename B>
-inline void CallRenderViewHostSSLDelegate(int render_process_id,
-                                          int render_view_id,
-                                          Method method,
-                                          const A& a,
-                                          const B& b) {
-  internal::CallRenderViewHostSSLDelegateHelper(
       render_process_id,
       render_view_id,
       method,

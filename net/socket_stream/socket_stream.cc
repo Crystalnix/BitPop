@@ -252,7 +252,7 @@ SocketStream::~SocketStream() {
 }
 
 void SocketStream::CopyAddrInfo(struct addrinfo* head) {
-  addresses_.Copy(head, true);
+  addresses_ = AddressList::CreateByCopying(head);
 }
 
 void SocketStream::DoClose() {
@@ -776,7 +776,7 @@ int SocketStream::DoSOCKSConnect() {
 
   next_state_ = STATE_SOCKS_CONNECT_COMPLETE;
 
-  ClientSocket* s = socket_.release();
+  StreamSocket* s = socket_.release();
   HostResolver::RequestInfo req_info(HostPortPair::FromURL(url_));
 
   DCHECK(!proxy_info_.is_empty());
@@ -832,7 +832,7 @@ int SocketStream::DoSSLConnectComplete(int result) {
         reinterpret_cast<SSLClientSocket*>(socket_.get());
       SSLInfo ssl_info;
       ssl_socket->GetSSLInfo(&ssl_info);
-      if (ssl_config_.IsAllowedBadCert(ssl_info.cert)) {
+      if (ssl_config_.IsAllowedBadCert(ssl_info.cert, NULL)) {
         // If we already have the certificate in the set of allowed bad
         // certificates, we did try it and failed again, so we should not
         // retry again: the connection should fail at last.

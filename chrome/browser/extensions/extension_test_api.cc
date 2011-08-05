@@ -8,6 +8,7 @@
 
 #include "base/memory/singleton.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/extensions/extensions_quota_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -50,6 +51,7 @@ ExtensionTestLogFunction::~ExtensionTestLogFunction() {}
 bool ExtensionTestLogFunction::RunImpl() {
   std::string message;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &message));
+  VLOG(1) << message;
   return true;
 }
 

@@ -115,8 +115,16 @@ VectorPlatformDeviceEmf::~VectorPlatformDeviceEmf() {
   SkASSERT(previous_pen_ == NULL);
 }
 
+SkDeviceFactory* VectorPlatformDeviceEmf::onNewDeviceFactory() {
+  return SkNEW(VectorPlatformDeviceEmfFactory);
+}
+
 HDC VectorPlatformDeviceEmf::BeginPlatformPaint() {
   return hdc_;
+}
+
+uint32_t VectorPlatformDeviceEmf::getDeviceCapabilities() {
+  return SkDevice::getDeviceCapabilities() | kVector_Capability;
 }
 
 void VectorPlatformDeviceEmf::drawPaint(const SkDraw& draw,
@@ -431,8 +439,8 @@ void VectorPlatformDeviceEmf::setMatrixClip(const SkMatrix& transform,
     LoadClipRegion();
 }
 
-void VectorPlatformDeviceEmf::drawToHDC(HDC dc, int x, int y,
-                                        const RECT* src_rect) {
+void VectorPlatformDeviceEmf::DrawToNativeContext(HDC dc, int x, int y,
+                                                  const RECT* src_rect) {
   SkASSERT(false);
 }
 

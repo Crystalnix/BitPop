@@ -73,7 +73,6 @@ class BrowserBubble {
   // Show or hide the bubble.
   virtual void Show(bool activate);
   virtual void Hide();
-  bool visible() const { return visible_; }
 
   // The contained view.
   views::View* view() const { return view_; }
@@ -97,7 +96,7 @@ class BrowserBubble {
 
  protected:
   // Create the popup widget.
-  virtual void InitPopup();
+  virtual void InitPopup(const gfx::Insets& content_margins);
 
   // Get |relative_to_| rect in screen coordinates.
   gfx::Rect GetAbsoluteRelativeTo();
@@ -126,9 +125,6 @@ class BrowserBubble {
 
   // The bounds relative to the frame.
   gfx::Rect bounds_;
-
-  // Current visibility.
-  bool visible_;
 
   // The delegate isn't owned by the bubble.
   Delegate* delegate_;

@@ -8,6 +8,7 @@
 
 #include "base/command_line.h"
 #include "chrome/browser/browser_url_handler.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
@@ -19,6 +20,7 @@
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_factory.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/extension.h"
 #include "chrome/common/url_constants.h"
 #include "content/browser/site_instance.h"
 #include "content/browser/tab_contents/tab_contents.h"
@@ -33,8 +35,11 @@ SiteInstance* GetSiteInstance(TabContents* source_contents, Profile* profile,
   // If url is a WebUI or extension, we need to be sure to use the right type
   // of renderer process up front.  Otherwise, we create a normal SiteInstance
   // as part of creating the tab.
-  if (ChromeWebUIFactory::GetInstance()->UseWebUIForURL(profile, url))
+  ExtensionService* service = profile->GetExtensionService();
+  if (ChromeWebUIFactory::GetInstance()->UseWebUIForURL(profile, url) ||
+      (service && service->GetExtensionByWebExtent(url))) {
     return SiteInstance::CreateSiteInstanceForURL(profile, url);
+  }
 
   if (!source_contents)
     return NULL;
@@ -60,9 +65,7 @@ bool WindowCanOpenTabs(Browser* browser) {
 // Finds an existing Browser compatible with |profile|, making a new one if no
 // such Browser is located.
 Browser* GetOrCreateBrowser(Profile* profile) {
-  Browser* browser = BrowserList::FindBrowserWithType(profile,
-                                                      Browser::TYPE_NORMAL,
-                                                      false);
+  Browser* browser = BrowserList::FindTabbedBrowser(profile, false);
   return browser ? browser : Browser::Create(profile);
 }
 
@@ -90,9 +93,10 @@ int GetIndexOfSingletonTab(browser::NavigateParams* params) {
   // URL.
   GURL rewritten_url(params->url);
   bool reverse_on_redirect = false;
-  BrowserURLHandler::RewriteURLIfNecessary(&rewritten_url,
-                                           params->browser->profile(),
-                                           &reverse_on_redirect);
+  BrowserURLHandler::GetInstance()->RewriteURLIfNecessary(
+      &rewritten_url,
+      params->browser->profile(),
+      &reverse_on_redirect);
 
   // If there are several matches: prefer the active tab by starting there.
   int start_index = std::max(0, params->browser->active_index());
@@ -178,26 +182,34 @@ Browser* GetBrowserForDisposition(browser::NavigateParams* params) {
         return GetOrCreateBrowser(profile);
       return NULL;
     case NEW_POPUP: {
-      // Make a new popup window. Coerce app-style if |params->browser| or the
-      // |source| represents an app.
-      Browser::Type type = Browser::TYPE_POPUP;
-      if ((params->browser && (params->browser->type() & Browser::TYPE_APP)) ||
-          (params->source_contents &&
-           params->source_contents->extension_tab_helper()->is_app())) {
-        type = Browser::TYPE_APP_POPUP;
-      }
+      // Make a new popup window.
       if (profile) {
-        Browser* browser = new Browser(type, profile);
-        browser->set_override_bounds(params->window_bounds);
-        browser->InitBrowserWindow();
-        return browser;
+        // Coerce app-style if |params->browser| or |source| represents an app.
+        std::string app_name;
+        if (!params->extension_app_id.empty()) {
+          app_name = params->extension_app_id;
+        } else if (params->browser && !params->browser->app_name().empty()) {
+          app_name = params->browser->app_name();
+        } else if (params->source_contents &&
+                   params->source_contents->extension_tab_helper()->is_app()) {
+          app_name = params->source_contents->extension_tab_helper()->
+              extension_app()->id();
+        }
+        if (app_name.empty()) {
+          Browser::CreateParams browser_params(Browser::TYPE_POPUP, profile);
+          browser_params.initial_bounds = params->window_bounds;
+          return Browser::CreateWithParams(browser_params);
+        } else {
+          return Browser::CreateForApp(Browser::TYPE_POPUP, app_name,
+                                       params->window_bounds, profile);
+        }
       }
       return NULL;
     }
     case NEW_WINDOW:
       // Make a new normal browser window.
       if (profile) {
-        Browser* browser = new Browser(Browser::TYPE_NORMAL, profile);
+        Browser* browser = new Browser(Browser::TYPE_TABBED, profile);
         browser->InitBrowserWindow();
         return browser;
       }
@@ -346,6 +358,7 @@ NavigateParams::NavigateParams(
       tabstrip_index(-1),
       tabstrip_add_types(TabStripModel::ADD_ACTIVE),
       window_action(NO_ACTION),
+      user_gesture(true),
       path_behavior(RESPECT),
       browser(a_browser),
       profile(NULL) {
@@ -360,6 +373,7 @@ NavigateParams::NavigateParams(Browser* a_browser,
       tabstrip_index(-1),
       tabstrip_add_types(TabStripModel::ADD_ACTIVE),
       window_action(NO_ACTION),
+      user_gesture(true),
       path_behavior(RESPECT),
       browser(a_browser),
       profile(NULL) {
@@ -371,6 +385,14 @@ NavigateParams::~NavigateParams() {
 void Navigate(NavigateParams* params) {
   Browser* source_browser = params->browser;
   AdjustNavigateParamsForURL(params);
+
+  // Adjust disposition based on size of popup window.
+  if (params->disposition == NEW_POPUP &&
+      (source_browser && source_browser->window())) {
+    params->disposition =
+        source_browser->window()->GetDispositionForPopupBounds(
+            params->window_bounds);
+  }
 
   params->browser = GetBrowserForDisposition(params);
   if (!params->browser)
@@ -384,13 +406,6 @@ void Navigate(NavigateParams* params) {
     params->referrer = GURL();
   }
 
-  if (params->window_action == browser::NavigateParams::NO_ACTION &&
-      source_browser != params->browser &&
-      params->browser->tabstrip_model()->empty()) {
-    // A new window has been created. So it needs to be displayed.
-    params->window_action = browser::NavigateParams::SHOW_WINDOW;
-  }
-
   // Make sure the Browser is shown if params call for it.
   ScopedBrowserDisplayer displayer(params);
 
@@ -400,6 +415,20 @@ void Navigate(NavigateParams* params) {
 
   // Some dispositions need coercion to base types.
   NormalizeDisposition(params);
+
+  // If a new window has been created, it needs to be displayed.
+  if (params->window_action == browser::NavigateParams::NO_ACTION &&
+      source_browser != params->browser &&
+      params->browser->tabstrip_model()->empty()) {
+    params->window_action = browser::NavigateParams::SHOW_WINDOW;
+  }
+
+  // If we create a popup window from a non user-gesture, don't activate it.
+  if (params->window_action == browser::NavigateParams::SHOW_WINDOW &&
+      params->disposition == NEW_POPUP &&
+      params->user_gesture == false) {
+    params->window_action = browser::NavigateParams::SHOW_WINDOW_INACTIVE;
+  }
 
   // Determine if the navigation was user initiated. If it was, we need to
   // inform the target TabContents, and we may need to update the UI.
@@ -486,7 +515,9 @@ void Navigate(NavigateParams* params) {
   if (singleton_index >= 0) {
     TabContents* target = params->browser->GetTabContentsAt(singleton_index);
 
-    if (params->path_behavior == NavigateParams::IGNORE_AND_NAVIGATE &&
+    if (target->is_crashed()) {
+      target->controller().Reload(true);
+    } else if (params->path_behavior == NavigateParams::IGNORE_AND_NAVIGATE &&
         target->GetURL() != params->url) {
       target->controller().LoadURL(
           params->url, params->referrer, params->transition);

@@ -53,6 +53,10 @@ struct WebPreferences {
   bool remote_fonts_enabled;
   bool javascript_can_access_clipboard;
   bool xss_auditor_enabled;
+  // We don't use dns_prefetching_enabled to disable DNS prefetching.  Instead,
+  // we disable the feature at a lower layer so that we catch non-WebKit uses
+  // of DNS prefetch as well.
+  bool dns_prefetching_enabled;
   bool local_storage_enabled;
   bool databases_enabled;
   bool application_cache_enabled;
@@ -84,6 +88,8 @@ struct WebPreferences {
   bool memory_info_enabled;
   bool interactive_form_validation_enabled;
   bool fullscreen_enabled;
+  bool allow_displaying_insecure_content;
+  bool allow_running_insecure_content;
 
   // We try to keep the default values the same as the default values in
   // chrome, except for the cases where it would require lots of extra work for

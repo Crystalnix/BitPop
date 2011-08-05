@@ -11,21 +11,10 @@
 #include "chrome/browser/ui/status_bubble.h"
 #include "chrome/browser/ui/views/frame/app_panel_browser_frame_view.h"
 #include "chrome/browser/ui/views/frame/browser_non_client_frame_view.h"
-#include "chrome/browser/ui/views/frame/browser_root_view.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "ui/gfx/font.h"
 #include "views/widget/root_view.h"
 #include "views/window/hit_test.h"
-
-#if !defined(OS_CHROMEOS)
-// static (Factory method.)
-BrowserFrame* BrowserFrame::Create(BrowserView* browser_view,
-                                   Profile* profile) {
-  BrowserFrameGtk* frame = new BrowserFrameGtk(browser_view, profile);
-  frame->InitBrowserFrame();
-  return frame;
-}
-#endif
 
 // static
 const gfx::Font& BrowserFrame::GetTitleFont() {
@@ -33,22 +22,15 @@ const gfx::Font& BrowserFrame::GetTitleFont() {
   return *title_font;
 }
 
-BrowserFrameGtk::BrowserFrameGtk(BrowserView* browser_view, Profile* profile)
-    : BrowserFrame(browser_view),
-      WindowGtk(browser_view),
-      ALLOW_THIS_IN_INITIALIZER_LIST(delegate_(this)),
+BrowserFrameGtk::BrowserFrameGtk(BrowserFrame* browser_frame,
+                                 BrowserView* browser_view)
+    : views::NativeWindowGtk(browser_frame),
       browser_view_(browser_view) {
-  set_native_browser_frame(this);
-  browser_view_->set_frame(this);
-  non_client_view()->SetFrameView(CreateFrameViewForWindow());
+  // Don't focus anything on creation, selecting a tab will set the focus.
+  set_focus_on_creation(false);
 }
 
 BrowserFrameGtk::~BrowserFrameGtk() {
-}
-
-void BrowserFrameGtk::InitBrowserFrame() {
-  WindowGtk::InitWindow(NULL, gfx::Rect());
-  // Don't focus anything on creation, selecting a tab will set the focus.
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -62,62 +44,26 @@ const views::NativeWindow* BrowserFrameGtk::AsNativeWindow() const {
   return this;
 }
 
-BrowserNonClientFrameView* BrowserFrameGtk::CreateBrowserNonClientFrameView() {
-  return browser::CreateBrowserNonClientFrameView(this, browser_view_);
-}
-
 int BrowserFrameGtk::GetMinimizeButtonOffset() const {
   NOTIMPLEMENTED();
   return 0;
 }
 
-ThemeProvider* BrowserFrameGtk::GetThemeProviderForFrame() const {
-  // This is implemented for a different interface than GetThemeProvider is,
-  // but they mean the same things.
-  return GetThemeProvider();
-}
-
-bool BrowserFrameGtk::AlwaysUseNativeFrame() const {
-  return false;
-}
-
 void BrowserFrameGtk::TabStripDisplayModeChanged() {
-  if (GetRootView()->has_children()) {
+  if (GetWidget()->GetRootView()->has_children()) {
     // Make sure the child of the root view gets Layout again.
-    GetRootView()->GetChildViewAt(0)->InvalidateLayout();
+    GetWidget()->GetRootView()->GetChildViewAt(0)->InvalidateLayout();
   }
-  GetRootView()->Layout();
+  GetWidget()->GetRootView()->Layout();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// BrowserFrameGtk, WindowGtk overrides :
-
-ThemeProvider* BrowserFrameGtk::GetThemeProvider() const {
-  return ThemeServiceFactory::GetForProfile(
-      browser_view_->browser()->profile());
-}
-
-void BrowserFrameGtk::SetInitialFocus() {
-  browser_view_->RestoreFocus();
-}
-
-views::RootView* BrowserFrameGtk::CreateRootView() {
-  return delegate_->DelegateCreateRootView();
-}
-
-bool BrowserFrameGtk::GetAccelerator(int cmd_id,
-                                     ui::Accelerator* accelerator) {
-  return browser_view_->GetAccelerator(cmd_id, accelerator);
-}
-
-views::NonClientFrameView* BrowserFrameGtk::CreateFrameViewForWindow() {
-  return delegate_->DelegateCreateFrameViewForWindow();
-}
+// BrowserFrameGtk, NativeWindowGtk overrides:
 
 gboolean BrowserFrameGtk::OnWindowStateEvent(GtkWidget* widget,
                                              GdkEventWindowState* event) {
   bool was_full_screen = IsFullscreen();
-  gboolean result = views::WindowGtk::OnWindowStateEvent(widget, event);
+  gboolean result = views::NativeWindowGtk::OnWindowStateEvent(widget, event);
   if ((!IsVisible() || IsMinimized()) && browser_view_->GetStatusBubble()) {
     // The window is effectively hidden. We have to hide the status bubble as
     // unlike windows gtk has no notion of child windows that are hidden along
@@ -132,5 +78,17 @@ gboolean BrowserFrameGtk::OnWindowStateEvent(GtkWidget* widget,
 gboolean BrowserFrameGtk::OnConfigureEvent(GtkWidget* widget,
                                            GdkEventConfigure* event) {
   browser_view_->WindowMoved();
-  return views::WindowGtk::OnConfigureEvent(widget, event);
+  return views::NativeWindowGtk::OnConfigureEvent(widget, event);
 }
+
+
+////////////////////////////////////////////////////////////////////////////////
+// NativeBrowserFrame, public:
+
+// static
+NativeBrowserFrame* NativeBrowserFrame::CreateNativeBrowserFrame(
+    BrowserFrame* browser_frame,
+    BrowserView* browser_view) {
+  return new BrowserFrameGtk(browser_frame, browser_view);
+}
+

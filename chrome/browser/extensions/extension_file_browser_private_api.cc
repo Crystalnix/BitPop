@@ -24,7 +24,6 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/views/html_dialog_view.h"
 #include "chrome/browser/ui/webui/extension_icon_source.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
@@ -64,12 +63,12 @@ const int kReadWriteFilePermissions = base::PLATFORM_FILE_OPEN |
                                       base::PLATFORM_FILE_CREATE |
                                       base::PLATFORM_FILE_OPEN_ALWAYS |
                                       base::PLATFORM_FILE_CREATE_ALWAYS |
+                                      base::PLATFORM_FILE_OPEN_TRUNCATED |
                                       base::PLATFORM_FILE_READ |
                                       base::PLATFORM_FILE_WRITE |
                                       base::PLATFORM_FILE_EXCLUSIVE_READ |
                                       base::PLATFORM_FILE_EXCLUSIVE_WRITE |
                                       base::PLATFORM_FILE_ASYNC |
-                                      base::PLATFORM_FILE_TRUNCATE |
                                       base::PLATFORM_FILE_WRITE_ATTRIBUTES;
 
 typedef std::pair<int, const FileBrowserHandler* > LastUsedHandler;
@@ -239,10 +238,6 @@ class LocalFileSystemCallbackDispatcher
     NOTREACHED();
   }
 
-  virtual void DidGetLocalPath(const FilePath& local_path) {
-    NOTREACHED();
-  }
-
   virtual void DidReadMetadata(const base::PlatformFileInfo& info,
                                const FilePath& unused) OVERRIDE {
     NOTREACHED();
@@ -352,8 +347,7 @@ void RequestLocalFileSystemFunction::RequestOnFileThread(
 }
 
 bool RequestLocalFileSystemFunction::RunImpl() {
-  if (!dispatcher() || !dispatcher()->render_view_host() ||
-      !dispatcher()->render_view_host()->process())
+  if (!dispatcher() || !render_view_host() || !render_view_host()->process())
     return false;
 
   BrowserThread::PostTask(
@@ -361,7 +355,7 @@ bool RequestLocalFileSystemFunction::RunImpl() {
       NewRunnableMethod(this,
           &RequestLocalFileSystemFunction::RequestOnFileThread,
           source_url_,
-          dispatcher()->render_view_host()->process()->id()));
+          render_view_host()->process()->id()));
   // Will finish asynchronously.
   return true;
 }
@@ -446,10 +440,6 @@ class ExecuteTasksFileSystemCallbackDispatcher
 
   // fileapi::FileSystemCallbackDispatcher overrides.
   virtual void DidSucceed() OVERRIDE {
-    NOTREACHED();
-  }
-
-  virtual void DidGetLocalPath(const FilePath& local_path) {
     NOTREACHED();
   }
 
@@ -679,7 +669,7 @@ void ExecuteTasksFileBrowserFunction::RequestFileEntryOnFileThread(
           new ExecuteTasksFileSystemCallbackDispatcher(
               this,
               profile(),
-              dispatcher()->render_view_host()->process()->id(),
+              render_view_host()->process()->id(),
               source_url,
               GetExtension(),
               task_id,
@@ -774,7 +764,7 @@ FileDialogFunction::~FileDialogFunction() {
 
 // static
 FileDialogFunction::Callback
-FileDialogFunction::Callback::null_(NULL, NULL, NULL);
+FileDialogFunction::Callback::null_(NULL, NULL);
 
 // static
 FileDialogFunction::Callback::Map FileDialogFunction::Callback::map_;
@@ -782,10 +772,9 @@ FileDialogFunction::Callback::Map FileDialogFunction::Callback::map_;
 // static
 void FileDialogFunction::Callback::Add(int32 tab_id,
                                      SelectFileDialog::Listener* listener,
-                                     HtmlDialogView* dialog,
                                      void* params) {
   if (map_.find(tab_id) == map_.end()) {
-    map_.insert(std::make_pair(tab_id, Callback(listener, dialog, params)));
+    map_.insert(std::make_pair(tab_id, Callback(listener, params)));
   } else {
     DLOG_ASSERT("FileDialogFunction::AddCallback tab_id already present");
   }
@@ -805,23 +794,32 @@ FileDialogFunction::Callback::Find(int32 tab_id) {
 
 
 int32 FileDialogFunction::GetTabId() const {
-  return dispatcher()->delegate()->associated_tab_contents()->
-    controller().session_id().id();
+  int32 tab_id = 0;
+  if (!dispatcher()) {
+    NOTREACHED();
+    return tab_id;
+  }
+
+  // TODO(jamescook):  This is going to fail when we switch to tab-modal
+  // dialogs.  Figure out a way to find which SelectFileDialog::Listener
+  // to call from inside these extension FileDialogFunctions.
+  Browser* browser = const_cast<FileDialogFunction*>(this)->GetCurrentBrowser();
+  if (browser) {
+    TabContents* contents = browser->GetSelectedTabContents();
+    if (contents)
+      tab_id = ExtensionTabUtil::GetTabId(contents);
+  }
+  return tab_id;
 }
 
 const FileDialogFunction::Callback& FileDialogFunction::GetCallback() const {
-  if (!dispatcher() || !dispatcher()->delegate() ||
-      !dispatcher()->delegate()->associated_tab_contents()) {
-    return Callback::null();
-  }
   return Callback::Find(GetTabId());
 }
 
-void FileDialogFunction::CloseDialog(HtmlDialogView* dialog) {
-  DCHECK(dialog);
-  TabContents* contents = dispatcher()->delegate()->associated_tab_contents();
-  if (contents)
-    dialog->CloseContents(contents);
+void FileDialogFunction::RemoveCallback() {
+  // Listeners expect to be invoked exactly once, so we need to remove our
+  // callback objects afterwards.
+  Callback::Remove(GetTabId());
 }
 
 // GetFileSystemRootPathOnFileThread can only be called from the file thread,
@@ -907,12 +905,13 @@ void SelectFileFunction::GetLocalPathsResponseOnUIThread(
   const Callback& callback = GetCallback();
   DCHECK(!callback.IsNull());
   if (!callback.IsNull()) {
-    // Must do this before callback, as the callback may delete listeners
-    // waiting for window close.
-    CloseDialog(callback.dialog());
+    LOG(INFO) << "FileBrowser: FileSelected";
     callback.listener()->FileSelected(files[0],
                                       index,
                                       callback.params());
+    RemoveCallback();  // Listeners expect to be invoked exactly once.
+  } else {
+    LOG(WARNING) << "Callback not found";
   }
   SendResponse(true);
 }
@@ -1006,10 +1005,11 @@ void SelectFilesFunction::GetLocalPathsResponseOnUIThread(
   const Callback& callback = GetCallback();
   DCHECK(!callback.IsNull());
   if (!callback.IsNull()) {
-    // Must do this before callback, as the callback may delete listeners
-    // waiting for window close.
-    CloseDialog(callback.dialog());
+    LOG(INFO) << "FileBrowser: MultiFilesSelected";
     callback.listener()->MultiFilesSelected(files, callback.params());
+    RemoveCallback();  // Listeners expect to be invoked exactly once.
+  } else {
+    LOG(WARNING) << "Callback not found";
   }
   SendResponse(true);
 }
@@ -1018,10 +1018,11 @@ bool CancelFileDialogFunction::RunImpl() {
   const Callback& callback = GetCallback();
   DCHECK(!callback.IsNull());
   if (!callback.IsNull()) {
-    // Must do this before callback, as the callback may delete listeners
-    // waiting for window close.
-    CloseDialog(callback.dialog());
+    LOG(INFO) << "FileBrowser: Cancel";
     callback.listener()->FileSelectionCanceled(callback.params());
+    RemoveCallback();  // Listeners expect to be invoked exactly once.
+  } else {
+    LOG(WARNING) << "Callback not found";
   }
   SendResponse(true);
   return true;
@@ -1095,6 +1096,8 @@ bool FileDialogStringsFunction::RunImpl() {
   SET_STRING(IDS_FILE_BROWSER, NOTHING_SELECTED);
   SET_STRING(IDS_FILE_BROWSER, ONE_FILE_SELECTED);
   SET_STRING(IDS_FILE_BROWSER, MANY_FILES_SELECTED);
+
+  SET_STRING(IDS_FILE_BROWSER, PLAYBACK_ERROR);
 
   // FILEBROWSER, without the underscore, is from the old school codebase.
   // TODO(rginda): Move these into IDS_FILE_BROWSER post M12.

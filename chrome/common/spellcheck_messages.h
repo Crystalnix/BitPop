@@ -94,3 +94,12 @@ IPC_MESSAGE_CONTROL4(SpellCheckHostMsg_PlatformRequestTextCheck,
                      int /* request identifier given by WebKit */,
                      int /* document tag */,
                      string16 /* sentence */)
+
+// Only used on Mac.
+IPC_MESSAGE_ROUTED2(SpellCheckHostMsg_ToggleSpellCheck,
+                    bool /* enabled */,
+                    bool /* checked */)
+
+// Tracks spell checking occurrence to collect histogram.
+IPC_MESSAGE_ROUTED1(SpellCheckHostMsg_NotifyChecked,
+                    bool /* true if checked word is misspelled */)

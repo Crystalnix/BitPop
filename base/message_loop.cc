@@ -4,20 +4,20 @@
 
 #include "base/message_loop.h"
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
-#include <gdk/gdk.h>
-#include <gdk/gdkx.h>
-#endif
-
 #include <algorithm>
 
+#include "base/bind.h"
 #include "base/compiler_specific.h"
+#include "base/debug/alias.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/message_pump_default.h"
 #include "base/metrics/histogram.h"
+#include "base/scoped_ptr.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "base/threading/thread_local.h"
+#include "base/time.h"
+#include "base/tracked_objects.h"
 
 #if defined(OS_MACOSX)
 #include "base/message_pump_mac.h"
@@ -26,6 +26,8 @@
 #include "base/message_pump_libevent.h"
 #endif
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
+#include <gdk/gdk.h>
+#include <gdk/gdkx.h>
 #include "base/message_pump_glib.h"
 #endif
 #if defined(TOUCH_UI)
@@ -81,6 +83,40 @@ const base::LinearHistogram::DescriptionPair event_descriptions_[] = {
 
 bool enable_histogrammer_ = false;
 
+// TODO(ajwong): This is one use case for having a Owned() tag that behaves
+// like a "Unique" pointer.  If we had that, and Tasks were always safe to
+// delete on MessageLoop shutdown, this class could just be a function.
+class TaskClosureAdapter : public base::RefCounted<TaskClosureAdapter> {
+ public:
+  // |should_leak_task| points to a flag variable that can be used to determine
+  // if this class should leak the Task on destruction.  This is important
+  // at MessageLoop shutdown since not all tasks can be safely deleted without
+  // running.  See MessageLoop::DeletePendingTasks() for the exact behavior
+  // of when a Task should be deleted. It is subtle.
+  TaskClosureAdapter(Task* task, bool* should_leak_task)
+      : task_(task),
+        should_leak_task_(should_leak_task) {
+  }
+
+  void Run() {
+    task_->Run();
+    delete task_;
+    task_ = NULL;
+  }
+
+ private:
+  friend class base::RefCounted<TaskClosureAdapter>;
+
+  ~TaskClosureAdapter() {
+    if (!*should_leak_task_) {
+      delete task_;
+    }
+  }
+
+  Task* task_;
+  bool* should_leak_task_;
+};
+
 }  // namespace
 
 //------------------------------------------------------------------------------
@@ -124,6 +160,7 @@ MessageLoop::MessageLoop(Type type)
       exception_restoration_(false),
       message_histogram_(NULL),
       state_(NULL),
+      should_leak_tasks_(true),
 #ifdef OS_WIN
       os_modal_loop_(false),
 #endif  // OS_WIN
@@ -191,6 +228,16 @@ MessageLoop::~MessageLoop() {
 
   // OK, now make it so that no one can find us.
   lazy_tls_ptr.Pointer()->Set(NULL);
+
+#if defined(OS_WIN)
+  // If we left the high-resolution timer activated, deactivate it now.
+  // Doing this is not-critical, it is mainly to make sure we track
+  // the high resolution timer activations properly in our unit tests.
+  if (!high_resolution_timer_expiration_.is_null()) {
+    base::Time::ActivateHighResolutionTimer(false);
+    high_resolution_timer_expiration_ = base::TimeTicks();
+  }
+#endif
 }
 
 // static
@@ -220,22 +267,78 @@ void MessageLoop::RemoveDestructionObserver(
 
 void MessageLoop::PostTask(
     const tracked_objects::Location& from_here, Task* task) {
-  PostTask_Helper(from_here, task, 0, true);
+  CHECK(task);
+  PendingTask pending_task(
+      base::Bind(&TaskClosureAdapter::Run,
+                 new TaskClosureAdapter(task, &should_leak_tasks_)),
+      from_here,
+      CalculateDelayedRuntime(0), true);
+  AddToIncomingQueue(&pending_task);
 }
 
 void MessageLoop::PostDelayedTask(
     const tracked_objects::Location& from_here, Task* task, int64 delay_ms) {
-  PostTask_Helper(from_here, task, delay_ms, true);
+  CHECK(task);
+  PendingTask pending_task(
+      base::Bind(&TaskClosureAdapter::Run,
+                 new TaskClosureAdapter(task, &should_leak_tasks_)),
+      from_here,
+      CalculateDelayedRuntime(delay_ms), true);
+  AddToIncomingQueue(&pending_task);
 }
 
 void MessageLoop::PostNonNestableTask(
     const tracked_objects::Location& from_here, Task* task) {
-  PostTask_Helper(from_here, task, 0, false);
+  CHECK(task);
+  PendingTask pending_task(
+      base::Bind(&TaskClosureAdapter::Run,
+                 new TaskClosureAdapter(task, &should_leak_tasks_)),
+      from_here,
+      CalculateDelayedRuntime(0), false);
+  AddToIncomingQueue(&pending_task);
 }
 
 void MessageLoop::PostNonNestableDelayedTask(
     const tracked_objects::Location& from_here, Task* task, int64 delay_ms) {
-  PostTask_Helper(from_here, task, delay_ms, false);
+  CHECK(task);
+  PendingTask pending_task(
+      base::Bind(&TaskClosureAdapter::Run,
+                 new TaskClosureAdapter(task, &should_leak_tasks_)),
+      from_here,
+      CalculateDelayedRuntime(delay_ms), false);
+  AddToIncomingQueue(&pending_task);
+}
+
+void MessageLoop::PostTask(
+    const tracked_objects::Location& from_here, const base::Closure& task) {
+  CHECK(!task.is_null());
+  PendingTask pending_task(task, from_here, CalculateDelayedRuntime(0), true);
+  AddToIncomingQueue(&pending_task);
+}
+
+void MessageLoop::PostDelayedTask(
+    const tracked_objects::Location& from_here, const base::Closure& task,
+    int64 delay_ms) {
+  CHECK(!task.is_null());
+  PendingTask pending_task(task, from_here,
+                           CalculateDelayedRuntime(delay_ms), true);
+  AddToIncomingQueue(&pending_task);
+}
+
+void MessageLoop::PostNonNestableTask(
+    const tracked_objects::Location& from_here, const base::Closure& task) {
+  CHECK(!task.is_null());
+  PendingTask pending_task(task, from_here, CalculateDelayedRuntime(0), false);
+  AddToIncomingQueue(&pending_task);
+}
+
+void MessageLoop::PostNonNestableDelayedTask(
+    const tracked_objects::Location& from_here, const base::Closure& task,
+    int64 delay_ms) {
+  CHECK(!task.is_null());
+  PendingTask pending_task(task, from_here,
+                           CalculateDelayedRuntime(delay_ms), false);
+  AddToIncomingQueue(&pending_task);
 }
 
 void MessageLoop::Run() {
@@ -353,31 +456,48 @@ bool MessageLoop::ProcessNextDelayedNonNestableTask() {
   if (deferred_non_nestable_work_queue_.empty())
     return false;
 
-  Task* task = deferred_non_nestable_work_queue_.front().task;
+  PendingTask pending_task = deferred_non_nestable_work_queue_.front();
   deferred_non_nestable_work_queue_.pop();
 
-  RunTask(task);
+  RunTask(pending_task);
   return true;
 }
 
-void MessageLoop::RunTask(Task* task) {
+void MessageLoop::RunTask(const PendingTask& pending_task) {
   DCHECK(nestable_tasks_allowed_);
   // Execute the task and assume the worst: It is probably not reentrant.
   nestable_tasks_allowed_ = false;
 
+  // Before running the task, store the program counter where it was posted
+  // and deliberately alias it to ensure it is on the stack if the task
+  // crashes. Be careful not to assume that the variable itself will have the
+  // expected value when displayed by the optimizer in an optimized build.
+  // Look at a memory dump of the stack.
+  const void* program_counter = pending_task.birth_program_counter;
+  base::debug::Alias(&program_counter);
+
   HistogramEvent(kTaskRunEvent);
   FOR_EACH_OBSERVER(TaskObserver, task_observers_,
-                    WillProcessTask(task));
-  task->Run();
-  FOR_EACH_OBSERVER(TaskObserver, task_observers_, DidProcessTask(task));
-  delete task;
+                    WillProcessTask(pending_task.time_posted));
+  pending_task.task.Run();
+  FOR_EACH_OBSERVER(TaskObserver, task_observers_,
+                    DidProcessTask(pending_task.time_posted));
+
+#if defined(TRACK_ALL_TASK_OBJECTS)
+  if (tracked_objects::ThreadData::IsActive() && pending_task.post_births) {
+    tracked_objects::ThreadData::current()->TallyADeath(
+        *pending_task.post_births,
+        TimeTicks::Now() - pending_task.time_posted);
+  }
+#endif  // defined(TRACK_ALL_TASK_OBJECTS)
 
   nestable_tasks_allowed_ = true;
 }
 
-bool MessageLoop::DeferOrRunPendingTask(const PendingTask& pending_task) {
+bool MessageLoop::DeferOrRunPendingTask(
+    const PendingTask& pending_task) {
   if (pending_task.nestable || state_->run_depth == 1) {
-    RunTask(pending_task.task);
+    RunTask(pending_task);
     // Show that we ran a task (Note: a new one might arrive as a
     // consequence!).
     return true;
@@ -419,6 +539,18 @@ void MessageLoop::ReloadWorkQueue() {
 
 bool MessageLoop::DeletePendingTasks() {
   bool did_work = !work_queue_.empty();
+  // TODO(darin): Delete all tasks once it is safe to do so.
+  // Until it is totally safe, just do it when running Purify or
+  // Valgrind.
+  //
+  // See http://crbug.com/61131
+  //
+#if defined(PURIFY) || defined(USE_HEAPCHECKER)
+  should_leak_tasks_ = false;
+#else
+      if (RunningOnValgrind())
+        should_leak_tasks_ = false;
+#endif  // defined(OS_POSIX)
   while (!work_queue_.empty()) {
     PendingTask pending_task = work_queue_.front();
     work_queue_.pop();
@@ -427,52 +559,31 @@ bool MessageLoop::DeletePendingTasks() {
       // normally be deleted in case of any funny dependencies between delayed
       // tasks.
       AddToDelayedWorkQueue(pending_task);
-    } else {
-      // TODO(darin): Delete all tasks once it is safe to do so.
-      // Until it is totally safe, just do it when running Purify or
-      // Valgrind.
-#if defined(PURIFY) || defined(USE_HEAPCHECKER)
-      delete pending_task.task;
-#else
-      if (RunningOnValgrind())
-        delete pending_task.task;
-#endif  // defined(OS_POSIX)
     }
   }
   did_work |= !deferred_non_nestable_work_queue_.empty();
   while (!deferred_non_nestable_work_queue_.empty()) {
-    // TODO(darin): Delete all tasks once it is safe to do so.
-    // Until it is totaly safe, only delete them under Purify and Valgrind.
-    Task* task = NULL;
-#if defined(PURIFY) || defined(USE_HEAPCHECKER)
-    task = deferred_non_nestable_work_queue_.front().task;
-#else
-    if (RunningOnValgrind())
-      task = deferred_non_nestable_work_queue_.front().task;
-#endif
     deferred_non_nestable_work_queue_.pop();
-    if (task)
-      delete task;
   }
   did_work |= !delayed_work_queue_.empty();
+
+  // Historically, we always delete the task regardless of valgrind status. It's
+  // not completely clear why we want to leak them in the loops above.  This
+  // code is replicating legacy behavior, and should not be considered
+  // absolutely "correct" behavior.  See TODO above about deleting all tasks
+  // when it's safe.
+  should_leak_tasks_ = false;
   while (!delayed_work_queue_.empty()) {
-    Task* task = delayed_work_queue_.top().task;
     delayed_work_queue_.pop();
-    delete task;
   }
+  should_leak_tasks_ = true;
   return did_work;
 }
 
-// Possibly called on a background thread!
-void MessageLoop::PostTask_Helper(
-    const tracked_objects::Location& from_here, Task* task, int64 delay_ms,
-    bool nestable) {
-  task->SetBirthPlace(from_here);
-
-  PendingTask pending_task(task, nestable);
-
+TimeTicks MessageLoop::CalculateDelayedRuntime(int64 delay_ms) {
+  TimeTicks delayed_run_time;
   if (delay_ms > 0) {
-    pending_task.delayed_run_time =
+    delayed_run_time =
         TimeTicks::Now() + TimeDelta::FromMilliseconds(delay_ms);
 
 #if defined(OS_WIN)
@@ -485,9 +596,10 @@ void MessageLoop::PostTask_Helper(
       bool needs_high_res_timers =
           delay_ms < (2 * base::Time::kMinLowResolutionThresholdMs);
       if (needs_high_res_timers) {
-        base::Time::ActivateHighResolutionTimer(true);
-        high_resolution_timer_expiration_ = TimeTicks::Now() +
-            TimeDelta::FromMilliseconds(kHighResolutionTimerModeLeaseTimeMs);
+        if (base::Time::ActivateHighResolutionTimer(true)) {
+          high_resolution_timer_expiration_ = TimeTicks::Now() +
+              TimeDelta::FromMilliseconds(kHighResolutionTimerModeLeaseTimeMs);
+        }
       }
     }
 #endif
@@ -504,6 +616,11 @@ void MessageLoop::PostTask_Helper(
   }
 #endif
 
+  return delayed_run_time;
+}
+
+// Possibly called on a background thread!
+void MessageLoop::AddToIncomingQueue(PendingTask* pending_task) {
   // Warning: Don't try to short-circuit, and handle this thread's tasks more
   // directly, as it could starve handling of foreign threads.  Put every task
   // into this queue.
@@ -513,7 +630,8 @@ void MessageLoop::PostTask_Helper(
     base::AutoLock locked(incoming_queue_lock_);
 
     bool was_empty = incoming_queue_.empty();
-    incoming_queue_.push(pending_task);
+    incoming_queue_.push(*pending_task);
+    pending_task->task.Reset();
     if (!was_empty)
       return;  // Someone else should have started the sub-pump.
 
@@ -566,8 +684,8 @@ bool MessageLoop::DoWork() {
       work_queue_.pop();
       if (!pending_task.delayed_run_time.is_null()) {
         AddToDelayedWorkQueue(pending_task);
-        // If we changed the topmost task, then it is time to re-schedule.
-        if (delayed_work_queue_.top().task == pending_task.task)
+        // If we changed the topmost task, then it is time to reschedule.
+        if (delayed_work_queue_.top().task.Equals(pending_task.task))
           pump_->ScheduleDelayedWork(pending_task.delayed_run_time);
       } else {
         if (DeferOrRunPendingTask(pending_task))
@@ -580,7 +698,7 @@ bool MessageLoop::DoWork() {
   return false;
 }
 
-bool MessageLoop::DoDelayedWork(base::TimeTicks* next_delayed_work_time) {
+bool MessageLoop::DoDelayedWork(TimeTicks* next_delayed_work_time) {
   if (!nestable_tasks_allowed_ || delayed_work_queue_.empty()) {
     recent_time_ = *next_delayed_work_time = TimeTicks();
     return false;
@@ -647,6 +765,34 @@ MessageLoop::AutoRunState::~AutoRunState() {
 
 //------------------------------------------------------------------------------
 // MessageLoop::PendingTask
+
+MessageLoop::PendingTask::PendingTask(
+    const base::Closure& task,
+    const tracked_objects::Location& posted_from,
+    TimeTicks delayed_run_time,
+    bool nestable)
+    : task(task),
+      time_posted(TimeTicks::Now()),
+      delayed_run_time(delayed_run_time),
+      sequence_num(0),
+      nestable(nestable),
+      birth_program_counter(posted_from.program_counter()) {
+#if defined(TRACK_ALL_TASK_OBJECTS)
+  if (tracked_objects::ThreadData::IsActive()) {
+    tracked_objects::ThreadData* current_thread_data =
+        tracked_objects::ThreadData::current();
+    if (current_thread_data) {
+      post_births = current_thread_data->TallyABirth(posted_from);
+    } else {
+      // Shutdown started, and this thread wasn't registered.
+      post_births = NULL;
+    }
+  }
+#endif  // defined(TRACK_ALL_TASK_OBJECTS)
+}
+
+MessageLoop::PendingTask::~PendingTask() {
+}
 
 bool MessageLoop::PendingTask::operator<(const PendingTask& other) const {
   // Since the top of a priority queue is defined as the "greatest" element, we

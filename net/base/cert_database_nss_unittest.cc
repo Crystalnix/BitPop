@@ -10,8 +10,8 @@
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/lazy_instance.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/path_service.h"
+#include "base/scoped_temp_dir.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "crypto/nss_util.h"
@@ -23,8 +23,8 @@
 #include "net/base/crypto_module.h"
 #include "net/base/net_errors.h"
 #include "net/base/x509_certificate.h"
-#include "net/third_party/mozilla_security_manager/nsNSSCertificateDB.h"
 #include "net/third_party/mozilla_security_manager/nsNSSCertTrust.h"
+#include "net/third_party/mozilla_security_manager/nsNSSCertificateDB.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace psm = mozilla_security_manager;
@@ -155,18 +155,20 @@ TEST_F(CertDatabaseNSSTest, ImportFromPKCS12WrongPassword) {
   EXPECT_EQ(ERR_PKCS12_IMPORT_BAD_PASSWORD,
             cert_db_.ImportFromPKCS12(slot_,
                                       pkcs12_data,
-                                      ASCIIToUTF16("")));
+                                      ASCIIToUTF16(""),
+                                      true));  // is_extractable
 
   // Test db should still be empty.
   EXPECT_EQ(0U, ListCertsInSlot(slot_->os_module_handle()).size());
 }
 
-TEST_F(CertDatabaseNSSTest, ImportFromPKCS12AndExportAgain) {
+TEST_F(CertDatabaseNSSTest, ImportFromPKCS12AsExtractableAndExportAgain) {
   std::string pkcs12_data = ReadTestFile("client.p12");
 
   EXPECT_EQ(OK, cert_db_.ImportFromPKCS12(slot_,
                                           pkcs12_data,
-                                          ASCIIToUTF16("12345")));
+                                          ASCIIToUTF16("12345"),
+                                          true));  // is_extractable
 
   CertificateList cert_list = ListCertsInSlot(slot_->os_module_handle());
   ASSERT_EQ(1U, cert_list.size());
@@ -181,6 +183,26 @@ TEST_F(CertDatabaseNSSTest, ImportFromPKCS12AndExportAgain) {
                                        &exported_data));
   ASSERT_LT(0U, exported_data.size());
   // TODO(mattm): further verification of exported data?
+}
+
+TEST_F(CertDatabaseNSSTest, ImportFromPKCS12AsUnextractableAndExportAgain) {
+  std::string pkcs12_data = ReadTestFile("client.p12");
+
+  EXPECT_EQ(OK, cert_db_.ImportFromPKCS12(slot_,
+                                          pkcs12_data,
+                                          ASCIIToUTF16("12345"),
+                                          false));  // is_extractable
+
+  CertificateList cert_list = ListCertsInSlot(slot_->os_module_handle());
+  ASSERT_EQ(1U, cert_list.size());
+  scoped_refptr<X509Certificate> cert(cert_list[0]);
+
+  EXPECT_EQ("testusercert",
+            cert->subject().common_name);
+
+  std::string exported_data;
+  EXPECT_EQ(0, cert_db_.ExportToPKCS12(cert_list, ASCIIToUTF16("exportpw"),
+                                       &exported_data));
 }
 
 TEST_F(CertDatabaseNSSTest, ImportCACert_SSLTrust) {

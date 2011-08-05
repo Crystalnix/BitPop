@@ -10,8 +10,8 @@
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/path_service.h"
+#include "base/scoped_temp_dir.h"
 #include "base/string16.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
@@ -374,11 +374,7 @@ void ExpireHistoryTest::EnsureURLInfoGone(const URLRow& row) {
   // TODO(sky): fix this, see comment in HasThumbnail.
   // EXPECT_FALSE(HasThumbnail(row.id()));
 
-  // Check the notifications. There should be a delete notification with this
-  // URL in it. There should also be a "typed URL changed" notification if the
-  // row is marked typed.
   bool found_delete_notification = false;
-  bool found_typed_changed_notification = false;
   for (size_t i = 0; i < notifications_.size(); i++) {
     if (notifications_[i].first == NotificationType::HISTORY_URLS_DELETED) {
       const URLsDeletedDetails* deleted_details =
@@ -387,27 +383,13 @@ void ExpireHistoryTest::EnsureURLInfoGone(const URLRow& row) {
           deleted_details->urls.end()) {
         found_delete_notification = true;
       }
-    } else if (notifications_[i].first ==
-               NotificationType::HISTORY_TYPED_URLS_MODIFIED) {
-      // See if we got a typed URL changed notification.
-      const URLsModifiedDetails* modified_details =
-          reinterpret_cast<URLsModifiedDetails*>(notifications_[i].second);
-      for (size_t cur_url = 0; cur_url < modified_details->changed_urls.size();
-           cur_url++) {
-        if (modified_details->changed_urls[cur_url].url() == row.url())
-          found_typed_changed_notification = true;
-      }
-    } else if (notifications_[i].first ==
-               NotificationType::HISTORY_URL_VISITED) {
-      // See if we got a visited URL notification.
-      const URLVisitedDetails* visited_details =
-          reinterpret_cast<URLVisitedDetails*>(notifications_[i].second);
-      if (visited_details->row.url() == row.url())
-          found_typed_changed_notification = true;
+    } else {
+      EXPECT_NE(notifications_[i].first, NotificationType::HISTORY_URL_VISITED);
+      EXPECT_NE(notifications_[i].first,
+                NotificationType::HISTORY_TYPED_URLS_MODIFIED);
     }
   }
   EXPECT_TRUE(found_delete_notification);
-  EXPECT_EQ(row.typed_count() > 0, found_typed_changed_notification);
 }
 
 TEST_F(ExpireHistoryTest, DeleteFaviconsIfPossible) {

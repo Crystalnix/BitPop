@@ -66,6 +66,12 @@ FilePath ResourceBundle::GetResourcesFilePath() {
 }
 
 // static
+FilePath ResourceBundle::GetLargeIconResourcesFilePath() {
+  // Not supported.
+  return FilePath();
+}
+
+// static
 FilePath ResourceBundle::GetLocaleFilePath(const std::string& app_locale) {
   FilePath locale_file_path;
   PathService::Get(ui::DIR_LOCALES, &locale_file_path);
@@ -117,10 +123,6 @@ gfx::Image* ResourceBundle::GetPixbufImpl(int resource_id, bool rtl_enabled) {
   LOG(WARNING) << "Unable to pixbuf with id " << resource_id;
   NOTREACHED();  // Want to assert in debug mode.
   return GetEmptyImage();
-}
-
-GdkPixbuf* ResourceBundle::GetPixbufNamed(int resource_id) {
-  return *GetPixbufImpl(resource_id, false);
 }
 
 GdkPixbuf* ResourceBundle::GetRTLEnabledPixbufNamed(int resource_id) {

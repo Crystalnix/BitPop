@@ -11,13 +11,13 @@
 
 #include "app/sql/init_status.h"
 #include "base/basictypes.h"
-#include "base/callback.h"
+#include "base/callback_old.h"
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
 #include "base/task.h"
-#include "chrome/browser/favicon_service.h"
+#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/search_engines/template_url_id.h"
 #include "chrome/common/ref_counted_util.h"
@@ -27,7 +27,7 @@
 #include "content/common/page_transition_types.h"
 
 class BookmarkService;
-struct DownloadCreateInfo;
+struct DownloadHistoryInfo;
 class FilePath;
 class GURL;
 class HistoryURLProvider;
@@ -330,15 +330,17 @@ class HistoryService : public CancelableRequestProvider,
   typedef Callback4<Handle,
                     bool,        // Were we able to determine the # of visits?
                     int,         // Number of visits.
-                    base::Time>::Type  // Time of first visit. Only first bool
+                    base::Time>::Type  // Time of first visit. Only set if bool
                                        // is true and int is > 0.
-      GetVisitCountToHostCallback;
+      GetVisibleVisitCountToHostCallback;
 
-  // Requests the number of visits to all urls on the scheme/host/post
-  // identified by url. This is only valid for http and https urls.
-  Handle GetVisitCountToHost(const GURL& url,
-                             CancelableRequestConsumerBase* consumer,
-                             GetVisitCountToHostCallback* callback);
+  // Requests the number of user-visible visits (i.e. no redirects or subframes)
+  // to all urls on the same scheme/host/port as |url|.  This is only valid for
+  // HTTP and HTTPS URLs.
+  Handle GetVisibleVisitCountToHost(
+      const GURL& url,
+      CancelableRequestConsumerBase* consumer,
+      GetVisibleVisitCountToHostCallback* callback);
 
   // Called when QueryTopURLsAndRedirects completes. The vector contains a list
   // of the top |result_count| URLs.  For each of these URLs, there is an entry
@@ -416,24 +418,25 @@ class HistoryService : public CancelableRequestProvider,
 
   // Implemented by the caller of 'CreateDownload' below, and is called when the
   // history service has created a new entry for a download in the history db.
-  typedef Callback2<DownloadCreateInfo, int64>::Type
+  typedef Callback2<int32, int64>::Type
       DownloadCreateCallback;
 
   // Begins a history request to create a new persistent entry for a download.
   // 'info' contains all the download's creation state, and 'callback' runs
   // when the history service request is complete.
-  Handle CreateDownload(const DownloadCreateInfo& info,
+  Handle CreateDownload(int32 id,
+                        const DownloadHistoryInfo& info,
                         CancelableRequestConsumerBase* consumer,
                         DownloadCreateCallback* callback);
 
   // Implemented by the caller of 'QueryDownloads' below, and is called when the
   // history service has retrieved a list of all download state. The call
-  typedef Callback1<std::vector<DownloadCreateInfo>*>::Type
+  typedef Callback1<std::vector<DownloadHistoryInfo>*>::Type
       DownloadQueryCallback;
 
   // Begins a history request to retrieve the state of all downloads in the
   // history db. 'callback' runs when the history service request is complete,
-  // at which point 'info' contains an array of DownloadCreateInfo, one per
+  // at which point 'info' contains an array of DownloadHistoryInfo, one per
   // download.
   Handle QueryDownloads(CancelableRequestConsumerBase* consumer,
                         DownloadQueryCallback* callback);
@@ -576,7 +579,7 @@ class HistoryService : public CancelableRequestProvider,
   static bool CanAddURL(const GURL& url);
 
  protected:
-  ~HistoryService();
+  virtual ~HistoryService();
 
   // These are not currently used, hopefully we can do something in the future
   // to ensure that the most important things happen first.

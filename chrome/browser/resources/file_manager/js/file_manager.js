@@ -525,20 +525,18 @@ FileManager.prototype = {
     // Always sharing the data model between the detail/thumb views confuses
     // them.  Instead we maintain this bogus data model, and hook it up to the
     // view that is not in use.
-    this.emptyDataModel_ = new cr.ui.table.TableDataModel([]);
+    this.emptyDataModel_ = new cr.ui.ArrayDataModel([]);
 
-    this.dataModel_ = new cr.ui.table.TableDataModel([]);
+    this.dataModel_ = new cr.ui.ArrayDataModel([]);
     this.dataModel_.sort('name');
-    this.dataModel_.addEventListener('sorted',
-                                this.onDataModelSorted_.bind(this));
     this.dataModel_.prepareSort = this.prepareSort_.bind(this);
 
     if (this.dialogType_ == FileManager.DialogType.SELECT_OPEN_FILE ||
         this.dialogType_ == FileManager.DialogType.SELECT_OPEN_FOLDER ||
         this.dialogType_ == FileManager.DialogType.SELECT_SAVEAS_FILE) {
-      this.selectionModelClass_ = cr.ui.table.TableSingleSelectionModel;
+      this.selectionModelClass_ = cr.ui.ListSingleSelectionModel;
     } else {
-      this.selectionModelClass_ = cr.ui.table.TableSelectionModel;
+      this.selectionModelClass_ = cr.ui.ListSelectionModel;
     }
 
     this.initTable_();
@@ -1473,16 +1471,6 @@ FileManager.prototype = {
   };
 
   /**
-   * Invoked by the table dataModel after a sort completes.
-   *
-   * We use this hook to make sure selected files stay visible after a sort.
-   */
-  FileManager.prototype.onDataModelSorted_ = function() {
-    var i = this.currentList_.selectionModel.leadIndex;
-    this.currentList_.scrollIntoView(i);
-  }
-
-  /**
    * Update the selection summary UI when the selection summarization completes.
    */
   FileManager.prototype.onSelectionSummarized_ = function() {
@@ -1637,8 +1625,11 @@ FileManager.prototype = {
       return;
     }
 
-    var i = this.currentList_.selectionModel.leadIndex;
-    var entry = this.dataModel_.item(i);
+    var entry = this.selection.leadEntry;
+    if (!entry) {
+      console.log('Invalid selection');
+      return;
+    }
 
     if (entry.isDirectory)
       return this.changeDirectory(entry.fullPath);
@@ -1699,9 +1690,6 @@ FileManager.prototype = {
 
     function onReadSome(entries) {
       if (entries.length == 0) {
-        if (self.dataModel_.sortStatus.field != 'name')
-          self.dataModel_.updateIndex(0);
-
         if (opt_callback)
           opt_callback();
         return;
@@ -1747,7 +1735,6 @@ FileManager.prototype = {
     var spliceArgs = [].slice.call(this.rootEntries_);
     spliceArgs.unshift(0, 0);  // index, deleteCount
     self.dataModel_.splice.apply(self.dataModel_, spliceArgs);
-    self.dataModel_.updateIndex(0);
 
     if (opt_callback)
       opt_callback();
@@ -2012,10 +1999,17 @@ FileManager.prototype = {
         if (this.selection.totalCount == 1 &&
             this.selection.leadEntry.isDirectory &&
             this.dialogType_ != FileManager.SELECT_FOLDER) {
+          event.preventDefault();
           this.changeDirectory(this.selection.leadEntry.fullPath);
         } else if (!this.okButton_.disabled) {
+          event.preventDefault();
           this.onOk_();
         }
+        break;
+
+      case 27:  // Escape => Cancel dialog.
+        event.preventDefault();
+        this.onCancel_();
         break;
 
       case 32:  // Ctrl-Space => New Folder.
@@ -2043,12 +2037,24 @@ FileManager.prototype = {
   };
 
   /**
+   * Close the extension window, but first give the extension API time to
+   * process the last request.  Disable the UI during the wait.
+   * TODO(jamescook): Remove this hack by listening for an "OK to close"
+   * event from the C++ extension API, then call window.close().
+   */
+  FileManager.prototype.closeWindow_ = function() {
+    this.dialogDom_.style.opacity = '0';
+    setTimeout(function() { window.close(); }, 0);
+  };
+
+  /**
    * Handle a click of the cancel button.  Closes the window.
    *
    * @param {Event} event The click event.
    */
   FileManager.prototype.onCancel_ = function(event) {
     chrome.fileBrowserPrivate.cancelDialog();
+    this.closeWindow_();
   };
 
   /**
@@ -2074,7 +2080,7 @@ FileManager.prototype = {
 
       chrome.fileBrowserPrivate.selectFile(currentDirUrl + encodeURI(filename),
                                            0);
-      // Window closed by above call.
+      this.closeWindow_();
       return;
     }
 
@@ -2100,7 +2106,7 @@ FileManager.prototype = {
     // Multi-file selection has no other restrictions.
     if (this.dialogType_ == FileManager.DialogType.SELECT_OPEN_MULTI_FILE) {
       chrome.fileBrowserPrivate.selectFiles(ary);
-      // Window closed by above call.
+      this.closeWindow_();
       return;
     }
 
@@ -2124,7 +2130,7 @@ FileManager.prototype = {
     }
 
     chrome.fileBrowserPrivate.selectFile(ary[0], 0);
-    // Window closed by above call.
+    this.closeWindow_();
   };
 
 })();

@@ -28,20 +28,20 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/webdriver/dispatch.h"
-#include "chrome/test/webdriver/error_codes.h"
 #include "chrome/test/webdriver/session_manager.h"
 #include "chrome/test/webdriver/utility_functions.h"
+#include "chrome/test/webdriver/commands/alert_commands.h"
 #include "chrome/test/webdriver/commands/cookie_commands.h"
 #include "chrome/test/webdriver/commands/create_session.h"
+#include "chrome/test/webdriver/commands/execute_async_script_command.h"
 #include "chrome/test/webdriver/commands/execute_command.h"
 #include "chrome/test/webdriver/commands/find_element_commands.h"
-#include "chrome/test/webdriver/commands/implicit_wait_command.h"
 #include "chrome/test/webdriver/commands/navigate_commands.h"
 #include "chrome/test/webdriver/commands/mouse_commands.h"
 #include "chrome/test/webdriver/commands/screenshot_command.h"
 #include "chrome/test/webdriver/commands/session_with_id.h"
+#include "chrome/test/webdriver/commands/set_timeout_commands.h"
 #include "chrome/test/webdriver/commands/source_command.h"
-#include "chrome/test/webdriver/commands/speed_command.h"
 #include "chrome/test/webdriver/commands/target_locator_commands.h"
 #include "chrome/test/webdriver/commands/title_command.h"
 #include "chrome/test/webdriver/commands/url_command.h"
@@ -56,22 +56,6 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #endif
-
-// Make sure we have ho zombies from CGIs.
-static void
-signal_handler(int sig_num) {
-  switch (sig_num) {
-#ifdef OS_POSIX
-  case SIGCHLD:
-    while (waitpid(-1, &sig_num, WNOHANG) > 0) { }
-    break;
-#elif OS_WIN
-  case 0:  // The win compiler demands at least 1 case statement.
-#endif
-  default:
-    break;
-  }
-}
 
 namespace webdriver {
 
@@ -109,9 +93,15 @@ void InitCallbacks(struct mg_context* ctx, Dispatcher* dispatcher,
   dispatcher->Add<ScreenshotCommand>("/session/*/screenshot");
 
   // Mouse Commands
-  dispatcher->Add<ClickCommand>("/session/*/element/*/click");
-  dispatcher->Add<DragCommand>( "/session/*/element/*/drag");
-  dispatcher->Add<HoverCommand>("/session/*/element/*/hover");
+  dispatcher->Add<MoveAndClickCommand>("/session/*/element/*/click");
+  dispatcher->Add<DragCommand>(        "/session/*/element/*/drag");
+  dispatcher->Add<HoverCommand>(       "/session/*/element/*/hover");
+
+  dispatcher->Add<MoveToCommand>(     "/session/*/moveto");
+  dispatcher->Add<ClickCommand>(      "/session/*/click");
+  dispatcher->Add<ButtonDownCommand>( "/session/*/buttondown");
+  dispatcher->Add<ButtonUpCommand>(   "/session/*/buttonup");
+  dispatcher->Add<DoubleClickCommand>("/session/*/doubleclick");
 
   // All session based commands should be listed after the element based
   // commands to avoid potential mapping conflicts from an overzealous
@@ -119,28 +109,29 @@ void InitCallbacks(struct mg_context* ctx, Dispatcher* dispatcher,
   // fetch the page title. If mapped first, this would overwrite the handler
   // for /session/*/element/*/attribute/title, which should fetch the title
   // attribute of the element.
+  dispatcher->Add<AcceptAlertCommand>(  "/session/*/accept_alert");
+  dispatcher->Add<AlertTextCommand>(    "/session/*/alert_text");
   dispatcher->Add<BackCommand>(         "/session/*/back");
+  dispatcher->Add<DismissAlertCommand>( "/session/*/dismiss_alert");
   dispatcher->Add<ExecuteCommand>(      "/session/*/execute");
+  dispatcher->Add<ExecuteAsyncScriptCommand>(
+                                        "/session/*/execute_async");
   dispatcher->Add<ForwardCommand>(      "/session/*/forward");
   dispatcher->Add<SwitchFrameCommand>(  "/session/*/frame");
   dispatcher->Add<RefreshCommand>(      "/session/*/refresh");
   dispatcher->Add<SourceCommand>(       "/session/*/source");
-  dispatcher->Add<SpeedCommand>(        "/session/*/speed");
   dispatcher->Add<TitleCommand>(        "/session/*/title");
   dispatcher->Add<URLCommand>(          "/session/*/url");
   dispatcher->Add<WindowCommand>(       "/session/*/window");
   dispatcher->Add<WindowHandleCommand>( "/session/*/window_handle");
   dispatcher->Add<WindowHandlesCommand>("/session/*/window_handles");
+  dispatcher->Add<SetAsyncScriptTimeoutCommand>(
+                                        "/session/*/timeouts/async_script");
   dispatcher->Add<ImplicitWaitCommand>( "/session/*/timeouts/implicit_wait");
 
   // Cookie functions.
   dispatcher->Add<CookieCommand>(     "/session/*/cookie");
   dispatcher->Add<NamedCookieCommand>("/session/*/cookie/*");
-
-  // Commands that have not been implemented yet. We list these out explicitly
-  // so that tests that attempt to use them fail with a meaningful error.
-  dispatcher->SetNotImplemented("/session/*/execute_async");
-  dispatcher->SetNotImplemented("/session/*/timeouts/async_script");
 
   // Since the /session/* is a wild card that would match the above URIs, this
   // line MUST be after all other webdriver command callbacks.
@@ -209,9 +200,8 @@ int main(int argc, char *argv[]) {
   CommandLine::Init(argc, argv);
   CommandLine* cmd_line = CommandLine::ForCurrentProcess();
 
-#if OS_POSIX
+#if defined(OS_POSIX)
   signal(SIGPIPE, SIG_IGN);
-  signal(SIGCHLD, &signal_handler);
 #endif
   srand((unsigned int)time(NULL));
 
@@ -224,7 +214,6 @@ int main(int argc, char *argv[]) {
   // Parse command line flags.
   std::string port = "9515";
   std::string root;
-  FilePath chrome_dir;
   std::string url_base;
   if (cmd_line->HasSwitch("port"))
     port = cmd_line->GetSwitchValueASCII("port");
@@ -233,26 +222,12 @@ int main(int argc, char *argv[]) {
   // requests.
   if (cmd_line->HasSwitch("root"))
     root = cmd_line->GetSwitchValueASCII("root");
-  if (cmd_line->HasSwitch("chrome-dir"))
-    chrome_dir = cmd_line->GetSwitchValuePath("chrome-dir");
   if (cmd_line->HasSwitch("url-base"))
     url_base = cmd_line->GetSwitchValueASCII("url-base");
 
   webdriver::SessionManager* manager = webdriver::SessionManager::GetInstance();
   manager->set_port(port);
   manager->set_url_base(url_base);
-  if (!chrome_dir.empty()) {
-    if (!file_util::DirectoryExists(chrome_dir)) {
-      std::cout << "Given Chrome directory is inaccessible or does not exist: "
-                << chrome_dir.value() << std::endl;
-#if defined(OS_WIN)
-      return ERROR_PATH_NOT_FOUND;
-#else
-      return ENOENT;
-#endif
-    }
-    manager->set_chrome_dir(chrome_dir);
-  }
 
   // Initialize SHTTPD context.
   // Listen on port 9515 or port specified on command line.
@@ -277,9 +252,6 @@ int main(int argc, char *argv[]) {
 
   if (root.length()) {
     VLOG(1) << "Serving files from the current working directory";
-  }
-  if (!chrome_dir.empty()) {
-    VLOG(1) << "Using Chrome inside directory: " << chrome_dir.value();
   }
 
   // Run until we receive command to shutdown.

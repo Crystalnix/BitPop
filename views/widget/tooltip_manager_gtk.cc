@@ -9,8 +9,8 @@
 #include "ui/gfx/font.h"
 #include "views/focus/focus_manager.h"
 #include "views/screen.h"
-#include "views/widget/root_view.h"
-#include "views/widget/widget_gtk.h"
+#include "views/view.h"
+#include "views/widget/native_widget_gtk.h"
 
 // WARNING: this implementation is good for a start, but it doesn't give us
 // control of tooltip positioning both on mouse events and when showing from
@@ -71,7 +71,7 @@ int TooltipManager::GetMaxWidth(int x, int y) {
   return monitor_bounds.width() == 0 ? 800 : (monitor_bounds.width() + 1) / 2;
 }
 
-TooltipManagerGtk::TooltipManagerGtk(WidgetGtk* widget)
+TooltipManagerGtk::TooltipManagerGtk(NativeWidgetGtk* widget)
     : widget_(widget),
       keyboard_view_(NULL),
       tooltip_window_(widget->window_contents()) {
@@ -85,12 +85,12 @@ bool TooltipManagerGtk::ShowTooltip(int x, int y, bool for_keyboard,
     view = keyboard_view_;
     view_loc.SetPoint(view->width() / 2, view->height() / 2);
   } else if (!for_keyboard) {
-    RootView* root_view = widget_->GetRootView();
+    View* root_view = widget_->GetWidget()->GetRootView();
     view = root_view->GetEventHandlerForPoint(gfx::Point(x, y));
     view_loc.SetPoint(x, y);
     View::ConvertPointFromWidget(view, &view_loc);
   } else {
-    FocusManager* focus_manager = widget_->GetFocusManager();
+    FocusManager* focus_manager = widget_->GetWidget()->GetFocusManager();
     if (focus_manager) {
       view = focus_manager->GetFocusedView();
       if (view)
@@ -116,7 +116,7 @@ bool TooltipManagerGtk::ShowTooltip(int x, int y, bool for_keyboard,
 
   int max_width, line_count;
   gfx::Point screen_loc(x, y);
-  View::ConvertPointToScreen(widget_->GetRootView(), &screen_loc);
+  View::ConvertPointToScreen(widget_->GetWidget()->GetRootView(), &screen_loc);
   TrimTooltipToFit(&text, &max_width, &line_count, screen_loc.x(),
                    screen_loc.y());
   tooltip_window_.SetTooltipText(text);

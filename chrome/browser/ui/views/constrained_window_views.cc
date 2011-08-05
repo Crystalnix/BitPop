@@ -19,6 +19,7 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "net/base/net_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
@@ -35,8 +36,8 @@
 #include "views/window/window.h"
 
 #if defined(OS_WIN)
-#include "views/widget/widget_win.h"
-#include "views/window/window_win.h"
+#include "views/widget/native_widget_win.h"
+#include "views/window/native_window_win.h"
 #endif
 
 using base::TimeDelta;
@@ -154,7 +155,6 @@ class ConstrainedWindowFrameView
 
   // Overridden from views::NonClientFrameView:
   virtual gfx::Rect GetBoundsForClientView() const OVERRIDE;
-  virtual bool AlwaysUseCustomFrame() const OVERRIDE;
   virtual gfx::Rect GetWindowBoundsForClientBounds(
       const gfx::Rect& client_bounds) const OVERRIDE;
   virtual int NonClientHitTest(const gfx::Point& point) OVERRIDE;
@@ -207,7 +207,7 @@ class ConstrainedWindowFrameView
   SkColor GetTitleColor() const {
     return container_->owner()->profile()->IsOffTheRecord()
 #if defined(OS_WIN)
-            || !views::WidgetWin::IsAeroGlassEnabled()
+            || !views::NativeWidgetWin::IsAeroGlassEnabled()
 #endif
             ? SK_ColorWHITE : SK_ColorBLACK;
   }
@@ -272,6 +272,10 @@ ConstrainedWindowFrameView::ConstrainedWindowFrameView(
   InitClass();
   InitWindowResources();
 
+  // Constrained windows always use the custom frame - they just have a
+  // different set of bitmaps.
+  container->set_frame_type(views::Window::FRAME_TYPE_FORCE_CUSTOM);
+
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
   close_button_->SetImage(views::CustomButton::BS_NORMAL,
                           rb.GetBitmapNamed(IDR_CLOSE_SA));
@@ -298,12 +302,6 @@ gfx::Rect ConstrainedWindowFrameView::GetBoundsForClientView() const {
   return client_view_bounds_;
 }
 
-bool ConstrainedWindowFrameView::AlwaysUseCustomFrame() const {
-  // Constrained windows always use the custom frame - they just have a
-  // different set of bitmaps.
-  return true;
-}
-
 gfx::Rect ConstrainedWindowFrameView::GetWindowBoundsForClientBounds(
     const gfx::Rect& client_bounds) const {
   int top_height = NonClientTopBorderHeight();
@@ -319,7 +317,7 @@ int ConstrainedWindowFrameView::NonClientHitTest(const gfx::Point& point) {
     return HTNOWHERE;
 
   int frame_component =
-      container_->GetWindow()->client_view()->NonClientHitTest(point);
+      container_->client_view()->NonClientHitTest(point);
 
   // See if we're in the sysmenu region.  (We check the ClientView first to be
   // consistent with OpaqueBrowserFrameView; it's not really necessary here.)
@@ -337,7 +335,7 @@ int ConstrainedWindowFrameView::NonClientHitTest(const gfx::Point& point) {
 
   int window_component = GetHTComponentForFrame(point, kFrameBorderThickness,
       NonClientBorderThickness(), kResizeAreaCornerSize, kResizeAreaCornerSize,
-      container_->GetWindow()->window_delegate()->CanResize());
+      container_->window_delegate()->CanResize());
   // Fall back to the caption if no other component matches.
   return (window_component == HTNOWHERE) ? HTCAPTION : window_component;
 }
@@ -492,7 +490,7 @@ void ConstrainedWindowFrameView::PaintFrameBorder(gfx::Canvas* canvas) {
 
 void ConstrainedWindowFrameView::PaintTitleBar(gfx::Canvas* canvas) {
   canvas->DrawStringInt(
-      container_->GetWindow()->window_delegate()->GetWindowTitle(),
+      container_->window_delegate()->GetWindowTitle(),
       *title_font_, GetTitleColor(), GetMirroredXForRect(title_bounds_),
       title_bounds_.y(), title_bounds_.width(), title_bounds_.height());
 }
@@ -548,7 +546,7 @@ gfx::Rect ConstrainedWindowFrameView::CalculateClientAreaBounds(
 }
 
 void ConstrainedWindowFrameView::InitWindowResources() {
-  resources_.reset(views::WidgetWin::IsAeroGlassEnabled() ?
+  resources_.reset(views::NativeWidgetWin::IsAeroGlassEnabled() ?
     static_cast<views::WindowResources*>(new VistaWindowResources) :
     new XPWindowResources);
 }
@@ -558,7 +556,7 @@ void ConstrainedWindowFrameView::InitClass() {
   static bool initialized = false;
   if (!initialized) {
 #if defined(OS_WIN)
-    title_font_ = new gfx::Font(views::WindowWin::GetWindowTitleFont());
+    title_font_ = new gfx::Font(views::NativeWindowWin::GetWindowTitleFont());
 #endif
     initialized = true;
   }
@@ -572,18 +570,18 @@ ConstrainedWindowViews::ConstrainedWindowViews(
     views::WindowDelegate* window_delegate)
     : owner_(owner),
       ALLOW_THIS_IN_INITIALIZER_LIST(native_constrained_window_(
-          NativeConstrainedWindow::CreateNativeConstrainedWindow(
-              this, window_delegate))) {
-  GetWindow()->non_client_view()->SetFrameView(CreateFrameViewForWindow());
-  native_constrained_window_->InitNativeConstrainedWindow(
-      owner->GetNativeView());
+          NativeConstrainedWindow::CreateNativeConstrainedWindow(this))) {
+  non_client_view()->SetFrameView(CreateFrameViewForWindow());
+  views::Window::InitParams params(window_delegate);
+  params.native_window = native_constrained_window_->AsNativeWindow();
+  params.widget_init_params.child = true;
+  params.widget_init_params.parent = owner->GetNativeView();
+  params.widget_init_params.native_widget =
+      native_constrained_window_->AsNativeWindow()->AsNativeWidget();
+  InitWindow(params);
 }
 
 ConstrainedWindowViews::~ConstrainedWindowViews() {
-}
-
-views::Window* ConstrainedWindowViews::GetWindow() {
-  return native_constrained_window_->AsNativeWindow()->GetWindow();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -592,10 +590,10 @@ views::Window* ConstrainedWindowViews::GetWindow() {
 void ConstrainedWindowViews::ShowConstrainedWindow() {
   // We marked the view as hidden during construction.  Mark it as
   // visible now so FocusManager will let us receive focus.
-  GetWindow()->non_client_view()->SetVisible(true);
+  non_client_view()->SetVisible(true);
   if (owner_->delegate())
     owner_->delegate()->WillShowConstrainedWindow(owner_);
-  GetWindow()->Activate();
+  Activate();
   FocusConstrainedWindow();
 }
 
@@ -606,16 +604,23 @@ void ConstrainedWindowViews::CloseConstrainedWindow() {
   NotificationService::current()->Notify(NotificationType::CWINDOW_CLOSED,
                                          Source<ConstrainedWindow>(this),
                                          NotificationService::NoDetails());
-  GetWindow()->CloseWindow();
+  Close();
 }
 
 void ConstrainedWindowViews::FocusConstrainedWindow() {
   if ((!owner_->delegate() ||
        owner_->delegate()->ShouldFocusConstrainedWindow()) &&
-      GetWindow()->window_delegate() &&
-      GetWindow()->window_delegate()->GetInitiallyFocusedView()) {
-    GetWindow()->window_delegate()->GetInitiallyFocusedView()->RequestFocus();
+      window_delegate() &&
+      window_delegate()->GetInitiallyFocusedView()) {
+    window_delegate()->GetInitiallyFocusedView()->RequestFocus();
   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// ConstrainedWindowViews, views::Window overrides:
+
+views::NonClientFrameView* ConstrainedWindowViews::CreateFrameViewForWindow() {
+  return new ConstrainedWindowFrameView(this);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -628,12 +633,14 @@ void ConstrainedWindowViews::OnNativeConstrainedWindowDestroyed() {
 }
 
 void ConstrainedWindowViews::OnNativeConstrainedWindowMouseActivate() {
-  GetWindow()->Activate();
+  Activate();
 }
 
-views::NonClientFrameView* ConstrainedWindowViews::CreateFrameViewForWindow() {
-  return new ConstrainedWindowFrameView(this);
+views::internal::NativeWindowDelegate*
+    ConstrainedWindowViews::AsNativeWindowDelegate() {
+  return this;
 }
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // ConstrainedWindow, public:

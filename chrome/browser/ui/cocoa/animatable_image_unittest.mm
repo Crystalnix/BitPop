@@ -1,10 +1,9 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import <Cocoa/Cocoa.h>
 
-#import "app/mac/nsimage_cache.h"
 #import "chrome/browser/ui/cocoa/animatable_image.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -16,7 +15,7 @@ class AnimatableImageTest : public CocoaTest {
  public:
   AnimatableImageTest() {
     NSRect frame = NSMakeRect(0, 0, 500, 500);
-    NSImage* image = app::mac::GetCachedImageWithName(@"forward_Template.pdf");
+    NSImage* image = [NSImage imageNamed:NSImageNameComputer];
     animation_ = [[AnimatableImage alloc] initWithImage:image
                                          animationFrame:frame];
   }

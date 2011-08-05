@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -53,7 +53,10 @@ bool TestingInstance::Init(uint32_t argc,
 }
 
 pp::Var TestingInstance::GetInstanceObject() {
-  return current_case_->GetTestObject();
+  if (current_case_)
+    return current_case_->GetTestObject();
+
+  return pp::Var(this, NULL);
 }
 
 void TestingInstance::HandleMessage(const pp::Var& message_data) {
@@ -112,8 +115,13 @@ void TestingInstance::ExecuteTests(int32_t unused) {
     LogError("Plugin initialization failed: " + errors_);
   } else if (!current_case_) {
     LogAvailableTests();
+    errors_.append("FAIL: Only listed tests");
   } else {
     current_case_->RunTest();
+    // Automated PyAuto tests rely on finding the exact strings below.
+    LogHTML(errors_.empty() ?
+            "<span class=\"pass\">[SHUTDOWN]</span> All tests passed." :
+            "<span class=\"fail\">[SHUTDOWN]</span> Some tests failed.");
   }
 
   // Declare we're done by setting a cookie to either "PASS" or the errors.

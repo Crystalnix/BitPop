@@ -5,12 +5,11 @@
 #include "chrome/browser/tab_contents/simple_alert_infobar_delegate.h"
 
 #include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/tab_contents/navigation_controller.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
 SimpleAlertInfoBarDelegate::SimpleAlertInfoBarDelegate(
     TabContents* contents,
-    SkBitmap* icon,
+    gfx::Image* icon,
     const string16& message,
     bool auto_expire)
     : ConfirmInfoBarDelegate(contents),
@@ -23,15 +22,11 @@ SimpleAlertInfoBarDelegate::~SimpleAlertInfoBarDelegate() {
 }
 
 bool SimpleAlertInfoBarDelegate::ShouldExpire(
-      const NavigationController::LoadCommittedDetails& details) const {
+      const content::LoadCommittedDetails& details) const {
   return auto_expire_ && ConfirmInfoBarDelegate::ShouldExpire(details);
 }
 
-void SimpleAlertInfoBarDelegate::InfoBarClosed() {
-  delete this;
-}
-
-SkBitmap* SimpleAlertInfoBarDelegate::GetIcon() const {
+gfx::Image* SimpleAlertInfoBarDelegate::GetIcon() const {
   return icon_;
 }
 

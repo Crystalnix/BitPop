@@ -42,23 +42,12 @@ class ServiceIPCServer : public IPC::Channel::Listener,
 
   // IPC message handlers.
   void OnEnableCloudPrintProxy(const std::string& lsid);
-  void OnEnableCloudPrintProxyWithTokens(const std::string& cloud_print_token,
-                                         const std::string& talk_token);
-  void OnIsCloudPrintProxyEnabled();
+  void OnEnableCloudPrintProxyWithRobot(
+      const std::string& robot_auth_code,
+      const std::string& robot_email,
+      const std::string& user_email);
+  void OnGetCloudPrintProxyInfo();
   void OnDisableCloudPrintProxy();
-
-#if defined(ENABLE_REMOTING)
-  void OnSetRemotingHostCredentials(const std::string& login,
-                                      const std::string& talk_token);
-  void OnEnableRemotingHost();
-  void OnDisableRemotingHost();
-  void OnGetRemotingHostInfo();
-
-  // Sends HostInfo message to the browser. It must is called when we
-  // receive GetRemotingHostInfo message or when status of the host
-  // is changed.
-  void SendRemotingHostInfo();
-#endif  // defined(ENABLE_REMOTING)
 
   void OnShutdown();
   void OnUpdateAvailable();

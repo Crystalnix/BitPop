@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,8 +9,8 @@
 #include "base/logging.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "third_party/skia/include/effects/SkGradientShader.h"
 #include "third_party/skia/include/effects/SkBlurMaskFilter.h"
+#include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/color_utils.h"
@@ -42,8 +42,8 @@ static void AddRoundRectPathWithPadding(int x, int y,
       SkIntToScalar(x + w) - padding, SkIntToScalar(y + h) - padding);
   path->addRoundRect(
       rect,
-      SkIntToScalar(corner_radius - padding),
-      SkIntToScalar(corner_radius - padding));
+      SkIntToScalar(corner_radius) - padding,
+      SkIntToScalar(corner_radius) - padding);
 }
 
 static void AddRoundRectPath(int x, int y,
@@ -304,10 +304,8 @@ bool ProgressBar::GetTooltipText(const gfx::Point& p, std::wstring* tooltip) {
   return !tooltip_text_.empty();
 }
 
-void ProgressBar::SetEnabled(bool enabled) {
-  if (enabled == enabled_)
-    return;
-  View::SetEnabled(enabled);
+void ProgressBar::OnEnabledChanged() {
+  View::OnEnabledChanged();
   // TODO(denisromanov): Need to switch progress bar color here?
 }
 

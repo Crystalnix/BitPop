@@ -10,7 +10,7 @@
 #include "base/mac/mac_util.h"
 #include "base/process_util.h"
 #include "base/sys_string_conversions.h"
-#include "chrome/browser/favicon_helper.h"
+#include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_list.h"
 #import "chrome/browser/ui/cocoa/multi_key_equivalent_button.h"
@@ -147,7 +147,7 @@ HungRendererController* g_instance = NULL;
       if (title.empty())
         title = TabContentsWrapper::GetDefaultTitle();
       [titles addObject:base::SysUTF16ToNSString(title)];
-      [favicons addObject:mac::FaviconForTabContents(it->tab_contents())];
+      [favicons addObject:mac::FaviconForTabContents(*it)];
     }
   }
   hungTitles_.reset([titles copy]);

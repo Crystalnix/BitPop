@@ -24,7 +24,6 @@
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/extension_resource.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/renderer_host/render_widget_host_view.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/common/bindings_policy.h"
 #include "content/common/page_transition_types.h"
@@ -139,93 +138,39 @@ ExtensionWebUI::ExtensionWebUI(TabContents* tab_contents, const GURL& url)
   // component apps like bookmark manager.
   should_hide_url_ = !extension->is_hosted_app();
 
-  bindings_ = BindingsPolicy::EXTENSION;
+  // The base class defaults to enabling web ui bindings, but we don't need
+  // those.
+  bindings_ = 0;
+
   // Bind externalHost to Extension WebUI loaded in Chrome Frame.
   const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
   if (browser_command_line.HasSwitch(switches::kChromeFrame))
     bindings_ |= BindingsPolicy::EXTERNAL_HOST;
   // For chrome:// overrides, some of the defaults are a little different.
   GURL effective_url = tab_contents->GetURL();
-  if (effective_url.SchemeIs(chrome::kChromeUIScheme) &&
-      effective_url.host() == chrome::kChromeUINewTabHost) {
-    focus_location_bar_by_default_ = true;
+  if (effective_url.SchemeIs(chrome::kChromeUIScheme)) {
+    if (effective_url.host() == chrome::kChromeUINewTabHost) {
+      focus_location_bar_by_default_ = true;
+    } else {
+      // Current behavior of other chrome:// pages is to display the URL.
+      should_hide_url_ = false;
+    }
   }
-}
 
-ExtensionWebUI::~ExtensionWebUI() {}
-
-void ExtensionWebUI::ResetExtensionFunctionDispatcher(
-    RenderViewHost* render_view_host) {
-  // TODO(jcivelli): http://crbug.com/60608 we should get the URL out of the
-  //                 active entry of the navigation controller.
-  extension_function_dispatcher_.reset(
-      ExtensionFunctionDispatcher::Create(render_view_host, this, url_));
-  DCHECK(extension_function_dispatcher_.get());
-}
-
-void ExtensionWebUI::ResetExtensionBookmarkManagerEventRouter() {
   // Hack: A few things we specialize just for the bookmark manager.
-  if (extension_function_dispatcher_->extension_id() ==
-      extension_misc::kBookmarkManagerId) {
+  if (extension->id() == extension_misc::kBookmarkManagerId) {
     extension_bookmark_manager_event_router_.reset(
-        new ExtensionBookmarkManagerEventRouter(GetProfile(), tab_contents()));
+        new ExtensionBookmarkManagerEventRouter(GetProfile(), tab_contents));
 
     link_transition_type_ = PageTransition::AUTO_BOOKMARK;
   }
 }
 
-void ExtensionWebUI::RenderViewCreated(RenderViewHost* render_view_host) {
-  ResetExtensionFunctionDispatcher(render_view_host);
-  ResetExtensionBookmarkManagerEventRouter();
-}
-
-void ExtensionWebUI::RenderViewReused(RenderViewHost* render_view_host) {
-  ResetExtensionFunctionDispatcher(render_view_host);
-  ResetExtensionBookmarkManagerEventRouter();
-}
-
-void ExtensionWebUI::ProcessWebUIMessage(
-    const ExtensionHostMsg_DomMessage_Params& params) {
-  extension_function_dispatcher_->HandleRequest(params);
-}
-
-Browser* ExtensionWebUI::GetBrowser() {
-  TabContents* contents = tab_contents();
-  TabContentsIterator tab_iterator;
-  for (; !tab_iterator.done(); ++tab_iterator) {
-    if (contents == (*tab_iterator)->tab_contents())
-      return tab_iterator.browser();
-  }
-
-  return NULL;
-}
-
-TabContents* ExtensionWebUI::associated_tab_contents() const {
-  return tab_contents();
-}
+ExtensionWebUI::~ExtensionWebUI() {}
 
 ExtensionBookmarkManagerEventRouter*
 ExtensionWebUI::extension_bookmark_manager_event_router() {
   return extension_bookmark_manager_event_router_.get();
-}
-
-gfx::NativeWindow ExtensionWebUI::GetCustomFrameNativeWindow() {
-  if (GetBrowser())
-    return NULL;
-
-  // If there was no browser associated with the function dispatcher delegate,
-  // then this WebUI may be hosted in an ExternalTabContainer, and a framing
-  // window will be accessible through the tab_contents.
-  TabContentsDelegate* tab_contents_delegate = tab_contents()->delegate();
-  if (tab_contents_delegate)
-    return tab_contents_delegate->GetFrameNativeWindow();
-  else
-    return NULL;
-}
-
-gfx::NativeView ExtensionWebUI::GetNativeViewOfHost() {
-  RenderWidgetHostView* rwhv = tab_contents()->GetRenderWidgetHostView();
-  return rwhv ? rwhv->GetNativeView() : NULL;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -233,7 +178,8 @@ gfx::NativeView ExtensionWebUI::GetNativeViewOfHost() {
 
 // static
 void ExtensionWebUI::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterDictionaryPref(kExtensionURLOverrides);
+  prefs->RegisterDictionaryPref(kExtensionURLOverrides,
+                                PrefService::UNSYNCABLE_PREF);
 }
 
 // static
@@ -263,6 +209,8 @@ bool ExtensionWebUI::HandleChromeURLOverride(GURL* url, Profile* profile) {
       UnregisterChromeURLOverride(page, profile, val);
       continue;
     }
+    if (!url->ref().empty())
+      override += "#" + url->ref();
     GURL extension_url(override);
     if (!extension_url.is_valid()) {
       NOTREACHED();
@@ -294,6 +242,40 @@ bool ExtensionWebUI::HandleChromeURLOverride(GURL* url, Profile* profile) {
     *url = extension_url;
     return true;
   }
+  return false;
+}
+
+// static
+bool ExtensionWebUI::HandleChromeURLOverrideReverse(GURL* url,
+                                                    Profile* profile) {
+  const DictionaryValue* overrides =
+      profile->GetPrefs()->GetDictionary(kExtensionURLOverrides);
+  if (!overrides)
+    return false;
+
+  // Find the reverse mapping based on the given URL. For example this maps the
+  // internal URL chrome-extension://eemcgdkndhakfknomggombfjeno/main.html#1 to
+  // chrome://bookmarks/#1 for display in the omnibox.
+  for (DictionaryValue::key_iterator it = overrides->begin_keys(),
+       end = overrides->end_keys(); it != end; ++it) {
+    ListValue* url_list;
+    if (!overrides->GetList(*it, &url_list))
+      continue;
+
+    for (ListValue::const_iterator it2 = url_list->begin(),
+         end2 = url_list->end(); it2 != end2; ++it2) {
+      std::string override;
+      if (!(*it2)->GetAsString(&override))
+        continue;
+      if (StartsWithASCII(url->spec(), override, true)) {
+        GURL original_url(chrome::kChromeUIScheme + std::string("://") + *it +
+                          url->spec().substr(override.length()));
+        *url = original_url;
+        return true;
+      }
+    }
+  }
+
   return false;
 }
 

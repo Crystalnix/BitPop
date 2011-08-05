@@ -7,12 +7,14 @@
 #include "base/file_descriptor_posix.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/metrics/histogram.h"
 #include "chrome/common/print_messages.h"
 #include "content/common/view_messages.h"
 #include "printing/metafile.h"
 #include "printing/metafile_impl.h"
 #include "printing/metafile_skia_wrapper.h"
 #include "skia/ext/vector_canvas.h"
+#include "third_party/skia/include/core/SkRefCnt.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "ui/gfx/point.h"
 
@@ -23,35 +25,37 @@
 using WebKit::WebFrame;
 using WebKit::WebNode;
 
-void PrintWebViewHelper::CreatePreviewDocument(
+bool PrintWebViewHelper::CreatePreviewDocument(
     const PrintMsg_PrintPages_Params& params, WebKit::WebFrame* frame,
     WebKit::WebNode* node) {
   int page_count = 0;
   printing::PreviewMetafile metafile;
   if (!metafile.Init())
-    return;
+    return false;
 
-  if (!RenderPages(params, frame, node, false, &page_count, &metafile))
-    return;
+  if (!RenderPages(params, frame, node, false, &page_count, &metafile, true))
+    return false;
+
 
   // Get the size of the resulting metafile.
   uint32 buf_size = metafile.GetDataSize();
   DCHECK_GT(buf_size, 0u);
 
   PrintHostMsg_DidPreviewDocument_Params preview_params;
+  preview_params.data_size = buf_size;
   preview_params.document_cookie = params.params.document_cookie;
   preview_params.expected_pages_count = page_count;
-  preview_params.data_size = buf_size;
+  preview_params.modifiable = IsModifiable(frame, node);
 
   if (!CopyMetafileDataToSharedMem(&metafile,
                                    &(preview_params.metafile_data_handle))) {
-    preview_params.expected_pages_count = 0;
-    preview_params.data_size = 0;
+    return false;
   }
   Send(new PrintHostMsg_PagesReadyForPreview(routing_id(), preview_params));
+  return true;
 }
 
-void PrintWebViewHelper::PrintPages(const PrintMsg_PrintPages_Params& params,
+bool PrintWebViewHelper::PrintPages(const PrintMsg_PrintPages_Params& params,
                                     WebFrame* frame,
                                     WebNode* node) {
   int page_count = 0;
@@ -64,11 +68,11 @@ void PrintWebViewHelper::PrintPages(const PrintMsg_PrintPages_Params& params,
 
   printing::NativeMetafile metafile;
   if (!metafile.Init())
-    return;
+    return false;
 
   if (!RenderPages(params, frame, node, send_expected_page_count, &page_count,
-                   &metafile)) {
-    return;
+                   &metafile, false)) {
+    return false;
   }
 
   // Get the size of the resulting metafile.
@@ -82,10 +86,11 @@ void PrintWebViewHelper::PrintPages(const PrintMsg_PrintPages_Params& params,
   // Ask the browser to open a file for us.
   Send(new PrintHostMsg_AllocateTempFileForPrinting(&fd, &sequence_number));
   if (!metafile.SaveToFD(fd))
-    return;
+    return false;
 
   // Tell the browser we've finished writing the file.
   Send(new PrintHostMsg_TempFileForPrintingWritten(sequence_number));
+  return true;
 #else
   PrintHostMsg_DidPrintPage_Params printed_page_params;
   printed_page_params.data_size = 0;
@@ -96,14 +101,14 @@ void PrintWebViewHelper::PrintPages(const PrintMsg_PrintPages_Params& params,
                                                   &shared_mem_handle));
   if (!base::SharedMemory::IsHandleValid(shared_mem_handle)) {
     NOTREACHED() << "AllocateSharedMemoryBuffer returned bad handle";
-    return;
+    return false;
   }
 
   {
     base::SharedMemory shared_buf(shared_mem_handle, false);
     if (!shared_buf.Map(buf_size)) {
       NOTREACHED() << "Map failed";
-      return;
+      return false;
     }
     metafile.GetData(shared_buf.memory(), buf_size);
     printed_page_params.data_size = buf_size;
@@ -134,6 +139,7 @@ void PrintWebViewHelper::PrintPages(const PrintMsg_PrintPages_Params& params,
       Send(new PrintHostMsg_DidPrintPage(routing_id(), printed_page_params));
     }
   }
+  return true;
 #endif  // defined(OS_CHROMEOS)
 }
 
@@ -142,49 +148,57 @@ bool PrintWebViewHelper::RenderPages(const PrintMsg_PrintPages_Params& params,
                                      WebKit::WebNode* node,
                                      bool send_expected_page_count,
                                      int* page_count,
-                                     printing::Metafile* metafile) {
+                                     printing::Metafile* metafile,
+                                     bool is_preview) {
   PrintMsg_Print_Params printParams = params.params;
-  scoped_ptr<skia::VectorCanvas> canvas;
 
   UpdatePrintableSizeInPrintParameters(frame, node, &printParams);
 
-  {
-    // Hack - when |prep_frame_view| goes out of scope, PrintEnd() gets called.
-    // Doing this before closing |metafile| below ensures
-    // webkit::ppapi::PluginInstance::PrintEnd() has a valid canvas/metafile to
-    // save the final output to. See pepper_plugin_instance.cc for the whole
-    // story.
-    PrepareFrameAndViewForPrint prep_frame_view(printParams,
-                                                frame,
-                                                node,
-                                                frame->view());
-    *page_count = prep_frame_view.GetExpectedPageCount();
-    if (send_expected_page_count) {
-      Send(new PrintHostMsg_DidGetPrintedPagesCount(routing_id(),
-                                                    printParams.document_cookie,
-                                                    *page_count));
-    }
-    if (!*page_count)
-      return false;
+  PrepareFrameAndViewForPrint prep_frame_view(printParams, frame, node,
+                                              frame->view());
+  *page_count = prep_frame_view.GetExpectedPageCount();
+  if (send_expected_page_count) {
+    Send(new PrintHostMsg_DidGetPrintedPagesCount(routing_id(),
+                                                  printParams.document_cookie,
+                                                  *page_count));
+  }
+  if (!*page_count)
+    return false;
 
-    PrintMsg_PrintPage_Params page_params;
-    page_params.params = printParams;
-    const gfx::Size& canvas_size = prep_frame_view.GetPrintCanvasSize();
-    if (params.pages.empty()) {
-      for (int i = 0; i < *page_count; ++i) {
-        page_params.page_number = i;
-        PrintPageInternal(page_params, canvas_size, frame, metafile, &canvas);
+  base::TimeTicks begin_time = base::TimeTicks::Now();
+  base::TimeTicks page_begin_time = begin_time;
+
+  PrintMsg_PrintPage_Params page_params;
+  page_params.params = printParams;
+  const gfx::Size& canvas_size = prep_frame_view.GetPrintCanvasSize();
+  if (params.pages.empty()) {
+    for (int i = 0; i < *page_count; ++i) {
+      page_params.page_number = i;
+      PrintPageInternal(page_params, canvas_size, frame, metafile);
+      if (is_preview) {
+        page_begin_time = ReportPreviewPageRenderTime(page_begin_time);
       }
-    } else {
-      for (size_t i = 0; i < params.pages.size(); ++i) {
-        page_params.page_number = params.pages[i];
-        PrintPageInternal(page_params, canvas_size, frame, metafile, &canvas);
+    }
+  } else {
+    for (size_t i = 0; i < params.pages.size(); ++i) {
+      page_params.page_number = params.pages[i];
+      PrintPageInternal(page_params, canvas_size, frame, metafile);
+      if (is_preview) {
+        page_begin_time = ReportPreviewPageRenderTime(page_begin_time);
       }
     }
   }
 
+  base::TimeDelta render_time = base::TimeTicks::Now() - begin_time;
+
+  prep_frame_view.FinishPrinting();
   metafile->FinishDocument();
 
+  if (is_preview) {
+    ReportTotalPreviewGenerationTime(params.pages.size(), *page_count,
+                                     render_time,
+                                     base::TimeTicks::Now() - begin_time);
+  }
   return true;
 }
 
@@ -192,8 +206,7 @@ void PrintWebViewHelper::PrintPageInternal(
     const PrintMsg_PrintPage_Params& params,
     const gfx::Size& canvas_size,
     WebFrame* frame,
-    printing::Metafile* metafile,
-    scoped_ptr<skia::VectorCanvas>* canvas) {
+    printing::Metafile* metafile) {
   double content_width_in_points;
   double content_height_in_points;
   double margin_top_in_points;
@@ -215,18 +228,21 @@ void PrintWebViewHelper::PrintPageInternal(
           margin_left_in_points,
       content_height_in_points + margin_top_in_points +
           margin_bottom_in_points);
-  gfx::Point content_origin(margin_left_in_points, margin_top_in_points);
+  gfx::Rect content_area(margin_left_in_points, margin_top_in_points,
+                         content_width_in_points, content_height_in_points);
 
-  skia::PlatformDevice* device = metafile->StartPageForVectorCanvas(
-      page_size, content_origin, 1.0f);
+  SkDevice* device = metafile->StartPageForVectorCanvas(
+      page_size, content_area, 1.0f);
   if (!device)
     return;
 
-  canvas->reset(new skia::VectorCanvas(device));
-  printing::MetafileSkiaWrapper::SetMetafileOnCanvas(canvas->get(), metafile);
-  frame->printPage(params.page_number, canvas->get());
+  // The printPage method take a reference to the canvas we pass down, so it
+  // can't be a stack object.
+  SkRefPtr<skia::VectorCanvas> canvas = new skia::VectorCanvas(device);
+  canvas->unref();  // SkRefPtr and new both took a reference.
+  printing::MetafileSkiaWrapper::SetMetafileOnCanvas(canvas.get(), metafile);
+  frame->printPage(params.page_number, canvas.get());
 
-  // TODO(myhuang): We should handle transformation for paper margins.
   // TODO(myhuang): We should render the header and the footer.
 
   // Done printing. Close the device context to retrieve the compiled metafile.

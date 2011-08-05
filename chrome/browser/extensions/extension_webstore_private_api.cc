@@ -7,11 +7,12 @@
 #include <string>
 #include <vector>
 
-#include "base/memory/scoped_temp_dir.h"
+#include "base/scoped_temp_dir.h"
 #include "base/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/crx_installer.h"
+#include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/extensions/extension_install_dialog.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -21,6 +22,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_error_utils.h"
+#include "chrome/common/extensions/extension_l10n_util.h"
 #include "chrome/common/net/gaia/gaia_constants.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/common/notification_details.h"
@@ -33,8 +35,13 @@
 
 namespace {
 
+const char kIconDataKey[] = "iconData";
+const char kIdKey[] = "id";
+const char kLocalizedNameKey[] = "localizedName";
 const char kLoginKey[] = "login";
+const char kManifestKey[] = "manifest";
 const char kTokenKey[] = "token";
+
 const char kImageDecodeError[] = "Image decode failed";
 const char kInvalidIdError[] = "Invalid id";
 const char kInvalidManifestError[] = "Invalid manifest";
@@ -47,6 +54,15 @@ const char kUserGestureRequiredError[] =
 ProfileSyncService* test_sync_service = NULL;
 BrowserSignin* test_signin = NULL;
 bool ignore_user_gesture_for_tests = false;
+
+// A flag used for BeginInstallWithManifest::SetAutoConfirmForTests.
+enum AutoConfirmForTest {
+  DO_NOT_SKIP = 0,
+  PROCEED,
+  ABORT
+};
+AutoConfirmForTest auto_confirm_for_tests = DO_NOT_SKIP;
+
 
 // Returns either the test sync service, or the real one from |profile|.
 ProfileSyncService* GetSyncService(Profile* profile) {
@@ -90,15 +106,6 @@ DictionaryValue* CreateLoginResult(Profile* profile) {
     }
   }
   return dictionary;
-}
-
-// If |profile| is not incognito, returns it. Otherwise returns the real
-// (not incognito) default profile.
-Profile* GetDefaultProfile(Profile* profile) {
-  if (!profile->IsOffTheRecord())
-    return profile;
-  else
-    return g_browser_process->profile_manager()->GetDefaultProfile();
 }
 
 }  // namespace
@@ -283,15 +290,25 @@ bool BeginInstallWithManifestFunction::RunImpl() {
     return false;
   }
 
-  EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &id_));
+  DictionaryValue* details = NULL;
+  EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(0, &details));
+  CHECK(details);
+
+  EXTENSION_FUNCTION_VALIDATE(details->GetString(kIdKey, &id_));
   if (!Extension::IdIsValid(id_)) {
     SetResult(INVALID_ID);
     error_ = kInvalidIdError;
     return false;
   }
 
-  EXTENSION_FUNCTION_VALIDATE(args_->GetString(1, &icon_data_));
-  EXTENSION_FUNCTION_VALIDATE(args_->GetString(2, &manifest_));
+  EXTENSION_FUNCTION_VALIDATE(details->GetString(kManifestKey, &manifest_));
+
+  if (details->HasKey(kIconDataKey))
+    EXTENSION_FUNCTION_VALIDATE(details->GetString(kIconDataKey, &icon_data_));
+
+  if (details->HasKey(kLocalizedNameKey))
+    EXTENSION_FUNCTION_VALIDATE(details->GetString(kLocalizedNameKey,
+                                                   &localized_name_));
 
   scoped_refptr<SafeBeginInstallHelper> helper =
       new SafeBeginInstallHelper(this, icon_data_, manifest_);
@@ -337,6 +354,16 @@ void BeginInstallWithManifestFunction::SetResult(ResultCode code) {
   }
 }
 
+// static
+void BeginInstallWithManifestFunction::SetIgnoreUserGestureForTests(
+    bool ignore) {
+  ignore_user_gesture_for_tests = ignore;
+}
+
+void BeginInstallWithManifestFunction::SetAutoConfirmForTests(
+    bool should_proceed) {
+  auto_confirm_for_tests = should_proceed ? PROCEED : ABORT;
+}
 
 void BeginInstallWithManifestFunction::OnParseSuccess(
     const SkBitmap& icon, DictionaryValue* parsed_manifest) {
@@ -344,21 +371,41 @@ void BeginInstallWithManifestFunction::OnParseSuccess(
   icon_ = icon;
   parsed_manifest_.reset(parsed_manifest);
 
+  // If we were passed a localized name to use in the dialog, create a copy
+  // of the original manifest and replace the name in it.
+  scoped_ptr<DictionaryValue> localized_manifest;
+  if (!localized_name_.empty()) {
+    localized_manifest.reset(parsed_manifest->DeepCopy());
+    localized_manifest->SetString(extension_manifest_keys::kName,
+                                  localized_name_);
+  }
+
   // Create a dummy extension and show the extension install confirmation
   // dialog.
   std::string init_errors;
   dummy_extension_ = Extension::Create(
       FilePath(),
       Extension::INTERNAL,
-      *static_cast<DictionaryValue*>(parsed_manifest_.get()),
+      localized_manifest.get() ? *localized_manifest.get() : *parsed_manifest,
       Extension::NO_FLAGS,
       &init_errors);
   if (!dummy_extension_.get()) {
     OnParseFailure(MANIFEST_ERROR, std::string(kInvalidManifestError));
     return;
   }
+
   if (icon_.empty())
     icon_ = Extension::GetDefaultIcon(dummy_extension_->is_app());
+
+  // In tests, we may have setup to proceed or abort without putting up the real
+  // confirmation dialog.
+  if (auto_confirm_for_tests != DO_NOT_SKIP) {
+    if (auto_confirm_for_tests == PROCEED)
+      this->InstallUIProceed();
+    else
+      this->InstallUIAbort();
+    return;
+  }
 
   ShowExtensionInstallDialog(profile(),
                              this,
@@ -381,7 +428,10 @@ void BeginInstallWithManifestFunction::OnParseFailure(
 }
 
 void BeginInstallWithManifestFunction::InstallUIProceed() {
-  CrxInstaller::SetWhitelistedManifest(id_, parsed_manifest_.release());
+  CrxInstaller::WhitelistEntry* entry = new CrxInstaller::WhitelistEntry;
+  entry->parsed_manifest.reset(parsed_manifest_.release());
+  entry->localized_name = localized_name_;
+  CrxInstaller::SetWhitelistEntry(id_, entry);
   SetResult(ERROR_NONE);
   SendResponse(true);
 
@@ -410,7 +460,7 @@ bool CompleteInstallFunction::RunImpl() {
   }
 
   if (!CrxInstaller::IsIdWhitelisted(id) &&
-      !CrxInstaller::GetWhitelistedManifest(id)) {
+      !CrxInstaller::GetWhitelistEntry(id)) {
     error_ = ExtensionErrorUtils::FormatErrorMessage(
         kNoPreviousBeginInstallError, id);
     return false;
@@ -432,7 +482,7 @@ bool CompleteInstallFunction::RunImpl() {
   // install flow. The above call to SetWhitelistedInstallId will bypass the
   // normal permissions install dialog.
   NavigationController& controller =
-      dispatcher()->delegate()->associated_tab_contents()->controller();
+      dispatcher()->delegate()->GetAssociatedTabContents()->controller();
   controller.LoadURL(url, source_url(), PageTransition::LINK);
 
   return true;
@@ -441,7 +491,7 @@ bool CompleteInstallFunction::RunImpl() {
 bool GetBrowserLoginFunction::RunImpl() {
   if (!IsWebStoreURL(profile_, source_url()))
     return false;
-  result_.reset(CreateLoginResult(GetDefaultProfile(profile_)));
+  result_.reset(CreateLoginResult(profile_->GetOriginalProfile()));
   return true;
 }
 
@@ -485,12 +535,12 @@ bool PromptBrowserLoginFunction::RunImpl() {
     EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &preferred_email));
   }
 
-  Profile* profile = GetDefaultProfile(profile_);
+  Profile* profile = profile_->GetOriginalProfile();
 
   // Login can currently only be invoked tab-modal.  Since this is
   // coming from the webstore, we should always have a tab, but check
   // just in case.
-  TabContents* tab = dispatcher()->delegate()->associated_tab_contents();
+  TabContents* tab = dispatcher()->delegate()->GetAssociatedTabContents();
   if (!tab)
     return false;
 
@@ -537,7 +587,7 @@ void PromptBrowserLoginFunction::OnLoginSuccess() {
   // Ensure that apps are synced.
   // - If the user has already setup sync, we add Apps to the current types.
   // - If not, we create a new set which is just Apps.
-  ProfileSyncService* service = GetSyncService(GetDefaultProfile(profile_));
+  ProfileSyncService* service = GetSyncService(profile_->GetOriginalProfile());
   syncable::ModelTypeSet types;
   if (service->HasSyncSetupCompleted())
     service->GetPreferredDataTypes(&types);
@@ -579,7 +629,7 @@ void PromptBrowserLoginFunction::Observe(NotificationType type,
 
   DCHECK(waiting_for_token_);
 
-  result_.reset(CreateLoginResult(GetDefaultProfile(profile_)));
+  result_.reset(CreateLoginResult(profile_->GetOriginalProfile()));
   SendResponse(true);
 
   // Matches the AddRef in RunImpl().

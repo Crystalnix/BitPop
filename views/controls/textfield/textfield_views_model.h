@@ -6,8 +6,10 @@
 #define VIEWS_CONTROLS_TEXTFIELD_TEXTFIELD_VIEWS_MODEL_H_
 #pragma once
 
+#include <list>
 #include <vector>
 
+#include "base/gtest_prod_util.h"
 #include "base/string16.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/ime/composition_text.h"
@@ -22,6 +24,11 @@ class Range;
 }  // namespace ui
 
 namespace views {
+
+namespace internal {
+// Internal Edit class that keeps track of edits for undo/redo.
+class Edit;
+}  // namespace internal
 
 // A model that represents a text content for TextfieldViews.
 // It supports editing, selection and cursor manipulation.
@@ -70,26 +77,34 @@ class TextfieldViewsModel {
 
   // Edit related methods.
 
-  // Sest the text. Returns true if the text has been modified.
-  // The current composition text will be confirmed first.
+  // Sest the text. Returns true if the text has been modified.  The
+  // current composition text will be confirmed first.  Setting
+  // the same text will not add edit history because it's not user
+  // visible change nor user-initiated change. This allow a client
+  // code to set the same text multiple times without worrying about
+  // messing edit history.
   bool SetText(const string16& text);
 
   // Inserts given |text| at the current cursor position.
   // The current composition text will be cleared.
-  void InsertText(const string16& text);
+  void InsertText(const string16& text) {
+    InsertTextInternal(text, false);
+  }
 
   // Inserts a character at the current cursor position.
   void InsertChar(char16 c) {
-    InsertText(string16(&c, 1));
+    InsertTextInternal(string16(&c, 1), true);
   }
 
   // Replaces characters at the current position with characters in given text.
   // The current composition text will be cleared.
-  void ReplaceText(const string16& text);
+  void ReplaceText(const string16& text) {
+    ReplaceTextInternal(text, false);
+  }
 
   // Replaces the char at the current position with given character.
   void ReplaceChar(char16 c) {
-    ReplaceText(string16(&c, 1));
+    ReplaceTextInternal(string16(&c, 1), true);
   }
 
   // Appends the text.
@@ -159,7 +174,10 @@ class TextfieldViewsModel {
 
   void GetSelectedRange(ui::Range* range) const;
 
-  // The current composition text will be confirmed.
+  // The current composition text will be confirmed. The
+  // selection starts with the range's start position,
+  // and ends with the range's end position, therefore
+  // the cursor position becomes the end position.
   void SelectRange(const ui::Range& range);
 
   // Selects all text.
@@ -173,6 +191,18 @@ class TextfieldViewsModel {
   // Clears selection.
   // The current composition text will be confirmed.
   void ClearSelection();
+
+  // Returns true if there is an undoable edit.
+  bool CanUndo();
+
+  // Returns true if there is an redoable edit.
+  bool CanRedo();
+
+  // Undo edit. Returns true if undo changed the text.
+  bool Undo();
+
+  // Redo edit. Returns true if redo changed the text.
+  bool Redo();
 
   // Returns visible text. If the field is password, it returns the
   // sequence of "*".
@@ -198,6 +228,11 @@ class TextfieldViewsModel {
   // Deletes the selected text. This method shouldn't be called with
   // composition text.
   void DeleteSelection();
+
+  // Deletes the selected text (if any) and insert text at given
+  // position.
+  void DeleteSelectionAndInsertTextAt(
+      const string16& text, size_t position);
 
   // Retrieves the text content in a given range.
   string16 GetTextFromRange(const ui::Range& range) const;
@@ -227,6 +262,16 @@ class TextfieldViewsModel {
 
  private:
   friend class NativeTextfieldViews;
+  friend class NativeTextfieldViewsTest;
+  friend class TextfieldViewsModelTest;
+  friend class UndoRedo_BasicTest;
+  friend class UndoRedo_CutCopyPasteTest;
+  friend class UndoRedo_ReplaceTest;
+  friend class internal::Edit;
+
+  FRIEND_TEST_ALL_PREFIXES(TextfieldViewsModelTest, UndoRedo_BasicTest);
+  FRIEND_TEST_ALL_PREFIXES(TextfieldViewsModelTest, UndoRedo_CutCopyPasteTest);
+  FRIEND_TEST_ALL_PREFIXES(TextfieldViewsModelTest, UndoRedo_ReplaceTest);
 
   // Returns the visible text given |start| and |end|.
   string16 GetVisibleText(size_t start, size_t end) const;
@@ -237,6 +282,44 @@ class TextfieldViewsModel {
   // Returns the normalized cursor position that does not exceed the
   // text length.
   size_t GetSafePosition(size_t position) const;
+
+  // Insert the given |text|. |mergeable| indicates if this insert
+  // operation can be merged to previous edit in the edit history.
+  void InsertTextInternal(const string16& text, bool mergeable);
+
+  // Replace the current text with the given |text|. |mergeable|
+  // indicates if this replace operation can be merged to previous
+  // edit in the edit history.
+  void ReplaceTextInternal(const string16& text, bool mergeable);
+
+  // Clears all edit history.
+  void ClearEditHistory();
+
+  // Clears redo history.
+  void ClearRedoHistory();
+
+  // Executes and records edit operations.
+  void ExecuteAndRecordDelete(size_t from, size_t to, bool mergeable);
+  void ExecuteAndRecordReplace(const string16& text, bool mergeable);
+  void ExecuteAndRecordReplaceAt(const string16& text,
+                                 size_t at,
+                                 bool mergeable);
+  void ExecuteAndRecordInsert(const string16& text, bool mergeable);
+
+  // Adds or merge |edit| into edit history. Return true if the edit
+  // has been merged and must be deleted after redo.
+  bool AddOrMergeEditHistory(internal::Edit* edit);
+
+  // Modify the text buffer in following way:
+  // 1) Delete the string from |delete_from| to |delte_to|.
+  // 2) Insert the |new_text| at the index |new_text_insert_at|.
+  //    Note that the index is after deletion.
+  // 3) Move the cursor to |new_cursor_pos|.
+  void ModifyText(size_t delete_from,
+                  size_t delete_to,
+                  const string16& new_text,
+                  size_t new_text_insert_at,
+                  size_t new_cursor_pos);
 
   // Pointer to a TextfieldViewsModel::Delegate instance, should be provided by
   // the View object.
@@ -260,6 +343,22 @@ class TextfieldViewsModel {
 
   // True if the text is the password.
   bool is_password_;
+
+  typedef std::list<internal::Edit*> EditHistory;
+  EditHistory edit_history_;
+
+  // An iterator that points to the current edit that can be undone.
+  // This iterator moves from the |end()|, meaining no edit to undo,
+  // to the last element (one before |end()|), meaning no edit to redo.
+  //  There is no edit to undo (== end()) when:
+  // 1) in initial state. (nothing to undo)
+  // 2) very 1st edit is undone.
+  // 3) all edit history is removed.
+  //  There is no edit to redo (== last element or no element) when:
+  // 1) in initial state. (nothing to redo)
+  // 2) new edit is added. (redo history is cleared)
+  // 3) redone all undone edits.
+  EditHistory::iterator current_edit_;
 
   DISALLOW_COPY_AND_ASSIGN(TextfieldViewsModel);
 };

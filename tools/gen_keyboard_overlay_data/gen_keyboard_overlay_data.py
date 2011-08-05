@@ -48,6 +48,34 @@ MODIFIER_ALT = 1 << 2
 KEYBOARD_GLYPH_SPREADSHEET_KEY = '0Ao3KldW9piwEdExLbGR6TmZ2RU9aUjFCMmVxWkVqVmc'
 HOTKEY_SPREADSHEET_KEY = '0AqzoqbAMLyEPdE1RQXdodk1qVkFyTWtQbUxROVM1cXc'
 
+LABEL_MAP = {
+  'glyph_arrow_down': 'down',
+  'glyph_arrow_left': 'left',
+  'glyph_arrow_right': 'right',
+  'glyph_arrow_up': 'up',
+  'glyph_back': 'back',
+  'glyph_backspace': 'backspace',
+  'glyph_brightness_down': 'bright down',
+  'glyph_brightness_up': 'bright up',
+  'glyph_enter': 'enter',
+  'glyph_forward': 'forward',
+  'glyph_fullscreen': 'full screen',
+  # Kana/Eisu key on Japanese keyboard
+  'glyph_ime': u'\u304b\u306a\u0020\u002f\u0020\u82f1\u6570',
+  'glyph_lock': 'lock',
+  'glyph_overview': 'switch window',
+  'glyph_power': 'power',
+  'glyph_right': 'right',
+  'glyph_reload': 'reload',
+  'glyph_search': 'search',
+  'glyph_shift': 'shift',
+  'glyph_tab': 'tab',
+  'glyph_tools': 'tools',
+  'glyph_volume_down': 'vol. down',
+  'glyph_volume_mute': 'mute',
+  'glyph_volume_up': 'vol. up',
+};
+
 COPYRIGHT_HEADER_TEMPLATE=(
 """// Copyright (c) %s The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -236,8 +264,8 @@ def FetchKeyboardGlyphData(client):
                'hr', 'hu', 'id', 'it', 'iw', 'ja', 'ko', 'lt', 'lv', 'nl', 'no',
                'pl', 'pt_BR', 'pt_PT', 'ro', 'ru', 'sk', 'sl', 'sr', 'sv', 'th',
                'tr', 'uk', 'vi', 'zh_CN', 'zh_TW']
-  glyph_cols = ['scancode', 'position', 'p0', 'p1', 'p2', 'p3', 'p4', 'p5',
-                'p6', 'p7', 'p8', 'p9', 'label', 'key', 'format', 'notes']
+  glyph_cols = ['scancode', 'p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7',
+                'p8', 'p9', 'label', 'format', 'notes']
   keyboard_glyph_data = FetchSpreadsheetFeeds(
       client, KEYBOARD_GLYPH_SPREADSHEET_KEY, languages, glyph_cols)
   ret = {}
@@ -250,7 +278,14 @@ def FetchKeyboardGlyphData(client):
         ret[lang]['layoutName'] = line['notes']
         continue
       del line['scancode']
+      if 'notes' in line:
+        del line['notes']
+      if 'label' in line:
+        line['label'] = LABEL_MAP.get(line['label'], line['label'])
       keys[scancode] = line
+    # Add a label to space key
+    if '39' not in keys:
+      keys['39'] = {'label': 'space'}
     ret[lang]['keys'] = keys
   return ret
 
@@ -337,8 +372,13 @@ def OutputCC(hotkey_data, outfile):
   print 'Generating: %s' % outfile
   out = file(outfile, 'w')
   for (behavior, _) in hotkey_data:
+    message_name = ToMessageName(behavior)
+    # Indent the line if message_name is longer than 45 characters, which means
+    # the second line in the generated code is longer than 80 characters.
+    if len(message_name) > 45:
+      message_name = '\n          %s' % message_name
     out.write(CC_SNIPPET_TEMPLATE % (Toi18nContent(behavior),
-                                     ToMessageName(behavior)))
+                                     message_name))
 
 
 def OutputAltGr(keyboard_glyph_data, outfile):
@@ -350,15 +390,18 @@ def OutputAltGr(keyboard_glyph_data, outfile):
 
   for layout in keyboard_glyph_data.keys():
     try:
-      right_alt = keyboard_glyph_data[layout]["keys"]["E0 38"]["key"].strip()
-      if right_alt.lower() == "alt gr":
+      # If left and right alt have different values, this layout to the list of
+      # layouts that don't remap the right alt key.
+      right_alt = keyboard_glyph_data[layout]["keys"]["E0 38"]["label"].strip()
+      left_alt = keyboard_glyph_data[layout]["keys"]["38"]["label"].strip()
+      if right_alt.lower() != left_alt.lower():
         altgr_output.append('  "%s",' % layout)
     except KeyError:
       pass
 
     try:
-      caps_lock = keyboard_glyph_data[layout]["keys"]["E0 5B"]["key"].strip()
-      if caps_lock.lower() != "glyph_search":
+      caps_lock = keyboard_glyph_data[layout]["keys"]["E0 5B"]["label"].strip()
+      if caps_lock.lower() != "search":
         capslock_output.append('  "%s",' % layout)
     except KeyError:
       pass

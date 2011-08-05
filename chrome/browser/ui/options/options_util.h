@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,15 +8,25 @@
 
 #include "base/basictypes.h"
 
-class Profile;
+// An identifier for an Options Tab page. These are treated as indices into
+// the list of available tabs to be displayed. PAGE_DEFAULT means select the
+// last tab viewed when the Options window was opened, or PAGE_GENERAL if the
+// Options was never opened.
+enum OptionsPage {
+  OPTIONS_PAGE_DEFAULT = -1,
+#if defined(OS_CHROMEOS)
+  OPTIONS_PAGE_SYSTEM,
+  OPTIONS_PAGE_INTERNET,
+  OPTIONS_PAGE_ACCOUNTS,
+#endif
+  OPTIONS_PAGE_GENERAL,
+  OPTIONS_PAGE_CONTENT,
+  OPTIONS_PAGE_ADVANCED,
+  OPTIONS_PAGE_COUNT
+};
 
 class OptionsUtil {
  public:
-  // TODO(kmadhusu): Remove "ResetToDefaults" function after platform-specific
-  // dialogs are removed.
-  // Resets all prefs to their default values.
-  static void ResetToDefaults(Profile* profile);
-
   // Try to make the the crash stats consent and the metrics upload
   // permission match |enabled|, returns the actual enabled setting.
   static bool ResolveMetricsReportingEnabled(bool enabled);

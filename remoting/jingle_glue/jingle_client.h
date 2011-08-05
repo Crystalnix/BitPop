@@ -137,12 +137,8 @@ class JingleClient : public base::RefCountedThreadSafe<JingleClient>,
   };
 
   // Physical sockets are used if |network_manager| and
-  // |socket_factory| are not specified. Otherwise ownership of these
+  // |socket_factory| are set to NULL. Otherwise ownership of these
   // objects is given to JingleClient.
-  JingleClient(JingleThread* thread,
-               SignalStrategy* signal_strategy,
-               PortAllocatorSessionFactory* session_factory,
-               Callback* callback);
   JingleClient(JingleThread* thread,
                SignalStrategy* signal_strategy,
                talk_base::NetworkManager* network_manager,
@@ -176,8 +172,11 @@ class JingleClient : public base::RefCountedThreadSafe<JingleClient>,
   // Message loop used by this object to execute tasks.
   MessageLoop* message_loop();
 
+  // SignalStrategy::StatusObserver implementation.
+  virtual void OnStateChange(State state);
+  virtual void OnJidChange(const std::string& full_jid);
+
  private:
-  friend class HeartbeatSenderTest;
   friend class JingleClientTest;
 
   void DoInitialize();
@@ -189,10 +188,6 @@ class JingleClient : public base::RefCountedThreadSafe<JingleClient>,
   void UpdateState(State new_state);
 
   // Virtual for mocking in a unittest.
-  //
-  // TODO(ajwong): Private virtual functions are odd. Can we remove this?
-  virtual void OnStateChange(State state);
-  virtual void OnJidChange(const std::string& full_jid);
   void OnJingleInfo(const std::string& token,
                     const std::vector<std::string>& relay_hosts,
                     const std::vector<talk_base::SocketAddress>& stun_hosts);

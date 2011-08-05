@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -68,23 +68,6 @@ bool Syncer::ExitRequested() {
 void Syncer::RequestEarlyExit() {
   base::AutoLock lock(early_exit_requested_lock_);
   early_exit_requested_ = true;
-}
-
-// TODO(tim): Deprecated.
-void Syncer::SyncShare(sessions::SyncSession* session) {
-  ScopedDirLookup dir(session->context()->directory_manager(),
-                      session->context()->account_name());
-  // The directory must be good here.
-  CHECK(dir.good());
-
-  const sessions::SyncSourceInfo& source(session->source());
-  if (sync_pb::GetUpdatesCallerInfo::CLEAR_PRIVATE_DATA ==
-      source.updates_source) {
-    SyncShare(session, CLEAR_PRIVATE_DATA, SYNCER_END);
-    return;
-  } else {
-    SyncShare(session, SYNCER_BEGIN, SYNCER_END);
-  }
 }
 
 void Syncer::SyncShare(sessions::SyncSession* session,
@@ -242,6 +225,9 @@ void Syncer::SyncShare(sessions::SyncSession* session,
         status->reset_conflicts_resolved();
         ResolveConflictsCommand resolve_conflicts_command;
         resolve_conflicts_command.Execute(session);
+
+        // Has ConflictingUpdates includes both blocking and non-blocking
+        // conflicts. If we have either, we want to attempt to reapply.
         if (status->HasConflictingUpdates())
           next_step = APPLY_UPDATES_TO_RESOLVE_CONFLICTS;
         else
@@ -252,11 +238,17 @@ void Syncer::SyncShare(sessions::SyncSession* session,
         StatusController* status = session->status_controller();
         VLOG(1) << "Applying updates to resolve conflicts";
         ApplyUpdatesCommand apply_updates;
-        int before_conflicting_updates = status->TotalNumConflictingItems();
+
+        // We only care to resolve conflicts again if we made progress on the
+        // blocking conflicts. Whether or not we made progress on the
+        // non-blocking doesn't matter.
+        int before_blocking_conflicting_updates =
+            status->TotalNumBlockingConflictingItems();
         apply_updates.Execute(session);
-        int after_conflicting_updates = status->TotalNumConflictingItems();
-        status->update_conflicts_resolved(before_conflicting_updates >
-                                          after_conflicting_updates);
+        int after_blocking_conflicting_updates =
+            status->TotalNumBlockingConflictingItems();
+        status->update_conflicts_resolved(before_blocking_conflicting_updates >
+                                          after_blocking_conflicting_updates);
         if (status->conflicts_resolved())
           next_step = RESOLVE_CONFLICTS;
         else

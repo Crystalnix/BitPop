@@ -12,7 +12,7 @@
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "views/controls/button/menu_button.h"
-#include "views/widget/widget_gtk.h"
+#include "views/widget/widget.h"
 
 namespace chromeos {
 
@@ -31,6 +31,10 @@ void KeyboardSwitchMenu::UpdateUI(const std::string& input_method_id,
   // Update all view hierarchies so that the new input method name is shown in
   // the menu button.
   views::Widget::NotifyLocaleChanged();
+}
+
+bool KeyboardSwitchMenu::ShouldSupportConfigUI() {
+  return false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

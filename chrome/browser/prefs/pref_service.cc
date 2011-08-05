@@ -18,11 +18,13 @@
 #include "base/string_util.h"
 #include "base/value_conversions.h"
 #include "build/build_config.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_pref_store.h"
 #include "chrome/browser/policy/configuration_policy_pref_store.h"
 #include "chrome/browser/prefs/command_line_pref_store.h"
 #include "chrome/browser/prefs/default_pref_store.h"
 #include "chrome/browser/prefs/overlay_persistent_pref_store.h"
+#include "chrome/browser/prefs/pref_model_associator.h"
 #include "chrome/browser/prefs/pref_notifier_impl.h"
 #include "chrome/browser/prefs/pref_value_store.h"
 #include "chrome/browser/ui/profile_error_dialog.h"
@@ -77,25 +79,41 @@ Value* CreateLocaleDefaultValue(Value::ValueType type, int message_id) {
 
 // Forwards a notification after a PostMessage so that we can wait for the
 // MessageLoop to run.
-void NotifyReadError(PrefService* pref, int message_id) {
+void NotifyReadError(int message_id) {
   ShowProfileErrorDialog(message_id);
 }
+
+// Shows notifications which correspond to PersistentPrefStore's reading errors.
+class ReadErrorHandler : public PersistentPrefStore::ReadErrorDelegate {
+ public:
+  virtual void OnError(PersistentPrefStore::PrefReadError error) {
+    if (error != PersistentPrefStore::PREF_READ_ERROR_NONE) {
+      // Failing to load prefs on startup is a bad thing(TM). See bug 38352 for
+      // an example problem that this can cause.
+      // Do some diagnosis and try to avoid losing data.
+      int message_id = 0;
+      if (error <= PersistentPrefStore::PREF_READ_ERROR_JSON_TYPE) {
+        message_id = IDS_PREFERENCES_CORRUPT_ERROR;
+      } else if (error != PersistentPrefStore::PREF_READ_ERROR_NO_FILE) {
+        message_id = IDS_PREFERENCES_UNREADABLE_ERROR;
+      }
+
+      if (message_id) {
+        BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+            NewRunnableFunction(&NotifyReadError, message_id));
+      }
+      UMA_HISTOGRAM_ENUMERATION("PrefService.ReadError", error, 20);
+    }
+  }
+};
 
 }  // namespace
 
 // static
 PrefService* PrefService::CreatePrefService(const FilePath& pref_filename,
                                             PrefStore* extension_prefs,
-                                            Profile* profile) {
-  return CreatePrefServiceAsync(pref_filename, extension_prefs, profile, NULL);
-}
-
-// static
-PrefService* PrefService::CreatePrefServiceAsync(
-    const FilePath& pref_filename,
-    PrefStore* extension_prefs,
-    Profile* profile,
-    PrefService::Delegate* delegate) {
+                                            Profile* profile,
+                                            bool async) {
   using policy::ConfigurationPolicyPrefStore;
 
 #if defined(OS_LINUX)
@@ -127,9 +145,10 @@ PrefService* PrefService::CreatePrefServiceAsync(
           profile);
   DefaultPrefStore* default_pref_store = new DefaultPrefStore();
 
-  return new PrefService(managed_platform, managed_cloud, extension_prefs,
-                         command_line, user, recommended_platform,
-                         recommended_cloud, default_pref_store, delegate);
+  return new PrefService(
+      managed_platform, managed_cloud, extension_prefs,
+      command_line, user, recommended_platform,
+      recommended_cloud, default_pref_store, async);
 }
 
 PrefService* PrefService::CreateIncognitoPrefService(
@@ -145,10 +164,10 @@ PrefService::PrefService(PrefStore* managed_platform_prefs,
                          PrefStore* recommended_platform_prefs,
                          PrefStore* recommended_cloud_prefs,
                          DefaultPrefStore* default_store,
-                         PrefService::Delegate* delegate)
+                         bool async)
     : user_pref_store_(user_prefs),
-      default_store_(default_store),
-      delegate_(delegate) {
+      default_store_(default_store) {
+  pref_sync_associator_.reset(new PrefModelAssociator(this));
   pref_notifier_.reset(new PrefNotifierImpl(this));
   pref_value_store_.reset(
       new PrefValueStore(managed_platform_prefs,
@@ -159,16 +178,17 @@ PrefService::PrefService(PrefStore* managed_platform_prefs,
                          recommended_platform_prefs,
                          recommended_cloud_prefs,
                          default_store,
+                         pref_sync_associator_.get(),
                          pref_notifier_.get()));
-  InitFromStorage();
+  InitFromStorage(async);
 }
 
 PrefService::PrefService(const PrefService& original,
                          PrefStore* incognito_extension_prefs)
       : user_pref_store_(
             new OverlayPersistentPrefStore(original.user_pref_store_.get())),
-        default_store_(original.default_store_.get()),
-        delegate_(NULL) {
+        default_store_(original.default_store_.get()) {
+  // Incognito mode doesn't sync, so no need to create PrefModelAssociator.
   pref_notifier_.reset(new PrefNotifierImpl(this));
   pref_value_store_.reset(original.pref_value_store_->CloneAndSpecialize(
       NULL, // managed_platform_prefs
@@ -179,8 +199,8 @@ PrefService::PrefService(const PrefService& original,
       NULL, // recommended_platform_prefs
       NULL, // recommended_cloud_prefs
       default_store_.get(),
+      NULL, // pref_sync_associator_
       pref_notifier_.get()));
-  InitFromStorage();
 }
 
 PrefService::~PrefService() {
@@ -192,49 +212,20 @@ PrefService::~PrefService() {
   pref_value_store_.reset();
   user_pref_store_ = NULL;
   default_store_ = NULL;
+  pref_sync_associator_.reset();
 }
 
-void PrefService::OnPrefsRead(PersistentPrefStore::PrefReadError error,
-                              bool no_dir) {
-  if (no_dir) {
-    // Bad news. When profile is created, the process that creates the directory
-    // is explicitly started. So if directory is missing it probably means that
-    // Chromium hasn't sufficient privileges.
-    CHECK(delegate_);
-    delegate_->OnPrefsLoaded(this, false);
-    return;
-  }
-
-  if (error != PersistentPrefStore::PREF_READ_ERROR_NONE) {
-    // Failing to load prefs on startup is a bad thing(TM). See bug 38352 for
-    // an example problem that this can cause.
-    // Do some diagnosis and try to avoid losing data.
-    int message_id = 0;
-    if (error <= PersistentPrefStore::PREF_READ_ERROR_JSON_TYPE) {
-      message_id = IDS_PREFERENCES_CORRUPT_ERROR;
-    } else if (error != PersistentPrefStore::PREF_READ_ERROR_NO_FILE) {
-      message_id = IDS_PREFERENCES_UNREADABLE_ERROR;
-    }
-
-    if (message_id) {
-      BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-          NewRunnableFunction(&NotifyReadError, this, message_id));
-    }
-    UMA_HISTOGRAM_ENUMERATION("PrefService.ReadError", error, 20);
-  }
-
-  if (delegate_)
-    delegate_->OnPrefsLoaded(this, true);
-}
-
-void PrefService::InitFromStorage() {
-  if (!delegate_) {
-    const PersistentPrefStore::PrefReadError error =
-        user_pref_store_->ReadPrefs();
-    OnPrefsRead(error, false);
+void PrefService::InitFromStorage(bool async) {
+  if (!async) {
+    ReadErrorHandler error_handler;
+    error_handler.OnError(user_pref_store_->ReadPrefs());
   } else {
-    // todo(altimofeev): move this method to PersistentPrefStore interface.
-    (static_cast<JsonPrefStore*>(user_pref_store_.get()))->ReadPrefs(this);
+    // Guarantee that initialization happens after this function returned.
+    MessageLoop::current()->PostTask(
+        FROM_HERE,
+        NewRunnableMethod(user_pref_store_.get(),
+                          &PersistentPrefStore::ReadPrefsAsync,
+                          new ReadErrorHandler()));
   }
 }
 
@@ -258,72 +249,286 @@ void PrefService::CommitPendingWrite() {
   user_pref_store_->CommitPendingWrite();
 }
 
+namespace {
+
+// If there's no g_browser_process or no local state, return true (for testing).
+bool IsLocalStatePrefService(PrefService* prefs){
+  return (!g_browser_process ||
+          !g_browser_process->local_state() ||
+          g_browser_process->local_state() == prefs);
+}
+
+// If there's no g_browser_process, return true (for testing).
+bool IsProfilePrefService(PrefService* prefs){
+  // TODO(zea): uncomment this once all preferences are only ever registered
+  // with either the local_state's pref service or the profile's pref service.
+  // return (!g_browser_process || g_browser_process->local_state() != prefs);
+  return true;
+}
+
+}  // namespace
+
+
+// Local State prefs.
 void PrefService::RegisterBooleanPref(const char* path,
                                       bool default_value) {
-  RegisterPreference(path, Value::CreateBooleanValue(default_value));
+  // If this fails, the pref service in use is a profile pref service, so the
+  // sync status must be provided (see profile pref registration calls below).
+  DCHECK(IsLocalStatePrefService(this));
+  RegisterPreference(path,
+                     Value::CreateBooleanValue(default_value),
+                     UNSYNCABLE_PREF);
 }
 
 void PrefService::RegisterIntegerPref(const char* path, int default_value) {
-  RegisterPreference(path, Value::CreateIntegerValue(default_value));
+  // If this fails, the pref service in use is a profile pref service, so the
+  // sync status must be provided (see profile pref registration calls below).
+  DCHECK(IsLocalStatePrefService(this));
+  RegisterPreference(path,
+                     Value::CreateIntegerValue(default_value),
+                     UNSYNCABLE_PREF);
 }
 
 void PrefService::RegisterDoublePref(const char* path, double default_value) {
-  RegisterPreference(path, Value::CreateDoubleValue(default_value));
+  // If this fails, the pref service in use is a profile pref service, so the
+  // sync status must be provided (see profile pref registration calls below).
+  DCHECK(IsLocalStatePrefService(this));
+  RegisterPreference(path,
+                     Value::CreateDoubleValue(default_value),
+                     UNSYNCABLE_PREF);
 }
 
 void PrefService::RegisterStringPref(const char* path,
                                      const std::string& default_value) {
-  RegisterPreference(path, Value::CreateStringValue(default_value));
+  // If this fails, the pref service in use is a profile pref service, so the
+  // sync status must be provided (see profile pref registration calls below).
+  DCHECK(IsLocalStatePrefService(this));
+  RegisterPreference(path,
+                     Value::CreateStringValue(default_value),
+                     UNSYNCABLE_PREF);
 }
 
 void PrefService::RegisterFilePathPref(const char* path,
                                        const FilePath& default_value) {
-  RegisterPreference(path, Value::CreateStringValue(default_value.value()));
+  // If this fails, the pref service in use is a profile pref service, so the
+  // sync status must be provided (see profile pref registration calls below).
+  DCHECK(IsLocalStatePrefService(this));
+  RegisterPreference(path,
+                     Value::CreateStringValue(default_value.value()),
+                     UNSYNCABLE_PREF);
 }
 
 void PrefService::RegisterListPref(const char* path) {
-  RegisterPreference(path, new ListValue());
+  // If this fails, the pref service in use is a profile pref service, so the
+  // sync status must be provided (see profile pref registration calls below).
+  DCHECK(IsLocalStatePrefService(this));
+  RegisterPreference(path,
+                     new ListValue(),
+                     UNSYNCABLE_PREF);
 }
 
 void PrefService::RegisterListPref(const char* path, ListValue* default_value) {
-  RegisterPreference(path, default_value);
+  // If this fails, the pref service in use is a profile pref service, so the
+  // sync status must be provided (see profile pref registration calls below).
+  DCHECK(IsLocalStatePrefService(this));
+  RegisterPreference(path,
+                     default_value,
+                     UNSYNCABLE_PREF);
 }
 
 void PrefService::RegisterDictionaryPref(const char* path) {
-  RegisterPreference(path, new DictionaryValue());
+  // If this fails, the pref service in use is a profile pref service, so the
+  // sync status must be provided (see profile pref registration calls below).
+  DCHECK(IsLocalStatePrefService(this));
+  RegisterPreference(path,
+                     new DictionaryValue(),
+                     UNSYNCABLE_PREF);
 }
 
 void PrefService::RegisterDictionaryPref(const char* path,
                                          DictionaryValue* default_value) {
-  RegisterPreference(path, default_value);
+  // If this fails, the pref service in use is a profile pref service, so the
+  // sync status must be provided (see profile pref registration calls below).
+  DCHECK(IsLocalStatePrefService(this));
+  RegisterPreference(path,
+                     default_value,
+                     UNSYNCABLE_PREF);
 }
 
 void PrefService::RegisterLocalizedBooleanPref(const char* path,
                                                int locale_default_message_id) {
+  // If this fails, the pref service in use is a profile pref service, so the
+  // sync status must be provided (see profile pref registration calls below).
+  DCHECK(IsLocalStatePrefService(this));
   RegisterPreference(
       path,
-      CreateLocaleDefaultValue(Value::TYPE_BOOLEAN, locale_default_message_id));
+      CreateLocaleDefaultValue(Value::TYPE_BOOLEAN, locale_default_message_id),
+      UNSYNCABLE_PREF);
 }
 
 void PrefService::RegisterLocalizedIntegerPref(const char* path,
                                                int locale_default_message_id) {
+  // If this fails, the pref service in use is a profile pref service, so the
+  // sync status must be provided (see profile pref registration calls below).
+  DCHECK(IsLocalStatePrefService(this));
   RegisterPreference(
       path,
-      CreateLocaleDefaultValue(Value::TYPE_INTEGER, locale_default_message_id));
+      CreateLocaleDefaultValue(Value::TYPE_INTEGER, locale_default_message_id),
+      UNSYNCABLE_PREF);
 }
 
 void PrefService::RegisterLocalizedDoublePref(const char* path,
                                               int locale_default_message_id) {
+  // If this fails, the pref service in use is a profile pref service, so the
+  // sync status must be provided (see profile pref registration calls below).
+  DCHECK(IsLocalStatePrefService(this));
   RegisterPreference(
       path,
-      CreateLocaleDefaultValue(Value::TYPE_DOUBLE, locale_default_message_id));
+      CreateLocaleDefaultValue(Value::TYPE_DOUBLE, locale_default_message_id),
+      UNSYNCABLE_PREF);
 }
 
 void PrefService::RegisterLocalizedStringPref(const char* path,
                                               int locale_default_message_id) {
+  // If this fails, the pref service in use is a profile pref service, so the
+  // sync status must be provided (see profile pref registration calls below).
+  DCHECK(IsLocalStatePrefService(this));
   RegisterPreference(
       path,
-      CreateLocaleDefaultValue(Value::TYPE_STRING, locale_default_message_id));
+      CreateLocaleDefaultValue(Value::TYPE_STRING, locale_default_message_id),
+      UNSYNCABLE_PREF);
+}
+
+void PrefService::RegisterInt64Pref(const char* path, int64 default_value) {
+  // If this fails, the pref service in use is a profile pref service, so the
+  // sync status must be provided (see profile pref registration calls below).
+  DCHECK(IsLocalStatePrefService(this));
+  RegisterPreference(
+      path,
+      Value::CreateStringValue(base::Int64ToString(default_value)),
+      UNSYNCABLE_PREF);
+}
+
+// Profile prefs (must use the sync_status variable).
+void PrefService::RegisterBooleanPref(const char* path,
+                                      bool default_value,
+                                      PrefSyncStatus sync_status) {
+  DCHECK(IsProfilePrefService(this));
+  RegisterPreference(path,
+                     Value::CreateBooleanValue(default_value),
+                     sync_status);
+}
+
+void PrefService::RegisterIntegerPref(const char* path,
+                                      int default_value,
+                                      PrefSyncStatus sync_status) {
+  DCHECK(IsProfilePrefService(this));
+  RegisterPreference(path,
+                     Value::CreateIntegerValue(default_value),
+                     sync_status);
+}
+
+void PrefService::RegisterDoublePref(const char* path,
+                                     double default_value,
+                                     PrefSyncStatus sync_status) {
+  DCHECK(IsProfilePrefService(this));
+  RegisterPreference(path,
+                     Value::CreateDoubleValue(default_value),
+                     sync_status);
+}
+
+void PrefService::RegisterStringPref(const char* path,
+                                     const std::string& default_value,
+                                     PrefSyncStatus sync_status) {
+  DCHECK(IsProfilePrefService(this));
+  RegisterPreference(path,
+                     Value::CreateStringValue(default_value),
+                     sync_status);
+}
+
+void PrefService::RegisterFilePathPref(const char* path,
+                                       const FilePath& default_value,
+                                       PrefSyncStatus sync_status) {
+  DCHECK(IsProfilePrefService(this));
+  RegisterPreference(path,
+                     Value::CreateStringValue(default_value.value()),
+                     sync_status);
+}
+
+void PrefService::RegisterListPref(const char* path,
+                                   PrefSyncStatus sync_status) {
+  DCHECK(IsProfilePrefService(this));
+  RegisterPreference(path, new ListValue(), sync_status);
+}
+
+void PrefService::RegisterListPref(const char* path,
+                                   ListValue* default_value,
+                                   PrefSyncStatus sync_status) {
+  DCHECK(IsProfilePrefService(this));
+  RegisterPreference(path, default_value, sync_status);
+}
+
+void PrefService::RegisterDictionaryPref(const char* path,
+                                         PrefSyncStatus sync_status) {
+  DCHECK(IsProfilePrefService(this));
+  RegisterPreference(path, new DictionaryValue(), sync_status);
+}
+
+void PrefService::RegisterDictionaryPref(const char* path,
+                                         DictionaryValue* default_value,
+                                         PrefSyncStatus sync_status) {
+  DCHECK(IsProfilePrefService(this));
+  RegisterPreference(path, default_value, sync_status);
+}
+
+void PrefService::RegisterLocalizedBooleanPref(const char* path,
+                                               int locale_default_message_id,
+                                               PrefSyncStatus sync_status) {
+  DCHECK(IsProfilePrefService(this));
+  RegisterPreference(
+      path,
+      CreateLocaleDefaultValue(Value::TYPE_BOOLEAN,locale_default_message_id),
+      sync_status);
+}
+
+void PrefService::RegisterLocalizedIntegerPref(const char* path,
+                                               int locale_default_message_id,
+                                               PrefSyncStatus sync_status) {
+  DCHECK(IsProfilePrefService(this));
+  RegisterPreference(
+      path,
+      CreateLocaleDefaultValue(Value::TYPE_INTEGER, locale_default_message_id),
+      sync_status);
+}
+
+void PrefService::RegisterLocalizedDoublePref(const char* path,
+                                              int locale_default_message_id,
+                                              PrefSyncStatus sync_status) {
+  DCHECK(IsProfilePrefService(this));
+  RegisterPreference(
+      path,
+      CreateLocaleDefaultValue(Value::TYPE_DOUBLE, locale_default_message_id),
+      sync_status);
+}
+
+void PrefService::RegisterLocalizedStringPref(const char* path,
+                                              int locale_default_message_id,
+                                              PrefSyncStatus sync_status) {
+  DCHECK(IsProfilePrefService(this));
+  RegisterPreference(
+      path,
+      CreateLocaleDefaultValue(Value::TYPE_STRING, locale_default_message_id),
+      sync_status);
+}
+
+void PrefService::RegisterInt64Pref(const char* path,
+                                    int64 default_value,
+                                    PrefSyncStatus sync_status) {
+  DCHECK(IsProfilePrefService(this));
+  RegisterPreference(
+      path,
+      Value::CreateStringValue(base::Int64ToString(default_value)),
+      sync_status);
 }
 
 bool PrefService::GetBoolean(const char* path) const {
@@ -486,7 +691,9 @@ void PrefService::RemovePrefObserver(const char* path,
   pref_notifier_->RemovePrefObserver(path, obs);
 }
 
-void PrefService::RegisterPreference(const char* path, Value* default_value) {
+void PrefService::RegisterPreference(const char* path,
+                                     Value* default_value,
+                                     PrefSyncStatus sync_status) {
   DCHECK(CalledOnValidThread());
 
   // The main code path takes ownership, but most don't. We'll be safe.
@@ -503,6 +710,10 @@ void PrefService::RegisterPreference(const char* path, Value* default_value) {
 
   // Hand off ownership.
   default_store_->SetDefaultValue(path, scoped_value.release());
+
+  // Register with sync if necessary.
+  if (sync_status == SYNCABLE_PREF && pref_sync_associator_.get())
+    pref_sync_associator_->RegisterPref(path);
 }
 
 void PrefService::ClearPref(const char* path) {
@@ -517,21 +728,7 @@ void PrefService::ClearPref(const char* path) {
 }
 
 void PrefService::Set(const char* path, const Value& value) {
-  DCHECK(CalledOnValidThread());
-
-  const Preference* pref = FindPreference(path);
-  if (!pref) {
-    NOTREACHED() << "Trying to write an unregistered pref: " << path;
-    return;
-  }
-
-  if (pref->GetType() != value.GetType()) {
-    NOTREACHED() << "Trying to set pref " << path
-                 << " of type " << pref->GetType()
-                 << " to value of type " << value.GetType();
-  } else {
-    user_pref_store_->SetValue(path, value.DeepCopy());
-  }
+  SetUserPrefValue(path, value.DeepCopy());
 }
 
 void PrefService::SetBoolean(const char* path, bool value) {
@@ -554,10 +751,6 @@ void PrefService::SetFilePath(const char* path, const FilePath& value) {
   SetUserPrefValue(path, base::CreateFilePathValue(value));
 }
 
-void PrefService::SetList(const char* path, ListValue* value) {
-  SetUserPrefValue(path, value);
-}
-
 void PrefService::SetInt64(const char* path, int64 value) {
   SetUserPrefValue(path, Value::CreateStringValue(base::Int64ToString(value)));
 }
@@ -577,11 +770,6 @@ int64 PrefService::GetInt64(const char* path) const {
   int64 val;
   base::StringToInt64(result, &val);
   return val;
-}
-
-void PrefService::RegisterInt64Pref(const char* path, int64 default_value) {
-  RegisterPreference(
-      path, Value::CreateStringValue(base::Int64ToString(default_value)));
 }
 
 Value* PrefService::GetMutableUserPref(const char* path,
@@ -624,6 +812,7 @@ void PrefService::ReportUserPrefChanged(const std::string& key) {
 }
 
 void PrefService::SetUserPrefValue(const char* path, Value* new_value) {
+  scoped_ptr<Value> owned_value(new_value);
   DCHECK(CalledOnValidThread());
   DLOG_IF(WARNING, IsManagedPreference(path)) <<
       "Attempt to change managed preference " << path;
@@ -640,7 +829,11 @@ void PrefService::SetUserPrefValue(const char* path, Value* new_value) {
     return;
   }
 
-  user_pref_store_->SetValue(path, new_value);
+  user_pref_store_->SetValue(path, owned_value.release());
+}
+
+SyncableService* PrefService::GetSyncableService() {
+  return pref_sync_associator_.get();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

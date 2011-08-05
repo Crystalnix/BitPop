@@ -16,6 +16,7 @@
 #include "googleurl/src/gurl.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileSystem.h"
 #include "webkit/fileapi/file_system_util.h"
+#include "webkit/fileapi/local_file_system_file_util.h"
 #include "webkit/fileapi/sandbox_mount_point_provider.h"
 #include "webkit/glue/webkit_glue.h"
 
@@ -57,25 +58,25 @@ FileSystemPathManager::~FileSystemPathManager() {}
 void FileSystemPathManager::ValidateFileSystemRootAndGetURL(
     const GURL& origin_url, fileapi::FileSystemType type,
     bool create, GetRootPathCallback* callback_ptr) {
-
+  scoped_ptr<GetRootPathCallback> callback(callback_ptr);
   switch (type) {
   case kFileSystemTypeTemporary:
   case kFileSystemTypePersistent:
     sandbox_provider_->ValidateFileSystemRootAndGetURL(
-        origin_url, type, create, callback_ptr);
+        origin_url, type, create, callback.release());
     break;
   case kFileSystemTypeExternal:
     if (external_provider_.get()) {
       external_provider_->ValidateFileSystemRootAndGetURL(
-          origin_url, type, create, callback_ptr);
+          origin_url, type, create, callback.release());
     } else {
-      callback_ptr->Run(false, FilePath(), std::string());
+      callback->Run(false, FilePath(), std::string());
     }
     break;
   case kFileSystemTypeUnknown:
   default:
     NOTREACHED();
-    callback_ptr->Run(false, FilePath(), std::string());
+    callback->Run(false, FilePath(), std::string());
   }
 }
 
@@ -158,6 +159,21 @@ bool FileSystemPathManager::IsAccessAllowed(
       return false;
   }
   return true;
+}
+
+FileSystemFileUtil* FileSystemPathManager::GetFileSystemFileUtil(
+    FileSystemType type) const {
+  switch (type) {
+    case kFileSystemTypeTemporary:
+    case kFileSystemTypePersistent:
+      return sandbox_provider_->GetFileSystemFileUtil();
+    case kFileSystemTypeExternal:
+      return LocalFileSystemFileUtil::GetInstance();
+    case kFileSystemTypeUnknown:
+    default:
+      NOTREACHED();
+      return NULL;
+  }
 }
 
 }  // namespace fileapi

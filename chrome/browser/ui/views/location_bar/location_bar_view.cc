@@ -4,7 +4,7 @@
 
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 
-#if defined(OS_LINUX)
+#if defined(TOOLKIT_USES_GTK)
 #include <gtk/gtk.h>
 #endif
 
@@ -17,10 +17,12 @@
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/extension_browser_event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/instant/instant_controller.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_model.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/browser_dialogs.h"
@@ -38,6 +40,7 @@
 #include "content/common/notification_service.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -96,12 +99,12 @@ static const int kNormalModeBackgroundImages[] = {
 // LocationBarView -----------------------------------------------------------
 
 LocationBarView::LocationBarView(Profile* profile,
-                                 CommandUpdater* command_updater,
+                                 Browser* browser,
                                  ToolbarModel* model,
                                  Delegate* delegate,
                                  Mode mode)
     : profile_(profile),
-      command_updater_(command_updater),
+      browser_(browser),
       model_(model),
       delegate_(delegate),
       disposition_(CURRENT_TAB),
@@ -118,7 +121,8 @@ LocationBarView::LocationBarView(Profile* profile,
       mode_(mode),
       show_focus_rect_(false),
       bubble_type_(FirstRun::MINIMAL_BUBBLE),
-      template_url_model_(NULL) {
+      template_url_model_(NULL),
+      animation_offset_(0) {
   DCHECK(profile_);
   SetID(VIEW_ID_LOCATION_BAR);
   SetFocusable(true);
@@ -166,14 +170,12 @@ void LocationBarView::Init() {
   // URL edit field.
   // View container for URL edit field.
 #if defined(OS_WIN)
-  location_entry_.reset(new AutocompleteEditViewWin(font_, this, model_, this,
-      GetWidget()->GetNativeView(), profile_, command_updater_,
+  location_entry_.reset(new OmniboxViewWin(font_, this, model_, this,
+      GetWidget()->GetNativeView(), profile_, browser_->command_updater(),
       mode_ == POPUP, this));
 #else
-  location_entry_.reset(
-      AutocompleteEditViewGtk::Create(
-          this, model_, profile_,
-          command_updater_, mode_ == POPUP, this));
+  location_entry_.reset(OmniboxViewGtk::Create(this, model_, profile_,
+      browser_->command_updater(), mode_ == POPUP, this));
 #endif
 
   location_entry_view_ = location_entry_->AddToView(this);
@@ -204,7 +206,7 @@ void LocationBarView::Init() {
 
   // The star is not visible in popups and in the app launcher.
   if (browser_defaults::bookmarks_enabled && (mode_ == NORMAL)) {
-    star_view_ = new StarView(command_updater_);
+    star_view_ = new StarView(browser_->command_updater());
     AddChildView(star_view_);
     star_view_->SetVisible(true);
   }
@@ -269,10 +271,20 @@ SkColor LocationBarView::GetColor(ToolbarModel::SecurityLevel security_level,
   }
 }
 
+// DropdownBarHostDelegate
+void LocationBarView::SetFocusAndSelection(bool select_all) {
+  FocusLocation(select_all);
+}
+
+void LocationBarView::SetAnimationOffset(int offset) {
+  animation_offset_ = offset;
+}
+
 void LocationBarView::Update(const TabContents* tab_for_state_restoring) {
   bool star_enabled = star_view_ && !model_->input_in_progress() &&
                       edit_bookmarks_enabled_.GetValue();
-  command_updater_->UpdateCommandEnabled(IDC_BOOKMARK_PAGE, star_enabled);
+  browser_->command_updater()->UpdateCommandEnabled(
+      IDC_BOOKMARK_PAGE, star_enabled);
   if (star_view_)
     star_view_->SetVisible(star_enabled);
   RefreshContentSettingViews();
@@ -780,16 +792,16 @@ void LocationBarView::OnAutocompleteAccept(
     disposition_ = disposition;
     transition_ = transition;
 
-    if (command_updater_) {
+    if (browser_->command_updater()) {
       if (!alternate_nav_url.is_valid()) {
-        command_updater_->ExecuteCommand(IDC_OPEN_CURRENT_URL);
+        browser_->command_updater()->ExecuteCommand(IDC_OPEN_CURRENT_URL);
       } else {
         AlternateNavURLFetcher* fetcher =
             new AlternateNavURLFetcher(alternate_nav_url);
         // The AlternateNavURLFetcher will listen for the pending navigation
         // notification that will be issued as a result of the "open URL." It
         // will automatically install itself into that navigation controller.
-        command_updater_->ExecuteCommand(IDC_OPEN_CURRENT_URL);
+        browser_->command_updater()->ExecuteCommand(IDC_OPEN_CURRENT_URL);
         if (fetcher->state() == AlternateNavURLFetcher::NOT_STARTED) {
           // I'm not sure this should be reachable, but I'm not also sure enough
           // that it shouldn't to stick in a NOTREACHED().  In any case, this is
@@ -839,7 +851,7 @@ void LocationBarView::OnSetFocus() {
 }
 
 SkBitmap LocationBarView::GetFavicon() const {
-  return GetTabContentsFromDelegate(delegate_)->GetFavicon();
+  return delegate_->GetTabContentsWrapper()->favicon_tab_helper()->GetFavicon();
 }
 
 string16 LocationBarView::GetTitle() const {
@@ -1036,11 +1048,13 @@ void LocationBarView::WriteDragDataForView(views::View* sender,
   DCHECK_NE(GetDragOperationsForView(sender, press_pt),
             ui::DragDropTypes::DRAG_NONE);
 
-  TabContents* tab_contents = GetTabContentsFromDelegate(delegate_);
+  TabContentsWrapper* tab_contents = delegate_->GetTabContentsWrapper();
   DCHECK(tab_contents);
-  drag_utils::SetURLAndDragImage(tab_contents->GetURL(),
-                                 UTF16ToWideHack(tab_contents->GetTitle()),
-                                 tab_contents->GetFavicon(), data);
+  drag_utils::SetURLAndDragImage(
+      tab_contents->tab_contents()->GetURL(),
+      UTF16ToWideHack(tab_contents->tab_contents()->GetTitle()),
+      tab_contents->favicon_tab_helper()->GetFavicon(),
+      data);
 }
 
 int LocationBarView::GetDragOperationsForView(views::View* sender,
@@ -1114,11 +1128,11 @@ void LocationBarView::Revert() {
   location_entry_->RevertAll();
 }
 
-const AutocompleteEditView* LocationBarView::location_entry() const {
+const OmniboxView* LocationBarView::location_entry() const {
   return location_entry_.get();
 }
 
-AutocompleteEditView* LocationBarView::location_entry() {
+OmniboxView* LocationBarView::location_entry() {
   return location_entry_.get();
 }
 

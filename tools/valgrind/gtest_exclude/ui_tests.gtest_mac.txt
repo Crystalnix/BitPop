@@ -6,6 +6,7 @@ ErrorPageTest.IFrameDNSError_GoBack
 ErrorPageTest.DNSError_GoBack1
 # Hung one each on the mac bots
 AutomatedUITestBase.CloseBrowserWindow
+AutomatedUITestBase.DuplicateTab
 AutomatedUITestBase.OpenBrowserWindow
 ErrorPageTest.DNSError_GoBack2
 ResourceDispatcherTest.CrossSiteNavigationErrorPage
@@ -28,10 +29,6 @@ ErrorPageTest.IFrameDNSError_GoBackAndForward
 BrowserEncodingTest.TestEncodingAutoDetect
 # See http://crbug.com/29598.
 DOMStorageTest.LocalStorageLayoutTests
-ErrorPageTest.DNSError_GoBack1
-ErrorPageTest.DNSError_GoBack2
-ErrorPageTest.DNSError_GoBack2AndForward
-ErrorPageTest.DNSError_GoBack2Forward2
 # See http://crbug.com/30367.
 NewTabUITest.NTPHasThumbnails
 NewTabUITest.UpdateUserPrefsVersion
@@ -101,7 +98,7 @@ AutomatedUITestBase.ShowDownloads
 AutomationProxyTest.AcceleratorDownloads
 AutomationProxyTest.AcceleratorExtensions
 AutomationProxyTest.ActivateTab
-AutomationProxyTest.FLAKY_BlockedPopupTest
+AutomationProxyTest.BlockedPopupTest
 AutomationProxyTest.GetActiveTabIndex
 AutomationProxyTest.GetCurrentURL
 AutomationProxyTest2.GetActiveTabIndex
@@ -113,23 +110,21 @@ ExtensionProxyUITest.EnableDisable
 IFrameTest.Crash
 LoginPromptTest.SupplyRedundantAuths
 LoginPromptTest.TestCancelAuth
-MediaTest.VideoBearSilentTheora
-MediaTest.VideoBearTheora
-MediaTest.VideoBearWebm
 MetricsServiceTest.CrashRenderers
 PPAPITest.Buffer
-PPAPITest.FLAKY_PaintAggregator
+PPAPITest.PaintAggregator
 PPAPITest.FileIO
+PPAPITest.FileRef
 PreferenceServiceTest.PreservedWindowPlacementIsLoaded
 PrintPreviewUITest.LoadPrintPreviewByURL
 RedirectTest.ServerReference
 RepostFormWarningTest.TestDoubleReload
 ResourceDispatcherTest.ContentDispositionEmpty
 ResourceDispatcherTest.ContentDispositionInline
-ResourceDispatcherTest.FLAKY_SyncXMLHttpRequest
+ResourceDispatcherTest.SyncXMLHttpRequest
 ResourceDispatcherTest.SniffNoContentTypeNoData
 SessionHistoryTest.LocationChangeInSubframe
-ShowModalDialogTest.FLAKY_BasicTest
+ShowModalDialogTest.BasicTest
 V8BenchmarkTest.Perf
 ViewSourceTest.DoesBrowserConsumeViewSourcePrefix
 WorkerFileSystemTest.FileEntryToURISync
@@ -141,6 +136,7 @@ AutomationProxyTest3.FrameDocumentCanBeAccessed
 DromaeoTest.DOMCorePerf
 LoginPromptTest.CancelRedundantAuths
 MetricsServiceTest.CloseRenderersNormally
+ResourceDispatcherTest.DoNotSniffHTMLFromImageGIF
 SunSpiderTest.Perf
 
 # Valgrind dies on arena assertion, see http://crbug.com/58146
@@ -160,8 +156,8 @@ DomStorageEmptyDatabaseTest.EmptyDirAfterGet
 SearchProviderTest.TestIsSearchProviderInstalled
 
 # Following tests crash with LOG(FATAL) on valgrind mac; See http://crbug.com/60036
-OptionsUITest.FLAKY_TwoCommandsOneTab
-OptionsUITest.FLAKY_CommandAgainGoesBackToOptionsTab
+OptionsUITest.TwoCommandsOneTab
+OptionsUITest.CommandAgainGoesBackToOptionsTab
 
 # Times out, see http://crbug.com/50297
 DOMStorageTest.RootLayoutTests
@@ -173,17 +169,18 @@ ErrorPageTest.Page404_GoBack
 # > connect /var/tmp/ChromeTestingInterface: Connection refused
 NamedInterfaceTest.BasicNamedInterface
 
-# Fails a Check most of the time, see http://crbug.com/74473
-UILayoutTest.MediaUILayoutTest
-
 # Fails to start the browser, see http://crbug.com/75249
+AutomationProxySnapshotTest.ContentLargerThanView
 AutomationProxyTest.AcceleratorNewTab
+BookmarksUITest.CommandOpensBookmarksTab
+HistoryTester.VerifyHistoryLength1
 HistoryTester.VerifyHistoryLength2
 RedirectTest.ClientServerServer
 DomCheckerTest.File
 ResourceDispatcherTest.CrossSiteNavigationNonBuffered
 ResourceDispatcherTest.CrossSiteNoUnloadOn204
 ResourceDispatcherTest.CrossSiteOnunloadCookie
+ResourceDispatcherTest.CrossOriginRedirectBlocked
 ResourceDispatcherTest.SniffHTMLWithNoContentType
 
 # Fails, see http://crbug.com/75250
@@ -203,3 +200,26 @@ RepostFormWarningTest.TestLoginAfterRepost
 WorkerFileSystemTest.SyncOperations
 WorkerFileSystemTest.FileWriterSyncWriteOverlapped
 WorkerFileSystemTest.AsyncOperations
+
+# Fails, see http://crbug.com/81657
+AutomationProxyVisibleTest.AppendTab
+
+# NavigateToURL fails, see http://crbug.com/81658
+BrowserEncodingTest.TestEncodingAliasMapping
+LoginPromptTest.TestBasicAuth
+LoginPromptTest.TestDigestAuth
+ResourceDispatcherTest.DoNotSniffHTMLFromTextPlain
+
+# OptionsUITest.NavBarCheck fails, see http://crbug.com/83209
+OptionsUITest.NavBarCheck
+
+# Timing out, see http://crbug.com/83565
+NPAPIAutomationEnabledTest.LoadAllBlockedPlugins
+
+# Fails constantly. See http://crbug.com/84230.
+NPAPITesterBase.NPObjectIdentity
+
+# Flaky on valgrind test. See http://crbug.com/84257.
+AutomatedUITestBase.RestoreTab
+AutomationProxyTest4.BooleanValueIsEchoedByDomAutomationController 
+

@@ -15,6 +15,7 @@ var ContentSettingsExceptionsArea =
     options.contentSettings.ContentSettingsExceptionsArea;
 var CookiesView = options.CookiesView;
 var FontSettings = options.FontSettings;
+var HandlerOptions = options.HandlerOptions;
 var ImportDataOverlay = options.ImportDataOverlay;
 var InstantConfirmOverlay = options.InstantConfirmOverlay;
 var LanguageOptions = options.LanguageOptions;
@@ -39,8 +40,10 @@ function load() {
   cr.ui.decorate('select[pref]', options.PrefSelect);
   cr.ui.decorate('input[pref][type=text]', options.PrefTextField);
   cr.ui.decorate('input[pref][type=url]', options.PrefTextField);
-  cr.ui.decorate('#content-settings-page input[type=radio]',
+  cr.ui.decorate('#content-settings-page input[type=radio]:not(.handler-radio)',
       options.ContentSettingsRadio);
+  cr.ui.decorate('#content-settings-page input[type=radio].handler-radio',
+      options.HandlersEnabledRadio);
 
   var menuOffPattern = /(^\?|&)menu=off($|&)/;
   var menuDisabled = menuOffPattern.test(window.location.search);
@@ -104,6 +107,12 @@ function load() {
                               ContentSettings.getInstance(),
                               [$('privacyContentSettingsButton'),
                                $('show-cookies-button')]);
+  // If HandlerOptions is null it means it got compiled out.
+  if (HandlerOptions) {
+    OptionsPage.registerSubPage(HandlerOptions.getInstance(),
+                                ContentSettings.getInstance(),
+                                [$('manage-handlers-button')]);
+  }
   OptionsPage.registerSubPage(FontSettings.getInstance(),
                               AdvancedOptions.getInstance(),
                               [$('fontSettingsCustomizeFontsButton')]);
@@ -150,15 +159,17 @@ function load() {
     OptionsPage.registerSubPage(ChangePictureOptions.getInstance(),
                                 PersonalOptions.getInstance(),
                                 [$('change-picture-button')]);
-    OptionsPage.registerOverlay(new OptionsPage('detailsInternetPage',
-                                                'detailsInternetPage',
-                                                'detailsInternetPage'),
+    OptionsPage.registerOverlay(DetailsInternetPage.getInstance(),
                                 InternetOptions.getInstance());
 
     var languageModifierKeysOverlay = new OptionsPage(
         'languageCustomizeModifierKeysOverlay',
         localStrings.getString('languageCustomizeModifierKeysOverlay'),
         'languageCustomizeModifierKeysOverlay')
+    $('languageCustomizeModifierKeysOverleyDismissButton').onclick =
+        function() {
+      OptionsPage.closeOverlay();
+    };
     OptionsPage.registerOverlay(languageModifierKeysOverlay,
                                 SystemOptions.getInstance(),
                                 [$('modifier-keys-button')]);
@@ -170,7 +181,8 @@ function load() {
   var path = document.location.pathname;
 
   if (path.length > 1) {
-    var pageName = path.slice(1);
+    // Skip starting slash and remove trailing slash (if any).
+    var pageName = path.slice(1).replace(/\/$/, '');
     // Show page, but don't update history (there's already an entry for it).
     OptionsPage.showPageByName(pageName, false);
   } else {

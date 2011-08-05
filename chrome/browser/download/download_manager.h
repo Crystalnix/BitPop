@@ -41,13 +41,14 @@
 #include "base/observer_list.h"
 #include "base/scoped_ptr.h"
 #include "base/time.h"
+#include "chrome/browser/download/download_item.h"
 #include "chrome/browser/download/download_status_updater_delegate.h"
+#include "chrome/browser/download/download_process_handle.h"
 #include "chrome/browser/ui/shell_dialogs.h"
 #include "content/browser/browser_thread.h"
 
 class DownloadFileManager;
 class DownloadHistory;
-class DownloadItem;
 class DownloadPrefs;
 class DownloadStatusUpdater;
 class GURL;
@@ -55,11 +56,8 @@ class Profile;
 class ResourceDispatcherHost;
 class TabContents;
 struct DownloadCreateInfo;
+struct DownloadHistoryInfo;
 struct DownloadSaveInfo;
-
-namespace net {
-class URLRequestContextGetter;
-}
 
 // Browser's download manager: manages all downloads and destination view.
 class DownloadManager
@@ -117,7 +115,7 @@ class DownloadManager
   bool Init(Profile* profile);
 
   // Notifications sent from the download thread to the UI thread
-  void StartDownload(DownloadCreateInfo* info);
+  void StartDownload(int32 id);
   void UpdateDownload(int32 download_id, int64 size);
   // |hash| is sha256 hash for the downloaded file. It is empty when the hash
   // is not available.
@@ -193,13 +191,11 @@ class DownloadManager
 
   // Methods called on completion of a query sent to the history system.
   void OnQueryDownloadEntriesComplete(
-      std::vector<DownloadCreateInfo>* entries);
-  void OnCreateDownloadEntryComplete(
-      DownloadCreateInfo info, int64 db_handle);
+      std::vector<DownloadHistoryInfo>* entries);
+  void OnCreateDownloadEntryComplete(int32 download_id, int64 db_handle);
 
   // Display a new download in the appropriate browser UI.
-  void ShowDownloadInBrowser(const DownloadCreateInfo& info,
-                             DownloadItem* download);
+  void ShowDownloadInBrowser(DownloadItem* download);
 
   // The number of in progress (including paused) downloads.
   int in_progress_count() const {
@@ -207,8 +203,6 @@ class DownloadManager
   }
 
   Profile* profile() { return profile_; }
-
-  DownloadHistory* download_history() { return download_history_.get(); }
 
   DownloadPrefs* download_prefs() { return download_prefs_.get(); }
 
@@ -231,11 +225,24 @@ class DownloadManager
   virtual void FileSelected(const FilePath& path, int index, void* params);
   virtual void FileSelectionCanceled(void* params);
 
+  // Returns true if this download should show the "dangerous file" warning.
+  // Various factors are considered, such as the type of the file, whether a
+  // user action initiated the download, and whether the user has explicitly
+  // marked the file type as "auto open".
+  bool IsDangerous(const DownloadItem& download,
+                   const DownloadStateInfo& state,
+                   bool visited_referrer_before);
+
   // Called when the user has validated the download of a dangerous file.
   void DangerousDownloadValidated(DownloadItem* download);
 
   // Callback function after url is checked with safebrowsing service.
-  void CheckDownloadUrlDone(DownloadCreateInfo* info, bool is_dangerous_url);
+  void CheckDownloadUrlDone(int32 download_id, bool is_dangerous_url);
+
+  // Callback function after we check whether the referrer URL has been visited
+  // before today.
+  void CheckVisitedReferrerBeforeDone(int32 download_id,
+                                      bool visited_referrer_before);
 
   // Callback function after download file hash is checked with safebrowsing
   // service.
@@ -271,27 +278,31 @@ class DownloadManager
   friend class DeleteTask<DownloadManager>;
   friend class OtherDownloadManagerObserver;
 
-  ~DownloadManager();
+  virtual ~DownloadManager();
 
   // Called on the download thread to check whether the suggested file path
   // exists.  We don't check if the file exists on the UI thread to avoid UI
   // stalls from interacting with the file system.
-  void CheckIfSuggestedPathExists(DownloadCreateInfo* info,
+  void CheckIfSuggestedPathExists(int32 download_id,
+                                  DownloadStateInfo state,
                                   const FilePath& default_path);
 
   // Called on the UI thread once the DownloadManager has determined whether the
   // suggested file path exists.
-  void OnPathExistenceAvailable(DownloadCreateInfo* info);
+  void OnPathExistenceAvailable(int32 download_id,
+                                DownloadStateInfo new_state);
 
   // Called back after a target path for the file to be downloaded to has been
   // determined, either automatically based on the suggested file name, or by
   // the user in a Save As dialog box.
-  void AttachDownloadItem(DownloadCreateInfo* info);
+  void ContinueDownloadWithPath(DownloadItem* download,
+                                const FilePath& chosen_file);
 
   // Download cancel helper function.
+  // |process_handle| is passed by value because it is ultimately passed to
+  // other threads, and this way we don't have to worry about object lifetimes.
   void DownloadCancelledInternal(int download_id,
-                                 int render_process_id,
-                                 int request_id);
+                                 DownloadProcessHandle process_handle);
 
   // All data has been downloaded.
   // |hash| is sha256 hash for the downloaded file. It is empty when the hash
@@ -306,15 +317,22 @@ class DownloadManager
 
   // Makes the ResourceDispatcherHost pause/un-pause a download request.
   // Called on the IO thread.
+  // |process_handle| is passed by value because this is called from other
+  // threads, and this way we don't have to worry about object lifetimes.
   void PauseDownloadRequest(ResourceDispatcherHost* rdh,
-                            int render_process_id,
-                            int request_id,
+                            DownloadProcessHandle process_handle,
                             bool pause);
 
   // Inform observers that the model has changed.
   void NotifyModelChanged();
 
+  // Get the download item from the history map.  Useful after the item has
+  // been removed from the active map, or was retrieved from the history DB.
   DownloadItem* GetDownloadItem(int id);
+
+  // Get the download item from the active map.  Useful when the item is not
+  // yet in the history map.
+  DownloadItem* GetActiveDownloadItem(int id);
 
   // Debugging routine to confirm relationship between below
   // containers; no-op if NDEBUG.
@@ -375,7 +393,6 @@ class DownloadManager
 
   // The current active profile.
   Profile* profile_;
-  scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
 
   scoped_ptr<DownloadHistory> download_history_;
 

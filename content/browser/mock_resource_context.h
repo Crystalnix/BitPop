@@ -5,6 +5,8 @@
 #ifndef CONTENT_BROWSER_MOCK_RESOURCE_CONTEXT_H_
 #define CONTENT_BROWSER_MOCK_RESOURCE_CONTEXT_H_
 
+#include "base/compiler_specific.h"
+#include "base/memory/ref_counted.h"
 #include "content/browser/resource_context.h"
 
 namespace base {
@@ -22,8 +24,10 @@ class MockResourceContext : public ResourceContext {
   friend struct base::DefaultLazyInstanceTraits<MockResourceContext>;
 
   MockResourceContext();
-  ~MockResourceContext();
-  virtual void EnsureInitialized() const;
+  virtual ~MockResourceContext();
+  virtual void EnsureInitialized() const OVERRIDE;
+
+  const scoped_refptr<net::URLRequestContext> test_request_context_;
 };
 
 }  // namespace content

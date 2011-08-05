@@ -6,7 +6,7 @@ found in the LICENSE file.
 
 /* styles for the cookies list elements in cookies_view.html */
 #remove-all-cookies-search-column {
-  bottom: 0;
+  bottom: 10px;
   position: absolute;
   right: 0;
 }
@@ -17,13 +17,14 @@ html[dir=rtl] #remove-all-cookies-search-column {
 }
 
 #cookies-column-headers {
-  margin-bottom: 10px;
   position: relative;
   width: 100%;
 }
 
 #cookies-column-headers h3 {
-  margin-bottom: 0;
+  font-size: 105%;
+  font-weight: bold;
+  margin: 10px 0;
 }
 
 /* notice the width and padding for these columns match up with those below */
@@ -41,10 +42,6 @@ html[dir=rtl] #remove-all-cookies-search-column {
 
 #cookies-list {
   border: 1px solid #D9D9D9;
-  /* it would be nice if we could make this expand as necessary up to the height
-   * of the window, but the panel doesn't have a known height and that would
-   * probably confuse cr.ui.List (which doesn't expect that) anyway */
-  height: 600px;
   margin: 0;
 }
 
@@ -126,7 +123,7 @@ list.cookie-list > .deletable-item[selected] .cookie-data {
   font-size: 85%;
   height: auto;
   margin: 2px 4px 2px 0;
-  max-width: 80px;
+  max-width: 100px;
   min-width: 40px;
   overflow: hidden;
   padding: 0 3px;

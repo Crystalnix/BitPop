@@ -23,7 +23,6 @@
 #include "chrome/browser/download/download_item_model.h"
 #include "chrome/browser/download/download_manager.h"
 #include "chrome/browser/download/download_prefs.h"
-#include "chrome/browser/download/download_shelf.h"
 #include "chrome/browser/download/download_util.h"
 #include "chrome/browser/download/save_file.h"
 #include "chrome/browser/download/save_file_manager.h"
@@ -34,6 +33,8 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/tab_util.h"
+#include "chrome/browser/ui/download/download_tab_helper.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
@@ -53,7 +54,6 @@
 #include "net/url_request/url_request_context.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPageSerializerClient.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "net/url_request/url_request_context_getter.h"
 
 using base::Time;
 using WebKit::WebPageSerializerClient;
@@ -153,24 +153,25 @@ bool CanSaveAsComplete(const std::string& contents_mime_type) {
 
 }  // namespace
 
-SavePackage::SavePackage(TabContents* tab_contents,
+SavePackage::SavePackage(TabContentsWrapper* wrapper,
                          SavePackageType save_type,
                          const FilePath& file_full_path,
                          const FilePath& directory_full_path)
-    : TabContentsObserver(tab_contents),
+    : TabContentsObserver(wrapper->tab_contents()),
+      wrapper_(wrapper),
       file_manager_(NULL),
       download_(NULL),
       page_url_(GetUrlToBeSaved()),
       saved_main_file_path_(file_full_path),
       saved_main_directory_path_(directory_full_path),
-      title_(tab_contents->GetTitle()),
+      title_(tab_contents()->GetTitle()),
       finished_(false),
       user_canceled_(false),
       disk_error_occurred_(false),
       save_type_(save_type),
       all_save_items_count_(0),
       wait_state_(INITIALIZE),
-      tab_id_(tab_contents->GetRenderProcessHost()->id()),
+      tab_id_(tab_contents()->GetRenderProcessHost()->id()),
       unique_id_(g_save_package_id++),
       ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)) {
   DCHECK(page_url_.is_valid());
@@ -183,19 +184,20 @@ SavePackage::SavePackage(TabContents* tab_contents,
   InternalInit();
 }
 
-SavePackage::SavePackage(TabContents* tab_contents)
-    : TabContentsObserver(tab_contents),
+SavePackage::SavePackage(TabContentsWrapper* wrapper)
+    : TabContentsObserver(wrapper->tab_contents()),
+      wrapper_(wrapper),
       file_manager_(NULL),
       download_(NULL),
       page_url_(GetUrlToBeSaved()),
-      title_(tab_contents->GetTitle()),
+      title_(tab_contents()->GetTitle()),
       finished_(false),
       user_canceled_(false),
       disk_error_occurred_(false),
       save_type_(SAVE_TYPE_UNKNOWN),
       all_save_items_count_(0),
       wait_state_(INITIALIZE),
-      tab_id_(tab_contents->GetRenderProcessHost()->id()),
+      tab_id_(tab_contents()->GetRenderProcessHost()->id()),
       unique_id_(g_save_package_id++),
       ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)) {
   DCHECK(page_url_.is_valid());
@@ -205,10 +207,11 @@ SavePackage::SavePackage(TabContents* tab_contents)
 // This is for testing use. Set |finished_| as true because we don't want
 // method Cancel to be be called in destructor in test mode.
 // We also don't call InternalInit().
-SavePackage::SavePackage(TabContents* tab_contents,
+SavePackage::SavePackage(TabContentsWrapper* wrapper,
                          const FilePath& file_full_path,
                          const FilePath& directory_full_path)
-    : TabContentsObserver(tab_contents),
+    : TabContentsObserver(wrapper->tab_contents()),
+      wrapper_(wrapper),
       file_manager_(NULL),
       download_(NULL),
       saved_main_file_path_(file_full_path),
@@ -311,8 +314,6 @@ bool SavePackage::Init() {
     return false;
   }
 
-  request_context_getter_ = profile->GetRequestContext();
-
   // Create the fake DownloadItem and display the view.
   DownloadManager* download_manager =
       tab_contents()->profile()->GetDownloadManager();
@@ -325,7 +326,7 @@ bool SavePackage::Init() {
   // to be alive as long as the Profile is alive.
   download_manager->SavePageAsDownloadStarted(download_);
 
-  tab_contents()->OnStartDownload(download_);
+  wrapper_->download_tab_helper()->OnStartDownload(download_);
 
   // Check save type and process the save page job.
   if (save_type_ == SAVE_AS_COMPLETE_HTML) {
@@ -417,7 +418,7 @@ bool SavePackage::GenerateFileName(const std::string& disposition,
   // TODO(jungshik): Figure out the referrer charset when having one
   // makes sense and pass it to GetSuggestedFilename.
   string16 suggested_name =
-      net::GetSuggestedFilename(url, disposition, "",
+      net::GetSuggestedFilename(url, disposition, "", "",
                                 ASCIIToUTF16(kDefaultSaveName));
 
   // TODO(evan): this code is totally wrong -- we should just generate
@@ -866,7 +867,7 @@ void SavePackage::SaveNextFile(bool process_all_remaining_items) {
                            routing_id(),
                            save_item->save_source(),
                            save_item->full_path(),
-                           request_context_getter_.get(),
+                           tab_contents()->profile()->GetResourceContext(),
                            this);
   } while (process_all_remaining_items && waiting_item_queue_.size());
 }
@@ -993,9 +994,8 @@ void SavePackage::GetSerializedHtmlDataForCurrentPageWithLocalLinks() {
   // Get the relative directory name.
   FilePath relative_dir_name = saved_main_directory_path_.BaseName();
 
-  tab_contents()->render_view_host()->
-      GetSerializedHtmlDataForCurrentPageWithLocalLinks(
-      saved_links, saved_file_paths, relative_dir_name);
+  Send(new ViewMsg_GetSerializedHtmlDataForCurrentPageWithLocalLinks(
+      routing_id(), saved_links, saved_file_paths, relative_dir_name));
 }
 
 // Process the serialized HTML content data of a specified web page
@@ -1074,8 +1074,8 @@ void SavePackage::GetAllSavableResourceLinksForCurrentPage() {
     return;
 
   wait_state_ = RESOURCES_LIST;
-  tab_contents()->render_view_host()->
-      GetAllSavableResourceLinksForCurrentPage(page_url_);
+  Send(new ViewMsg_GetAllSavableResourceLinksForCurrentPage(routing_id(),
+                                                            page_url_));
 }
 
 // Give backend the lists which contain all resource links that have local
@@ -1243,7 +1243,8 @@ FilePath SavePackage::GetSaveDirPreference(PrefService* prefs) {
     FilePath default_save_path = prefs->GetFilePath(
         prefs::kDownloadDefaultDirectory);
     prefs->RegisterFilePathPref(prefs::kSaveFileDefaultDirectory,
-                                default_save_path);
+                                default_save_path,
+                                PrefService::UNSYNCABLE_PREF);
   }
 
   // Get the directory from preference.

@@ -12,6 +12,7 @@
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/path.h"
+#include "ui/gfx/transform.h"
 #include "views/background.h"
 #include "views/controls/button/button_dropdown.h"
 #include "views/controls/button/checkbox.h"
@@ -24,26 +25,22 @@
 #include "views/test/views_test_base.h"
 #include "views/view.h"
 #include "views/views_delegate.h"
+#include "views/widget/native_widget.h"
 #include "views/widget/root_view.h"
 #include "views/window/dialog_delegate.h"
 #include "views/window/window.h"
 
 #if defined(OS_WIN)
-#include "views/widget/widget_win.h"
 #include "views/controls/button/native_button_win.h"
 #include "views/test/test_views_delegate.h"
-#elif defined(OS_LINUX)
-#include "views/widget/widget_gtk.h"
-#include "views/window/window_gtk.h"
 #endif
 #if defined(TOUCH_UI)
 #include "views/touchui/gesture_manager.h"
 #endif
 
 using ::testing::_;
-using namespace views;
 
-namespace {
+namespace views {
 
 class ViewTest : public ViewsTestBase {
  public:
@@ -52,75 +49,7 @@ class ViewTest : public ViewsTestBase {
 
   virtual ~ViewTest() {
   }
-
-  Widget* CreateWidget() {
-    return Widget::CreateWidget(
-        Widget::CreateParams(Widget::CreateParams::TYPE_WINDOW));
-  }
 };
-
-/*
-
-// Paints the RootView.
-void PaintRootView(views::RootView* root, bool empty_paint) {
-  if (!empty_paint) {
-    root->PaintNow();
-  } else {
-    // User isn't logged in, so that PaintNow will generate an empty rectangle.
-    // Invoke paint directly.
-    gfx::Rect paint_rect = root->GetScheduledPaintRect();
-    gfx::CanvasSkia canvas(paint_rect.width(), paint_rect.height(), true);
-    canvas.TranslateInt(-paint_rect.x(), -paint_rect.y());
-    canvas.ClipRectInt(0, 0, paint_rect.width(), paint_rect.height());
-    root->Paint(&canvas);
-  }
-}
-
-typedef CWinTraits<WS_VISIBLE|WS_CLIPCHILDREN|WS_CLIPSIBLINGS> CVTWTraits;
-
-// A trivial window implementation that tracks whether or not it has been
-// painted. This is used by the painting test to determine if paint will result
-// in an empty region.
-class EmptyWindow : public CWindowImpl<EmptyWindow,
-                                       CWindow,
-                                       CVTWTraits> {
- public:
-  DECLARE_FRAME_WND_CLASS(L"Chrome_ChromeViewsEmptyWindow", 0)
-
-  BEGIN_MSG_MAP_EX(EmptyWindow)
-    MSG_WM_PAINT(OnPaint)
-  END_MSG_MAP()
-
-  EmptyWindow::EmptyWindow(const CRect& bounds) : empty_paint_(false) {
-    Create(NULL, static_cast<RECT>(bounds));
-    ShowWindow(SW_SHOW);
-  }
-
-  EmptyWindow::~EmptyWindow() {
-    ShowWindow(SW_HIDE);
-    DestroyWindow();
-  }
-
-  void EmptyWindow::OnPaint(HDC dc) {
-    PAINTSTRUCT ps;
-    HDC paint_dc = BeginPaint(&ps);
-    if (!empty_paint_ && (ps.rcPaint.top - ps.rcPaint.bottom) == 0 &&
-        (ps.rcPaint.right - ps.rcPaint.left) == 0) {
-      empty_paint_ = true;
-    }
-    EndPaint(&ps);
-  }
-
-  bool empty_paint() {
-    return empty_paint_;
-  }
-
- private:
-  bool empty_paint_;
-
-  DISALLOW_COPY_AND_ASSIGN(EmptyWindow);
-};
-*/
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -270,8 +199,6 @@ void TestView::ViewHierarchyChanged(bool is_add, View *parent, View *child) {
   child_ = child;
 }
 
-}  // namespace
-
 TEST_F(ViewTest, AddRemoveNotifications) {
   TestView* v1 = new TestView();
   v1->SetBounds(0, 0, 300, 300);
@@ -366,14 +293,12 @@ TEST_F(ViewTest, MouseEvent) {
   TestView* v2 = new TestView();
   v2->SetBounds(100, 100, 100, 100);
 
-  scoped_ptr<Widget> window(CreateWidget());
-#if defined(OS_WIN)
-  WidgetWin* window_win = static_cast<WidgetWin*>(window.get());
-  window_win->set_delete_on_destroy(false);
-  window_win->set_window_style(WS_OVERLAPPEDWINDOW);
-  window_win->Init(NULL, gfx::Rect(50, 50, 650, 650));
-#endif
-  RootView* root = window->GetRootView();
+  scoped_ptr<Widget> widget(new Widget);
+  Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
+  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.bounds = gfx::Rect(50, 50, 650, 650);
+  widget->Init(params);
+  View* root = widget->GetRootView();
 
   root->AddChildView(v1);
   v1->AddChildView(v2);
@@ -417,7 +342,7 @@ TEST_F(ViewTest, MouseEvent) {
   // Make sure v1 did not receive the event
   EXPECT_EQ(v1->last_mouse_event_type_, 0);
 
-  window->CloseNow();
+  widget->CloseNow();
 }
 
 #if defined(TOUCH_UI)
@@ -477,19 +402,15 @@ TEST_F(ViewTest, TouchEvent) {
   TestView* v3 = new TestViewIgnoreTouch();
   v3->SetBounds(0, 0, 100, 100);
 
-  scoped_ptr<Widget> window(CreateWidget());
-#if defined(OS_WIN)
-  // This code would need to be here when we support
-  // touch on windows?
-  WidgetWin* window_win = static_cast<WidgetWin*>(window.get());
-  window_win->set_delete_on_destroy(false);
-  window_win->set_window_style(WS_OVERLAPPEDWINDOW);
-  window_win->Init(NULL, gfx::Rect(50, 50, 650, 650));
-#endif
-  RootView* root = window->GetRootView();
+  scoped_ptr<Widget> widget(new Widget());
+  Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
+  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.bounds = gfx::Rect(50, 50, 650, 650);
+  widget->Init(params);
+  View* root = widget->GetRootView();
 
   root->AddChildView(v1);
-  root->SetGestureManager(gm);
+  static_cast<internal::RootView*>(root)->SetGestureManager(gm);
   v1->AddChildView(v2);
   v2->AddChildView(v3);
 
@@ -580,7 +501,7 @@ TEST_F(ViewTest, TouchEvent) {
   EXPECT_EQ(NULL, gm->last_view_);
   EXPECT_EQ(gm->previously_handled_flag_, false);
 
-  window->CloseNow();
+  widget->CloseNow();
 }
 #endif
 
@@ -612,11 +533,11 @@ TEST_F(ViewTest, DISABLED_Painting) {
                             RDW_UPDATENOW | RDW_INVALIDATE | RDW_ALLCHILDREN);
   bool empty_paint = paint_window.empty_paint();
 
-  views::WidgetWin window;
+  NativeWidgetWin window;
   window.set_delete_on_destroy(false);
   window.set_window_style(WS_OVERLAPPEDWINDOW);
   window.Init(NULL, gfx::Rect(50, 50, 650, 650), NULL);
-  RootView* root = window.GetRootView();
+  View* root = window.GetRootView();
 
   TestView* v1 = new TestView();
   v1->SetBounds(0, 0, 650, 650);
@@ -673,10 +594,17 @@ TEST_F(ViewTest, DISABLED_Painting) {
 }
 */
 
+#if defined(OS_WIN)
 TEST_F(ViewTest, RemoveNotification) {
-  views::ViewStorage* vs = views::ViewStorage::GetInstance();
-  views::Widget* window = CreateWidget();
-  views::RootView* root_view = window->GetRootView();
+#elif defined(TOOLKIT_USES_GTK)
+// TODO(beng): stopped working with widget hierarchy split,
+//             http://crbug.com/82364
+TEST_F(ViewTest, DISABLED_RemoveNotification) {
+#endif
+  ViewStorage* vs = ViewStorage::GetInstance();
+  Widget* widget = new Widget;
+  widget->Init(Widget::InitParams(Widget::InitParams::TYPE_WINDOW));
+  View* root_view = widget->GetRootView();
 
   View* v1 = new View;
   int s1 = vs->CreateStorageID();
@@ -737,7 +665,6 @@ TEST_F(ViewTest, RemoveNotification) {
 
   // Now remove even more.
   root_view->RemoveChildView(v1);
-  EXPECT_EQ(stored_views - 8, vs->view_count());
   EXPECT_EQ(NULL, vs->RetrieveView(s1));
   EXPECT_EQ(NULL, vs->RetrieveView(s11));
   EXPECT_EQ(NULL, vs->RetrieveView(s12));
@@ -748,9 +675,9 @@ TEST_F(ViewTest, RemoveNotification) {
   root_view->AddChildView(v1);
   vs->StoreView(s1, v1);
 
-  // Now delete the root view (deleting the window will trigger a delete of the
-  // RootView) and make sure we are notified that the views were removed.
-  delete window;
+  // Synchronously closing the window deletes the view hierarchy, which should
+  // remove all its views from ViewStorage.
+  widget->CloseNow();
   EXPECT_EQ(stored_views - 10, vs->view_count());
   EXPECT_EQ(NULL, vs->RetrieveView(s1));
   EXPECT_EQ(NULL, vs->RetrieveView(s12));
@@ -762,7 +689,7 @@ TEST_F(ViewTest, RemoveNotification) {
 }
 
 namespace {
-class HitTestView : public views::View {
+class HitTestView : public View {
  public:
   explicit HitTestView(bool has_hittest_mask)
       : has_hittest_mask_(has_hittest_mask) {
@@ -770,7 +697,7 @@ class HitTestView : public views::View {
   virtual ~HitTestView() {}
 
  protected:
-  // Overridden from views::View:
+  // Overridden from View:
   virtual bool HasHitTestMask() const {
     return has_hittest_mask_;
   }
@@ -794,16 +721,17 @@ class HitTestView : public views::View {
   DISALLOW_COPY_AND_ASSIGN(HitTestView);
 };
 
-gfx::Point ConvertPointToView(views::View* view, const gfx::Point& p) {
+gfx::Point ConvertPointToView(View* view, const gfx::Point& p) {
   gfx::Point tmp(p);
-  views::View::ConvertPointToView(view->GetRootView(), view, &tmp);
+  View::ConvertPointToView(view->GetWidget()->GetRootView(), view, &tmp);
   return tmp;
 }
 }
 
 TEST_F(ViewTest, HitTestMasks) {
-  scoped_ptr<views::Widget> window(CreateWidget());
-  views::RootView* root_view = window->GetRootView();
+  Widget* widget = new Widget;
+  widget->Init(Widget::InitParams(Widget::InitParams::TYPE_WINDOW));
+  View* root_view = widget->GetRootView();
   root_view->SetBounds(0, 0, 500, 500);
 
   gfx::Rect v1_bounds = gfx::Rect(0, 0, 100, 100);
@@ -833,6 +761,8 @@ TEST_F(ViewTest, HitTestMasks) {
   EXPECT_EQ(v2, root_view->GetEventHandlerForPoint(v2_centerpoint));
   EXPECT_EQ(v1, root_view->GetEventHandlerForPoint(v1_origin));
   EXPECT_EQ(root_view, root_view->GetEventHandlerForPoint(v2_origin));
+
+  widget->CloseNow();
 }
 
 TEST_F(ViewTest, Textfield) {
@@ -843,9 +773,11 @@ TEST_F(ViewTest, Textfield) {
 
   ui::Clipboard clipboard;
 
-  Widget* window = CreateWidget();
-  window->Init(NULL, gfx::Rect(0, 0, 100, 100));
-  RootView* root_view = window->GetRootView();
+  Widget* widget = new Widget;
+  Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
+  params.bounds = gfx::Rect(0, 0, 100, 100);
+  widget->Init(params);
+  View* root_view = widget->GetRootView();
 
   Textfield* textfield = new Textfield();
   root_view->AddChildView(textfield);
@@ -865,25 +797,25 @@ TEST_F(ViewTest, Textfield) {
   EXPECT_EQ(kText, textfield->text());
   textfield->ClearSelection();
   EXPECT_EQ(kEmptyString, textfield->GetSelectedText());
+
+  widget->CloseNow();
 }
 
 #if defined(OS_WIN)
 
 // Tests that the Textfield view respond appropiately to cut/copy/paste.
 TEST_F(ViewTest, TextfieldCutCopyPaste) {
-  views::ViewsDelegate::views_delegate = new TestViewsDelegate;
-
   const std::wstring kNormalText = L"Normal";
   const std::wstring kReadOnlyText = L"Read only";
   const std::wstring kPasswordText = L"Password! ** Secret stuff **";
 
   ui::Clipboard clipboard;
 
-  Widget* window = CreateWidget();
-#if defined(OS_WIN)
-  static_cast<WidgetWin*>(window)->Init(NULL, gfx::Rect(0, 0, 100, 100));
-#endif
-  RootView* root_view = window->GetRootView();
+  Widget* widget = new Widget;
+  Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
+  params.bounds = gfx::Rect(0, 0, 100, 100);
+  widget->Init(params);
+  View* root_view = widget->GetRootView();
 
   Textfield* normal = new Textfield();
   Textfield* read_only = new Textfield();
@@ -979,9 +911,7 @@ TEST_F(ViewTest, TextfieldCutCopyPaste) {
   ::SendMessage(normal->GetTestingHandle(), WM_PASTE, 0, 0);
   ::GetWindowText(normal->GetTestingHandle(), buffer, 1024);
   EXPECT_EQ(kReadOnlyText, std::wstring(buffer));
-
-  delete views::ViewsDelegate::views_delegate;
-  views::ViewsDelegate::views_delegate = NULL;
+  widget->CloseNow();
 }
 #endif
 
@@ -996,23 +926,24 @@ bool TestView::AcceleratorPressed(const Accelerator& accelerator) {
 #if defined(OS_WIN)
 TEST_F(ViewTest, ActivateAccelerator) {
   // Register a keyboard accelerator before the view is added to a window.
-  views::Accelerator return_accelerator(ui::VKEY_RETURN, false, false, false);
+  Accelerator return_accelerator(ui::VKEY_RETURN, false, false, false);
   TestView* view = new TestView();
   view->Reset();
   view->AddAccelerator(return_accelerator);
   EXPECT_EQ(view->accelerator_count_map_[return_accelerator], 0);
 
   // Create a window and add the view as its child.
-  WidgetWin window;
-  window.Init(NULL, gfx::Rect(0, 0, 100, 100));
-  window.set_delete_on_destroy(false);
-  window.set_window_style(WS_OVERLAPPEDWINDOW);
-  RootView* root = window.GetRootView();
+  scoped_ptr<Widget> widget(new Widget);
+  Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
+  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.bounds = gfx::Rect(0, 0, 100, 100);
+  widget->Init(params);
+  View* root = widget->GetRootView();
   root->AddChildView(view);
 
   // Get the focus manager.
-  views::FocusManager* focus_manager =
-      views::FocusManager::GetFocusManagerForNativeView(window.GetNativeView());
+  FocusManager* focus_manager = FocusManager::GetFocusManagerForNativeView(
+      widget->GetNativeView());
   ASSERT_TRUE(focus_manager);
 
   // Hit the return key and see if it takes effect.
@@ -1020,7 +951,7 @@ TEST_F(ViewTest, ActivateAccelerator) {
   EXPECT_EQ(view->accelerator_count_map_[return_accelerator], 1);
 
   // Hit the escape key. Nothing should happen.
-  views::Accelerator escape_accelerator(ui::VKEY_ESCAPE, false, false, false);
+  Accelerator escape_accelerator(ui::VKEY_ESCAPE, false, false, false);
   EXPECT_FALSE(focus_manager->ProcessAccelerator(escape_accelerator));
   EXPECT_EQ(view->accelerator_count_map_[return_accelerator], 1);
   EXPECT_EQ(view->accelerator_count_map_[escape_accelerator], 0);
@@ -1055,27 +986,28 @@ TEST_F(ViewTest, ActivateAccelerator) {
   EXPECT_EQ(view->accelerator_count_map_[return_accelerator], 2);
   EXPECT_EQ(view->accelerator_count_map_[escape_accelerator], 2);
 
-  window.CloseNow();
+  widget->CloseNow();
 }
 #endif
 
 #if defined(OS_WIN)
 TEST_F(ViewTest, HiddenViewWithAccelerator) {
-  views::Accelerator return_accelerator(ui::VKEY_RETURN, false, false, false);
+  Accelerator return_accelerator(ui::VKEY_RETURN, false, false, false);
   TestView* view = new TestView();
   view->Reset();
   view->AddAccelerator(return_accelerator);
   EXPECT_EQ(view->accelerator_count_map_[return_accelerator], 0);
 
-  WidgetWin window;
-  window.Init(NULL, gfx::Rect(0, 0, 100, 100));
-  window.set_delete_on_destroy(false);
-  window.set_window_style(WS_OVERLAPPEDWINDOW);
-  RootView* root = window.GetRootView();
+  scoped_ptr<Widget> widget(new Widget);
+  Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
+  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.bounds = gfx::Rect(0, 0, 100, 100);
+  widget->Init(params);
+  View* root = widget->GetRootView();
   root->AddChildView(view);
 
-  views::FocusManager* focus_manager =
-      views::FocusManager::GetFocusManagerForNativeView(window.GetNativeView());
+  FocusManager* focus_manager = FocusManager::GetFocusManagerForNativeView(
+      widget->GetNativeView());
   ASSERT_TRUE(focus_manager);
 
   view->SetVisible(false);
@@ -1086,7 +1018,7 @@ TEST_F(ViewTest, HiddenViewWithAccelerator) {
   EXPECT_EQ(view,
             focus_manager->GetCurrentTargetForAccelerator(return_accelerator));
 
-  window.CloseNow();
+  widget->CloseNow();
 }
 #endif
 
@@ -1167,16 +1099,15 @@ class SimpleWindowDelegate : public WindowDelegate {
 //   area that it opens the test windows. --beng
 TEST_F(ViewTest, DISABLED_RerouteMouseWheelTest) {
   TestViewWithControls* view_with_controls = new TestViewWithControls();
-  views::Window* window1 =
-      views::Window::CreateChromeWindow(
-          NULL, gfx::Rect(0, 0, 100, 100),
-          new SimpleWindowDelegate(view_with_controls));
+  Window* window1 = Window::CreateChromeWindow(
+      NULL, gfx::Rect(0, 0, 100, 100),
+      new SimpleWindowDelegate(view_with_controls));
   window1->Show();
   ScrollView* scroll_view = new ScrollView();
   scroll_view->SetContents(new ScrollableTestView());
-  views::Window* window2 =
-      views::Window::CreateChromeWindow(NULL, gfx::Rect(200, 200, 100, 100),
-                                        new SimpleWindowDelegate(scroll_view));
+  Window* window2 = Window::CreateChromeWindow(
+      NULL, gfx::Rect(200, 200, 100, 100),
+      new SimpleWindowDelegate(scroll_view));
   window2->Show();
   EXPECT_EQ(0, scroll_view->GetVisibleRect().y());
 
@@ -1211,6 +1142,9 @@ TEST_F(ViewTest, DISABLED_RerouteMouseWheelTest) {
   ::SendMessage(view_with_controls->text_field_->GetTestingHandle(),
                 WM_MOUSEWHEEL, MAKEWPARAM(0, -20), MAKELPARAM(50, 50));
   EXPECT_EQ(80, scroll_view->GetVisibleRect().y());
+
+  window1->CloseNow();
+  window2->CloseNow();
 }
 #endif
 
@@ -1218,8 +1152,7 @@ TEST_F(ViewTest, DISABLED_RerouteMouseWheelTest) {
 // Dialogs' default button
 ////////////////////////////////////////////////////////////////////////////////
 
-namespace ui {
-class MockMenuModel : public MenuModel {
+class MockMenuModel : public ui::MenuModel {
  public:
   MOCK_CONST_METHOD0(HasIcons, bool());
   MOCK_CONST_METHOD1(GetFirstItemIndex, int(gfx::NativeMenu native_menu));
@@ -1234,7 +1167,7 @@ class MockMenuModel : public MenuModel {
   MOCK_CONST_METHOD1(IsItemCheckedAt, bool(int index));
   MOCK_CONST_METHOD1(GetGroupIdAt, int(int index));
   MOCK_METHOD2(GetIconAt, bool(int index, SkBitmap* icon));
-  MOCK_CONST_METHOD1(GetButtonMenuItemAt, ButtonMenuItemModel*(int index));
+  MOCK_CONST_METHOD1(GetButtonMenuItemAt, ui::ButtonMenuItemModel*(int index));
   MOCK_CONST_METHOD1(IsEnabledAt, bool(int index));
   MOCK_CONST_METHOD1(IsVisibleAt, bool(int index));
   MOCK_CONST_METHOD1(GetSubmenuModelAt, MenuModel*(int index));
@@ -1244,15 +1177,14 @@ class MockMenuModel : public MenuModel {
       int disposition));
   MOCK_METHOD0(MenuWillShow, void());
   MOCK_METHOD0(MenuClosed, void());
-  MOCK_METHOD1(SetMenuModelDelegate, void(MenuModelDelegate* delegate));
+  MOCK_METHOD1(SetMenuModelDelegate, void(ui::MenuModelDelegate* delegate));
   MOCK_METHOD3(GetModelAndIndexForCommandId, bool(int command_id,
       MenuModel** model, int* index));
 };
-}
 
 class TestDialog : public DialogDelegate, public ButtonListener {
  public:
-  explicit TestDialog(ui::MockMenuModel* mock_menu_model)
+  explicit TestDialog(MockMenuModel* mock_menu_model)
       : contents_(NULL),
         button1_(NULL),
         button2_(NULL),
@@ -1264,7 +1196,7 @@ class TestDialog : public DialogDelegate, public ButtonListener {
         oked_(false) {
   }
 
-  // views::DialogDelegate implementation:
+  // DialogDelegate implementation:
   virtual int GetDefaultDialogButton() const {
     return MessageBoxFlags::DIALOGBUTTON_OK;
   }
@@ -1295,8 +1227,8 @@ class TestDialog : public DialogDelegate, public ButtonListener {
     return false;
   }
 
-  // views::ButtonListener implementation.
-  virtual void ButtonPressed(Button* sender, const views::Event& event) {
+  // ButtonListener implementation.
+  virtual void ButtonPressed(Button* sender, const Event& event) {
     last_pressed_button_ = sender;
   }
 
@@ -1323,7 +1255,7 @@ class TestDialog : public DialogDelegate, public ButtonListener {
   NativeButtonBase* checkbox_;
   ButtonDropDown* button_drop_;
   Button* last_pressed_button_;
-  ui::MockMenuModel* mock_menu_model_;
+  MockMenuModel* mock_menu_model_;
 
   bool canceled_;
   bool oked_;
@@ -1348,14 +1280,13 @@ class DefaultButtonTest : public ViewTest {
 
   virtual void SetUp() {
     test_dialog_ = new TestDialog(NULL);
-    views::Window* window =
-        views::Window::CreateChromeWindow(NULL, gfx::Rect(0, 0, 100, 100),
-                                          test_dialog_);
+    Window* window = Window::CreateChromeWindow(NULL, gfx::Rect(0, 0, 100, 100),
+                                                test_dialog_);
     window->Show();
     focus_manager_ = test_dialog_->contents_->GetFocusManager();
     ASSERT_TRUE(focus_manager_ != NULL);
     client_view_ =
-        static_cast<views::DialogClientView*>(window->client_view());
+        static_cast<DialogClientView*>(window->client_view());
     ok_button_ = client_view_->ok_button();
     cancel_button_ = client_view_->cancel_button();
   }
@@ -1390,11 +1321,11 @@ class DefaultButtonTest : public ViewTest {
     test_dialog_->ResetStates();
   }
 
-  views::FocusManager* focus_manager_;
+  FocusManager* focus_manager_;
   TestDialog* test_dialog_;
   DialogClientView* client_view_;
-  views::NativeButton* ok_button_;
-  views::NativeButton* cancel_button_;
+  NativeButton* ok_button_;
+  NativeButton* cancel_button_;
 };
 
 TEST_F(DefaultButtonTest, DialogDefaultButtonTest) {
@@ -1453,9 +1384,8 @@ class ButtonDropDownTest : public ViewTest {
 
   virtual void SetUp() {
     test_dialog_ = new TestDialog(&mock_menu_model_);
-    views::Window* window =
-        views::Window::CreateChromeWindow(NULL, gfx::Rect(0, 0, 100, 100),
-                                          test_dialog_);
+    Window* window = Window::CreateChromeWindow(NULL, gfx::Rect(0, 0, 100, 100),
+                                                test_dialog_);
     window->Show();
     test_dialog_->button_drop_->SetBounds(0, 0, 100, 100);
     // We have to cast the button back into a View in order to invoke it's
@@ -1464,7 +1394,7 @@ class ButtonDropDownTest : public ViewTest {
   }
 
   TestDialog* test_dialog_;
-  ui::MockMenuModel mock_menu_model_;
+  MockMenuModel mock_menu_model_;
   // This is owned by test_dialog_.
   View* button_as_view_;
 
@@ -1509,9 +1439,9 @@ TEST_F(ViewTest, ChangeVisibility) {
   // TODO(oshima): we probably should enable this for entire tests on linux.
   g_log_set_always_fatal(G_LOG_LEVEL_CRITICAL);
 #endif
-  scoped_ptr<views::Widget> window(CreateWidget());
+  scoped_ptr<Widget> window(CreateWidget());
   window->Init(NULL, gfx::Rect(0, 0, 500, 300));
-  views::RootView* root_view = window->GetRootView();
+  View* root_view = window->GetRootView();
   NativeButtonBase* native = new NativeButtonBase(NULL, L"Native");
 
   root_view->SetContentsView(native);
@@ -1530,14 +1460,14 @@ TEST_F(ViewTest, ChangeVisibility) {
 ////////////////////////////////////////////////////////////////////////////////
 // Native view hierachy
 ////////////////////////////////////////////////////////////////////////////////
-class TestNativeViewHierarchy : public views::View {
+class TestNativeViewHierarchy : public View {
  public:
   TestNativeViewHierarchy() {
   }
 
   virtual void NativeViewHierarchyChanged(bool attached,
                                           gfx::NativeView native_view,
-                                          RootView* root_view) {
+                                          internal::RootView* root_view) {
     NotificationInfo info;
     info.attached = attached;
     info.native_view = native_view;
@@ -1547,7 +1477,7 @@ class TestNativeViewHierarchy : public views::View {
   struct NotificationInfo {
     bool attached;
     gfx::NativeView native_view;
-    RootView* root_view;
+    internal::RootView* root_view;
   };
   static const size_t kTotalViews = 2;
   std::vector<NotificationInfo> notifications_;
@@ -1557,13 +1487,18 @@ class TestChangeNativeViewHierarchy {
  public:
   explicit TestChangeNativeViewHierarchy(ViewTest *view_test) {
     view_test_ = view_test;
-    native_host_ = new views::NativeViewHost();
-    host_ = view_test->CreateWidget();
-    host_->Init(NULL, gfx::Rect(0, 0, 500, 300));
+    native_host_ = new NativeViewHost();
+    host_ = new Widget;
+    Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
+    params.bounds = gfx::Rect(0, 0, 500, 300);
+    host_->Init(params);
     host_->GetRootView()->AddChildView(native_host_);
     for (size_t i = 0; i < TestNativeViewHierarchy::kTotalViews; ++i) {
-      windows_[i] = view_test->CreateWidget();
-      windows_[i]->Init(host_->GetNativeView(), gfx::Rect(0, 0, 500, 300));
+      windows_[i] = new Widget;
+      Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
+      params.parent = host_->GetNativeView();
+      params.bounds = gfx::Rect(0, 0, 500, 300);
+      windows_[i]->Init(params);
       root_views_[i] = windows_[i]->GetRootView();
       test_views_[i] = new TestNativeViewHierarchy;
       root_views_[i]->AddChildView(test_views_[i]);
@@ -1580,7 +1515,7 @@ class TestChangeNativeViewHierarchy {
   }
 
   void CheckEnumeratingNativeWidgets() {
-    if (!host_->GetWindow())
+    if (!host_->GetContainingWindow())
       return;
     NativeWidget::NativeWidgets widgets;
     NativeWidget::GetAllNativeWidgets(host_->GetNativeView(), &widgets);
@@ -1589,7 +1524,7 @@ class TestChangeNativeViewHierarchy {
     // go through all of them.
     for (NativeWidget::NativeWidgets::iterator i = widgets.begin();
          i != widgets.end(); ++i) {
-      RootView* root_view = (*i)->GetWidget()->GetRootView();
+      View* root_view = (*i)->GetWidget()->GetRootView();
       if (host_->GetRootView() == root_view)
         continue;
       size_t j;
@@ -1608,10 +1543,10 @@ class TestChangeNativeViewHierarchy {
     size_t i;
     for (i = 0; i < TestNativeViewHierarchy::kTotalViews; ++i) {
       // TODO(georgey): use actual hierarchy changes to send notifications.
-      root_views_[i]->NotifyNativeViewHierarchyChanged(false,
-          host_->GetNativeView());
-      root_views_[i]->NotifyNativeViewHierarchyChanged(true,
-          host_->GetNativeView());
+      static_cast<internal::RootView*>(root_views_[i])->
+          NotifyNativeViewHierarchyChanged(false, host_->GetNativeView());
+      static_cast<internal::RootView*>(root_views_[i])->
+          NotifyNativeViewHierarchyChanged(true, host_->GetNativeView());
     }
     for (i = 0; i < TestNativeViewHierarchy::kTotalViews; ++i) {
       ASSERT_EQ(static_cast<size_t>(2), test_views_[i]->notifications_.size());
@@ -1626,10 +1561,10 @@ class TestChangeNativeViewHierarchy {
     }
   }
 
-  views::NativeViewHost* native_host_;
-  views::Widget* host_;
-  views::Widget* windows_[TestNativeViewHierarchy::kTotalViews];
-  views::RootView* root_views_[TestNativeViewHierarchy::kTotalViews];
+  NativeViewHost* native_host_;
+  Widget* host_;
+  Widget* windows_[TestNativeViewHierarchy::kTotalViews];
+  View* root_views_[TestNativeViewHierarchy::kTotalViews];
   TestNativeViewHierarchy* test_views_[TestNativeViewHierarchy::kTotalViews];
   ViewTest* view_test_;
 };
@@ -1684,14 +1619,12 @@ TEST_F(ViewTest, TransformPaint) {
   TestView* v2 = new TestView();
   v2->SetBounds(100, 100, 200, 100);
 
-  Widget* widget = CreateWidget();
-#if defined(OS_WIN)
-  WidgetWin* window_win = static_cast<WidgetWin*>(widget);
-  window_win->set_window_style(WS_OVERLAPPEDWINDOW);
-  window_win->Init(NULL, gfx::Rect(50, 50, 650, 650));
-#endif
+  Widget* widget = new Widget;
+  Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
+  params.bounds = gfx::Rect(50, 50, 650, 650);
+  widget->Init(params);
   widget->Show();
-  RootView* root = widget->GetRootView();
+  View* root = widget->GetRootView();
 
   root->AddChildView(v1);
   v1->AddChildView(v2);
@@ -1703,8 +1636,10 @@ TEST_F(ViewTest, TransformPaint) {
   EXPECT_EQ(gfx::Rect(100, 100, 200, 100), v1->scheduled_paint_rect());
 
   // Rotate |v1| counter-clockwise.
-  v1->SetRotation(-90.0);
-  v1->SetTranslateY(500);
+  ui::Transform transform;
+  transform.SetRotate(-90.0f);
+  transform.SetTranslateY(500.0f);
+  v1->SetTransform(transform);
 
   // |v2| now occupies (100, 200) to (200, 400) in |root|.
 
@@ -1723,13 +1658,11 @@ TEST_F(ViewTest, TransformEvent) {
   TestView* v2 = new TestView();
   v2->SetBounds(100, 100, 200, 100);
 
-  Widget* widget = CreateWidget();
-#if defined(OS_WIN)
-  WidgetWin* window_win = static_cast<WidgetWin*>(widget);
-  window_win->set_window_style(WS_OVERLAPPEDWINDOW);
-  window_win->Init(NULL, gfx::Rect(50, 50, 650, 650));
-#endif
-  RootView* root = widget->GetRootView();
+  Widget* widget = new Widget;
+  Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
+  params.bounds = gfx::Rect(50, 50, 650, 650);
+  widget->Init(params);
+  View* root = widget->GetRootView();
 
   root->AddChildView(v1);
   v1->AddChildView(v2);
@@ -1737,8 +1670,10 @@ TEST_F(ViewTest, TransformEvent) {
   // At this moment, |v2| occupies (100, 100) to (300, 200) in |root|.
 
   // Rotate |v1| counter-clockwise.
-  v1->SetRotation(-90.0);
-  v1->SetTranslateY(500);
+  ui::Transform transform(v1->GetTransform());
+  transform.SetRotate(-90.0f);
+  transform.SetTranslateY(500.0f);
+  v1->SetTransform(transform);
 
   // |v2| now occupies (100, 200) to (200, 400) in |root|.
   v1->Reset();
@@ -1757,8 +1692,10 @@ TEST_F(ViewTest, TransformEvent) {
   root->OnMouseReleased(released);
 
   // Now rotate |v2| inside |v1| clockwise.
-  v2->SetRotation(90.0);
-  v2->SetTranslateX(100);
+  transform = v2->GetTransform();
+  transform.SetRotate(90.0f);
+  transform.SetTranslateX(100.0f);
+  v2->SetTransform(transform);
 
   // Now, |v2| occupies (100, 100) to (200, 300) in |v1|, and (100, 300) to
   // (300, 400) in |root|.
@@ -1777,19 +1714,23 @@ TEST_F(ViewTest, TransformEvent) {
 
   root->OnMouseReleased(released);
 
-  v1->ResetTransform();
-  v2->ResetTransform();
+  v1->SetTransform(ui::Transform());
+  v2->SetTransform(ui::Transform());
 
   TestView* v3 = new TestView();
   v3->SetBounds(10, 10, 20, 30);
   v2->AddChildView(v3);
 
   // Rotate |v3| clockwise with respect to |v2|.
-  v3->SetRotation(90.0);
-  v3->SetTranslateX(30);
+  transform = v1->GetTransform();
+  transform.SetRotate(90.0f);
+  transform.SetTranslateX(30.0f);
+  v3->SetTransform(transform);
 
   // Scale |v2| with respect to |v1| along both axis.
-  v2->SetScale(0.8f, 0.5f);
+  transform = v2->GetTransform();
+  transform.SetScale(0.8f, 0.5f);
+  v2->SetTransform(transform);
 
   // |v3| occupies (108, 105) to (132, 115) in |root|.
 
@@ -1808,24 +1749,28 @@ TEST_F(ViewTest, TransformEvent) {
 
   root->OnMouseReleased(released);
 
-  v1->ResetTransform();
-  v2->ResetTransform();
-  v3->ResetTransform();
+  v1->SetTransform(ui::Transform());
+  v2->SetTransform(ui::Transform());
+  v3->SetTransform(ui::Transform());
 
   v1->Reset();
   v2->Reset();
   v3->Reset();
 
   // Rotate |v3| clockwise with respect to |v2|, and scale it along both axis.
-  v3->SetRotation(90.0);
-  v3->SetTranslateX(30);
+  transform = v3->GetTransform();
+  transform.SetRotate(90.0f);
+  transform.SetTranslateX(30.0f);
   // Rotation sets some scaling transformation. Using SetScale would overwrite
   // that and pollute the rotation. So combine the scaling with the existing
   // transforamtion.
-  v3->ConcatScale(0.8f, 0.5f);
+  transform.ConcatScale(0.8f, 0.5f);
+  v3->SetTransform(transform);
 
   // Translate |v2| with respect to |v1|.
-  v2->SetTranslate(10, 10);
+  transform = v2->GetTransform();
+  transform.SetTranslate(10, 10);
+  v2->SetTransform(transform);
 
   // |v3| now occupies (120, 120) to (144, 130) in |root|.
 
@@ -1875,15 +1820,15 @@ class VisibleBoundsView : public View {
 TEST_F(ViewTest, OnVisibleBoundsChanged) {
   gfx::Rect viewport_bounds(0, 0, 100, 100);
 
-  scoped_ptr<Widget> widget(CreateWidget());
-  WidgetWin* widget_win = static_cast<WidgetWin*>(widget.get());
-  widget_win->set_delete_on_destroy(false);
-  widget_win->set_window_style(WS_OVERLAPPEDWINDOW);
-  widget_win->Init(NULL, viewport_bounds);
+  scoped_ptr<Widget> widget(new Widget);
+  Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
+  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.bounds = viewport_bounds;
+  widget->Init(params);
   widget->GetRootView()->SetBoundsRect(viewport_bounds);
 
   View* viewport = new View;
-  widget->GetRootView()->SetContentsView(viewport);
+  widget->SetContentsView(viewport);
   View* contents = new View;
   viewport->AddChildView(contents);
   viewport->SetBoundsRect(viewport_bounds);
@@ -1941,3 +1886,130 @@ TEST_F(ViewTest, SetBoundsPaint) {
           top_view->scheduled_paint_rects_[1]);
   EXPECT_EQ(gfx::Rect(10, 10, 40, 40), paint_rect);
 }
+
+// Tests conversion methods with a transform.
+TEST_F(ViewTest, ConvertPointToViewWithTransform) {
+  TestView top_view;
+  TestView* child = new TestView;
+  TestView* child_child = new TestView;
+
+  top_view.AddChildView(child);
+  child->AddChildView(child_child);
+
+  top_view.SetBounds(0, 0, 1000, 1000);
+
+  child->SetBounds(7, 19, 500, 500);
+  ui::Transform transform;
+  transform.SetScale(3.0f, 4.0f);
+  child->SetTransform(transform);
+
+  child_child->SetBounds(17, 13, 100, 100);
+  transform = ui::Transform();
+  transform.SetScale(5.0f, 7.0f);
+  child_child->SetTransform(transform);
+
+  // Sanity check to make sure basic transforms act as expected.
+  {
+    ui::Transform transform;
+    transform.ConcatTranslate(1, 1);
+    transform.ConcatScale(100, 55);
+    transform.ConcatTranslate(110, -110);
+
+    EXPECT_EQ(210, transform.matrix().getTranslateX());
+    EXPECT_EQ(-55, transform.matrix().getTranslateY());
+    EXPECT_EQ(100, transform.matrix().getScaleX());
+    EXPECT_EQ(55, transform.matrix().getScaleY());
+    EXPECT_EQ(0, transform.matrix().getSkewX());
+    EXPECT_EQ(0, transform.matrix().getSkewY());
+  }
+
+  {
+    ui::Transform transform;
+    transform.SetTranslate(1, 1);
+    ui::Transform t2;
+    t2.SetScale(100, 55);
+    ui::Transform t3;
+    t3.SetTranslate(110, -110);
+    transform.ConcatTransform(t2);
+    transform.ConcatTransform(t3);
+
+    EXPECT_EQ(210, transform.matrix().getTranslateX());
+    EXPECT_EQ(-55, transform.matrix().getTranslateY());
+    EXPECT_EQ(100, transform.matrix().getScaleX());
+    EXPECT_EQ(55, transform.matrix().getScaleY());
+    EXPECT_EQ(0, transform.matrix().getSkewX());
+    EXPECT_EQ(0, transform.matrix().getSkewY());
+  }
+
+  // Conversions from child->top and top->child.
+  {
+    gfx::Point point(5, 5);
+    View::ConvertPointToView(child, &top_view, &point);
+    EXPECT_EQ(22, point.x());
+    EXPECT_EQ(39, point.y());
+
+    point.SetPoint(22, 39);
+    View::ConvertPointToView(&top_view, child, &point);
+    EXPECT_EQ(5, point.x());
+    EXPECT_EQ(5, point.y());
+  }
+
+  // Conversions from child_child->top and top->child_child.
+  {
+    gfx::Point point(5, 5);
+    View::ConvertPointToView(child_child, &top_view, &point);
+    EXPECT_EQ(133, point.x());
+    EXPECT_EQ(211, point.y());
+
+    point.SetPoint(133, 211);
+    View::ConvertPointToView(&top_view, child_child, &point);
+    EXPECT_EQ(5, point.x());
+    EXPECT_EQ(5, point.y());
+  }
+
+  // Conversions from child_child->child and child->child_child
+  {
+    gfx::Point point(5, 5);
+    View::ConvertPointToView(child_child, child, &point);
+    EXPECT_EQ(42, point.x());
+    EXPECT_EQ(48, point.y());
+
+    point.SetPoint(42, 48);
+    View::ConvertPointToView(child, child_child, &point);
+    EXPECT_EQ(5, point.x());
+    EXPECT_EQ(5, point.y());
+  }
+
+  // Conversions from top_view to child with a value that should be negative.
+  // This ensures we don't round up with negative numbers.
+  {
+    gfx::Point point(6, 18);
+    View::ConvertPointToView(&top_view, child, &point);
+    EXPECT_EQ(-1, point.x());
+    EXPECT_EQ(-1, point.y());
+  }
+}
+
+TEST_F(ViewTest, Contains) {
+  TestView v1;
+  TestView* v2 = new TestView();
+  TestView* v3 = new TestView();
+
+  v1.AddChildView(v2);
+  v2->AddChildView(v3);
+
+  EXPECT_FALSE(v1.Contains(NULL));
+  EXPECT_TRUE(v1.Contains(&v1));
+  EXPECT_TRUE(v1.Contains(v2));
+  EXPECT_TRUE(v1.Contains(v3));
+  EXPECT_FALSE(v2->Contains(NULL));
+  EXPECT_TRUE(v2->Contains(v2));
+  EXPECT_FALSE(v2->Contains(&v1));
+  EXPECT_TRUE(v2->Contains(v3));
+  EXPECT_FALSE(v3->Contains(NULL));
+  EXPECT_TRUE(v3->Contains(v3));
+  EXPECT_FALSE(v3->Contains(&v1));
+  EXPECT_FALSE(v3->Contains(v2));
+}
+
+}  // namespace views

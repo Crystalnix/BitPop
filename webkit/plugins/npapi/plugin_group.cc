@@ -244,15 +244,15 @@ bool PluginGroup::Match(const WebPluginInfo& plugin) const {
 Version* PluginGroup::CreateVersionFromString(const string16& version_string) {
   // Remove spaces and ')' from the version string,
   // Replace any instances of 'r', ',' or '(' with a dot.
-  std::wstring version = UTF16ToWide(version_string);
-  RemoveChars(version, L") ", &version);
+  std::string version = UTF16ToASCII(version_string);
+  RemoveChars(version, ") ", &version);
   std::replace(version.begin(), version.end(), 'd', '.');
   std::replace(version.begin(), version.end(), 'r', '.');
   std::replace(version.begin(), version.end(), ',', '.');
   std::replace(version.begin(), version.end(), '(', '.');
   std::replace(version.begin(), version.end(), '_', '.');
 
-  return Version::GetVersionFromString(WideToASCII(version));
+  return Version::GetVersionFromString(version);
 }
 
 void PluginGroup::UpdateActivePlugin(const WebPluginInfo& plugin) {
@@ -471,8 +471,20 @@ bool PluginGroup::IsPluginOutdated(const Version& plugin_version,
   return false;
 }
 
+bool PluginGroup::IsWhitelisted() const {
+  for (size_t i = 0; i < web_plugin_infos_.size(); ++i) {
+    if (web_plugin_infos_[i].enabled & WebPluginInfo::POLICY_ENABLED)
+      return true;
+  }
+  return false;
+}
+
 // Returns true if the latest version of this plugin group is vulnerable.
 bool PluginGroup::IsVulnerable() const {
+  // A plugin isn't considered vulnerable if it's explicitly whitelisted.
+  if (IsWhitelisted())
+    return false;
+
   for (size_t i = 0; i < version_ranges_.size(); ++i) {
     if (IsPluginOutdated(*version_, version_ranges_[i]))
       return true;
@@ -481,6 +493,10 @@ bool PluginGroup::IsVulnerable() const {
 }
 
 bool PluginGroup::RequiresAuthorization() const {
+  // A plugin doesn't require authorization if it's explicitly whitelisted.
+  if (IsWhitelisted())
+    return false;
+
   for (size_t i = 0; i < version_ranges_.size(); ++i) {
     if (IsVersionInRange(*version_, version_ranges_[i]) &&
         version_ranges_[i].requires_authorization)

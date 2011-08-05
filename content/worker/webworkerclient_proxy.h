@@ -20,6 +20,7 @@ class WebWorker;
 }
 
 class WebWorkerStubBase;
+class WorkerDevToolsAgent;
 
 // This class receives IPCs from the renderer and calls the WebCore::Worker
 // implementation (after the data types have been converted by glue code).  It
@@ -73,13 +74,18 @@ class WebWorkerClientProxy : public WebKit::WebWorkerClient {
                              const WebKit::WebString& name,
                              const WebKit::WebString& display_name,
                              unsigned long estimated_size);
-
+  virtual bool allowFileSystem();
   virtual void openFileSystem(WebKit::WebFileSystem::Type type,
                               long long size,
                               bool create,
                               WebKit::WebFileSystemCallbacks* callbacks);
+  virtual void dispatchDevToolsMessage(const WebKit::WebString&);
 
   void EnsureWorkerContextTerminates();
+
+  void set_devtools_agent(WorkerDevToolsAgent* devtools_agent) {
+    devtools_agent_ = devtools_agent;
+  }
 
  private:
   bool Send(IPC::Message* message);
@@ -88,6 +94,7 @@ class WebWorkerClientProxy : public WebKit::WebWorkerClient {
   int appcache_host_id_;
   WebWorkerStubBase* stub_;
   ScopedRunnableMethodFactory<WebWorkerClientProxy> kill_process_factory_;
+  WorkerDevToolsAgent* devtools_agent_;
 
   DISALLOW_COPY_AND_ASSIGN(WebWorkerClientProxy);
 };

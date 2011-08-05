@@ -31,15 +31,11 @@ class SaveFileManager;
 class SaveItem;
 class SavePackage;
 struct SavePackageParam;
-class TabContents;
+class TabContentsWrapper;
 
 namespace base {
 class Thread;
 class Time;
-}
-
-namespace net {
-class URLRequestContextGetter;
 }
 
 
@@ -88,12 +84,12 @@ class SavePackage : public base::RefCountedThreadSafe<SavePackage>,
   // Constructor for user initiated page saving. This constructor results in a
   // SavePackage that will generate and sanitize a suggested name for the user
   // in the "Save As" dialog box.
-  explicit SavePackage(TabContents* tab_contents);
+  explicit SavePackage(TabContentsWrapper* wrapper);
 
   // This contructor is used only for testing. We can bypass the file and
   // directory name generation / sanitization by providing well known paths
   // better suited for tests.
-  SavePackage(TabContents* tab_contents,
+  SavePackage(TabContentsWrapper* wrapper,
               SavePackageType save_type,
               const FilePath& file_full_path,
               const FilePath& directory_full_path);
@@ -151,11 +147,11 @@ class SavePackage : public base::RefCountedThreadSafe<SavePackage>,
   friend class base::RefCountedThreadSafe<SavePackage>;
 
   // For testing only.
-  SavePackage(TabContents* tab_contents,
+  SavePackage(TabContentsWrapper* wrapper,
               const FilePath& file_full_path,
               const FilePath& directory_full_path);
 
-  ~SavePackage();
+  virtual ~SavePackage();
 
   // Notes from Init() above applies here as well.
   void InternalInit();
@@ -256,6 +252,9 @@ class SavePackage : public base::RefCountedThreadSafe<SavePackage>,
   static const FilePath::CharType* ExtensionForMimeType(
       const std::string& contents_mime_type);
 
+  // Owning TabContentsWrapper.
+  TabContentsWrapper* wrapper_;
+
   typedef std::queue<SaveItem*> SaveItemQueue;
   // A queue for items we are about to start saving.
   SaveItemQueue waiting_item_queue_;
@@ -263,10 +262,6 @@ class SavePackage : public base::RefCountedThreadSafe<SavePackage>,
   typedef base::hash_map<int32, SaveItem*> SavedItemMap;
   // saved_success_items_ is map of all saving job which are successfully saved.
   SavedItemMap saved_success_items_;
-
-  // The request context which provides application-specific context for
-  // net::URLRequest instances.
-  scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
 
   // Non-owning pointer for handling file writing on the file thread.
   SaveFileManager* file_manager_;

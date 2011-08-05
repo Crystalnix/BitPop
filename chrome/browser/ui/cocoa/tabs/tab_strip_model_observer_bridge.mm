@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -48,18 +48,18 @@ void TabStripModelObserverBridge::TabDetachedAt(TabContentsWrapper* contents,
   }
 }
 
-void TabStripModelObserverBridge::TabSelectedAt(
+void TabStripModelObserverBridge::ActiveTabChanged(
     TabContentsWrapper* old_contents,
     TabContentsWrapper* new_contents,
     int index,
     bool user_gesture) {
   if ([controller_ respondsToSelector:
-          @selector(selectTabWithContents:previousContents:atIndex:
+          @selector(activateTabWithContents:previousContents:atIndex:
                     userGesture:)]) {
-    [controller_ selectTabWithContents:new_contents
-                      previousContents:old_contents
-                               atIndex:index
-                           userGesture:user_gesture];
+    [controller_ activateTabWithContents:new_contents
+                        previousContents:old_contents
+                                 atIndex:index
+                             userGesture:user_gesture];
   }
 }
 

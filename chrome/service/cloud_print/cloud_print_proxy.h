@@ -15,6 +15,10 @@
 
 class ServiceProcessPrefs;
 
+namespace cloud_print {
+struct CloudPrintProxyInfo;
+}  // namespace cloud_print
+
 // CloudPrintProxy is the layer between the service process UI thread
 // and the cloud print proxy backend.
 class CloudPrintProxy : public CloudPrintProxyFrontend,
@@ -35,26 +39,30 @@ class CloudPrintProxy : public CloudPrintProxyFrontend,
 
   // Enables/disables cloud printing for the user
   void EnableForUser(const std::string& lsid);
+  void EnableForUserWithRobot(
+      const std::string& robot_auth_code,
+      const std::string& robot_email,
+      const std::string& user_email);
   void DisableForUser();
-  // Returns the enabled stata of the proxy. If enabled, the email address used
-  // for authentication is also returned in the optional |email| argument.
-  bool IsEnabled(std::string* email) const;
+  // Returns the proxy info.
+  void GetProxyInfo(cloud_print::CloudPrintProxyInfo* info);
 
-  const std::string& cloud_print_email() const {
-    return cloud_print_email_;
+  const std::string& user_email() const {
+    return user_email_;
   }
 
   // CloudPrintProxyFrontend implementation. Called on UI thread.
   virtual void OnPrinterListAvailable(
       const printing::PrinterList& printer_list);
-  virtual void OnAuthenticated(const std::string& cloud_print_token,
-                               const std::string& cloud_print_xmpp_token,
-                               const std::string& email);
+  virtual void OnAuthenticated(const std::string& robot_oauth_refresh_token,
+                               const std::string& robot_email,
+                               const std::string& user_email);
   virtual void OnAuthenticationFailed();
   virtual void OnPrintSystemUnavailable();
 
  protected:
   void Shutdown();
+  bool CreateBackend();
 
   // Our asynchronous backend to communicate with sync components living on
   // other threads.
@@ -67,7 +75,13 @@ class CloudPrintProxy : public CloudPrintProxyFrontend,
   Client* client_;
   // The email address of the account used to authenticate to the Cloud Print
   // service.
-  std::string cloud_print_email_;
+  std::string user_email_;
+  // This is set to true when the Cloud Print proxy is enabled and after
+  // successful authentication with the Cloud Print service.
+  bool enabled_;
+  // This is initialized after a successful call to one of the Enable* methods.
+  // It is not cleared in DisableUser.
+  std::string proxy_id_;
 
   DISALLOW_COPY_AND_ASSIGN(CloudPrintProxy);
 };

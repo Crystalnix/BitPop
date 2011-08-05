@@ -6,17 +6,16 @@
 #define CHROME_BROWSER_UI_VIEWS_ABOUT_CHROME_VIEW_H_
 #pragma once
 
+#include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "views/controls/image_view.h"
 #include "views/controls/label.h"
-#include "views/controls/link.h"
+#include "views/controls/link_listener.h"
 #include "views/view.h"
 #include "views/window/dialog_delegate.h"
 
-#if defined(OS_WIN) || defined(OS_CHROMEOS)
+#if defined(OS_WIN)
 #include "chrome/browser/google/google_update.h"
-#endif
-#if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/version_loader.h"
 #endif
 
 namespace views {
@@ -36,8 +35,8 @@ class Profile;
 ////////////////////////////////////////////////////////////////////////////////
 class AboutChromeView : public views::View,
                         public views::DialogDelegate,
-                        public views::LinkController
-#if defined(OS_WIN) || defined(OS_CHROMEOS)
+                        public views::LinkListener
+#if defined(OS_WIN)
                         , public GoogleUpdateStatusListener
 #endif
                         {
@@ -73,9 +72,10 @@ class AboutChromeView : public views::View,
   virtual bool Accept();
   virtual views::View* GetContentsView();
 
-  // Overridden from views::LinkController:
-  virtual void LinkActivated(views::Link* source, int event_flags);
-#if defined(OS_WIN) || defined(OS_CHROMEOS)
+  // Overridden from views::LinkListener:
+  virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
+
+#if defined(OS_WIN)
   // Overridden from GoogleUpdateStatusListener:
   virtual void OnReportResults(GoogleUpdateUpgradeResult result,
                                GoogleUpdateErrorCode error_code,
@@ -83,18 +83,11 @@ class AboutChromeView : public views::View,
 #endif
 
  private:
-#if defined(OS_WIN) || defined(OS_CHROMEOS)
+#if defined(OS_WIN)
   // Update the UI to show the status of the upgrade.
   void UpdateStatus(GoogleUpdateUpgradeResult result,
                     GoogleUpdateErrorCode error_code);
 #endif
-
-#if defined(OS_CHROMEOS)
-  // Callback from chromeos::VersionLoader giving the version.
-  void OnOSVersion(chromeos::VersionLoader::Handle handle,
-                   std::string version);
-#endif
-
 
   Profile* profile_;
 
@@ -102,9 +95,7 @@ class AboutChromeView : public views::View,
   views::ImageView* about_dlg_background_logo_;
   views::Label* about_title_label_;
   views::Textfield* version_label_;
-#if defined(OS_CHROMEOS)
   views::Textfield* os_version_label_;
-#endif
   views::Label* copyright_label_;
   views::Label* main_text_label_;
   int main_text_label_height_;
@@ -138,7 +129,7 @@ class AboutChromeView : public views::View,
   // Determines the order of the two links we draw in the main label.
   bool chromium_url_appears_first_;
 
-#if defined(OS_WIN) || defined(OS_CHROMEOS)
+#if defined(OS_WIN)
   // The class that communicates with Google Update to find out if an update is
   // available and asks it to start an upgrade.
   scoped_refptr<GoogleUpdate> google_updater_;
@@ -155,14 +146,6 @@ class AboutChromeView : public views::View,
 
   // Whether text direction is left-to-right or right-to-left.
   bool text_direction_is_rtl_;
-
-#if defined(OS_CHROMEOS)
-  // Handles asynchronously loading the version.
-  chromeos::VersionLoader loader_;
-
-  // Used to request the version.
-  CancelableRequestConsumer consumer_;
-#endif
 
   DISALLOW_COPY_AND_ASSIGN(AboutChromeView);
 };

@@ -37,6 +37,7 @@ typedef LoggingNotificationDelegate<DesktopNotificationsTest>
 class MockBalloonCollection : public BalloonCollectionImpl {
  public:
   MockBalloonCollection();
+  virtual ~MockBalloonCollection();
 
   // BalloonCollectionImpl overrides
   virtual void Add(const Notification& notification,
@@ -59,7 +60,7 @@ class MockBalloonCollection : public BalloonCollectionImpl {
 class DesktopNotificationsTest : public testing::Test {
  public:
   DesktopNotificationsTest();
-  ~DesktopNotificationsTest();
+  virtual ~DesktopNotificationsTest();
 
   static void log(const std::string& message) {
     log_output_.append(message);

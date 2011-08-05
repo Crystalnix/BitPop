@@ -10,19 +10,19 @@
 
 #include "base/i18n/rtl.h"
 #include "base/lazy_instance.h"
+#include "base/stringprintf.h"
 #include "base/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/dom_operation_notification_details.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/safe_browsing/malware_details.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/tab_contents/tab_util.h"
-#include "chrome/browser/ui/webui/new_tab_ui.h"
+#include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/common/jstemplate_builder.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -30,6 +30,7 @@
 #include "content/browser/tab_contents/navigation_controller.h"
 #include "content/browser/tab_contents/navigation_entry.h"
 #include "content/browser/tab_contents/tab_contents.h"
+#include "content/browser/user_metrics.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
@@ -47,7 +48,7 @@ static const char* const kSbDiagnosticUrl =
     "http://safebrowsing.clients.google.com/safebrowsing/diagnostic?site=%s&client=chromium";
 #endif
 
-static const char* const kSbReportPhishingUrl =
+static const char* const kSbReportPhishingErrorUrl =
     "http://www.google.com/safebrowsing/report_error/";
 
 // URL for the "Learn more" link on the multi threat malware blocking page.
@@ -75,6 +76,12 @@ static const char* const kPLinkHtml =
 static const char* const kPrivacyLinkHtml =
     "<a href=\"\" onclick=\"sendCommand('showPrivacy'); return false;\" "
     "onmousedown=\"return false;\">%s</a>";
+
+// After a malware interstitial where the user opted-in to the report
+// but clicked "proceed anyway", we delay the call to
+// MalwareDetails::FinishCollection() by this much time (in
+// milliseconds).
+static const int64 kMalwareDetailsProceedDelayMilliSeconds = 3000;
 
 // The commands returned by the page when the user performs an action.
 static const char* const kShowDiagnosticCommand = "showDiagnostic";
@@ -123,14 +130,16 @@ SafeBrowsingBlockingPage::SafeBrowsingBlockingPage(
     SafeBrowsingService* sb_service,
     TabContents* tab_contents,
     const UnsafeResourceList& unsafe_resources)
-    : InterstitialPage(tab_contents,
-                       IsMainPage(unsafe_resources),
-                       unsafe_resources[0].url),
+    : ChromeInterstitialPage(tab_contents,
+                             IsMainPageLoadBlocked(unsafe_resources),
+                             unsafe_resources[0].url),
+      malware_details_proceed_delay_ms_(
+          kMalwareDetailsProceedDelayMilliSeconds),
       sb_service_(sb_service),
-      is_main_frame_(IsMainPage(unsafe_resources)),
+      is_main_frame_load_blocked_(IsMainPageLoadBlocked(unsafe_resources)),
       unsafe_resources_(unsafe_resources) {
   RecordUserAction(SHOW);
-  if (!is_main_frame_) {
+  if (!is_main_frame_load_blocked_) {
     navigation_entry_index_to_remove_ =
         tab()->controller().last_committed_entry_index();
   } else {
@@ -174,15 +183,20 @@ std::string SafeBrowsingBlockingPage::GetHTMLContents() {
     PopulateMultipleThreatStringDictionary(&strings);
     html = rb.GetRawDataResource(
         IDR_SAFE_BROWSING_MULTIPLE_THREAT_BLOCK).as_string();
-  } else if (unsafe_resources_[0].threat_type ==
-             SafeBrowsingService::URL_MALWARE) {
-    PopulateMalwareStringDictionary(&strings);
-    html = rb.GetRawDataResource(IDR_SAFE_BROWSING_MALWARE_BLOCK).as_string();
-  } else {  // Phishing.
-    DCHECK(unsafe_resources_[0].threat_type ==
-           SafeBrowsingService::URL_PHISHING);
-    PopulatePhishingStringDictionary(&strings);
-    html = rb.GetRawDataResource(IDR_SAFE_BROWSING_PHISHING_BLOCK).as_string();
+  } else {
+    SafeBrowsingService::UrlCheckResult threat_type =
+        unsafe_resources_[0].threat_type;
+    if (threat_type == SafeBrowsingService::URL_MALWARE) {
+      PopulateMalwareStringDictionary(&strings);
+      html = rb.GetRawDataResource(
+          IDR_SAFE_BROWSING_MALWARE_BLOCK).as_string();
+    } else {  // Phishing.
+      DCHECK(threat_type == SafeBrowsingService::URL_PHISHING ||
+             threat_type == SafeBrowsingService::CLIENT_SIDE_PHISHING_URL);
+      PopulatePhishingStringDictionary(&strings);
+      html = rb.GetRawDataResource(
+          IDR_SAFE_BROWSING_PHISHING_BLOCK).as_string();
+    }
   }
 
   return jstemplate_builder::GetTemplatesHtml(html, &strings, "template_root");
@@ -220,14 +234,16 @@ void SafeBrowsingBlockingPage::PopulateMultipleThreatStringDictionary(
   for (UnsafeResourceList::const_iterator iter = unsafe_resources_.begin();
        iter != unsafe_resources_.end(); ++iter) {
     const SafeBrowsingService::UnsafeResource& resource = *iter;
+    SafeBrowsingService::UrlCheckResult threat_type = resource.threat_type;
     DictionaryValue* current_error_strings = new DictionaryValue;
-    if (resource.threat_type == SafeBrowsingService::URL_MALWARE) {
+    if (threat_type == SafeBrowsingService::URL_MALWARE) {
       malware = true;
       current_error_strings->SetString("type", "malware");
       current_error_strings->SetString("typeLabel", malware_label);
       current_error_strings->SetString("errorLink", malware_link);
     } else {
-      DCHECK(resource.threat_type == SafeBrowsingService::URL_PHISHING);
+      DCHECK(threat_type == SafeBrowsingService::URL_PHISHING ||
+             threat_type == SafeBrowsingService::CLIENT_SIDE_PHISHING_URL);
       phishing = true;
       current_error_strings->SetString("type", "phishing");
       current_error_strings->SetString("typeLabel", phishing_label);
@@ -286,7 +302,7 @@ void SafeBrowsingBlockingPage::PopulateMultipleThreatStringDictionary(
 
 void SafeBrowsingBlockingPage::PopulateMalwareStringDictionary(
     DictionaryValue* strings) {
-  std::string diagnostic_link = StringPrintf(kSbDiagnosticHtml,
+  std::string diagnostic_link = base::StringPrintf(kSbDiagnosticHtml,
       l10n_util::GetStringUTF8(
         IDS_SAFE_BROWSING_MALWARE_DIAGNOSTIC_PAGE).c_str());
 
@@ -294,7 +310,7 @@ void SafeBrowsingBlockingPage::PopulateMalwareStringDictionary(
   // Check to see if we're blocking the main page, or a sub-resource on the
   // main page.
   string16 description1, description3, description5;
-  if (is_main_frame_) {
+  if (is_main_frame_load_blocked_) {
     description1 = l10n_util::GetStringFUTF16(
         IDS_SAFE_BROWSING_MALWARE_DESCRIPTION1, UTF8ToUTF16(url().host()));
   } else {
@@ -304,7 +320,7 @@ void SafeBrowsingBlockingPage::PopulateMalwareStringDictionary(
         UTF8ToUTF16(url().host()));
   }
 
-  std::string proceed_link = StringPrintf(kPLinkHtml,
+  std::string proceed_link = base::StringPrintf(kPLinkHtml,
       l10n_util::GetStringUTF8(IDS_SAFE_BROWSING_MALWARE_PROCEED_LINK).c_str());
   description3 =
       l10n_util::GetStringFUTF16(IDS_SAFE_BROWSING_MALWARE_DESCRIPTION3,
@@ -338,7 +354,7 @@ void SafeBrowsingBlockingPage::PopulateMalwareStringDictionary(
     // Show the checkbox for sending malware details.
     strings->SetBoolean(kDisplayCheckBox, true);
 
-    std::string privacy_link = StringPrintf(
+    std::string privacy_link = base::StringPrintf(
         kPrivacyLinkHtml,
         l10n_util::GetStringUTF8(
             IDS_SAFE_BROWSING_PRIVACY_POLICY_PAGE).c_str());
@@ -363,8 +379,10 @@ void SafeBrowsingBlockingPage::PopulateMalwareStringDictionary(
 
 void SafeBrowsingBlockingPage::PopulatePhishingStringDictionary(
     DictionaryValue* strings) {
-  std::string proceed_link = StringPrintf(kPLinkHtml, l10n_util::GetStringUTF8(
-      IDS_SAFE_BROWSING_PHISHING_PROCEED_LINK).c_str());
+  std::string proceed_link = base::StringPrintf(
+      kPLinkHtml,
+      l10n_util::GetStringUTF8(
+          IDS_SAFE_BROWSING_PHISHING_PROCEED_LINK).c_str());
   string16 description3 = l10n_util::GetStringFUTF16(
       IDS_SAFE_BROWSING_PHISHING_DESCRIPTION3,
       UTF8ToUTF16(proceed_link));
@@ -405,10 +423,12 @@ void SafeBrowsingBlockingPage::CommandReceived(const std::string& cmd) {
   if (command == kLearnMoreCommand) {
     // User pressed "Learn more".
     GURL url;
-    if (unsafe_resources_[0].threat_type == SafeBrowsingService::URL_MALWARE) {
+    SafeBrowsingService::UrlCheckResult threat_type =
+        unsafe_resources_[0].threat_type;
+    if (threat_type == SafeBrowsingService::URL_MALWARE) {
       url = google_util::AppendGoogleLocaleParam(GURL(kLearnMoreMalwareUrl));
-    } else if (unsafe_resources_[0].threat_type ==
-               SafeBrowsingService::URL_PHISHING) {
+    } else if (threat_type == SafeBrowsingService::URL_PHISHING ||
+               threat_type == SafeBrowsingService::CLIENT_SIDE_PHISHING_URL) {
       url = google_util::AppendGoogleLocaleParam(GURL(kLearnMorePhishingUrl));
     } else {
       NOTREACHED();
@@ -459,11 +479,15 @@ void SafeBrowsingBlockingPage::CommandReceived(const std::string& cmd) {
     // User pressed "Report error" for a phishing site.
     // Note that we cannot just put a link in the interstitial at this point.
     // It is not OK to navigate in the context of an interstitial page.
-    DCHECK(unsafe_resources_[element_index].threat_type ==
-           SafeBrowsingService::URL_PHISHING);
+    SafeBrowsingService::UrlCheckResult threat_type =
+        unsafe_resources_[element_index].threat_type;
+    DCHECK(threat_type == SafeBrowsingService::URL_PHISHING ||
+           threat_type == SafeBrowsingService::CLIENT_SIDE_PHISHING_URL);
     GURL report_url =
-        safe_browsing_util::GeneratePhishingReportUrl(kSbReportPhishingUrl,
-                                                      bad_url_spec);
+        safe_browsing_util::GeneratePhishingReportUrl(
+            kSbReportPhishingErrorUrl,
+            bad_url_spec,
+            threat_type == SafeBrowsingService::CLIENT_SIDE_PHISHING_URL);
     tab()->OpenURL(report_url, GURL(), CURRENT_TAB, PageTransition::LINK);
     return;
   }
@@ -471,8 +495,8 @@ void SafeBrowsingBlockingPage::CommandReceived(const std::string& cmd) {
   if (command == kShowDiagnosticCommand) {
     // We're going to take the user to Google's SafeBrowsing diagnostic page.
     std::string diagnostic =
-        StringPrintf(kSbDiagnosticUrl,
-                     EscapeQueryParamValue(bad_url_spec, true).c_str());
+        base::StringPrintf(kSbDiagnosticUrl,
+                           EscapeQueryParamValue(bad_url_spec, true).c_str());
     GURL diagnostic_url(diagnostic);
     diagnostic_url = google_util::AppendGoogleLocaleParam(diagnostic_url);
     DCHECK(unsafe_resources_[element_index].threat_type ==
@@ -491,7 +515,8 @@ void SafeBrowsingBlockingPage::SetReportingPreference(bool report) {
 
 void SafeBrowsingBlockingPage::Proceed() {
   RecordUserAction(PROCEED);
-  FinishMalwareDetails();  // Send the malware details, if we opted to.
+  // Send the malware details, if we opted to.
+  FinishMalwareDetails(malware_details_proceed_delay_ms_);
 
   NotifySafeBrowsingService(sb_service_, unsafe_resources_, true);
 
@@ -529,7 +554,8 @@ void SafeBrowsingBlockingPage::DontProceed() {
   }
 
   RecordUserAction(DONT_PROCEED);
-  FinishMalwareDetails();  // Send the malware details, if we opted to.
+  // Send the malware details, if we opted to.
+  FinishMalwareDetails(0);  // No delay
 
   NotifySafeBrowsingService(sb_service_, unsafe_resources_, false);
 
@@ -563,7 +589,8 @@ void SafeBrowsingBlockingPage::RecordUserAction(BlockingPageEvent event) {
   PopulateMultipleThreatStringDictionary(&strings);
 
   string16 title;
-  DCHECK(strings.GetString("title", &title));
+  bool success = strings.GetString("title", &title);
+  DCHECK(success);
 
   std::string action = "SBInterstitial";
   if (title ==
@@ -595,7 +622,7 @@ void SafeBrowsingBlockingPage::RecordUserAction(BlockingPageEvent event) {
   UserMetrics::RecordComputedAction(action);
 }
 
-void SafeBrowsingBlockingPage::FinishMalwareDetails() {
+void SafeBrowsingBlockingPage::FinishMalwareDetails(int64 delay_ms) {
   if (malware_details_ == NULL)
     return;  // Not all interstitials have malware details (eg phishing).
 
@@ -606,10 +633,11 @@ void SafeBrowsingBlockingPage::FinishMalwareDetails() {
   bool value;
   if (pref && pref->GetValue()->GetAsBoolean(&value) && value) {
     // Finish the malware details collection, send it over.
-    BrowserThread::PostTask(
+    BrowserThread::PostDelayedTask(
         BrowserThread::IO, FROM_HERE,
         NewRunnableMethod(
-            malware_details_.get(), &MalwareDetails::FinishCollection));
+            malware_details_.get(), &MalwareDetails::FinishCollection),
+        delay_ms);
   }
 }
 
@@ -670,8 +698,16 @@ void SafeBrowsingBlockingPage::ShowBlockingPage(
 }
 
 // static
-bool SafeBrowsingBlockingPage::IsMainPage(
+bool SafeBrowsingBlockingPage::IsMainPageLoadBlocked(
     const UnsafeResourceList& unsafe_resources) {
+  // Client-side phishing detection interstitials never block the main frame
+  // load, since they happen after the page is finished loading.
+  if (unsafe_resources[0].threat_type ==
+      SafeBrowsingService::CLIENT_SIDE_PHISHING_URL) {
+    return false;
+  }
+
+  // Otherwise, check the threat type.
   return unsafe_resources.size() == 1 &&
          unsafe_resources[0].resource_type == ResourceType::MAIN_FRAME;
 }

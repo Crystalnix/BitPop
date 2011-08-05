@@ -17,10 +17,10 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/extension_extent.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/user_script.h"
 #include "chrome/common/extensions/url_pattern.h"
+#include "chrome/common/extensions/url_pattern_set.h"
 #include "googleurl/src/gurl.h"
 #include "ui/gfx/size.h"
 
@@ -142,6 +142,7 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
       ID_HOSTS_4_OR_MORE,
       ID_HOSTS_ALL,
       ID_FULL_ACCESS,
+      ID_CLIPBOARD,
       ID_ENUM_BOUNDARY
     };
 
@@ -277,10 +278,13 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // Extension::kPermissions.
   static const char kBackgroundPermission[];
   static const char kBookmarkPermission[];
+  static const char kClipboardReadPermission[];
+  static const char kClipboardWritePermission[];
   static const char kContentSettingsPermission[];
   static const char kContextMenusPermission[];
   static const char kCookiePermission[];
-  static const char kChromeosInfoPrivatePermissions[];
+  static const char kChromePrivatePermission[];
+  static const char kChromeosInfoPrivatePermission[];
   static const char kDebuggerPermission[];
   static const char kExperimentalPermission[];
   static const char kFileBrowserHandlerPermission[];
@@ -289,11 +293,13 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   static const char kHistoryPermission[];
   static const char kIdlePermission[];
   static const char kManagementPermission[];
+  static const char kMediaPlayerPrivatePermission[];
   static const char kNotificationPermission[];
   static const char kProxyPermission[];
   static const char kTabPermission[];
   static const char kUnlimitedStoragePermission[];
   static const char kWebstorePrivatePermission[];
+  static const char kWebSocketProxyPrivatePermission[];
 
   static const Permission kPermissions[];
   static const size_t kNumPermissions;
@@ -430,7 +436,7 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // |granted_extent| and |granted_full_access|.
   static bool IsPrivilegeIncrease(const bool granted_full_access,
                                   const std::set<std::string>& granted_apis,
-                                  const ExtensionExtent& granted_extent,
+                                  const URLPatternSet& granted_extent,
                                   const Extension* new_extension);
 
   // Given an extension and icon size, read it if present and decode it into
@@ -475,14 +481,14 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // effective access to all hosts. See the non-static version of the method
   // for more details.
   static bool HasEffectiveAccessToAllHosts(
-      const ExtensionExtent& effective_host_permissions,
+      const URLPatternSet& effective_host_permissions,
       const std::set<std::string>& api_permissions);
 
   bool HasApiPermission(const std::string& function_name) const {
     return HasApiPermission(this->api_permissions(), function_name);
   }
 
-  const ExtensionExtent& GetEffectiveHostPermissions() const {
+  const URLPatternSet& GetEffectiveHostPermissions() const {
     return effective_host_permissions_;
   }
 
@@ -616,12 +622,16 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
 
   bool wants_file_access() const { return wants_file_access_; }
 
+  const std::string& content_security_policy() const {
+    return content_security_policy_;
+  }
+
   // App-related.
   bool is_app() const { return is_app_; }
   bool is_hosted_app() const { return is_app() && !web_extent().is_empty(); }
   bool is_packaged_app() const { return is_app() && web_extent().is_empty(); }
   bool is_storage_isolated() const { return is_app() && is_storage_isolated_; }
-  const ExtensionExtent& web_extent() const { return extent_; }
+  const URLPatternSet& web_extent() const { return extent_; }
   const std::string& launch_local_path() const { return launch_local_path_; }
   const std::string& launch_web_url() const { return launch_web_url_; }
   extension_misc::LaunchContainer launch_container() const {
@@ -702,7 +712,7 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   bool LoadIsApp(const DictionaryValue* manifest, std::string* error);
   bool LoadExtent(const DictionaryValue* manifest,
                   const char* key,
-                  ExtensionExtent* extent,
+                  URLPatternSet* extent,
                   const char* list_error,
                   const char* value_error,
                   URLPattern::ParseOption parse_strictness,
@@ -782,14 +792,14 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   bool incognito_split_mode_;
 
   // Defines the set of URLs in the extension's web content.
-  ExtensionExtent extent_;
+  URLPatternSet extent_;
 
   // The set of host permissions that the extension effectively has access to,
   // which is a merge of host_permissions_ and all of the match patterns in
   // any content scripts the extension has. This is used to determine which
   // URLs have the ability to load an extension's resources via embedded
   // chrome-extension: URLs (see extension_protocols.cc).
-  ExtensionExtent effective_host_permissions_;
+  URLPatternSet effective_host_permissions_;
 
   // The set of module-level APIs this extension can use.
   std::set<std::string> api_permissions_;
@@ -918,6 +928,11 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // granted it that access).
   bool wants_file_access_;
 
+  // The Content-Security-Policy for this extension.  Extensions can use
+  // Content-Security-Policies to mitigate cross-site scripting and other
+  // vulnerabilities.
+  std::string content_security_policy_;
+
   FRIEND_TEST_ALL_PREFIXES(ExtensionServiceTest,
                            UpdateExtensionPreservesLocation);
   FRIEND_TEST_ALL_PREFIXES(ExtensionTest, LoadPageActionHelper);
@@ -951,6 +966,10 @@ struct ExtensionInfo {
 
 // Struct used for the details of the EXTENSION_UNINSTALLED
 // notification.
+//
+// TODO(akalin): Now that sync doesn't need to listen to
+// EXTENSION_UNINSTALLED, everything but |extension_id| can be
+// removed.
 struct UninstalledExtensionInfo {
   explicit UninstalledExtensionInfo(const Extension& extension);
   ~UninstalledExtensionInfo();

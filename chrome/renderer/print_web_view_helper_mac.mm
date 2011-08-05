@@ -7,6 +7,8 @@
 #import <AppKit/AppKit.h>
 
 #include "base/logging.h"
+#include "base/mac/scoped_nsautorelease_pool.h"
+#include "base/metrics/histogram.h"
 #include "chrome/common/print_messages.h"
 #include "printing/metafile.h"
 #include "printing/metafile_impl.h"
@@ -26,9 +28,9 @@ void PrintWebViewHelper::PrintPageInternal(
   int page_number = params.page_number;
 
   // Render page for printing.
-  gfx::Point origin(0.0f, 0.0f);
-  RenderPage(params.params.printable_size, origin, scale_factor, page_number,
-      frame, &metafile);
+  gfx::Rect content_area(params.params.printable_size);
+  RenderPage(params.params.printable_size, content_area, scale_factor,
+      page_number, frame, &metafile);
   metafile.FinishDocument();
 
   PrintHostMsg_DidPrintPage_Params page_params;
@@ -51,7 +53,7 @@ void PrintWebViewHelper::PrintPageInternal(
   Send(new PrintHostMsg_DidPrintPage(routing_id(), page_params));
 }
 
-void PrintWebViewHelper::CreatePreviewDocument(
+bool PrintWebViewHelper::CreatePreviewDocument(
     const PrintMsg_PrintPages_Params& params, WebKit::WebFrame* frame,
     WebKit::WebNode* node) {
   PrintMsg_Print_Params printParams = params.params;
@@ -62,56 +64,74 @@ void PrintWebViewHelper::CreatePreviewDocument(
   int page_count = prep_frame_view.GetExpectedPageCount();
 
   if (!page_count)
-    return;
+    return false;
 
   printing::PreviewMetafile metafile;
   if (!metafile.Init())
-    return;
+    return false;
 
   float scale_factor = frame->getPrintPageShrink(0);
-  gfx::Point origin(printParams.margin_left, printParams.margin_top);
+  gfx::Rect content_area(printParams.margin_left, printParams.margin_top,
+                         printParams.printable_size.width(),
+                         printParams.printable_size.height());
+
+  base::TimeTicks begin_time = base::TimeTicks::Now();
+  base::TimeTicks page_begin_time = begin_time;
+
   if (params.pages.empty()) {
     for (int i = 0; i < page_count; ++i) {
-      RenderPage(printParams.page_size, origin, scale_factor, i, frame,
+      RenderPage(printParams.page_size, content_area, scale_factor, i, frame,
                  &metafile);
+      page_begin_time = ReportPreviewPageRenderTime(page_begin_time);
     }
   } else {
     for (size_t i = 0; i < params.pages.size(); ++i) {
       if (params.pages[i] >= page_count)
         break;
-      RenderPage(printParams.page_size, origin, scale_factor,
+      RenderPage(printParams.page_size, content_area, scale_factor,
                  static_cast<int>(params.pages[i]), frame, &metafile);
+      page_begin_time = ReportPreviewPageRenderTime(page_begin_time);
     }
   }
+
+  base::TimeDelta render_time = base::TimeTicks::Now() - begin_time;
+
+  prep_frame_view.FinishPrinting();
   metafile.FinishDocument();
+
+  ReportTotalPreviewGenerationTime(params.pages.size(), page_count,
+                                   render_time,
+                                   base::TimeTicks::Now() - begin_time);
 
   PrintHostMsg_DidPreviewDocument_Params preview_params;
   preview_params.data_size = metafile.GetDataSize();
   preview_params.document_cookie = params.params.document_cookie;
   preview_params.expected_pages_count = page_count;
+  preview_params.modifiable = IsModifiable(frame, node);
 
   // Ask the browser to create the shared memory for us.
   if (!CopyMetafileDataToSharedMem(&metafile,
                                    &(preview_params.metafile_data_handle))) {
-    preview_params.data_size = 0;
-    preview_params.expected_pages_count = 0;
+    return false;
   }
   Send(new PrintHostMsg_PagesReadyForPreview(routing_id(), preview_params));
+  return true;
 }
 
 void PrintWebViewHelper::RenderPage(
-    const gfx::Size& page_size, const gfx::Point& content_origin,
+    const gfx::Size& page_size, const gfx::Rect& content_area,
     const float& scale_factor, int page_number, WebFrame* frame,
     printing::Metafile* metafile) {
-  bool success = metafile->StartPage(page_size, content_origin, scale_factor);
+  bool success = metafile->StartPage(page_size, content_area, scale_factor);
   DCHECK(success);
 
   // printPage can create autoreleased references to |context|. PDF contexts
   // don't write all their data until they are destroyed, so we need to make
   // certain that there are no lingering references.
-  NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
-  frame->printPage(page_number, metafile->context());
-  [pool release];
+  {
+    base::mac::ScopedNSAutoreleasePool pool;
+    frame->printPage(page_number, metafile->context());
+  }
 
   // Done printing. Close the device context to retrieve the compiled metafile.
   metafile->FinishPage();

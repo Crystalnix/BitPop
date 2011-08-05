@@ -12,14 +12,14 @@
 #include "base/threading/worker_pool.h"
 #include "build/build_config.h"
 #include "content/common/child_process.h"
-#include "content/common/gpu_messages.h"
+#include "content/common/gpu/gpu_messages.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ui/gfx/gl/gl_context.h"
 #include "ui/gfx/gl/gl_implementation.h"
 
 GpuChannelManager::GpuChannelManager(IPC::Message::Sender* browser_channel,
                                      GpuWatchdog* watchdog,
-                                     MessageLoop* io_message_loop,
+                                     base::MessageLoopProxy* io_message_loop,
                                      base::WaitableEvent* shutdown_event)
     : ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)),
       io_message_loop_(io_message_loop),
@@ -49,7 +49,7 @@ bool GpuChannelManager::OnMessageReceived(const IPC::Message& msg) {
                         OnCreateViewCommandBuffer)
     IPC_MESSAGE_HANDLER(GpuMsg_Synchronize, OnSynchronize)
     IPC_MESSAGE_HANDLER(GpuMsg_VisibilityChanged, OnVisibilityChanged)
-#if defined(OS_LINUX) && !defined(TOUCH_UI) || defined(OS_WIN)
+#if defined(TOOLKIT_USES_GTK) && !defined(TOUCH_UI) || defined(OS_WIN)
     IPC_MESSAGE_HANDLER(GpuMsg_ResizeViewACK, OnResizeViewACK);
 #elif defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(GpuMsg_AcceleratedSurfaceBuffersSwappedACK,

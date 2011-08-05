@@ -17,10 +17,10 @@
 #include "chrome/test/profile_mock.h"
 #include "content/browser/browser_thread.h"
 
-using browser_sync::PreferenceDataTypeController;
 using browser_sync::ChangeProcessorMock;
 using browser_sync::DataTypeController;
 using browser_sync::ModelAssociatorMock;
+using browser_sync::PreferenceDataTypeController;
 using testing::_;
 using testing::DoAll;
 using testing::InvokeWithoutArgs;
@@ -51,8 +51,9 @@ class PreferenceDataTypeControllerTest : public testing::Test {
     model_associator_ = new ModelAssociatorMock();
     change_processor_ = new ChangeProcessorMock();
     EXPECT_CALL(*profile_sync_factory_, CreatePreferenceSyncComponents(_, _)).
-        WillOnce(Return(ProfileSyncFactory::SyncComponents(model_associator_,
-                                                           change_processor_)));
+        WillOnce(Return(
+            ProfileSyncFactory::SyncComponents(model_associator_,
+                                               change_processor_)));
   }
 
   void SetAssociateExpectations() {

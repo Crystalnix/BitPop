@@ -15,19 +15,19 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/custom_home_pages_table_model.h"
 #include "chrome/browser/instant/instant_confirm_dialog.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "chrome/browser/net/url_fixer_upper.h"
+#include "chrome/browser/platform_util.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_model.h"
-#include "chrome/browser/ui/options/options_window.h"
 #include "chrome/browser/ui/webui/favicon_source.h"
 #include "chrome/browser/ui/webui/options/options_managed_banner_handler.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/installer/util/browser_distribution.h"
+#include "chrome/common/url_constants.h"
 #include "content/browser/browser_thread.h"
+#include "content/browser/user_metrics.h"
 #include "content/common/notification_service.h"
 #include "content/common/notification_source.h"
 #include "content/common/notification_type.h"
@@ -126,7 +126,7 @@ void BrowserOptionsHandler::Initialize() {
 
   // Create our favicon data source.
   profile->GetChromeURLDataManager()->AddDataSource(
-      new FaviconSource(profile));
+      new FaviconSource(profile, FaviconSource::FAVICON));
 
   homepage_.Init(prefs::kHomePage, profile->GetPrefs(), NULL);
   default_browser_policy_.Init(prefs::kDefaultBrowserSettingEnabled,
@@ -160,28 +160,26 @@ void BrowserOptionsHandler::SetHomePage(const ListValue* args) {
 }
 
 void BrowserOptionsHandler::UpdateDefaultBrowserState() {
-#if defined(OS_WIN)
   // Check for side-by-side first.
-  if (!BrowserDistribution::GetDistribution()->CanSetAsDefault()) {
+  if (!platform_util::CanSetAsDefaultBrowser()) {
     SetDefaultBrowserUIString(IDS_OPTIONS_DEFAULTBROWSER_SXS);
     return;
   }
-#endif
 
 #if defined(OS_MACOSX)
-  ShellIntegration::DefaultBrowserState state =
+  ShellIntegration::DefaultWebClientState state =
       ShellIntegration::IsDefaultBrowser();
   int status_string_id;
-  if (state == ShellIntegration::IS_DEFAULT_BROWSER)
+  if (state == ShellIntegration::IS_DEFAULT_WEB_CLIENT)
     status_string_id = IDS_OPTIONS_DEFAULTBROWSER_DEFAULT;
-  else if (state == ShellIntegration::NOT_DEFAULT_BROWSER)
+  else if (state == ShellIntegration::NOT_DEFAULT_WEB_CLIENT)
     status_string_id = IDS_OPTIONS_DEFAULTBROWSER_NOTDEFAULT;
   else
     status_string_id = IDS_OPTIONS_DEFAULTBROWSER_UNKNOWN;
 
   SetDefaultBrowserUIString(status_string_id);
 #else
-  default_browser_worker_->StartCheckDefaultBrowser();
+  default_browser_worker_->StartCheckIsDefault();
 #endif
 }
 
@@ -196,7 +194,7 @@ void BrowserOptionsHandler::BecomeDefaultBrowser(const ListValue* args) {
   if (ShellIntegration::SetAsDefaultBrowser())
     UpdateDefaultBrowserState();
 #else
-  default_browser_worker_->StartSetAsDefaultBrowser();
+  default_browser_worker_->StartSetAsDefault();
   // Callback takes care of updating UI.
 #endif
 
@@ -207,16 +205,16 @@ void BrowserOptionsHandler::BecomeDefaultBrowser(const ListValue* args) {
 }
 
 int BrowserOptionsHandler::StatusStringIdForState(
-    ShellIntegration::DefaultBrowserState state) {
-  if (state == ShellIntegration::IS_DEFAULT_BROWSER)
+    ShellIntegration::DefaultWebClientState state) {
+  if (state == ShellIntegration::IS_DEFAULT_WEB_CLIENT)
     return IDS_OPTIONS_DEFAULTBROWSER_DEFAULT;
-  if (state == ShellIntegration::NOT_DEFAULT_BROWSER)
+  if (state == ShellIntegration::NOT_DEFAULT_WEB_CLIENT)
     return IDS_OPTIONS_DEFAULTBROWSER_NOTDEFAULT;
   return IDS_OPTIONS_DEFAULTBROWSER_UNKNOWN;
 }
 
-void BrowserOptionsHandler::SetDefaultBrowserUIState(
-    ShellIntegration::DefaultBrowserUIState state) {
+void BrowserOptionsHandler::SetDefaultWebClientUIState(
+    ShellIntegration::DefaultWebClientUIState state) {
   int status_string_id;
   if (state == ShellIntegration::STATE_IS_DEFAULT)
     status_string_id = IDS_OPTIONS_DEFAULTBROWSER_DEFAULT;
@@ -244,9 +242,7 @@ void BrowserOptionsHandler::SetDefaultBrowserUIString(int status_string_id) {
        status_string_id == IDS_OPTIONS_DEFAULTBROWSER_NOTDEFAULT)));
 
   web_ui_->CallJavascriptFunction("BrowserOptions.updateDefaultBrowserState",
-                                  *(status_string.get()),
-                                  *(is_default.get()),
-                                  *(can_be_default.get()));
+                                  *status_string, *is_default, *can_be_default);
 }
 
 void BrowserOptionsHandler::OnTemplateURLModelChanged() {
@@ -273,9 +269,12 @@ void BrowserOptionsHandler::OnTemplateURLModelChanged() {
   }
 
   scoped_ptr<Value> default_value(Value::CreateIntegerValue(default_index));
+  scoped_ptr<Value> default_managed(Value::CreateBooleanValue(
+      template_url_model_->is_default_search_managed()));
 
   web_ui_->CallJavascriptFunction("BrowserOptions.updateSearchEngines",
-                                  search_engines, *(default_value.get()));
+                                  search_engines, *default_value,
+                                  *default_managed);
 }
 
 void BrowserOptionsHandler::SetDefaultSearchEngine(const ListValue* args) {

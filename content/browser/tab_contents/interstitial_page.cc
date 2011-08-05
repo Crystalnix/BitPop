@@ -12,10 +12,6 @@
 #include "base/threading/thread.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/dom_operation_notification_details.h"
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/renderer_preferences_util.h"
-#include "chrome/browser/ui/browser_list.h"
 #include "content/browser/browser_thread.h"
 #include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/renderer_host/render_view_host.h"
@@ -157,12 +153,10 @@ InterstitialPage::InterstitialPage(TabContents* tab,
       original_child_id_(tab->render_view_host()->process()->id()),
       original_rvh_id_(tab->render_view_host()->routing_id()),
       should_revert_tab_title_(false),
+      tab_was_loading_(false),
       resource_dispatcher_host_notified_(false),
       ALLOW_THIS_IN_INITIALIZER_LIST(rvh_view_delegate_(
           new InterstitialPageRVHViewDelegate(this))) {
-  renderer_preferences_util::UpdateFromSystemSettings(
-      &renderer_preferences_, tab_->profile());
-
   InitInterstitialPageMap();
   // It would be inconsistent to create an interstitial with no new navigation
   // (which is the case when the interstitial was triggered by a sub-resource on
@@ -358,6 +352,11 @@ void InterstitialPage::DidNavigate(
   render_view_host_->view()->Show();
   tab_->set_interstitial_page(this);
 
+  // Hide the bookmark bar. Note that this has to happen after the interstitial
+  // page was registered with |tab_|, since there will be a callback to |tab_|
+  // testing if an interstitial page is showing before hiding the bookmark bar.
+  tab_->NotifyNavigationStateChanged(TabContents::INVALIDATE_BOOKMARK_BAR);
+
   NotificationService::current()->Notify(
       NotificationType::INTERSTITIAL_ATTACHED,
       Source<TabContents>(tab_),
@@ -380,6 +379,7 @@ void InterstitialPage::DidNavigate(
   // by the UI tests) expects to consider a navigation as complete. Without
   // this, navigating in a UI test to a URL that triggers an interstitial would
   // hang.
+  tab_was_loading_ = tab_->is_loading();
   tab_->SetIsLoading(false, NULL);
 }
 
@@ -409,12 +409,6 @@ void InterstitialPage::UpdateTitle(RenderViewHost* render_view_host,
   }
   entry->set_title(WideToUTF16Hack(title));
   tab_->NotifyNavigationStateChanged(TabContents::INVALIDATE_TITLE);
-}
-
-void InterstitialPage::DomOperationResponse(const std::string& json_string,
-                                            int automation_id) {
-  if (enabled_)
-    CommandReceived(json_string);
 }
 
 RendererPreferences InterstitialPage::GetRendererPrefs(Profile* profile) const {
@@ -450,8 +444,9 @@ void InterstitialPage::Proceed() {
   Disable();
   action_taken_ = PROCEED_ACTION;
 
-  // Resumes the throbber.
-  tab_->SetIsLoading(true, NULL);
+  // Resumes the throbber, if applicable.
+  if (tab_was_loading_)
+    tab_->SetIsLoading(true, NULL);
 
   // If this is a new navigation, the old page is going away, so we cancel any
   // blocked requests for it.  If it is not a new navigation, then it means the

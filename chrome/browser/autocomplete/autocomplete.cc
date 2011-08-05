@@ -23,10 +23,11 @@
 #include "chrome/browser/autocomplete/keyword_provider.h"
 #include "chrome/browser/autocomplete/search_provider.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
-#include "chrome/browser/external_protocol_handler.h"
+#include "chrome/browser/external_protocol/external_protocol_handler.h"
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_io_data.h"
 #include "chrome/browser/ui/webui/history_ui.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -48,7 +49,6 @@ using base::TimeDelta;
 
 AutocompleteInput::AutocompleteInput()
   : type_(INVALID),
-    initial_prevent_inline_autocomplete_(false),
     prevent_inline_autocomplete_(false),
     prefer_keyword_(false),
     allow_exact_keyword_match_(true),
@@ -61,17 +61,14 @@ AutocompleteInput::AutocompleteInput(const string16& text,
                                      bool prefer_keyword,
                                      bool allow_exact_keyword_match,
                                      MatchesRequested matches_requested)
-    : original_text_(text),
-      desired_tld_(desired_tld),
-      initial_prevent_inline_autocomplete_(prevent_inline_autocomplete),
+    : desired_tld_(desired_tld),
       prevent_inline_autocomplete_(prevent_inline_autocomplete),
       prefer_keyword_(prefer_keyword),
       allow_exact_keyword_match_(allow_exact_keyword_match),
       matches_requested_(matches_requested) {
-  // Trim whitespace from edges of input; don't inline autocomplete if there
-  // was trailing whitespace.
-  if (TrimWhitespace(text, TRIM_ALL, &text_) & TRIM_TRAILING)
-    prevent_inline_autocomplete_ = true;
+  // None of the providers care about leading white space so we always trim it.
+  // Providers that care about trailing white space handle trimming themselves.
+  TrimWhitespace(text, TRIM_LEADING, &text_);
 
   GURL canonicalized_url;
   type_ = Parse(text_, desired_tld, &parts_, &scheme_, &canonicalized_url);
@@ -163,7 +160,7 @@ AutocompleteInput::Type AutocompleteInput::Parse(
       !LowerCaseEqualsASCII(parsed_scheme, chrome::kHttpScheme) &&
       !LowerCaseEqualsASCII(parsed_scheme, chrome::kHttpsScheme)) {
     // See if we know how to handle the URL internally.
-    if (net::URLRequest::IsHandledProtocol(UTF16ToASCII(parsed_scheme)))
+    if (ProfileIOData::IsHandledProtocol(UTF16ToASCII(parsed_scheme)))
       return URL;
 
     // There are also some schemes that we convert to other things before they
@@ -223,7 +220,7 @@ AutocompleteInput::Type AutocompleteInput::Parse(
           };
           for (size_t i = 0; i < arraysize(components); ++i) {
             URLFixerUpper::OffsetComponent(
-                -static_cast<int>(http_scheme_prefix.size()), components[i]);
+                -static_cast<int>(http_scheme_prefix.length()), components[i]);
           }
 
           *parts = http_parts;
@@ -788,16 +785,17 @@ AutocompleteController::AutocompleteController(
       in_start_(false) {
   search_provider_ = new SearchProvider(this, profile);
   providers_.push_back(search_provider_);
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableHistoryQuickProvider) &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableHistoryQuickProvider))
+  // TODO(mrossetti): Remove the following and permanently modify the
+  // HistoryURLProvider to not search titles once HQP is turned on permanently.
+  bool hqp_enabled = !CommandLine::ForCurrentProcess()->HasSwitch(
+                         switches::kDisableHistoryQuickProvider);
+  if (hqp_enabled)
     providers_.push_back(new HistoryQuickProvider(this, profile));
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableHistoryURLProvider))
     providers_.push_back(new HistoryURLProvider(this, profile));
   providers_.push_back(new KeywordProvider(this, profile));
-  providers_.push_back(new HistoryContentsProvider(this, profile));
+  providers_.push_back(new HistoryContentsProvider(this, profile, hqp_enabled));
   providers_.push_back(new BuiltinProvider(this, profile));
   providers_.push_back(new ExtensionAppProvider(this, profile));
   for (ACProviders::iterator i(providers_.begin()); i != providers_.end(); ++i)
@@ -864,9 +862,10 @@ void AutocompleteController::Start(
     if (matches_requested != AutocompleteInput::ALL_MATCHES)
       DCHECK((*i)->done());
   }
-  if (matches_requested == AutocompleteInput::ALL_MATCHES && text.size() < 6) {
+  if (matches_requested == AutocompleteInput::ALL_MATCHES &&
+      (text.length() < 6)) {
     base::TimeTicks end_time = base::TimeTicks::Now();
-    std::string name = "Omnibox.QueryTime." + base::IntToString(text.size());
+    std::string name = "Omnibox.QueryTime." + base::IntToString(text.length());
     base::Histogram* counter = base::Histogram::FactoryGet(
         name, 1, 1000, 50, base::Histogram::kUmaTargetedHistogramFlag);
     counter->Add(static_cast<int>((end_time - start_time).InMilliseconds()));

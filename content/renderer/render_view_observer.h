@@ -8,6 +8,7 @@
 
 #include "base/basictypes.h"
 #include "ipc/ipc_channel.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebIconURL.h"
 
 class RenderView;
 
@@ -15,6 +16,7 @@ namespace WebKit {
 class WebDataSource;
 class WebFrame;
 class WebFormElement;
+class WebMediaPlayerClient;
 class WebMouseEvent;
 class WebNode;
 class WebString;
@@ -34,7 +36,8 @@ class RenderViewObserver : public IPC::Channel::Listener,
   // These match the WebKit API notifications
   virtual void DidStartLoading() {}
   virtual void DidStopLoading() {}
-  virtual void DidChangeIcons(WebKit::WebFrame* frame) {}
+  virtual void DidChangeIcon(WebKit::WebFrame* frame,
+                             WebKit::WebIconURL::Type) {}
   virtual void DidFinishDocumentLoad(WebKit::WebFrame* frame) {}
   virtual void DidFailLoad(WebKit::WebFrame* frame,
                            const WebKit::WebURLError& error) {}
@@ -66,15 +69,12 @@ class RenderViewObserver : public IPC::Channel::Listener,
       const WebKit::WebString& property_name,
       unsigned long long event_id) {}
   virtual void FocusedNodeChanged(const WebKit::WebNode& node) {}
-  // If any observer returns false, then the request will be denied.
-  virtual bool AllowImages(WebKit::WebFrame* frame, bool enabled_per_settings);
-  virtual bool AllowPlugins(WebKit::WebFrame* frame, bool enabled_per_settings);
-  virtual bool AllowScript(WebKit::WebFrame* frame, bool enabled_per_settings);
-  virtual void DidNotAllowPlugins(WebKit::WebFrame* frame) {}
-  virtual void DidNotAllowScript(WebKit::WebFrame* frame) {}
 
   // These match the RenderView methods.
   virtual void DidHandleMouseEvent(const WebKit::WebMouseEvent& event) {}
+
+  virtual void WillCreateMediaPlayer(WebKit::WebFrame* frame,
+                                     WebKit::WebMediaPlayerClient* client) {}
 
  protected:
   explicit RenderViewObserver(RenderView* render_view);

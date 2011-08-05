@@ -31,8 +31,16 @@ const CommandLinePrefStore::BooleanSwitchToPreferenceMapEntry
       { switches::kEnableCloudPrintProxy, prefs::kCloudPrintProxyEnabled,
           true },
       { switches::kAllowOutdatedPlugins, prefs::kPluginsAllowOutdated, true },
+      { switches::kAlwaysAuthorizePlugins, prefs::kPluginsAlwaysAuthorize,
+          true },
       { switches::kNoPings, prefs::kEnableHyperlinkAuditing, false },
       { switches::kNoReferrers, prefs::kEnableReferrers, false },
+      { switches::kNoRunningInsecureContent,
+        prefs::kWebKitAllowRunningInsecureContent, false },
+      { switches::kNoDisplayingInsecureContent,
+        prefs::kWebKitAllowDisplayingInsecureContent, false },
+      { switches::kAllowCrossOriginAuthPrompt,
+        prefs::kAllowCrossOriginAuthPrompt, true },
 };
 
 CommandLinePrefStore::CommandLinePrefStore(const CommandLine* command_line)
@@ -84,7 +92,7 @@ void CommandLinePrefStore::ApplyProxyMode() {
     std::string pac_script_url =
         command_line_->GetSwitchValueASCII(switches::kProxyPacUrl);
     SetValue(prefs::kProxy,
-             ProxyConfigDictionary::CreatePacScript(pac_script_url));
+             ProxyConfigDictionary::CreatePacScript(pac_script_url, false));
   } else if (command_line_->HasSwitch(switches::kProxyAutoDetect)) {
     SetValue(prefs::kProxy,
              ProxyConfigDictionary::CreateAutoDetect());

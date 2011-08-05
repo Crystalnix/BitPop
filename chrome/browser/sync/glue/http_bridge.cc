@@ -216,8 +216,8 @@ void HttpBridge::MakeAsynchronousPost() {
   if (fetch_state_.aborted)
     return;
 
-  fetch_state_.url_poster = new URLFetcher(url_for_request_,
-                                           URLFetcher::POST, this);
+  fetch_state_.url_poster = URLFetcher::Create(0, url_for_request_,
+                                               URLFetcher::POST, this);
   fetch_state_.url_poster->set_request_context(context_getter_for_request_);
   fetch_state_.url_poster->set_upload_data(content_type_, request_content_);
   fetch_state_.url_poster->set_extra_request_headers(extra_headers_);
@@ -269,7 +269,7 @@ void HttpBridge::OnURLFetchComplete(const URLFetcher *source,
                                     const GURL &url,
                                     const net::URLRequestStatus &status,
                                     int response_code,
-                                    const ResponseCookies &cookies,
+                                    const net::ResponseCookies &cookies,
                                     const std::string &data) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   base::AutoLock lock(fetch_state_lock_);

@@ -19,11 +19,11 @@
 #include "chrome/browser/autocomplete/autocomplete.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/gpu_data_manager.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/pref_names.h"
+#include "content/browser/gpu/gpu_data_manager.h"
 #include "googleurl/src/gurl.h"
 #include "webkit/plugins/npapi/webplugininfo.h"
 
@@ -290,6 +290,7 @@ void MetricsLog::WritePluginList(
 #endif
     WriteAttribute("filename", CreateBase64Hash(filename_bytes));
     WriteAttribute("version", UTF16ToUTF8(iter->version));
+    WriteIntAttribute("disabled", !webkit::npapi::IsPluginEnabled(*iter));
   }
 }
 

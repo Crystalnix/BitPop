@@ -33,18 +33,8 @@ class NativeTheme {
  public:
   // The part to be painted / sized.
   enum Part {
-    kScrollbarDownArrow,
-    kScrollbarLeftArrow,
-    kScrollbarRightArrow,
-    kScrollbarUpArrow,
-    kScrollbarHorizontalThumb,
-    kScrollbarVerticalThumb,
-    kScrollbarHorizontalTrack,
-    kScrollbarVerticalTrack,
     kCheckbox,
-    kRadio,
-    kPushButton,
-    kTextField,
+    kInnerSpinButton,
     kMenuList,
     kMenuCheck,
     kMenuCheckBackground,
@@ -53,10 +43,30 @@ class NativeTheme {
     kMenuPopupGutter,
     kMenuPopupSeparator,
     kMenuItemBackground,
+    kProgressBar,
+    kPushButton,
+    kRadio,
+
+    // The order of the arrow enums is important, do not change without also
+    // changing the code in platform implementations.
+    kScrollbarDownArrow,
+    kScrollbarLeftArrow,
+    kScrollbarRightArrow,
+    kScrollbarUpArrow,
+
+    kScrollbarHorizontalThumb,
+    kScrollbarVerticalThumb,
+    kScrollbarHorizontalTrack,
+    kScrollbarVerticalTrack,
+    kScrollbarHorizontalGripper,
+    kScrollbarVerticalGripper,
     kSliderTrack,
     kSliderThumb,
-    kInnerSpinButton,
-    kProgressBar,
+    kTabPanelBackground,
+    kTextField,
+    kTrackbarThumb,
+    kTrackbarTrack,
+    kWindowResizeGripper,
     kMaxPart,
   };
 
@@ -69,15 +79,8 @@ class NativeTheme {
     kMaxState,
   };
 
-  // Each structure below hold extra information needed when painting a given
+  // Each structure below holds extra information needed when painting a given
   // part.
-
-  struct ScrollbarTrackExtraParams {
-    int track_x;
-    int track_y;
-    int track_width;
-    int track_height;
-  };
 
   struct ButtonExtraParams {
     bool checked;
@@ -88,18 +91,24 @@ class NativeTheme {
     SkColor background_color;
   };
 
-  struct TextFieldExtraParams {
-    bool is_text_area;
-    bool is_listbox;
-    SkColor background_color;
+  struct InnerSpinButtonExtraParams {
+    bool spin_up;
+    bool read_only;
+    int classic_state;  // Used on Windows when uxtheme is not available.
   };
 
   struct MenuArrowExtraParams {
     bool pointing_right;
+    // Used for the disabled state to indicate if the item is both disabled and
+    // selected.
+    bool is_selected;
   };
 
   struct MenuCheckExtraParams {
     bool is_radio;
+    // Used for the disabled state to indicate if the item is both disabled and
+    // selected.
+    bool is_selected;
   };
 
   struct MenuItemExtraParams {
@@ -112,23 +121,15 @@ class NativeTheme {
     int arrow_x;
     int arrow_y;
     SkColor background_color;
+    int classic_state;  // Used on Windows when uxtheme is not available.
   };
 
   struct MenuSeparatorExtraParams {
     bool has_gutter;
   };
 
-  struct SliderExtraParams {
-    bool vertical;
-    bool in_drag;
-  };
-
-  struct InnerSpinButtonExtraParams {
-    bool spin_up;
-    bool read_only;
-  };
-
   struct ProgressBarExtraParams {
+    double animated_seconds;
     bool determinate;
     int value_rect_x;
     int value_rect_y;
@@ -136,22 +137,65 @@ class NativeTheme {
     int value_rect_height;
   };
 
+  struct ScrollbarArrowExtraParams {
+    bool is_hovering;
+  };
+
+  struct ScrollbarTrackExtraParams {
+    bool is_upper;
+    int track_x;
+    int track_y;
+    int track_width;
+    int track_height;
+    int classic_state;  // Used on Windows when uxtheme is not available.
+  };
+
+  struct ScrollbarThumbExtraParams {
+    bool is_hovering;
+  };
+
+  struct SliderExtraParams {
+    bool vertical;
+    bool in_drag;
+  };
+
+  struct TextFieldExtraParams {
+    bool is_text_area;
+    bool is_listbox;
+    SkColor background_color;
+    bool is_read_only;
+    bool is_focused;
+    bool fill_content_area;
+    bool draw_edges;
+    int classic_state;  // Used on Windows when uxtheme is not available.
+  };
+
+  struct TrackbarExtraParams {
+    bool vertical;
+    int classic_state;  // Used on Windows when uxtheme is not available.
+  };
+
   union ExtraParams {
-    ScrollbarTrackExtraParams scrollbar_track;
     ButtonExtraParams button;
+    InnerSpinButtonExtraParams inner_spin;
     MenuArrowExtraParams menu_arrow;
     MenuCheckExtraParams menu_check;
     MenuItemExtraParams menu_item;
     MenuListExtraParams menu_list;
     MenuSeparatorExtraParams menu_separator;
+    ProgressBarExtraParams progress_bar;
+    ScrollbarArrowExtraParams scrollbar_arrow;
+    ScrollbarTrackExtraParams scrollbar_track;
+    ScrollbarThumbExtraParams scrollbar_thumb;
     SliderExtraParams slider;
     TextFieldExtraParams text_field;
-    InnerSpinButtonExtraParams inner_spin;
-    ProgressBarExtraParams progress_bar;
+    TrackbarExtraParams trackbar;
   };
 
   // Return the size of the part.
-  virtual Size GetPartSize(Part part) const = 0;
+  virtual Size GetPartSize(Part part,
+                           State state,
+                           const ExtraParams& extra) const = 0;
 
   // Paint the part to the canvas.
   virtual void Paint(SkCanvas* canvas,

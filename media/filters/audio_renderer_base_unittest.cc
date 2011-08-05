@@ -16,7 +16,6 @@ using ::testing::InSequence;
 using ::testing::Invoke;
 using ::testing::NotNull;
 using ::testing::Return;
-using ::testing::ReturnRef;
 using ::testing::StrictMock;
 
 namespace media {
@@ -32,7 +31,7 @@ class MockAudioRendererBase : public AudioRendererBase {
   MOCK_METHOD1(SetVolume, void(float volume));
 
   // AudioRendererBase implementation.
-  MOCK_METHOD1(OnInitialize, bool(const MediaFormat& media_format));
+  MOCK_METHOD1(OnInitialize, bool(const AudioDecoderConfig& config));
   MOCK_METHOD0(OnStop, void());
 
   // Used for verifying check points during tests.
@@ -57,12 +56,10 @@ class AudioRendererBaseTest : public ::testing::Test {
     EXPECT_CALL(*decoder_, ProduceAudioSamples(_))
         .WillRepeatedly(Invoke(this, &AudioRendererBaseTest::EnqueueCallback));
 
-    // Sets the essential media format keys for this decoder.
-    decoder_media_format_.SetAsInteger(MediaFormat::kChannels, 1);
-    decoder_media_format_.SetAsInteger(MediaFormat::kSampleRate, 44100);
-    decoder_media_format_.SetAsInteger(MediaFormat::kSampleBits, 16);
-    EXPECT_CALL(*decoder_, media_format())
-        .WillRepeatedly(ReturnRef(decoder_media_format_));
+    // Set up audio properties.
+    ON_CALL(*decoder_, config())
+        .WillByDefault(Return(AudioDecoderConfig(16, CHANNEL_LAYOUT_MONO,
+                                                 44100)));
   }
 
   virtual ~AudioRendererBaseTest() {
@@ -78,7 +75,6 @@ class AudioRendererBaseTest : public ::testing::Test {
   scoped_refptr<MockAudioRendererBase> renderer_;
   scoped_refptr<MockAudioDecoder> decoder_;
   StrictMock<MockFilterHost> host_;
-  MediaFormat decoder_media_format_;
 
   // Number of asynchronous read requests sent to |decoder_|.
   size_t pending_reads_;
@@ -122,7 +118,7 @@ TEST_F(AudioRendererBaseTest, Initialize_Successful) {
   // Now seek to trigger prerolling, verifying the callback hasn't been
   // executed yet.
   EXPECT_CALL(*renderer_, CheckPoint(0));
-  renderer_->Seek(base::TimeDelta(), NewExpectedCallback());
+  renderer_->Seek(base::TimeDelta(), NewExpectedStatusCB(PIPELINE_OK));
   EXPECT_EQ(kMaxQueueSize, pending_reads_);
   renderer_->CheckPoint(0);
 
@@ -132,7 +128,7 @@ TEST_F(AudioRendererBaseTest, Initialize_Successful) {
     scoped_refptr<DataBuffer> buffer(new DataBuffer(1024));
     buffer->SetDataSize(1024);
     --pending_reads_;
-    decoder_->consume_audio_samples_callback()->Run(buffer);
+    decoder_->ConsumeAudioSamplesForTest(buffer);
   }
 }
 
@@ -150,7 +146,7 @@ TEST_F(AudioRendererBaseTest, OneCompleteReadCycle) {
   // Now seek to trigger prerolling, verifying the callback hasn't been
   // executed yet.
   EXPECT_CALL(*renderer_, CheckPoint(0));
-  renderer_->Seek(base::TimeDelta(), NewExpectedCallback());
+  renderer_->Seek(base::TimeDelta(), NewExpectedStatusCB(PIPELINE_OK));
   EXPECT_EQ(kMaxQueueSize, pending_reads_);
   renderer_->CheckPoint(0);
 
@@ -161,7 +157,7 @@ TEST_F(AudioRendererBaseTest, OneCompleteReadCycle) {
   while (pending_reads_) {
     scoped_refptr<DataBuffer> buffer(new DataBuffer(kDataSize));
     buffer->SetDataSize(kDataSize);
-    decoder_->consume_audio_samples_callback()->Run(buffer);
+    decoder_->ConsumeAudioSamplesForTest(buffer);
     --pending_reads_;
     bytes_buffered += kDataSize;
   }
@@ -185,7 +181,7 @@ TEST_F(AudioRendererBaseTest, OneCompleteReadCycle) {
 
   // Fulfill the read with an end-of-stream packet.
   scoped_refptr<DataBuffer> last_buffer(new DataBuffer(0));
-  decoder_->consume_audio_samples_callback()->Run(last_buffer);
+  decoder_->ConsumeAudioSamplesForTest(last_buffer);
   --pending_reads_;
 
   // We shouldn't report ended until all data has been flushed out.

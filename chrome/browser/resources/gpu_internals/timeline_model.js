@@ -51,7 +51,8 @@ cr.define('gpu', function() {
   /**
    * A TimelineThread stores all the trace events collected for a particular
    * thread. We organize the slices on a thread by "subrows," where subrow 0
-   * has all the root slices, subrow 1 those nested 1 deep, and so on.
+   * has all the root slices, subrow 1 those nested 1 deep, and so on. There
+   * is also a set of non-nested subrows.
    *
    * @constructor
    */
@@ -59,6 +60,7 @@ cr.define('gpu', function() {
     this.parent = parent;
     this.tid = tid;
     this.subRows = [[]];
+    this.nonNestedSubRows = [];
   }
 
   TimelineThread.prototype = {
@@ -66,6 +68,18 @@ cr.define('gpu', function() {
       while (i >= this.subRows.length)
         this.subRows.push([]);
       return this.subRows[i];
+    },
+
+    addNonNestedSlice: function(slice) {
+      for (var i = 0; i < this.nonNestedSubRows.length; i++) {
+        var currSubRow = this.nonNestedSubRows[i];
+        var lastSlice = currSubRow[currSubRow.length - 1];
+        if (slice.start >= lastSlice.start + lastSlice.duration) {
+          currSubRow.push(slice);
+          return;
+        }
+      }
+      this.nonNestedSubRows.push([slice]);
     },
 
     updateBounds: function() {
@@ -132,9 +146,10 @@ cr.define('gpu', function() {
 
 
       // Threadstate
-      const numColorIds = 12;
+      const numColorIds = 30;
       function ThreadState(tid) {
         this.openSlices = [];
+        this.openNonNestedSlices = {};
       }
       var threadStateByPTID = {};
 
@@ -145,8 +160,9 @@ cr.define('gpu', function() {
           // coloring across traces.
           var hash = 0;
           for (var i = 0; i < name.length; ++i)
-            hash = (hash + 37 * hash + name.charCodeAt(i)) % 0xFFFFFFFF;
+            hash = (hash + 37 * hash + 11 * name.charCodeAt(i)) % 0xFFFFFFFF;
           nameToColorMap[name] = hash % numColorIds;
+          console.log(name, nameToColorMap[name]);
         }
         return nameToColorMap[name];
       }
@@ -163,24 +179,49 @@ cr.define('gpu', function() {
           var colorId = getColor(event.name);
           var slice = new TimelineSlice(event.name, colorId, event.ts,
                                         event.args);
-          state.openSlices.push(slice);
+          if (event.args['ui-nest'] === '0') {
+            var sliceID = event.name;
+            for (var x in event.args) {
+              sliceID += ';' + event.args[x];
+            }
+            if (state.openNonNestedSlices[sliceID])
+              console.log('Event ' + sliceID + ' already open.');
+            state.openNonNestedSlices[sliceID] = slice;
+          } else
+            state.openSlices.push(slice);
         } else if (event.ph == 'E') {
-          if (state.openSlices.length == 0) {
-            // Ignore E events that that are unmatched.
-            continue;
-          }
-          var slice = state.openSlices.pop();
-          slice.duration = event.ts - slice.start;
+          if (event.args['ui-nest'] === '0') {
+            var sliceID = event.name;
+            for (var x in event.args) {
+              sliceID += ';' + event.args[x];
+            }
+            var slice = state.openNonNestedSlices[sliceID];
+            if (!slice)
+              continue;
+            slice.duration = event.ts - slice.start;
 
-          // Store the slice on the right subrow.
-          var thread = this.getProcess(event.pid).getThread(event.tid);
-          var subRowIndex = state.openSlices.length;
-          thread.getSubrow(subRowIndex).push(slice);
+            // Store the slice in a non-nested subrow.
+            var thread = this.getProcess(event.pid).getThread(event.tid);
+            thread.addNonNestedSlice(slice);
+            delete state.openNonNestedSlices[name];
+          } else {
+            if (state.openSlices.length == 0) {
+              // Ignore E events that that are unmatched.
+              continue;
+            }
+            var slice = state.openSlices.pop();
+            slice.duration = event.ts - slice.start;
 
-          // Add the slice to the subSlices array of its parent.
-          if (state.openSlices.length) {
-            var parentSlice = state.openSlices[state.openSlices.length - 1];
-            parentSlice.subSlices.push(slice);
+            // Store the slice on the right subrow.
+            var thread = this.getProcess(event.pid).getThread(event.tid);
+            var subRowIndex = state.openSlices.length;
+            thread.getSubrow(subRowIndex).push(slice);
+
+            // Add the slice to the subSlices array of its parent.
+            if (state.openSlices.length) {
+              var parentSlice = state.openSlices[state.openSlices.length - 1];
+              parentSlice.subSlices.push(slice);
+            }
           }
         } else if (event.ph == 'I') {
           // TODO(nduca): Implement parsing of immediate events.
@@ -206,8 +247,10 @@ cr.define('gpu', function() {
       for (var tI = 0; tI < threads.length; tI++) {
         var thread = threads[tI];
         thread.updateBounds();
-        wmin = Math.min(wmin, thread.minTimestamp);
-        wmax = Math.max(wmax, thread.maxTimestamp);
+        if (thread.minTimestamp && thread.maxTimestamp) {
+          wmin = Math.min(wmin, thread.minTimestamp);
+          wmax = Math.max(wmax, thread.maxTimestamp);
+        }
       }
       this.minTimestamp = wmin;
       this.maxTimestamp = wmax;
@@ -218,13 +261,18 @@ cr.define('gpu', function() {
       var threads = this.getAllThreads();
       for (var tI = 0; tI < threads.length; tI++) {
         var thread = threads[tI];
-        for (var tSR = 0; tSR < thread.subRows.length; tSR++) {
-          var subRow = thread.subRows[tSR];
+        var shiftSubRow = function(subRow) {
           for (var tS = 0; tS < subRow.length; tS++) {
             var slice = subRow[tS];
             slice.start = (slice.start - timeBase) / 1000;
             slice.duration /= 1000;
           }
+        };
+        for (var tSR = 0; tSR < thread.subRows.length; tSR++) {
+          shiftSubRow(thread.subRows[tSR]);
+        }
+        for (var tSR = 0; tSR < thread.nonNestedSubRows.length; tSR++) {
+          shiftSubRow(thread.nonNestedSubRows[tSR]);
         }
       }
 

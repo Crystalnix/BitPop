@@ -10,18 +10,21 @@
 #include "base/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/common/extensions/extension_messages.h"
-#include "chrome/common/render_messages.h"
+#include "content/browser/child_process_security_policy.h"
+#include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/browser/tab_contents/tab_contents_view.h"
 #include "content/browser/webui/generic_handler.h"
 #include "content/common/bindings_policy.h"
+#include "content/common/view_messages.h"
+#include "ipc/ipc_message.h"
+#include "ipc/ipc_message_macros.h"
 
-namespace {
-
-string16 GetJavascript(const std::string& function_name,
-                       const std::vector<const Value*>& arg_list) {
+// static
+string16 WebUI::GetJavascriptCall(
+    const std::string& function_name,
+    const std::vector<const Value*>& arg_list) {
   string16 parameters;
   std::string json;
   for (size_t i = 0; i < arg_list.size(); ++i) {
@@ -34,8 +37,6 @@ string16 GetJavascript(const std::string& function_name,
   return ASCIIToUTF16(function_name) +
       char16('(') + parameters + char16(')') + char16(';');
 }
-
-}  // namespace
 
 WebUI::WebUI(TabContents* contents)
     : hide_favicon_(false),
@@ -60,16 +61,32 @@ WebUI::~WebUI() {
 
 const WebUI::TypeID WebUI::kNoWebUI = NULL;
 
-void WebUI::ProcessWebUIMessage(
-    const ExtensionHostMsg_DomMessage_Params& params) {
+bool WebUI::OnMessageReceived(const IPC::Message& message) {
+  bool handled = true;
+  IPC_BEGIN_MESSAGE_MAP(WebUI, message)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_WebUISend, OnWebUISend)
+    IPC_MESSAGE_UNHANDLED(handled = false)
+  IPC_END_MESSAGE_MAP()
+  return handled;
+}
+
+void WebUI::OnWebUISend(const GURL& source_url,
+                        const std::string& message,
+                        const ListValue& args) {
+  if (!ChildProcessSecurityPolicy::GetInstance()->
+          HasWebUIBindings(tab_contents_->GetRenderProcessHost()->id())) {
+    NOTREACHED() << "Blocked unauthorized use of WebUIBindings.";
+    return;
+  }
+
   // Look up the callback for this message.
   MessageCallbackMap::const_iterator callback =
-      message_callbacks_.find(params.name);
+      message_callbacks_.find(message);
   if (callback == message_callbacks_.end())
     return;
 
   // Forward this message and content on.
-  callback->second->Run(&params.arguments);
+  callback->second->Run(&args);
 }
 
 void WebUI::CallJavascriptFunction(const std::string& function_name) {
@@ -83,7 +100,7 @@ void WebUI::CallJavascriptFunction(const std::string& function_name,
   DCHECK(IsStringASCII(function_name));
   std::vector<const Value*> args;
   args.push_back(&arg);
-  ExecuteJavascript(GetJavascript(function_name, args));
+  ExecuteJavascript(WebUI::GetJavascriptCall(function_name, args));
 }
 
 void WebUI::CallJavascriptFunction(
@@ -93,7 +110,7 @@ void WebUI::CallJavascriptFunction(
   std::vector<const Value*> args;
   args.push_back(&arg1);
   args.push_back(&arg2);
-  ExecuteJavascript(GetJavascript(function_name, args));
+  ExecuteJavascript(WebUI::GetJavascriptCall(function_name, args));
 }
 
 void WebUI::CallJavascriptFunction(
@@ -104,7 +121,7 @@ void WebUI::CallJavascriptFunction(
   args.push_back(&arg1);
   args.push_back(&arg2);
   args.push_back(&arg3);
-  ExecuteJavascript(GetJavascript(function_name, args));
+  ExecuteJavascript(WebUI::GetJavascriptCall(function_name, args));
 }
 
 void WebUI::CallJavascriptFunction(
@@ -119,14 +136,14 @@ void WebUI::CallJavascriptFunction(
   args.push_back(&arg2);
   args.push_back(&arg3);
   args.push_back(&arg4);
-  ExecuteJavascript(GetJavascript(function_name, args));
+  ExecuteJavascript(WebUI::GetJavascriptCall(function_name, args));
 }
 
 void WebUI::CallJavascriptFunction(
     const std::string& function_name,
     const std::vector<const Value*>& args) {
   DCHECK(IsStringASCII(function_name));
-  ExecuteJavascript(GetJavascript(function_name, args));
+  ExecuteJavascript(WebUI::GetJavascriptCall(function_name, args));
 }
 
 void WebUI::RegisterMessageCallback(const std::string &message,

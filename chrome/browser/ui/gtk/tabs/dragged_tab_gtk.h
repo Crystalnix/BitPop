@@ -8,11 +8,12 @@
 
 #include <gtk/gtk.h>
 
-#include "base/callback.h"
+#include "base/callback_old.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/task.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/base/animation/slide_animation.h"
+#include "ui/base/gtk/gtk_signal.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
@@ -98,8 +99,7 @@ class DraggedTabGtk : public ui::AnimationDelegate {
   void SetContainerShapeMask(cairo_surface_t* surface);
 
   // expose-event handler that notifies when the tab needs to be redrawn.
-  static gboolean OnExposeEvent(GtkWidget* widget, GdkEventExpose* event,
-                                DraggedTabGtk* dragged_tab);
+  CHROMEGTK_CALLBACK_1(DraggedTabGtk, gboolean, OnExpose, GdkEventExpose*);
 
   // The tab contents that the dragged tab contains.
   TabContents* data_source_;

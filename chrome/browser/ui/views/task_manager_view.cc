@@ -27,6 +27,7 @@
 #include "views/background.h"
 #include "views/controls/button/native_button.h"
 #include "views/controls/link.h"
+#include "views/controls/link_listener.h"
 #include "views/controls/menu/menu.h"
 #include "views/controls/table/group_table_view.h"
 #include "views/controls/table/table_view_observer.h"
@@ -138,6 +139,9 @@ string16 TaskManagerTableModel::GetText(int row, int col_id) {
       if (!model_->IsResourceFirstInGroup(row))
         return string16();
       return model_->GetResourceWebCoreCSSCacheSize(row);
+
+    case IDS_TASK_MANAGER_FPS_COLUMN:
+      return model_->GetResourceFPS(row);
 
     case IDS_TASK_MANAGER_SQLITE_MEMORY_USED_COLUMN:
       if (!model_->IsResourceFirstInGroup(row))
@@ -257,7 +261,7 @@ class TaskManagerView : public views::View,
                         public views::ButtonListener,
                         public views::DialogDelegate,
                         public views::TableViewObserver,
-                        public views::LinkController,
+                        public views::LinkListener,
                         public views::ContextMenuController,
                         public views::Menu::Delegate {
  public:
@@ -293,8 +297,8 @@ class TaskManagerView : public views::View,
   virtual void OnDoubleClick();
   virtual void OnKeyDown(ui::KeyboardCode keycode);
 
-  // views::LinkController implementation.
-  virtual void LinkActivated(views::Link* source, int event_flags);
+  // views::LinkListener implementation.
+  virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
 
   // Called by the column picker to pick up any new stat counters that
   // may have appeared since last time.
@@ -407,6 +411,9 @@ void TaskManagerView::Init() {
   columns_.push_back(ui::TableColumn(IDS_TASK_MANAGER_WEBCORE_CSS_CACHE_COLUMN,
                                      ui::TableColumn::RIGHT, -1, 0));
   columns_.back().sortable = true;
+  columns_.push_back(ui::TableColumn(IDS_TASK_MANAGER_FPS_COLUMN,
+                                     ui::TableColumn::RIGHT, -1, 0));
+  columns_.back().sortable = true;
   columns_.push_back(ui::TableColumn(IDS_TASK_MANAGER_SQLITE_MEMORY_USED_COLUMN,
                                      ui::TableColumn::RIGHT, -1, 0));
   columns_.back().sortable = true;
@@ -452,7 +459,7 @@ void TaskManagerView::Init() {
   kill_button_->SetAccessibleKeyboardShortcut(L"E");
   about_memory_link_ = new views::Link(UTF16ToWide(
       l10n_util::GetStringUTF16(IDS_TASK_MANAGER_ABOUT_MEMORY_LINK)));
-  about_memory_link_->SetController(this);
+  about_memory_link_->set_listener(this);
 
   // Makes sure our state is consistent.
   OnSelectionChanged();
@@ -560,7 +567,7 @@ void TaskManagerView::Show(bool highlight_background_resources) {
   if (instance_) {
     if (instance_->highlight_background_resources_ !=
         highlight_background_resources) {
-      instance_->window()->CloseWindow();
+      instance_->window()->Close();
     } else {
       // If there's a Task manager window open already, just activate it.
       instance_->window()->Activate();
@@ -619,7 +626,7 @@ bool TaskManagerView::ExecuteWindowsCommand(int command_id) {
     r = SetMenuItemInfo(system_menu, IDC_ALWAYS_ON_TOP, FALSE, &menu_info);
 
     // Now change the actual window's behavior.
-    window()->SetIsAlwaysOnTop(is_always_on_top_);
+    window()->SetAlwaysOnTop(is_always_on_top_);
 
     // Save the state.
     if (g_browser_process->local_state()) {
@@ -681,8 +688,7 @@ void TaskManagerView::OnKeyDown(ui::KeyboardCode keycode) {
     ActivateFocusedTab();
 }
 
-// views::LinkController implementation
-void TaskManagerView::LinkActivated(views::Link* source, int event_flags) {
+void TaskManagerView::LinkClicked(views::Link* source, int event_flags) {
   DCHECK(source == about_memory_link_);
   task_manager_->OpenAboutMemory();
 }
@@ -712,7 +718,7 @@ void TaskManagerView::ExecuteCommand(int id) {
 void TaskManagerView::InitAlwaysOnTopState() {
   is_always_on_top_ = false;
   if (GetSavedAlwaysOnTopState(&is_always_on_top_))
-    window()->SetIsAlwaysOnTop(is_always_on_top_);
+    window()->SetAlwaysOnTop(is_always_on_top_);
   AddAlwaysOnTopSystemMenuItem();
 }
 

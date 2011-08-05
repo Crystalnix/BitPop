@@ -119,19 +119,22 @@ class TreeNode : public TreeModelNode {
   }
 
   // Returns the node at |index|.
-  NodeType* GetChild(int index) {
-    DCHECK(index >= 0 && index < child_count());
-    return children_[index];
-  }
   const NodeType* GetChild(int index) const {
     DCHECK_LE(0, index);
     DCHECK_GT(child_count(), index);
     return children_[index];
   }
+  NodeType* GetChild(int index) {
+    return const_cast<NodeType*>(
+        static_cast<const NodeType&>(*this).GetChild(index));
+  }
 
   // Returns the parent of this object, or NULL if it's the root.
   const NodeType* parent() const { return parent_; }
   NodeType* parent() { return parent_; }
+
+  // Returns true if this is the root node.
+  bool is_root() const { return parent_ == NULL; }
 
   // Returns the index of |node|, or -1 if |node| is not a child of this.
   int GetIndexOf(const NodeType* node) const {
@@ -148,9 +151,6 @@ class TreeNode : public TreeModelNode {
 
   // TreeModelNode:
   virtual const string16& GetTitle() const OVERRIDE { return title_; }
-
-  // Returns true if this is the root.
-  bool IsRoot() const { return parent_ == NULL; }
 
   // Returns true if this == ancestor, or one of this nodes parents is
   // ancestor.

@@ -17,10 +17,15 @@
 #include "googleurl/src/gurl.h"
 #include "ppapi/c/dev/pp_cursor_type_dev.h"
 #include "ppapi/c/dev/ppp_graphics_3d_dev.h"
+// TODO(dmichael): Remove the 0.3 printing interface and remove the following
+//                 #define.
+#define PPP_PRINTING_DEV_USE_0_4 1
 #include "ppapi/c/dev/ppp_printing_dev.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_resource.h"
+#include "ppapi/c/ppp_instance.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/skia/include/core/SkRefCnt.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCanvas.h"
 #include "ui/gfx/rect.h"
 #include "webkit/plugins/ppapi/plugin_delegate.h"
@@ -29,12 +34,10 @@ typedef struct NPObject NPObject;
 struct PP_Var;
 struct PPB_Instance;
 struct PPB_Instance_Private;
-struct PPB_Find_Dev;
 struct PPB_Fullscreen_Dev;
 struct PPB_Messaging;
 struct PPB_Zoom_Dev;
 struct PPP_Find_Dev;
-struct PPP_Instance;
 struct PPP_Instance_Private;
 struct PPP_Messaging;
 struct PPP_Pdf;
@@ -76,19 +79,23 @@ class Resource;
 // ResourceTracker.
 class PluginInstance : public base::RefCounted<PluginInstance> {
  public:
+  struct PPP_Instance_Combined;
+
   PluginInstance(PluginDelegate* delegate,
                  PluginModule* module,
-                 const PPP_Instance* instance_interface);
+                 PPP_Instance_Combined* instance_interface);
 
   // Delete should be called by the WebPlugin before this destructor.
   ~PluginInstance();
 
-  static const PPB_Instance* GetInterface();
+  // Return a PPB_Instance interface compatible with the given interface name,
+  // if one is available.  Returns NULL if the requested interface is
+  // not supported.
+  static const void* GetInterface(const char* if_name);
   static const PPB_Instance_Private* GetPrivateInterface();
 
   // Returns a pointer to the interface implementing PPB_Find that is
   // exposed to the plugin.
-  static const PPB_Find_Dev* GetFindInterface();
   static const PPB_Fullscreen_Dev* GetFullscreenInterface();
   static const PPB_Messaging* GetMessagingInterface();
   static const PPB_Zoom_Dev* GetZoomInterface();
@@ -134,7 +141,7 @@ class PluginInstance : public base::RefCounted<PluginInstance> {
 
   // If the plugin instance is backed by a texture, return its texture ID in the
   // compositor's namespace. Otherwise return 0. Returns 0 by default.
-  virtual unsigned GetBackingTextureId();
+  unsigned GetBackingTextureId();
 
   // Commit the backing texture to the screen once the side effects some
   // rendering up to an offscreen SwapBuffers are visible.
@@ -261,11 +268,27 @@ class PluginInstance : public base::RefCounted<PluginInstance> {
     return fullscreen_container_;
   }
 
+  // TODO(dmichael): Remove this when all plugins are ported to use scripting
+  //                 from private interfaces.
+  struct PPP_Instance_Combined : public PPP_Instance_0_5 {
+    PPP_Instance_Combined(const PPP_Instance_0_5& instance_if);
+    PPP_Instance_Combined(const PPP_Instance_0_4& instance_if);
+
+    struct PP_Var (*GetInstanceObject_0_4)(PP_Instance instance);
+  };
+  template <class InterfaceType>
+  static PPP_Instance_Combined* new_instance_interface(
+      const void* interface_object) {
+    return new PPP_Instance_Combined(
+        *static_cast<const InterfaceType*>(interface_object));
+  }
+
  private:
   bool LoadFindInterface();
   bool LoadMessagingInterface();
   bool LoadPdfInterface();
   bool LoadSelectionInterface();
+  bool LoadPrintInterface();
   bool LoadPrivateInterface();
   bool LoadZoomInterface();
 
@@ -287,7 +310,7 @@ class PluginInstance : public base::RefCounted<PluginInstance> {
   bool DrawJPEGToPlatformDC(const SkBitmap& bitmap,
                             const gfx::Rect& printable_area,
                             WebKit::WebCanvas* canvas);
-#elif defined(OS_MACOSX)
+#elif defined(OS_MACOSX) && !defined(USE_SKIA)
   // Draws the given kARGB_8888_Config bitmap to the specified canvas starting
   // at the specified destination rect.
   void DrawSkBitmapToCanvas(const SkBitmap& bitmap, WebKit::WebCanvas* canvas,
@@ -314,7 +337,7 @@ class PluginInstance : public base::RefCounted<PluginInstance> {
 
   PluginDelegate* delegate_;
   scoped_refptr<PluginModule> module_;
-  const PPP_Instance* instance_interface_;
+  scoped_ptr<PPP_Instance_Combined> instance_interface_;
 
   PP_Instance pp_instance_;
 
@@ -371,23 +394,55 @@ class PluginInstance : public base::RefCounted<PluginInstance> {
   // to keep the pixels valid until CGContextEndPage is called. We use this
   // variable to hold on to the pixels.
   scoped_refptr<PPB_ImageData_Impl> last_printed_page_;
-#elif defined(OS_LINUX)
-  // On Linux, all pages need to be written to a PDF file in one shot. However,
-  // when users print only a subset of all the pages, it is impossible to know
-  // if a call to PrintPage() is the last call. Thus in PrintPage(), just store
-  // the page number in |ranges_|.
+#endif  // defined(OS_MACOSX)
+#if WEBKIT_USING_SKIA
+  // When printing to PDF (print preview, Linux) the entire document goes into
+  // one metafile.  However, when users print only a subset of all the pages,
+  // it is impossible to know if a call to PrintPage() is the last call.
+  // Thus in PrintPage(), just store the page number in |ranges_|.
   // The hack is in PrintEnd(), where a valid |canvas_| is preserved in
   // PrintWebViewHelper::PrintPages. This makes it possible to generate the
   // entire PDF given the variables below:
   //
   // The most recently used WebCanvas, guaranteed to be valid.
-  WebKit::WebCanvas* canvas_;
+  SkRefPtr<WebKit::WebCanvas> canvas_;
   // An array of page ranges.
   std::vector<PP_PrintPageNumberRange_Dev> ranges_;
-#endif  // defined(OS_LINUX)
+#endif  // WEBKIT_USING_SKIA
 
-  // The plugin print interface.
-  const PPP_Printing_Dev* plugin_print_interface_;
+  // The plugin print interface.  This nested struct adds functions needed for
+  // backwards compatibility.
+  struct PPP_Printing_Dev_Combined : public PPP_Printing_Dev {
+    // Conversion constructor for the most current interface.  Sets all old
+    // functions to NULL, so we know not to try to use them.
+    PPP_Printing_Dev_Combined(const PPP_Printing_Dev& base_if)
+        : PPP_Printing_Dev(base_if),
+          QuerySupportedFormats_0_3(NULL),
+          Begin_0_3(NULL) {}
+
+    // Conversion constructor for version 0.3.  Sets unsupported functions to
+    // NULL, so we know not to try to use them.
+    PPP_Printing_Dev_Combined(const PPP_Printing_Dev_0_3& old_if)
+        : PPP_Printing_Dev(),  // NOTE: The parens are important, to zero-
+                               // initialize the struct.
+                               // Except older version of g++ doesn't!
+                               // So do it explicitly in the ctor.
+          QuerySupportedFormats_0_3(old_if.QuerySupportedFormats),
+          Begin_0_3(old_if.Begin) {
+      QuerySupportedFormats = NULL;
+      Begin = NULL;
+      PrintPages = old_if.PrintPages;
+      End = old_if.End;
+    }
+
+    // The 0.3 version of 'QuerySupportedFormats'.
+    PP_PrintOutputFormat_Dev_0_3* (*QuerySupportedFormats_0_3)(
+        PP_Instance instance, uint32_t* format_count);
+    // The 0.3 version of 'Begin'.
+    int32_t (*Begin_0_3)(PP_Instance instance,
+                         const struct PP_PrintSettings_Dev_0_3* print_settings);
+  };
+  scoped_ptr<PPP_Printing_Dev_Combined> plugin_print_interface_;
 
   // The plugin 3D interface.
   const PPP_Graphics3D_Dev* plugin_graphics_3d_interface_;

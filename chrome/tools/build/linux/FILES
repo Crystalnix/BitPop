@@ -8,6 +8,9 @@ locales
 product_logo_48.png
 resources
 resources.pak
+xdg-mime
 xdg-settings
 libpdf.so
 libppGoogleNaClPluginChrome.so
+nacl_irt_x86_32.nexe
+nacl_irt_x86_64.nexe

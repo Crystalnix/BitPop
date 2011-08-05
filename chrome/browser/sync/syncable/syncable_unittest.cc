@@ -24,8 +24,8 @@
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_temp_dir.h"
-#include "base/string_util.h"
+#include "base/scoped_temp_dir.h"
+#include "base/stringprintf.h"
 #include "base/threading/platform_thread.h"
 #include "base/values.h"
 #include "chrome/browser/sync/engine/syncproto.h"
@@ -40,8 +40,8 @@
 #include "third_party/sqlite/sqlite3.h"
 
 using browser_sync::TestIdFactory;
-using test::ExpectBooleanValue;
-using test::ExpectStringValue;
+using test::ExpectDictBooleanValue;
+using test::ExpectDictStringValue;
 
 namespace syncable {
 
@@ -268,7 +268,7 @@ TEST_F(SyncableGeneralTest, ToValue) {
     EXPECT_FALSE(e.good());  // Hasn't been written yet.
 
     scoped_ptr<DictionaryValue> value(e.ToValue());
-    ExpectBooleanValue(false, *value, "good");
+    ExpectDictBooleanValue(false, *value, "good");
     EXPECT_EQ(1u, value->size());
   }
 
@@ -281,13 +281,13 @@ TEST_F(SyncableGeneralTest, ToValue) {
     me.Put(BASE_VERSION, 1);
 
     scoped_ptr<DictionaryValue> value(me.ToValue());
-    ExpectBooleanValue(true, *value, "good");
+    ExpectDictBooleanValue(true, *value, "good");
     EXPECT_TRUE(value->HasKey("kernel"));
-    ExpectStringValue("Unspecified", *value, "serverModelType");
-    ExpectStringValue("Unspecified", *value, "modelType");
-    ExpectBooleanValue(false, *value, "shouldMaintainPosition");
-    ExpectBooleanValue(true, *value, "existsOnClientBecauseNameIsNonEmpty");
-    ExpectBooleanValue(false, *value, "isRoot");
+    ExpectDictStringValue("Unspecified", *value, "serverModelType");
+    ExpectDictStringValue("Unspecified", *value, "modelType");
+    ExpectDictBooleanValue(false, *value, "shouldMaintainPosition");
+    ExpectDictBooleanValue(true, *value, "existsOnClientBecauseNameIsNonEmpty");
+    ExpectDictBooleanValue(false, *value, "isRoot");
   }
 
   dir.SaveChanges();
@@ -315,14 +315,16 @@ class TestUnsaveableDirectory : public Directory {
 // Test suite for syncable::Directory.
 class SyncableDirectoryTest : public testing::Test {
  protected:
-  static const FilePath::CharType kFilePath[];
+  ScopedTempDir temp_dir_;
   static const char kName[];
   static const Id kId;
 
   // SetUp() is called before each test case is run.
   // The sqlite3 DB is deleted before each test is run.
   virtual void SetUp() {
-    file_path_ = FilePath(kFilePath);
+    ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
+    file_path_ = temp_dir_.path().Append(
+        FILE_PATH_LITERAL("Test.sqlite3"));
     file_util::Delete(file_path_, true);
     dir_.reset(new Directory());
     ASSERT_TRUE(dir_.get());
@@ -675,8 +677,6 @@ TEST_F(SyncableDirectoryTest, TakeSnapshotGetsOnlyDirtyHandlesTest) {
   }
 }
 
-const FilePath::CharType SyncableDirectoryTest::kFilePath[] =
-    FILE_PATH_LITERAL("Test.sqlite3");
 const char SyncableDirectoryTest::kName[] = "Foo";
 const Id SyncableDirectoryTest::kId(TestIdFactory::FromNumber(-99));
 
@@ -1199,7 +1199,7 @@ TEST_F(SyncableDirectoryTest, TestSaveChangesFailure) {
   // always fail.
   dir_.reset(new TestUnsaveableDirectory());
   ASSERT_TRUE(dir_.get());
-  ASSERT_TRUE(OPENED == dir_->Open(FilePath(kFilePath), kName));
+  ASSERT_TRUE(OPENED == dir_->Open(file_path_, kName));
   ASSERT_TRUE(dir_->good());
   int64 handle2 = 0;
   {
@@ -1272,7 +1272,7 @@ TEST_F(SyncableDirectoryTest, TestSaveChangesFailureWithPurge) {
   // always fail.
   dir_.reset(new TestUnsaveableDirectory());
   ASSERT_TRUE(dir_.get());
-  ASSERT_TRUE(OPENED == dir_->Open(FilePath(kFilePath), kName));
+  ASSERT_TRUE(OPENED == dir_->Open(file_path_, kName));
   ASSERT_TRUE(dir_->good());
 
   ModelTypeSet set;
@@ -1385,8 +1385,20 @@ void SyncableDirectoryTest::ValidateEntry(BaseTransaction* trans,
 
 namespace {
 
-TEST(SyncableDirectoryManager, TestFileRelease) {
-  DirectoryManager dm(FilePath(FILE_PATH_LITERAL(".")));
+class SyncableDirectoryManager : public testing::Test {
+ public:
+  virtual void SetUp() {
+    ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
+  }
+
+  virtual void TearDown() {
+  }
+ protected:
+  ScopedTempDir temp_dir_;
+};
+
+TEST_F(SyncableDirectoryManager, TestFileRelease) {
+  DirectoryManager dm(FilePath(temp_dir_.path()));
   ASSERT_TRUE(dm.Open("ScopeTest"));
   {
     ScopedDirLookup(&dm, "ScopeTest");
@@ -1410,8 +1422,8 @@ class ThreadOpenTestDelegate : public base::PlatformThread::Delegate {
   DISALLOW_COPY_AND_ASSIGN(ThreadOpenTestDelegate);
 };
 
-TEST(SyncableDirectoryManager, ThreadOpenTest) {
-  DirectoryManager dm(FilePath(FILE_PATH_LITERAL(".")));
+TEST_F(SyncableDirectoryManager, ThreadOpenTest) {
+  DirectoryManager dm(FilePath(temp_dir_.path()));
   base::PlatformThreadHandle thread_handle;
   ThreadOpenTestDelegate test_delegate(&dm);
   ASSERT_TRUE(base::PlatformThread::Create(0, &test_delegate, &thread_handle));
@@ -1489,10 +1501,10 @@ class ThreadBugDelegate : public base::PlatformThread::Delegate {
   DISALLOW_COPY_AND_ASSIGN(ThreadBugDelegate);
 };
 
-TEST(SyncableDirectoryManager, ThreadBug1) {
+TEST_F(SyncableDirectoryManager, ThreadBug1) {
   Step step;
   step.number = 0;
-  DirectoryManager dirman(FilePath(FILE_PATH_LITERAL(".")));
+  DirectoryManager dirman(FilePath(temp_dir_.path()));
   ThreadBugDelegate thread_delegate_1(0, &step, &dirman);
   ThreadBugDelegate thread_delegate_2(1, &step, &dirman);
 
@@ -1586,10 +1598,10 @@ class DirectoryKernelStalenessBugDelegate : public ThreadBugDelegate {
   DISALLOW_COPY_AND_ASSIGN(DirectoryKernelStalenessBugDelegate);
 };
 
-TEST(SyncableDirectoryManager, DirectoryKernelStalenessBug) {
+TEST_F(SyncableDirectoryManager, DirectoryKernelStalenessBug) {
   Step step;
 
-  DirectoryManager dirman(FilePath(FILE_PATH_LITERAL(".")));
+  DirectoryManager dirman(FilePath(temp_dir_.path()));
   DirectoryKernelStalenessBugDelegate thread_delegate_1(0, &step, &dirman);
   DirectoryKernelStalenessBugDelegate thread_delegate_2(1, &step, &dirman);
 
@@ -1633,8 +1645,8 @@ class StressTransactionsDelegate : public base::PlatformThread::Delegate {
         CHECK(1 == CountEntriesWithName(&trans, trans.root_id(), path_name));
         base::PlatformThread::Sleep(rand() % 10);
       } else {
-        std::string unique_name = StringPrintf("%d.%d", thread_number_,
-                                               entry_count++);
+        std::string unique_name =
+            base::StringPrintf("%d.%d", thread_number_, entry_count++);
         path_name.assign(unique_name.begin(), unique_name.end());
         WriteTransaction trans(dir, UNITTEST, __FILE__, __LINE__);
         MutableEntry e(&trans, CREATE, trans.root_id(), path_name);
@@ -1653,7 +1665,9 @@ class StressTransactionsDelegate : public base::PlatformThread::Delegate {
 };
 
 TEST(SyncableDirectory, StressTransactions) {
-  DirectoryManager dirman(FilePath(FILE_PATH_LITERAL(".")));
+  ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  DirectoryManager dirman(FilePath(temp_dir.path()));
   std::string dirname = "stress";
   file_util::Delete(dirman.GetSyncDataDatabasePath(), true);
   dirman.Open(dirname);

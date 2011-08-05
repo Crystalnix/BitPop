@@ -208,10 +208,6 @@ BitmapPlatformDevice::~BitmapPlatformDevice() {
   data_->unref();
 }
 
-SkDeviceFactory* BitmapPlatformDevice::getDeviceFactory() {
-  return SkNEW(BitmapPlatformDeviceFactory);
-}
-
 BitmapPlatformDevice& BitmapPlatformDevice::operator=(
     const BitmapPlatformDevice& other) {
   data_ = other.data_;
@@ -230,8 +226,8 @@ void BitmapPlatformDevice::setMatrixClip(const SkMatrix& transform,
   data_->SetMatrixClip(transform, region);
 }
 
-void BitmapPlatformDevice::DrawToContext(CGContextRef context, int x, int y,
-                                         const CGRect* src_rect) {
+void BitmapPlatformDevice::DrawToNativeContext(CGContextRef context, int x,
+                                               int y, const CGRect* src_rect) {
   bool created_dc = false;
   if (!data_->bitmap_context()) {
     created_dc = true;
@@ -261,20 +257,12 @@ void BitmapPlatformDevice::DrawToContext(CGContextRef context, int x, int y,
     data_->ReleaseBitmapContext();
 }
 
-bool BitmapPlatformDevice::IsVectorial() {
-  return false;
-}
-
-// Returns the color value at the specified location.
-SkColor BitmapPlatformDevice::getColorAt(int x, int y) {
-  const SkBitmap& bitmap = accessBitmap(true);
-  SkAutoLockPixels lock(bitmap);
-  uint32_t* data = bitmap.getAddr32(0, 0);
-  return static_cast<SkColor>(data[x + y * width()]);
-}
-
 void BitmapPlatformDevice::onAccessBitmap(SkBitmap*) {
   // Not needed in CoreGraphics
+}
+
+SkDeviceFactory* BitmapPlatformDevice::onNewDeviceFactory() {
+  return SkNEW(BitmapPlatformDeviceFactory);
 }
 
 }  // namespace skia

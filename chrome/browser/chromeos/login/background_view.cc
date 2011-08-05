@@ -28,6 +28,7 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/views/dom_view.h"
 #include "chrome/browser/ui/views/window.h"
+#include "chrome/common/chrome_version_info.h"
 #include "googleurl/src/gurl.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -40,20 +41,14 @@
 #include "views/controls/button/text_button.h"
 #include "views/controls/label.h"
 #include "views/screen.h"
-#include "views/widget/widget_gtk.h"
 #include "views/window/window.h"
 
-// X Windows headers have "#define Status int". That interferes with
-// NetworkLibrary header which defines enum "Status".
-#include <X11/cursorfont.h>  // NOLINT
-#include <X11/Xcursor/Xcursor.h>  // NOLINT
-
 using views::Widget;
-using views::WidgetGtk;
 
 namespace {
 
 const SkColor kVersionColor = 0xff5c739f;
+const char kPlatformLabel[] = "cros:";
 
 // Returns the corresponding step id for step constant.
 int GetStepId(size_t step) {
@@ -74,41 +69,6 @@ int GetStepId(size_t step) {
   }
 }
 
-// The same as TextButton but switches cursor to hand cursor when mouse
-// is over the button.
-class TextButtonWithHandCursorOver : public views::TextButton {
- public:
-  TextButtonWithHandCursorOver(views::ButtonListener* listener,
-                               const std::wstring& text)
-      : views::TextButton(listener, text) {
-  }
-
-  virtual ~TextButtonWithHandCursorOver() {}
-
-  virtual gfx::NativeCursor GetCursorForPoint(
-      ui::EventType event_type,
-      const gfx::Point& p) {
-    if (!IsEnabled()) {
-      return NULL;
-    }
-    return gfx::GetCursor(GDK_HAND2);
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(TextButtonWithHandCursorOver);
-};
-
-// This gets rid of the ugly X default cursor.
-static void ResetXCursor() {
-  // TODO(sky): nuke this once new window manager is in place.
-  Display* display = ui::GetXDisplay();
-  Cursor cursor = XCreateFontCursor(display, XC_left_ptr);
-  XID root_window = ui::GetX11RootWindow();
-  XSetWindowAttributes attr;
-  attr.cursor = cursor;
-  XChangeWindowAttributes(display, root_window, CWCursor, &attr);
-}
-
 }  // namespace
 
 namespace chromeos {
@@ -122,7 +82,6 @@ BackgroundView::BackgroundView()
       boot_times_label_(NULL),
       progress_bar_(NULL),
       shutdown_button_(NULL),
-      did_paint_(false),
 #if defined(OFFICIAL_BUILD)
       is_official_build_(true),
 #else
@@ -130,6 +89,8 @@ BackgroundView::BackgroundView()
 #endif
       background_area_(NULL) {
 }
+
+BackgroundView::~BackgroundView() {}
 
 void BackgroundView::Init(const GURL& background_url) {
   views::Painter* painter = CreateBackgroundPainter();
@@ -167,11 +128,10 @@ views::Widget* BackgroundView::CreateWindowContainingView(
     const gfx::Rect& bounds,
     const GURL& background_url,
     BackgroundView** view) {
-  ResetXCursor();
-
-  Widget* window = Widget::CreateWidget(
-      Widget::CreateParams(Widget::CreateParams::TYPE_WINDOW));
-  window->Init(NULL, bounds);
+  Widget* window = new Widget;
+  Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
+  params.bounds = bounds;
+  window->Init(params);
   *view = new BackgroundView();
   (*view)->Init(background_url);
 
@@ -194,13 +154,12 @@ views::Widget* BackgroundView::CreateWindowContainingView(
 void BackgroundView::CreateModalPopup(views::WindowDelegate* view) {
   views::Window* window = browser::CreateViewsWindow(
       GetNativeWindow(), gfx::Rect(), view);
-  window->SetIsAlwaysOnTop(true);
+  window->SetAlwaysOnTop(true);
   window->Show();
 }
 
 gfx::NativeWindow BackgroundView::GetNativeWindow() const {
-  return
-      GTK_WINDOW(static_cast<const WidgetGtk*>(GetWidget())->GetNativeView());
+  return GetWidget()->GetNativeWindow();
 }
 
 void BackgroundView::SetStatusAreaVisible(bool visible) {
@@ -252,14 +211,6 @@ bool BackgroundView::ScreenSaverEnabled() {
 ///////////////////////////////////////////////////////////////////////////////
 // BackgroundView protected:
 
-void BackgroundView::OnPaint(gfx::Canvas* canvas) {
-  views::View::OnPaint(canvas);
-  if (!did_paint_) {
-    did_paint_ = true;
-    UpdateWindowType();
-  }
-}
-
 void BackgroundView::Layout() {
   const int kCornerPadding = 5;
   const int kInfoLeftPadding = 10;
@@ -307,6 +258,10 @@ void BackgroundView::Layout() {
 void BackgroundView::ChildPreferredSizeChanged(View* child) {
   Layout();
   SchedulePaint();
+}
+
+Profile* BackgroundView::GetProfile() const {
+  return NULL;
 }
 
 bool BackgroundView::ShouldOpenButtonOptions(
@@ -386,10 +341,11 @@ void BackgroundView::InitInfoLabels() {
   }
 
   if (CrosLibrary::Get()->EnsureLoaded()) {
+    version_loader_.EnablePlatformVersions(true);
     version_loader_.GetVersion(
         &version_consumer_,
         NewCallback(this, &BackgroundView::OnVersion),
-        is_official_build_?
+        is_official_build_ ?
             VersionLoader::VERSION_SHORT_WITH_DATE :
             VersionLoader::VERSION_FULL);
     if (!is_official_build_) {
@@ -404,9 +360,13 @@ void BackgroundView::InitInfoLabels() {
   policy::CloudPolicySubsystem* cloud_policy =
       g_browser_process->browser_policy_connector()->cloud_policy_subsystem();
   if (cloud_policy) {
+    // Two-step reset because we want to construct new ObserverRegistrar after
+    // destruction of old ObserverRegistrar to avoid DCHECK violation because
+    // of adding existing observer.
+    cloud_policy_registrar_.reset();
     cloud_policy_registrar_.reset(
         new policy::CloudPolicySubsystem::ObserverRegistrar(
-          cloud_policy, this));
+            cloud_policy, this));
 
     // Ensure that we have up-to-date enterprise info in case enterprise policy
     // is already fetched and has finished initialization.
@@ -432,7 +392,6 @@ void BackgroundView::InitProgressBar() {
 
 void BackgroundView::UpdateWindowType() {
   std::vector<int> params;
-  params.push_back(did_paint_ ? 1 : 0);
   WmIpc::instance()->SetWindowType(
       GTK_WIDGET(GetNativeWindow()),
       WM_IPC_WINDOW_LOGIN_BACKGROUND,
@@ -449,12 +408,18 @@ void BackgroundView::UpdateVersionLabel() {
   if (version_text_.empty())
     return;
 
-  // TODO(jungshik): Is string concatenation OK here?
-  std::string label_text = l10n_util::GetStringUTF8(IDS_PRODUCT_OS_NAME);
+  chrome::VersionInfo version_info;
+  std::string label_text = l10n_util::GetStringUTF8(IDS_PRODUCT_NAME);
   label_text += ' ';
-  label_text += l10n_util::GetStringUTF8(IDS_VERSION_FIELD_PREFIX);
+  label_text += version_info.Version();
+  label_text += " (";
+  // TODO(rkc): Fix this. This needs to be in a resource file, but we have had
+  // to put it in for merge into R12. Also, look at rtl implications for this
+  // entire string composition code.
+  label_text += kPlatformLabel;
   label_text += ' ';
   label_text += version_text_;
+  label_text += ')';
 
   if (!enterprise_domain_text_.empty()) {
     label_text += ' ';

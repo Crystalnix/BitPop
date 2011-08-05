@@ -8,6 +8,7 @@
 
 #include "base/basictypes.h"
 #include "base/file_path.h"
+#include "base/i18n/case_conversion.h"
 #include "base/string16.h"
 #include "base/string_number_conversions.h"
 #include "base/time.h"
@@ -194,10 +195,10 @@ bool DoesBookmarkContainWords(const BookmarkNode* node,
                               const std::string& languages) {
   return
       DoesBookmarkTextContainWords(
-          l10n_util::ToLower(node->GetTitle()), words) ||
+          base::i18n::ToLower(node->GetTitle()), words) ||
       DoesBookmarkTextContainWords(
-          l10n_util::ToLower(UTF8ToUTF16(node->GetURL().spec())), words) ||
-      DoesBookmarkTextContainWords(l10n_util::ToLower(
+          base::i18n::ToLower(UTF8ToUTF16(node->GetURL().spec())), words) ||
+      DoesBookmarkTextContainWords(base::i18n::ToLower(
           net::FormatUrl(node->GetURL(), languages, net::kFormatUrlOmitNothing,
                          UnescapeRule::NORMAL, NULL, NULL, NULL)), words);
 }
@@ -369,8 +370,7 @@ void OpenAll(gfx::NativeWindow parent,
 
   NewBrowserPageNavigator navigator_impl(profile);
   if (!navigator) {
-    Browser* browser =
-        BrowserList::FindBrowserWithType(profile, Browser::TYPE_NORMAL, false);
+    Browser* browser = BrowserList::FindTabbedBrowser(profile, false);
     if (!browser || !browser->GetSelectedTabContents()) {
       navigator = &navigator_impl;
     } else {
@@ -438,7 +438,7 @@ bool CanPasteFromClipboard(const BookmarkNode* node) {
 
 string16 GetNameForURL(const GURL& url) {
   if (url.is_valid()) {
-    return net::GetSuggestedFilename(url, "", "", string16());
+    return net::GetSuggestedFilename(url, "", "", "", string16());
   } else {
     return l10n_util::GetStringUTF16(IDS_APP_UNTITLED_SHORTCUT_FILE_NAME);
   }
@@ -478,6 +478,12 @@ std::vector<const BookmarkNode*> GetMostRecentlyModifiedFolders(
     if (nodes.size() < max_count &&
         find(nodes.begin(), nodes.end(), model->other_node()) == nodes.end()) {
       nodes.push_back(model->other_node());
+    }
+
+    if (nodes.size() < max_count && model->synced_node()->IsVisible() &&
+        find(nodes.begin(), nodes.end(),
+             model->synced_node()) == nodes.end()) {
+      nodes.push_back(model->synced_node());
     }
   }
   return nodes;
@@ -519,7 +525,7 @@ void GetBookmarksContainingText(BookmarkModel* model,
                                 std::vector<const BookmarkNode*>* nodes) {
   std::vector<string16> words;
   QueryParser parser;
-  parser.ExtractQueryWords(l10n_util::ToLower(text), &words);
+  parser.ParseQueryWords(base::i18n::ToLower(text), &words);
   if (words.empty())
     return;
 
@@ -539,7 +545,7 @@ bool DoesBookmarkContainText(const BookmarkNode* node,
                              const std::string& languages) {
   std::vector<string16> words;
   QueryParser parser;
-  parser.ExtractQueryWords(l10n_util::ToLower(text), &words);
+  parser.ParseQueryWords(base::i18n::ToLower(text), &words);
   if (words.empty())
     return false;
 
@@ -623,8 +629,12 @@ void ToggleWhenVisible(Profile* profile) {
 }
 
 void RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kShowBookmarkBar, false);
-  prefs->RegisterBooleanPref(prefs::kEditBookmarksEnabled, true);
+  prefs->RegisterBooleanPref(prefs::kShowBookmarkBar,
+                             false,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kEditBookmarksEnabled,
+                             true,
+                             PrefService::UNSYNCABLE_PREF);
 }
 
 void GetURLAndTitleToBookmark(TabContents* tab_contents,

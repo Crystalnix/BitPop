@@ -28,6 +28,7 @@
 #include "ppapi/c/dev/ppb_fullscreen_dev.h"
 #include "ppapi/c/dev/ppb_gles_chromium_texture_mapping_dev.h"
 #include "ppapi/c/dev/ppb_graphics_3d_dev.h"
+#include "ppapi/c/dev/ppb_layer_compositor_dev.h"
 #include "ppapi/c/dev/ppb_opengles_dev.h"
 #include "ppapi/c/dev/ppb_scrollbar_dev.h"
 #include "ppapi/c/dev/ppb_testing_dev.h"
@@ -35,11 +36,14 @@
 #include "ppapi/c/dev/ppb_url_util_dev.h"
 #include "ppapi/c/dev/ppb_var_deprecated.h"
 #include "ppapi/c/dev/ppb_video_decoder_dev.h"
+#include "ppapi/c/dev/ppb_video_layer_dev.h"
 #include "ppapi/c/dev/ppb_widget_dev.h"
 #include "ppapi/c/dev/ppb_zoom_dev.h"
 #include "ppapi/c/pp_module.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_var.h"
+#include "ppapi/c/ppb_audio.h"
+#include "ppapi/c/ppb_audio_config.h"
 #include "ppapi/c/ppb_core.h"
 #include "ppapi/c/ppb_graphics_2d.h"
 #include "ppapi/c/ppb_image_data.h"
@@ -60,19 +64,18 @@
 #include "ppapi/c/private/ppb_pdf.h"
 #include "ppapi/c/private/ppb_proxy_private.h"
 #include "ppapi/c/private/ppb_nacl_private.h"
+#include "ppapi/c/private/ppb_uma_private.h"
+#include "ppapi/c/trusted/ppb_audio_trusted.h"
 #include "ppapi/c/trusted/ppb_broker_trusted.h"
 #include "ppapi/c/trusted/ppb_image_data_trusted.h"
 #include "ppapi/c/trusted/ppb_url_loader_trusted.h"
+#include "ppapi/thunk/thunk.h"
 #include "webkit/plugins/ppapi/callbacks.h"
 #include "webkit/plugins/ppapi/common.h"
+#include "webkit/plugins/ppapi/ppapi_interface_factory.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
-#include "webkit/plugins/ppapi/ppb_audio_impl.h"
-#include "webkit/plugins/ppapi/ppb_broker_impl.h"
-#include "webkit/plugins/ppapi/ppb_buffer_impl.h"
-#include "webkit/plugins/ppapi/ppb_char_set_impl.h"
 #include "webkit/plugins/ppapi/ppb_console_impl.h"
 #include "webkit/plugins/ppapi/ppb_crypto_impl.h"
-#include "webkit/plugins/ppapi/ppb_cursor_control_impl.h"
 #include "webkit/plugins/ppapi/ppb_directory_reader_impl.h"
 #include "webkit/plugins/ppapi/ppb_file_chooser_impl.h"
 #include "webkit/plugins/ppapi/ppb_file_io_impl.h"
@@ -86,19 +89,23 @@
 #include "webkit/plugins/ppapi/ppb_font_impl.h"
 #include "webkit/plugins/ppapi/ppb_graphics_2d_impl.h"
 #include "webkit/plugins/ppapi/ppb_image_data_impl.h"
+#include "webkit/plugins/ppapi/ppb_layer_compositor_impl.h"
 #include "webkit/plugins/ppapi/ppb_nacl_private_impl.h"
 #include "webkit/plugins/ppapi/ppb_pdf_impl.h"
 #include "webkit/plugins/ppapi/ppb_proxy_impl.h"
 #include "webkit/plugins/ppapi/ppb_scrollbar_impl.h"
 #include "webkit/plugins/ppapi/ppb_transport_impl.h"
+#include "webkit/plugins/ppapi/ppb_uma_private_impl.h"
 #include "webkit/plugins/ppapi/ppb_url_loader_impl.h"
 #include "webkit/plugins/ppapi/ppb_url_request_info_impl.h"
 #include "webkit/plugins/ppapi/ppb_url_response_info_impl.h"
 #include "webkit/plugins/ppapi/ppb_url_util_impl.h"
 #include "webkit/plugins/ppapi/ppb_video_decoder_impl.h"
+#include "webkit/plugins/ppapi/ppb_video_layer_impl.h"
 #include "webkit/plugins/ppapi/ppb_widget_impl.h"
 #include "webkit/plugins/ppapi/resource_tracker.h"
 #include "webkit/plugins/ppapi/var.h"
+#include "webkit/plugins/ppapi/webkit_forwarding_impl.h"
 
 #ifdef ENABLE_GPU
 #include "webkit/plugins/ppapi/ppb_context_3d_impl.h"
@@ -219,26 +226,41 @@ const PPB_Testing_Dev testing_interface = {
   &GetLiveObjectsForInstance
 };
 
+// Return the part of the interface name before the ';' separator.
+// If there is no ';', just returns the whole string.
+std::string GetInterfacePrefix(const std::string& interface_string) {
+  size_t separator_pos = interface_string.find_first_of(';');
+  return interface_string.substr(0, separator_pos);
+}
+
 // GetInterface ----------------------------------------------------------------
 
 const void* GetInterface(const char* name) {
   // All interfaces should be used on the main thread.
   DCHECK(IsMainThread());
 
+  std::string name_prefix(GetInterfacePrefix(name));
+
+  // Allow custom interface factories first stab at the GetInterface call.
+  const void* custom_interface =
+      PpapiInterfaceFactoryManager::GetInstance()->GetInterface(name);
+  if (custom_interface)
+    return custom_interface;
+
   // Please keep alphabetized by interface macro name with "special" stuff at
   // the bottom.
   if (strcmp(name, PPB_AUDIO_CONFIG_INTERFACE) == 0)
-    return PPB_AudioConfig_Impl::GetInterface();
+    return ::ppapi::thunk::GetPPB_AudioConfig_Thunk();
   if (strcmp(name, PPB_AUDIO_INTERFACE) == 0)
-    return PPB_Audio_Impl::GetInterface();
+    return ::ppapi::thunk::GetPPB_Audio_Thunk();
   if (strcmp(name, PPB_AUDIO_TRUSTED_INTERFACE) == 0)
-    return PPB_Audio_Impl::GetTrustedInterface();
+    return ::ppapi::thunk::GetPPB_AudioTrusted_Thunk();
   if (strcmp(name, PPB_BROKER_TRUSTED_INTERFACE) == 0)
-    return PPB_Broker_Impl::GetTrustedInterface();
+    return ::ppapi::thunk::GetPPB_Broker_Thunk();
   if (strcmp(name, PPB_BUFFER_DEV_INTERFACE) == 0)
-    return PPB_Buffer_Impl::GetInterface();
+    return ::ppapi::thunk::GetPPB_Buffer_Thunk();
   if (strcmp(name, PPB_CHAR_SET_DEV_INTERFACE) == 0)
-    return PPB_CharSet_Impl::GetInterface();
+    return ::ppapi::thunk::GetPPB_CharSet_Thunk();
   if (strcmp(name, PPB_CONSOLE_DEV_INTERFACE) == 0)
     return PPB_Console_Impl::GetInterface();
   if (strcmp(name, PPB_CORE_INTERFACE) == 0)
@@ -246,23 +268,23 @@ const void* GetInterface(const char* name) {
   if (strcmp(name, PPB_CRYPTO_DEV_INTERFACE) == 0)
     return PPB_Crypto_Impl::GetInterface();
   if (strcmp(name, PPB_CURSOR_CONTROL_DEV_INTERFACE) == 0)
-    return GetCursorControlInterface();
+    return ::ppapi::thunk::GetPPB_CursorControl_Thunk();
   if (strcmp(name, PPB_DIRECTORYREADER_DEV_INTERFACE) == 0)
-    return PPB_DirectoryReader_Impl::GetInterface();
+    return ::ppapi::thunk::GetPPB_DirectoryReader_Thunk();
   if (strcmp(name, PPB_FILECHOOSER_DEV_INTERFACE) == 0)
-    return PPB_FileChooser_Impl::GetInterface();
+    return ::ppapi::thunk::GetPPB_FileChooser_Thunk();
   if (strcmp(name, PPB_FILEIO_DEV_INTERFACE) == 0)
-    return PPB_FileIO_Impl::GetInterface();
+    return ::ppapi::thunk::GetPPB_FileIO_Thunk();
   if (strcmp(name, PPB_NACL_PRIVATE_INTERFACE) == 0)
     return PPB_NaCl_Private_Impl::GetInterface();
   if (strcmp(name, PPB_FILEIOTRUSTED_DEV_INTERFACE) == 0)
-    return PPB_FileIO_Impl::GetTrustedInterface();
+    return ::ppapi::thunk::GetPPB_FileIOTrusted_Thunk();
   if (strcmp(name, PPB_FILEREF_DEV_INTERFACE) == 0)
-    return PPB_FileRef_Impl::GetInterface();
+    return ::ppapi::thunk::GetPPB_FileRef_Thunk();
   if (strcmp(name, PPB_FILESYSTEM_DEV_INTERFACE) == 0)
-    return PPB_FileSystem_Impl::GetInterface();
+    return ::ppapi::thunk::GetPPB_FileSystem_Thunk();
   if (strcmp(name, PPB_FIND_DEV_INTERFACE) == 0)
-    return PluginInstance::GetFindInterface();
+    return ::ppapi::thunk::GetPPB_Find_Thunk();
   if (strcmp(name, PPB_FLASH_INTERFACE) == 0)
     return PPB_Flash_Impl::GetInterface();
   if (strcmp(name, PPB_FLASH_CLIPBOARD_INTERFACE) == 0)
@@ -274,7 +296,7 @@ const void* GetInterface(const char* name) {
   if (strcmp(name, PPB_FLASH_MENU_INTERFACE) == 0)
     return PPB_Flash_Menu_Impl::GetInterface();
   if (strcmp(name, PPB_FONT_DEV_INTERFACE) == 0)
-    return PPB_Font_Impl::GetInterface();
+    return ::ppapi::thunk::GetPPB_Font_Thunk();
   if (strcmp(name, PPB_FULLSCREEN_DEV_INTERFACE) == 0)
     return PluginInstance::GetFullscreenInterface();
   if (strcmp(name, PPB_GRAPHICS_2D_INTERFACE) == 0)
@@ -283,8 +305,8 @@ const void* GetInterface(const char* name) {
     return PPB_ImageData_Impl::GetInterface();
   if (strcmp(name, PPB_IMAGEDATA_TRUSTED_INTERFACE) == 0)
     return PPB_ImageData_Impl::GetTrustedInterface();
-  if (strcmp(name, PPB_INSTANCE_INTERFACE) == 0)
-    return PluginInstance::GetInterface();
+  if (name_prefix == GetInterfacePrefix(PPB_INSTANCE_INTERFACE))
+    return PluginInstance::GetInterface(name);
   if (strcmp(name, PPB_INSTANCE_PRIVATE_INTERFACE) == 0)
     return PluginInstance::GetPrivateInterface();
   if (strcmp(name, PPB_MESSAGING_INTERFACE) == 0)
@@ -295,8 +317,8 @@ const void* GetInterface(const char* name) {
     return PPB_Proxy_Impl::GetInterface();
   if (strcmp(name, PPB_SCROLLBAR_DEV_INTERFACE) == 0)
     return PPB_Scrollbar_Impl::GetInterface();
-  if (strcmp(name, PPB_TRANSPORT_DEV_INTERFACE) == 0)
-    return PPB_Transport_Impl::GetInterface();
+  if (strcmp(name, PPB_UMA_PRIVATE_INTERFACE) == 0)
+    return PPB_UMA_Private_Impl::GetInterface();
   if (strcmp(name, PPB_URLLOADER_INTERFACE) == 0)
     return PPB_URLLoader_Impl::GetInterface();
   if (strcmp(name, PPB_URLLOADERTRUSTED_INTERFACE) == 0)
@@ -313,33 +335,39 @@ const void* GetInterface(const char* name) {
     return Var::GetInterface();
   if (strcmp(name, PPB_VIDEODECODER_DEV_INTERFACE) == 0)
     return PPB_VideoDecoder_Impl::GetInterface();
+  if (strcmp(name, PPB_VIDEOLAYER_DEV_INTERFACE) == 0)
+    return PPB_VideoLayer_Impl::GetInterface();
   if (strcmp(name, PPB_WIDGET_DEV_INTERFACE) == 0)
     return PPB_Widget_Impl::GetInterface();
   if (strcmp(name, PPB_ZOOM_DEV_INTERFACE) == 0)
     return PluginInstance::GetZoomInterface();
 
 #ifdef ENABLE_GPU
-  // This should really refer to switches::kDisable3DAPIs.
-  if (!CommandLine::ForCurrentProcess()->HasSwitch("disable-3d-apis")) {
-    if (strcmp(name, PPB_GRAPHICS_3D_DEV_INTERFACE) == 0)
-      return PPB_Graphics3D_Impl::GetInterface();
-    if (strcmp(name, PPB_CONTEXT_3D_DEV_INTERFACE) == 0)
-      return PPB_Context3D_Impl::GetInterface();
-    if (strcmp(name, PPB_CONTEXT_3D_TRUSTED_DEV_INTERFACE) == 0)
-      return PPB_Context3D_Impl::GetTrustedInterface();
-    if (strcmp(name, PPB_GLES_CHROMIUM_TEXTURE_MAPPING_DEV_INTERFACE) == 0)
-      return PPB_GLESChromiumTextureMapping_Impl::GetInterface();
-    if (strcmp(name, PPB_OPENGLES2_DEV_INTERFACE) == 0)
-      return PPB_OpenGLES_Impl::GetInterface();
-    if (strcmp(name, PPB_SURFACE_3D_DEV_INTERFACE) == 0)
-      return PPB_Surface3D_Impl::GetInterface();
-  }
+  if (strcmp(name, PPB_GRAPHICS_3D_DEV_INTERFACE) == 0)
+    return PPB_Graphics3D_Impl::GetInterface();
+  if (strcmp(name, PPB_CONTEXT_3D_DEV_INTERFACE) == 0)
+    return PPB_Context3D_Impl::GetInterface();
+  if (strcmp(name, PPB_CONTEXT_3D_TRUSTED_DEV_INTERFACE) == 0)
+    return PPB_Context3D_Impl::GetTrustedInterface();
+  if (strcmp(name, PPB_GLES_CHROMIUM_TEXTURE_MAPPING_DEV_INTERFACE) == 0)
+    return PPB_GLESChromiumTextureMapping_Impl::GetInterface();
+  if (strcmp(name, PPB_OPENGLES2_DEV_INTERFACE) == 0)
+    return PPB_OpenGLES_Impl::GetInterface();
+  if (strcmp(name, PPB_SURFACE_3D_DEV_INTERFACE) == 0)
+    return PPB_Surface3D_Impl::GetInterface();
+  if (strcmp(name, PPB_LAYER_COMPOSITOR_DEV_INTERFACE) == 0)
+    return PPB_LayerCompositor_Impl::GetInterface();
 #endif  // ENABLE_GPU
 
 #ifdef ENABLE_FLAPPER_HACKS
   if (strcmp(name, PPB_FLASH_NETCONNECTOR_INTERFACE) == 0)
     return PPB_Flash_NetConnector_Impl::GetInterface();
 #endif  // ENABLE_FLAPPER_HACKS
+
+#if defined(ENABLE_P2P_APIS)
+  if (strcmp(name, PPB_TRANSPORT_DEV_INTERFACE) == 0)
+    return PPB_Transport_Impl::GetInterface();
+#endif
 
   // Only support the testing interface when the command line switch is
   // specified. This allows us to prevent people from (ab)using this interface
@@ -469,15 +497,26 @@ PluginModule::GetInterfaceFunc PluginModule::GetLocalGetInterfaceFunc() {
 }
 
 PluginInstance* PluginModule::CreateInstance(PluginDelegate* delegate) {
-  const PPP_Instance* plugin_instance_interface =
-      reinterpret_cast<const PPP_Instance*>(GetPluginInterface(
-          PPP_INSTANCE_INTERFACE));
-  if (!plugin_instance_interface) {
+  PluginInstance* instance(NULL);
+  const void* plugin_instance_if = GetPluginInterface(PPP_INSTANCE_INTERFACE);
+  if (plugin_instance_if) {
+    instance = new PluginInstance(delegate, this,
+        PluginInstance::new_instance_interface<PPP_Instance>(
+            plugin_instance_if));
+  } else {
+    // If the current interface is not supported, try retrieving older versions.
+    const void* instance_if_0_4 =
+        GetPluginInterface(PPP_INSTANCE_INTERFACE_0_4);
+    if (instance_if_0_4) {
+      instance = new PluginInstance(delegate, this,
+          PluginInstance::new_instance_interface<PPP_Instance_0_4>(
+              instance_if_0_4));
+    }
+  }
+  if (!instance) {
     LOG(WARNING) << "Plugin doesn't support instance interface, failing.";
     return NULL;
   }
-  PluginInstance* instance = new PluginInstance(delegate, this,
-                                                plugin_instance_interface);
   if (out_of_process_proxy_.get())
     out_of_process_proxy_->AddInstance(instance->pp_instance());
   return instance;
@@ -545,6 +584,12 @@ void PluginModule::SetBroker(PluginDelegate::PpapiBroker* broker) {
 
 PluginDelegate::PpapiBroker* PluginModule::GetBroker(){
   return broker_;
+}
+
+::ppapi::WebKitForwarding* PluginModule::GetWebKitForwarding() {
+  if (!webkit_forwarding_.get())
+    webkit_forwarding_.reset(new WebKitForwardingImpl);
+  return webkit_forwarding_.get();
 }
 
 bool PluginModule::InitializeModule() {

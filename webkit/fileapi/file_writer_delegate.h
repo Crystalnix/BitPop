@@ -7,7 +7,9 @@
 
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_callback_factory.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop_proxy.h"
 #include "base/platform_file.h"
 #include "base/task.h"
 #include "base/time.h"
@@ -19,15 +21,19 @@
 namespace fileapi {
 
 class FileSystemOperation;
+class FileSystemOperationContext;
+class FileSystemQuotaUtil;
 
 class FileWriterDelegate : public net::URLRequest::Delegate {
  public:
   FileWriterDelegate(
       FileSystemOperation* write_operation,
-      int64 offset);
+      int64 offset,
+      scoped_refptr<base::MessageLoopProxy> proxy);
   virtual ~FileWriterDelegate();
 
-  void Start(base::PlatformFile file, net::URLRequest* request);
+  void Start(base::PlatformFile file,
+             net::URLRequest* request);
   base::PlatformFile file() {
     return file_;
   }
@@ -44,6 +50,9 @@ class FileWriterDelegate : public net::URLRequest::Delegate {
   virtual void OnReadCompleted(net::URLRequest* request, int bytes_read);
 
  private:
+  void OnGetFileInfoAndCallStartUpdate(
+      base::PlatformFileError error,
+      const base::PlatformFileInfo& file_info);
   void Read();
   void OnDataReceived(int bytes_read);
   void Write();
@@ -51,18 +60,26 @@ class FileWriterDelegate : public net::URLRequest::Delegate {
   void OnError(base::PlatformFileError error);
   void OnProgress(int bytes_read, bool done);
 
+  FileSystemOperationContext* file_system_operation_context() const;
+  FileSystemQuotaUtil* quota_util() const;
+
   FileSystemOperation* file_system_operation_;
   base::PlatformFile file_;
+  int64 size_;
   int64 offset_;
+  scoped_refptr<base::MessageLoopProxy> proxy_;
   base::Time last_progress_event_time_;
-  int bytes_read_backlog_;
+  int bytes_written_backlog_;
   int bytes_written_;
   int bytes_read_;
+  int64 total_bytes_written_;
+  int64 allowed_bytes_to_write_;
   scoped_refptr<net::IOBufferWithSize> io_buffer_;
   scoped_ptr<net::FileStream> file_stream_;
   net::URLRequest* request_;
   net::CompletionCallbackImpl<FileWriterDelegate> io_callback_;
   ScopedRunnableMethodFactory<FileWriterDelegate> method_factory_;
+  base::ScopedCallbackFactory<FileWriterDelegate> callback_factory_;
 };
 
 }  // namespace fileapi

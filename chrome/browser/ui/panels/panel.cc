@@ -11,6 +11,9 @@
 
 Panel::Panel(Browser* browser, const gfx::Rect& bounds)
     : bounds_(bounds),
+#ifndef NDEBUG
+      closing_(false),
+#endif
       minimized_(false) {
   browser_window_.reset(CreateNativePanel(browser, this));
 }
@@ -23,11 +26,26 @@ PanelManager* Panel::manager() const {
   return PanelManager::GetInstance();
 }
 
+void Panel::SetPanelBounds(const gfx::Rect& bounds) {
+  if (bounds_ == bounds)
+    return;
+  bounds_ = bounds;
+  browser_window_->SetBounds(bounds);
+}
+
 void Panel::Minimize() {
+  if (minimized_)
+    return;
+  minimized_ = true;
+
   NOTIMPLEMENTED();
 }
 
 void Panel::Restore() {
+  if (!minimized_)
+    return;
+  minimized_ = false;
+
   NOTIMPLEMENTED();
 }
 
@@ -40,27 +58,35 @@ void Panel::ShowInactive() {
 }
 
 void Panel::SetBounds(const gfx::Rect& bounds) {
-  NOTIMPLEMENTED();
+  // Ignore any SetBounds requests since the bounds are completely controlled
+  // by panel manager.
 }
 
 void Panel::Close() {
   if (!browser_window_.get())
     return;
+
+  // Mark that we're starting the closing process. This is used by the platform
+  // specific BrowserWindow implementation to ensure Panel::Close() should be
+  // called to close a panel.
+#ifndef NDEBUG
+  closing_ = true;
+#endif
+
   browser_window_->Close();
   manager()->Remove(this);
 }
 
 void Panel::Activate() {
-  NOTIMPLEMENTED();
+  browser_window_->Activate();
 }
 
 void Panel::Deactivate() {
-  NOTIMPLEMENTED();
+  browser_window_->Deactivate();
 }
 
 bool Panel::IsActive() const {
-  NOTIMPLEMENTED();
-  return false;
+  return browser_window_->IsActive();
 }
 
 void Panel::FlashFrame() {
@@ -86,7 +112,7 @@ void Panel::ToolbarSizeChanged(bool is_animating){
 }
 
 void Panel::UpdateTitleBar() {
-  NOTIMPLEMENTED();
+  browser_window_->UpdateTitleBar();
 }
 
 void Panel::ShelfVisibilityChanged() {
@@ -106,13 +132,11 @@ void Panel::SetStarredState(bool is_starred) {
 }
 
 gfx::Rect Panel::GetRestoredBounds() const {
-  NOTIMPLEMENTED();
-  return gfx::Rect();
+  return bounds_;
 }
 
 gfx::Rect Panel::GetBounds() const {
-  NOTIMPLEMENTED();
-  return gfx::Rect();
+  return minimized_ ? minimized_bounds_ : bounds_;
 }
 
 bool Panel::IsMaximized() const {
@@ -125,7 +149,6 @@ void Panel::SetFullscreen(bool fullscreen) {
 }
 
 bool Panel::IsFullscreen() const {
-  NOTIMPLEMENTED();
   return false;
 }
 
@@ -261,7 +284,7 @@ void Panel::ShowHTMLDialog(HtmlDialogUIDelegate* delegate,
 }
 
 void Panel::UserChangedTheme() {
-  NOTIMPLEMENTED();
+  browser_window_->UserChangedTheme();
 }
 
 int Panel::GetExtraRenderViewHeight() const {
@@ -303,6 +326,10 @@ void Panel::ShowCreateChromeAppShortcutsDialog(Profile* profile,
   NOTIMPLEMENTED();
 }
 
+void Panel::ToggleUseCompactNavigationBar() {
+  NOTIMPLEMENTED();
+}
+
 void Panel::Cut() {
   NOTIMPLEMENTED();
 }
@@ -340,6 +367,12 @@ void Panel::HideInstant(bool instant_is_active) {
 gfx::Rect Panel::GetInstantBounds() {
   NOTIMPLEMENTED();
   return gfx::Rect();
+}
+
+WindowOpenDisposition Panel::GetDispositionForPopupBounds(
+    const gfx::Rect& bounds) {
+  NOTIMPLEMENTED();
+  return NEW_POPUP;
 }
 
 #if defined(OS_CHROMEOS)

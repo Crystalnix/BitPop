@@ -27,7 +27,7 @@ class TabController {
   // Toggles whether |tab| is selected.
   virtual void ToggleSelected(BaseTab* tab) = 0;
 
-  // Adds the selection the anchor to |tab|.
+  // Adds the selection from the anchor to |tab|.
   virtual void AddSelectionFromAnchorTo(BaseTab* tab) = 0;
 
   // Closes the tab.
@@ -64,6 +64,10 @@ class TabController {
   // or NULL if there is no tab that contains the specified point.
   virtual BaseTab* GetTabAt(BaseTab* tab,
                             const gfx::Point& tab_in_tab_coordinates) = 0;
+
+  // Informs that an active tab is selected when already active (ie - clicked
+  // when already active/foreground).
+  virtual void ClickActiveTab(const BaseTab* tab) const = 0;
 
  protected:
   virtual ~TabController() {}

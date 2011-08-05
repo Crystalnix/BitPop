@@ -22,10 +22,6 @@ MenuHost::MenuHost(SubmenuView* submenu)
           NativeMenuHost::CreateNativeMenuHost(this))),
       submenu_(submenu),
       destroying_(false) {
-  Widget::CreateParams params;
-  params.type = Widget::CreateParams::TYPE_MENU;
-  params.has_dropshadow = true;
-  GetWidget()->SetCreateParams(params);
 }
 
 MenuHost::~MenuHost() {
@@ -35,48 +31,60 @@ void MenuHost::InitMenuHost(gfx::NativeWindow parent,
                             const gfx::Rect& bounds,
                             View* contents_view,
                             bool do_capture) {
-  native_menu_host_->InitMenuHost(parent, bounds);
-  GetWidget()->SetContentsView(contents_view);
+  Widget::InitParams params(Widget::InitParams::TYPE_MENU);
+  params.has_dropshadow = true;
+#if defined(OS_WIN)
+  params.parent = parent;
+#elif defined(TOOLKIT_USES_GTK)
+  params.parent = GTK_WIDGET(parent);
+#endif
+  params.bounds = bounds;
+  params.native_widget = native_menu_host_->AsNativeWidget();
+  Init(params);
+  SetContentsView(contents_view);
   ShowMenuHost(do_capture);
 }
 
 bool MenuHost::IsMenuHostVisible() {
-  return GetWidget()->IsVisible();
+  return IsVisible();
 }
 
 void MenuHost::ShowMenuHost(bool do_capture) {
-  GetWidget()->Show();
+  Show();
   if (do_capture)
     native_menu_host_->StartCapturing();
 }
 
 void MenuHost::HideMenuHost() {
   ReleaseMenuHostCapture();
-  GetWidget()->Hide();
+  Hide();
 }
 
 void MenuHost::DestroyMenuHost() {
   HideMenuHost();
   destroying_ = true;
-  static_cast<MenuHostRootView*>(GetWidget()->GetRootView())->ClearSubmenu();
-  GetWidget()->Close();
+  static_cast<MenuHostRootView*>(GetRootView())->ClearSubmenu();
+  Close();
 }
 
 void MenuHost::SetMenuHostBounds(const gfx::Rect& bounds) {
-  GetWidget()->SetBounds(bounds);
+  SetBounds(bounds);
 }
 
 void MenuHost::ReleaseMenuHostCapture() {
-  if (GetWidget()->native_widget()->HasMouseCapture())
-    GetWidget()->native_widget()->ReleaseMouseCapture();
+  if (native_widget()->HasMouseCapture())
+    native_widget()->ReleaseMouseCapture();
 }
 
-Widget* MenuHost::GetWidget() {
-  return native_menu_host_->AsNativeWidget()->GetWidget();
+////////////////////////////////////////////////////////////////////////////////
+// MenuHost, Widget overrides:
+
+internal::RootView* MenuHost::CreateRootView() {
+  return new MenuHostRootView(this, submenu_);
 }
 
-NativeWidget* MenuHost::GetNativeWidget() {
-  return native_menu_host_->AsNativeWidget();
+bool MenuHost::ShouldReleaseCaptureOnMouseReleased() const {
+  return false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -100,12 +108,8 @@ void MenuHost::OnNativeMenuHostCancelCapture() {
     menu_controller->CancelAll();
 }
 
-RootView* MenuHost::CreateRootView() {
-  return new MenuHostRootView(GetWidget(), submenu_);
-}
-
-bool MenuHost::ShouldReleaseCaptureOnMouseRelease() const {
-  return false;
+internal::NativeWidgetDelegate* MenuHost::AsNativeWidgetDelegate() {
+  return this;
 }
 
 }  // namespace views

@@ -74,11 +74,6 @@ MenuButton::~MenuButton() {
 
 bool MenuButton::Activate() {
   SetState(BS_PUSHED);
-  // We need to synchronously paint here because subsequently we enter a
-  // menu modal loop which will stop this window from updating and
-  // receiving the paint message that should be spawned by SetState until
-  // after the menu closes.
-  PaintNow();
   if (menu_delegate_) {
     gfx::Rect lb = GetLocalBounds();
 
@@ -105,7 +100,8 @@ bool MenuButton::Activate() {
     // matter where the user pressed. To force RootView to recalculate the
     // mouse target during the mouse press we explicitly set the mouse handler
     // to NULL.
-    GetRootView()->SetMouseHandler(NULL);
+    static_cast<internal::RootView*>(GetWidget()->GetRootView())->
+        SetMouseHandler(NULL);
 
     menu_visible_ = true;
 

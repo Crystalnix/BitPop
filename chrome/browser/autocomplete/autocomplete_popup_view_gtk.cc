@@ -16,7 +16,6 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete.h"
 #include "chrome/browser/autocomplete/autocomplete_edit.h"
-#include "chrome/browser/autocomplete/autocomplete_edit_view_gtk.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_popup_model.h"
 #include "chrome/browser/defaults.h"
@@ -25,6 +24,7 @@
 #include "chrome/browser/search_engines/template_url_model.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
+#include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "content/common/notification_service.h"
 #include "grit/theme_resources.h"
 #include "ui/base/gtk/gtk_windowing.h"
@@ -112,7 +112,7 @@ void DrawFullPixbuf(GdkDrawable* drawable, GdkGC* gc, GdkPixbuf* pixbuf,
 
 // TODO(deanm): Find some better home for this, and make it more efficient.
 size_t GetUTF8Offset(const string16& text, size_t text_offset) {
-  return UTF16ToUTF8(text.substr(0, text_offset)).size();
+  return UTF16ToUTF8(text.substr(0, text_offset)).length();
 }
 
 // Generates the normal URL color, a green color used in unhighlighted URL
@@ -193,7 +193,7 @@ void AutocompletePopupViewGtk::SetupLayoutForMatch(
   // spiral that can corrupt the screen. Assume that we'll never have more than
   // 2000 characters, which should be a safe assumption until we all get robot
   // eyes. http://crbug.com/66576
-  if (localized_text.size() > 2000)
+  if (localized_text.length() > 2000)
     localized_text = localized_text.substr(0, 2000);
   bool is_rtl = base::i18n::IsRTL();
   if (is_rtl && !base::i18n::StringContainsStrongRTLChars(localized_text)) {
@@ -204,7 +204,7 @@ void AutocompletePopupViewGtk::SetupLayoutForMatch(
   // We can have a prefix, or insert additional characters while processing the
   // classifications.  We need to take this in to account when we translate the
   // UTF-16 offsets in the classification into text_utf8 byte offsets.
-  size_t additional_offset = prefix_text.size();  // Length in utf-8 bytes.
+  size_t additional_offset = prefix_text.length();  // Length in utf-8 bytes.
   std::string text_utf8 = prefix_text + UTF16ToUTF8(localized_text);
 
   PangoAttrList* attrs = pango_attr_list_new();
@@ -241,7 +241,7 @@ void AutocompletePopupViewGtk::SetupLayoutForMatch(
       if (is_rtl && !marked_with_lre) {
         std::string lre(kLRE);
         text_utf8.insert(offset, lre);
-        additional_offset += lre.size();
+        additional_offset += lre.length();
       }
     }
 
@@ -261,19 +261,19 @@ void AutocompletePopupViewGtk::SetupLayoutForMatch(
     pango_attr_list_insert(attrs, weight_attr);  // Ownership taken.
   }
 
-  pango_layout_set_text(layout, text_utf8.data(), text_utf8.size());
+  pango_layout_set_text(layout, text_utf8.data(), text_utf8.length());
   pango_layout_set_attributes(layout, attrs);  // Ref taken.
   pango_attr_list_unref(attrs);
 }
 
 AutocompletePopupViewGtk::AutocompletePopupViewGtk(
     const gfx::Font& font,
-    AutocompleteEditView* edit_view,
+    OmniboxView* omnibox_view,
     AutocompleteEditModel* edit_model,
     Profile* profile,
     GtkWidget* location_bar)
     : model_(new AutocompletePopupModel(this, edit_model, profile)),
-      edit_view_(edit_view),
+      omnibox_view_(omnibox_view),
       location_bar_(location_bar),
       window_(gtk_window_new(GTK_WINDOW_POPUP)),
       layout_(NULL),
@@ -303,13 +303,13 @@ AutocompletePopupViewGtk::AutocompletePopupViewGtk(
                                  GDK_BUTTON_PRESS_MASK |
                                  GDK_BUTTON_RELEASE_MASK);
   g_signal_connect(window_, "motion-notify-event",
-                   G_CALLBACK(&HandleMotionThunk), this);
+                   G_CALLBACK(HandleMotionThunk), this);
   g_signal_connect(window_, "button-press-event",
-                   G_CALLBACK(&HandleButtonPressThunk), this);
+                   G_CALLBACK(HandleButtonPressThunk), this);
   g_signal_connect(window_, "button-release-event",
-                   G_CALLBACK(&HandleButtonReleaseThunk), this);
+                   G_CALLBACK(HandleButtonReleaseThunk), this);
   g_signal_connect(window_, "expose-event",
-                   G_CALLBACK(&HandleExposeThunk), this);
+                   G_CALLBACK(HandleExposeThunk), this);
 
   registrar_.Add(this,
                  NotificationType::BROWSER_THEME_CHANGED,
@@ -394,7 +394,7 @@ void AutocompletePopupViewGtk::Observe(NotificationType type,
                                        const NotificationDetails& details) {
   DCHECK(type == NotificationType::BROWSER_THEME_CHANGED);
 
-  if (theme_service_->UseGtkTheme()) {
+  if (theme_service_->UsingNativeTheme()) {
     gtk_util::UndoForceFontSize(window_);
 
     border_color_ = theme_service_->GetBorderColor();
@@ -458,9 +458,9 @@ void AutocompletePopupViewGtk::Hide() {
 }
 
 void AutocompletePopupViewGtk::StackWindow() {
-  gfx::NativeView edit_view = edit_view_->GetNativeView();
-  DCHECK(GTK_IS_WIDGET(edit_view));
-  GtkWidget* toplevel = gtk_widget_get_toplevel(edit_view);
+  gfx::NativeView omnibox_view = omnibox_view_->GetNativeView();
+  DCHECK(GTK_IS_WIDGET(omnibox_view));
+  GtkWidget* toplevel = gtk_widget_get_toplevel(omnibox_view);
   DCHECK(GTK_WIDGET_TOPLEVEL(toplevel));
   ui::StackPopupWindow(window_, toplevel);
 }
@@ -472,15 +472,14 @@ size_t AutocompletePopupViewGtk::LineFromY(int y) {
 
 void AutocompletePopupViewGtk::AcceptLine(size_t line,
                                           WindowOpenDisposition disposition) {
-  const AutocompleteMatch& match = model_->result().match_at(line);
-  // OpenURL() may close the popup, which will clear the result set and, by
-  // extension, |match| and its contents.  So copy the relevant strings out to
-  // make sure they stay alive until the call completes.
-  const GURL url(match.destination_url);
+  // OpenMatch() may close the popup, which will clear the result set and, by
+  // extension, |match| and its contents.  So copy the relevant match out to
+  // make sure it stays alive until the call completes.
+  AutocompleteMatch match = model_->result().match_at(line);
   string16 keyword;
   const bool is_keyword_hint = model_->GetKeywordForMatch(match, &keyword);
-  edit_view_->OpenURL(url, disposition, match.transition, GURL(), line,
-                      is_keyword_hint ? string16() : keyword);
+  omnibox_view_->OpenMatch(match, disposition, GURL(), line,
+                           is_keyword_hint ? string16() : keyword);
 }
 
 GdkPixbuf* AutocompletePopupViewGtk::IconForMatch(

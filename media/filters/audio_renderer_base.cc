@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <string>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/logging.h"
 #include "media/base/filter_host.h"
@@ -63,12 +64,13 @@ void AudioRendererBase::Stop(FilterCallback* callback) {
   }
 }
 
-void AudioRendererBase::Seek(base::TimeDelta time, FilterCallback* callback) {
+void AudioRendererBase::Seek(base::TimeDelta time, const FilterStatusCB& cb) {
   base::AutoLock auto_lock(lock_);
   DCHECK_EQ(kPaused, state_);
   DCHECK_EQ(0u, pending_reads_) << "Pending reads should have completed";
+  DCHECK(seek_cb_.is_null());
   state_ = kSeeking;
-  seek_callback_.reset(callback);
+  seek_cb_ = cb;
   seek_timestamp_ = time;
 
   // Throw away everything and schedule our reads.
@@ -88,18 +90,10 @@ void AudioRendererBase::Initialize(AudioDecoder* decoder,
   scoped_ptr<FilterCallback> c(callback);
   decoder_ = decoder;
 
+  // Use base::Unretained() as the decoder doesn't need to ref us.
   decoder_->set_consume_audio_samples_callback(
-      NewCallback(this, &AudioRendererBase::ConsumeAudioSamples));
-  // Get the media properties to initialize our algorithms.
-  int channels = 0;
-  int sample_rate = 0;
-  int sample_bits = 0;
-  if (!ParseMediaFormat(decoder_->media_format(), &channels, &sample_rate,
-                        &sample_bits)) {
-    host()->SetError(PIPELINE_ERROR_INITIALIZATION_FAILED);
-    callback->Run();
-    return;
-  }
+      base::Bind(&AudioRendererBase::ConsumeAudioSamples,
+                 base::Unretained(this)));
 
   // Create a callback so our algorithm can request more reads.
   AudioRendererAlgorithmBase::RequestReadCallback* cb =
@@ -110,14 +104,15 @@ void AudioRendererBase::Initialize(AudioDecoder* decoder,
 
   // Initialize our algorithm with media properties, initial playback rate,
   // and a callback to request more reads from the data source.
-  algorithm_->Initialize(channels,
-                         sample_rate,
-                         sample_bits,
+  AudioDecoderConfig config = decoder_->config();
+  algorithm_->Initialize(ChannelLayoutToChannelCount(config.channel_layout),
+                         config.sample_rate,
+                         config.bits_per_channel,
                          0.0f,
                          cb);
 
   // Give the subclass an opportunity to initialize itself.
-  if (!OnInitialize(decoder_->media_format())) {
+  if (!OnInitialize(config)) {
     host()->SetError(PIPELINE_ERROR_INITIALIZATION_FAILED);
     callback->Run();
     return;
@@ -165,13 +160,12 @@ void AudioRendererBase::ConsumeAudioSamples(scoped_refptr<Buffer> buffer_in) {
 
   // Check for our preroll complete condition.
   if (state_ == kSeeking) {
-    DCHECK(seek_callback_.get());
+    DCHECK(!seek_cb_.is_null());
     if (algorithm_->IsQueueFull() || recieved_end_of_stream_) {
       // Transition into paused whether we have data in |algorithm_| or not.
       // FillBuffer() will play silence if there's nothing to fill.
       state_ = kPaused;
-      seek_callback_->Run();
-      seek_callback_.reset();
+      ResetAndRunCB(&seek_cb_, PIPELINE_OK);
     }
   } else if (state_ == kPaused && pending_reads_ == 0) {
     // No more pending reads!  We're now officially "paused".
@@ -251,17 +245,6 @@ void AudioRendererBase::ScheduleRead_Locked() {
   // buffer pool to recycle buffers.
   scoped_refptr<Buffer> buffer;
   decoder_->ProduceAudioSamples(buffer);
-}
-
-// static
-bool AudioRendererBase::ParseMediaFormat(const MediaFormat& media_format,
-                                         int* channels_out,
-                                         int* sample_rate_out,
-                                         int* sample_bits_out) {
-  // TODO(scherkus): might be handy to support NULL parameters.
-  return media_format.GetAsInteger(MediaFormat::kChannels, channels_out) &&
-      media_format.GetAsInteger(MediaFormat::kSampleRate, sample_rate_out) &&
-      media_format.GetAsInteger(MediaFormat::kSampleBits, sample_bits_out);
 }
 
 void AudioRendererBase::SetPlaybackRate(float playback_rate) {

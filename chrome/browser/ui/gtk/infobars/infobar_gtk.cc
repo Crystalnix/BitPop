@@ -16,8 +16,7 @@
 #include "chrome/browser/ui/gtk/infobars/infobar_container_gtk.h"
 #include "content/common/notification_service.h"
 #include "ui/gfx/gtk_util.h"
-
-extern const int InfoBar::kInfoBarHeight = 37;
+#include "ui/gfx/image.h"
 
 namespace {
 
@@ -31,6 +30,7 @@ const int kRightPadding = 5;
 }  // namespace
 
 // static
+const int InfoBar::kInfoBarHeight = 37;
 const int InfoBar::kEndOfLabelSpacing = 6;
 const int InfoBar::kButtonButtonSpacing = 3;
 
@@ -58,11 +58,9 @@ InfoBar::InfoBar(InfoBarDelegate* delegate)
   gtk_widget_set_size_request(bg_box_, -1, kInfoBarHeight);
 
   // Add the icon on the left, if any.
-  SkBitmap* icon = delegate->GetIcon();
+  gfx::Image* icon = delegate->GetIcon();
   if (icon) {
-    GdkPixbuf* pixbuf = gfx::GdkPixbufFromSkBitmap(icon);
-    GtkWidget* image = gtk_image_new_from_pixbuf(pixbuf);
-    g_object_unref(pixbuf);
+    GtkWidget* image = gtk_image_new_from_pixbuf(*icon);
 
     gtk_misc_set_alignment(GTK_MISC(image), 0.5, 0.5);
 
@@ -89,32 +87,27 @@ GtkWidget* InfoBar::widget() {
   return slide_widget_->widget();
 }
 
-void InfoBar::AnimateOpen() {
-  slide_widget_->Open();
+void InfoBar::Show(bool animate) {
+  if (animate)
+    slide_widget_->Open();
+  else
+    slide_widget_->OpenWithoutAnimation();
 
   gtk_widget_show_all(bg_box_);
   if (bg_box_->window)
     gdk_window_lower(bg_box_->window);
 }
 
-void InfoBar::Open() {
-  slide_widget_->OpenWithoutAnimation();
-
-  gtk_widget_show_all(bg_box_);
-  if (bg_box_->window)
-    gdk_window_lower(bg_box_->window);
-}
-
-void InfoBar::AnimateClose() {
-  slide_widget_->Close();
-}
-
-void InfoBar::Close() {
-  if (delegate_) {
-    delegate_->InfoBarClosed();
-    delegate_ = NULL;
+void InfoBar::Hide(bool animate) {
+  if (animate) {
+    slide_widget_->Close();
+  } else {
+    if (delegate_) {
+      delegate_->InfoBarClosed();
+      delegate_ = NULL;
+    }
+    delete this;
   }
-  delete this;
 }
 
 bool InfoBar::IsAnimating() {
@@ -138,7 +131,7 @@ void InfoBar::RemoveInfoBar() const {
 }
 
 void InfoBar::Closed() {
-  Close();
+  Hide(false);
 }
 
 void InfoBar::SetThemeProvider(GtkThemeService* theme_service) {

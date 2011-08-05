@@ -5,14 +5,17 @@
 #include "chrome/browser/history/in_memory_url_index.h"
 
 #include <algorithm>
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <numeric>
 
 #include "base/file_util.h"
 #include "base/i18n/break_iterator.h"
+#include "base/i18n/case_conversion.h"
 #include "base/metrics/histogram.h"
 #include "base/string_util.h"
+#include "base/threading/thread_restrictions.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete.h"
@@ -20,6 +23,7 @@
 #include "chrome/browser/history/url_database.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
+#include "googleurl/src/url_parse.h"
 #include "googleurl/src/url_util.h"
 #include "net/base/escape.h"
 #include "net/base/net_util.h"
@@ -57,12 +61,12 @@ const int kScoreRank[] = { 1425, 1200, 900, 400 };
 
 ScoredHistoryMatch::ScoredHistoryMatch()
     : raw_score(0),
-      prefix_adjust(0) {}
+      can_inline(false) {}
 
 ScoredHistoryMatch::ScoredHistoryMatch(const URLRow& url_info)
     : HistoryMatch(url_info, 0, false, false),
       raw_score(0),
-      prefix_adjust(0) {}
+      can_inline(false) {}
 
 ScoredHistoryMatch::~ScoredHistoryMatch() {}
 
@@ -137,14 +141,29 @@ int ScoreForValue(int value, const int* value_ranks) {
 InMemoryURLIndex::InMemoryURLIndex(const FilePath& history_dir)
     : history_dir_(history_dir),
       history_item_count_(0) {
+  InMemoryURLIndex::InitializeSchemeWhitelist(&scheme_whitelist_);
 }
 
 // Called only by unit tests.
 InMemoryURLIndex::InMemoryURLIndex()
     : history_item_count_(0) {
+  InMemoryURLIndex::InitializeSchemeWhitelist(&scheme_whitelist_);
 }
 
 InMemoryURLIndex::~InMemoryURLIndex() {}
+
+// static
+void InMemoryURLIndex::InitializeSchemeWhitelist(
+    std::set<std::string>* whitelist) {
+  DCHECK(whitelist);
+  whitelist->insert(std::string(chrome::kAboutScheme));
+  whitelist->insert(std::string(chrome::kChromeUIScheme));
+  whitelist->insert(std::string(chrome::kFileScheme));
+  whitelist->insert(std::string(chrome::kFtpScheme));
+  whitelist->insert(std::string(chrome::kHttpScheme));
+  whitelist->insert(std::string(chrome::kHttpsScheme));
+  whitelist->insert(std::string(chrome::kMailToScheme));
+}
 
 // Indexing
 
@@ -162,6 +181,11 @@ void InMemoryURLIndex::ShutDown() {
 
 bool InMemoryURLIndex::IndexRow(const URLRow& row) {
   const GURL& gurl(row.url());
+
+  // Index only URLs with a whitelisted scheme.
+  if (!InMemoryURLIndex::URLSchemeIsWhitelisted(gurl))
+    return true;
+
   string16 url(net::FormatUrl(gurl, languages_,
       net::kFormatUrlOmitUsernamePassword,
       UnescapeRule::SPACES | UnescapeRule::URL_SPECIAL_CHARS,
@@ -179,7 +203,7 @@ bool InMemoryURLIndex::IndexRow(const URLRow& row) {
   history_info_map_[history_id] = new_row;
 
   // Split URL into individual, unique words then add in the title words.
-  url = l10n_util::ToLower(url);
+  url = base::i18n::ToLower(url);
   String16Set url_words = WordSetFromString16(url);
   String16Set title_words = WordSetFromString16(row.title());
   String16Set words;
@@ -234,6 +258,8 @@ bool InMemoryURLIndex::RestoreFromCacheFile() {
   // That is: ensure that the database has not been modified since the cache
   // was last saved. DB file modification date is inadequate. There are no
   // SQLite table checksums automatically stored.
+  // FIXME(mrossetti): Move File IO to another thread.
+  base::ThreadRestrictions::ScopedAllowIO allow_io;
   base::TimeTicks beginning_time = base::TimeTicks::Now();
   FilePath file_path;
   if (!GetCacheFilePath(&file_path) || !file_util::PathExists(file_path))
@@ -267,6 +293,8 @@ bool InMemoryURLIndex::RestoreFromCacheFile() {
 }
 
 bool InMemoryURLIndex::SaveToCacheFile() {
+  // FIXME(mrossetti): Move File IO to another thread.
+  base::ThreadRestrictions::ScopedAllowIO allow_io;
   base::TimeTicks beginning_time = base::TimeTicks::Now();
   InMemoryURLIndexCacheItem index_cache;
   SavePrivateData(&index_cache);
@@ -352,7 +380,7 @@ ScoredHistoryMatches InMemoryURLIndex::HistoryItemsForTerms(
     String16Vector lower_terms;
     for (String16Vector::const_iterator term_iter = terms.begin();
          term_iter != terms.end(); ++term_iter)
-      lower_terms.push_back(l10n_util::ToLower(*term_iter));
+      lower_terms.push_back(base::i18n::ToLower(*term_iter));
 
     String16Vector::value_type all_terms(JoinString(lower_terms, ' '));
     HistoryIDSet history_id_set = HistoryIDSetFromWords(all_terms);
@@ -472,11 +500,12 @@ InMemoryURLIndex::HistoryIDSet InMemoryURLIndex::HistoryIDsForTerm(
 // static
 InMemoryURLIndex::String16Set InMemoryURLIndex::WordSetFromString16(
     const string16& uni_string) {
+  const size_t kMaxWordLength = 64;
   String16Vector words = WordVectorFromString16(uni_string, false);
   String16Set word_set;
   for (String16Vector::const_iterator iter = words.begin(); iter != words.end();
        ++iter)
-    word_set.insert(l10n_util::ToLower(*iter));
+    word_set.insert(base::i18n::ToLower(*iter).substr(0, kMaxWordLength));
   return word_set;
 }
 
@@ -484,8 +513,10 @@ InMemoryURLIndex::String16Set InMemoryURLIndex::WordSetFromString16(
 InMemoryURLIndex::String16Vector InMemoryURLIndex::WordVectorFromString16(
     const string16& uni_string,
     bool break_on_space) {
-  base::BreakIterator iter(&uni_string, break_on_space ?
-      base::BreakIterator::BREAK_SPACE : base::BreakIterator::BREAK_WORD);
+  base::i18n::BreakIterator iter(
+      uni_string,
+      break_on_space ? base::i18n::BreakIterator::BREAK_SPACE
+                     : base::i18n::BreakIterator::BREAK_WORD);
   String16Vector words;
   if (!iter.Init())
     return words;
@@ -644,10 +675,14 @@ size_t InMemoryURLIndex::CachedResultsIndexForTerm(
 TermMatches InMemoryURLIndex::MatchTermInString(const string16& term,
                                                 const string16& string,
                                                 int term_num) {
+  const size_t kMaxCompareLength = 2048;
+  const string16& short_string = (string.length() > kMaxCompareLength) ?
+      string.substr(0, kMaxCompareLength) : string;
   TermMatches matches;
-  for (size_t location = string.find(term); location != string16::npos;
-       location = string.find(term, location + 1))
+  for (size_t location = short_string.find(term); location != string16::npos;
+       location = short_string.find(term, location + 1)) {
     matches.push_back(TermMatch(term_num, location, term.size()));
+  }
   return matches;
 }
 
@@ -709,14 +744,8 @@ ScoredHistoryMatch InMemoryURLIndex::ScoredMatchForURL(
 
   // Figure out where each search term appears in the URL and/or page title
   // so that we can score as well as provide autocomplete highlighting.
-  string16 url = l10n_util::ToLower(UTF8ToUTF16(gurl.spec()));
-  // Strip any 'http://' prefix before matching.
-  if (url_util::FindAndCompareScheme(url, chrome::kHttpScheme, NULL)) {
-    match.prefix_adjust = strlen(chrome::kHttpScheme) + 3;  // Allow for '://'.
-    url = url.substr(match.prefix_adjust);
-  }
-
-  string16 title = l10n_util::ToLower(row.title());
+  string16 url = base::i18n::ToLower(UTF8ToUTF16(gurl.spec()));
+  string16 title = base::i18n::ToLower(row.title());
   int term_num = 0;
   for (String16Vector::const_iterator iter = terms.begin(); iter != terms.end();
        ++iter, ++term_num) {
@@ -736,6 +765,13 @@ ScoredHistoryMatch InMemoryURLIndex::ScoredMatchForURL(
   match.url_matches = SortAndDeoverlap(match.url_matches);
   match.title_matches = SortAndDeoverlap(match.title_matches);
 
+  // We should not (currently) inline autocomplete a result unless both of the
+  // following are true:
+  //   * There is exactly one substring matches in the URL, and
+  //   * The one URL match starts at the beginning of the URL.
+  match.can_inline =
+      match.url_matches.size() == 1 && match.url_matches[0].offset == 0;
+
   // Get partial scores based on term matching. Note that the score for
   // each of the URL and title are adjusted by the fraction of the
   // terms appearing in each.
@@ -743,8 +779,7 @@ ScoredHistoryMatch InMemoryURLIndex::ScoredMatchForURL(
       match.url_matches.size() / terms.size();
   int title_score =
       ScoreComponentForMatches(match.title_matches, title.size()) *
-      static_cast<int>(match.title_matches.size()) /
-      static_cast<int>(terms.size());
+      match.title_matches.size() / terms.size();
   // Arbitrarily pick the best.
   // TODO(mrossetti): It might make sense that a term which appears in both the
   // URL and the Title should boost the score a bit.
@@ -752,32 +787,34 @@ ScoredHistoryMatch InMemoryURLIndex::ScoredMatchForURL(
   if (term_score == 0)
     return match;
 
-  // Factor in recency of visit, visit count and typed count attributes of the
-  // URLRow.
+  // Determine scoring factors for the recency of visit, visit count and typed
+  // count attributes of the URLRow.
   const int kDaysAgoLevel[] = { 0, 10, 20, 30 };
-  int score = ScoreForValue((base::Time::Now() -
+  int days_ago_value = ScoreForValue((base::Time::Now() -
       row.last_visit()).InDays(), kDaysAgoLevel);
   const int kVisitCountLevel[] = { 30, 10, 5, 3 };
   int visit_count_value = ScoreForValue(row.visit_count(), kVisitCountLevel);
   const int kTypedCountLevel[] = { 10, 5, 3, 1 };
   int typed_count_value = ScoreForValue(row.typed_count(), kTypedCountLevel);
 
-  // Determine how many of the factors comprising the final score are
-  // significant by summing the relative factors for each and subtracting how
-  // many will be 'discarded' even if they are low.
-  const int kVisitCountMultiplier = 2;
-  const int kTypedCountMultiplier = 3;
-  const int kSignificantFactors =
-      kVisitCountMultiplier +  // Visit count factor plus
-      kTypedCountMultiplier +  // typed count factor plus
-      2 -                      // one each for string match and last visit
-      2;                       // minus 2 insignificant factors.
-  // The following, in effect, discards up to |kSignificantFactors| low scoring
-  // elements which contribute little to the score but which can inordinately
-  // drag down an otherwise good score.
-  match.raw_score = std::min(kScoreRank[0], (term_score + score +
-      (visit_count_value * kVisitCountMultiplier) + (typed_count_value *
-      kTypedCountMultiplier)) / kSignificantFactors);
+  // The final raw score is calculated by:
+  //   - accumulating each contributing factor, some of which are added more
+  //     than once giving them more 'influence' on the final score (currently,
+  //     visit_count_value is added twice and typed_count_value three times)
+  //   - dropping the lowest scores (|kInsignificantFactors|)
+  //   - dividing by the remaining significant factors
+  // This approach allows emphasis on more relevant factors while reducing the
+  // inordinate impact of low scoring factors.
+  int factor[] = {term_score, days_ago_value, visit_count_value,
+      visit_count_value, typed_count_value, typed_count_value,
+      typed_count_value};
+  const int kInsignificantFactors = 2;
+  const int kSignificantFactors = arraysize(factor) - kInsignificantFactors;
+  std::partial_sort(factor, factor + kSignificantFactors,
+                    factor + arraysize(factor), std::greater<int>());
+  for (int i = 0; i < kSignificantFactors; ++i)
+    match.raw_score += factor[i];
+  match.raw_score /= kSignificantFactors;
 
   return match;
 }
@@ -821,8 +858,12 @@ int InMemoryURLIndex::ScoreComponentForMatches(const TermMatches& matches,
   // that was matched.
   size_t term_length_total = std::accumulate(matches.begin(), matches.end(),
                                              0, AccumulateMatchLength);
+  const size_t kMaxSignificantLength = 50;
+  size_t max_significant_length =
+      std::min(max_length, std::max(term_length_total, kMaxSignificantLength));
   const int kCompleteMaxValue = 500;
-  int complete_value = term_length_total * kCompleteMaxValue / max_length;
+  int complete_value =
+      term_length_total * kCompleteMaxValue / max_significant_length;
 
   int raw_score = order_value + start_value + complete_value;
   const int kTermScoreLevel[] = { 1000, 650, 500, 200 };
@@ -861,6 +902,10 @@ bool InMemoryURLIndex::GetCacheFilePath(FilePath* file_path) {
     return false;
   *file_path = history_dir_.Append(FILE_PATH_LITERAL("History Provider Cache"));
   return true;
+}
+
+bool InMemoryURLIndex::URLSchemeIsWhitelisted(const GURL& gurl) const {
+  return scheme_whitelist_.find(gurl.scheme()) != scheme_whitelist_.end();
 }
 
 void InMemoryURLIndex::SavePrivateData(InMemoryURLIndexCacheItem* cache) const {

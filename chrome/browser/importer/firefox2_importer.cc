@@ -148,8 +148,6 @@ TemplateURL* Firefox2Importer::CreateTemplateURL(const string16& title,
 void Firefox2Importer::ImportBookmarksFile(
     const FilePath& file_path,
     const std::set<GURL>& default_urls,
-    bool import_to_bookmark_bar,
-    const string16& first_folder_name,
     Importer* importer,
     std::vector<ProfileWriter::BookmarkEntry>* bookmarks,
     std::vector<TemplateURL*>* template_urls,
@@ -160,9 +158,10 @@ void Firefox2Importer::ImportBookmarksFile(
   base::SplitString(content, '\n', &lines);
 
   std::vector<ProfileWriter::BookmarkEntry> toolbar_bookmarks;
-  string16 last_folder = first_folder_name;
+  string16 last_folder;
   bool last_folder_on_toolbar = false;
   bool last_folder_is_empty = true;
+  bool has_subfolder = false;
   base::Time last_folder_add_date;
   std::vector<string16> path;
   size_t toolbar_folder = 0;
@@ -213,16 +212,18 @@ void Firefox2Importer::ImportBookmarksFile(
       entry.url = url;
       entry.title = title;
 
-      if (import_to_bookmark_bar && toolbar_folder) {
-        // Flatten the items in toolbar.
+      if (toolbar_folder) {
+        // The toolbar folder should be at the top level.
         entry.in_toolbar = true;
-        entry.path.assign(path.begin() + toolbar_folder, path.end());
+        entry.path.assign(path.begin() + toolbar_folder - 1, path.end());
         toolbar_bookmarks.push_back(entry);
       } else {
-        // Insert the item into the "Imported from Firefox" folder.
+        // Add this bookmark to the list of |bookmarks|.
+        if (!has_subfolder && !last_folder.empty()) {
+          path.push_back(last_folder);
+          last_folder.clear();
+        }
         entry.path.assign(path.begin(), path.end());
-        if (import_to_bookmark_bar)
-          entry.path.erase(entry.path.begin());
         bookmarks->push_back(entry);
       }
 
@@ -244,8 +245,11 @@ void Firefox2Importer::ImportBookmarksFile(
 
     // Bookmarks in sub-folder are encapsulated with <DL> tag.
     if (StartsWithASCII(line, "<DL>", false)) {
-      path.push_back(last_folder);
-      last_folder.clear();
+      has_subfolder = true;
+      if (!last_folder.empty()) {
+        path.push_back(last_folder);
+        last_folder.clear();
+      }
       if (last_folder_on_toolbar && !toolbar_folder)
         toolbar_folder = path.size();
 
@@ -264,16 +268,17 @@ void Firefox2Importer::ImportBookmarksFile(
         entry.is_folder = true;
         entry.creation_time = last_folder_add_date;
         entry.title = folder_title;
-        if (import_to_bookmark_bar && toolbar_folder) {
-          // Flatten the folder in toolbar.
-          entry.in_toolbar = true;
-          entry.path.assign(path.begin() + toolbar_folder, path.end());
-          toolbar_bookmarks.push_back(entry);
+        if (toolbar_folder) {
+          // The toolbar folder should be at the top level.
+          // Make sure we don't add the toolbar folder itself if it is empty.
+          if (toolbar_folder <= path.size()) {
+            entry.in_toolbar = true;
+            entry.path.assign(path.begin() + toolbar_folder - 1, path.end());
+            toolbar_bookmarks.push_back(entry);
+          }
         } else {
-          // Insert the folder into the "Imported from Firefox" folder.
+          // Add this folder to the list of |bookmarks|.
           entry.path.assign(path.begin(), path.end());
-          if (import_to_bookmark_bar)
-            entry.path.erase(entry.path.begin());
           bookmarks->push_back(entry);
         }
 
@@ -303,22 +308,16 @@ void Firefox2Importer::ImportBookmarks() {
   FilePath file = source_path_;
   if (!parsing_bookmarks_html_file_)
     file = file.AppendASCII("bookmarks.html");
-  string16 first_folder_name = bridge_->GetLocalizedString(
-      parsing_bookmarks_html_file_ ? IDS_BOOKMARK_GROUP :
-                                     IDS_BOOKMARK_GROUP_FROM_FIREFOX);
 
-  ImportBookmarksFile(file, default_urls, import_to_bookmark_bar(),
-                      first_folder_name, this, &bookmarks, &template_urls,
+  ImportBookmarksFile(file, default_urls, this, &bookmarks, &template_urls,
                       &favicons);
 
   // Write data into profile.
   if (!bookmarks.empty() && !cancelled()) {
-    int options = 0;
-    if (import_to_bookmark_bar())
-      options |= ProfileWriter::IMPORT_TO_BOOKMARK_BAR;
-    if (bookmark_bar_disabled())
-      options |= ProfileWriter::BOOKMARK_BAR_DISABLED;
-    bridge_->AddBookmarkEntries(bookmarks, first_folder_name, options);
+    string16 first_folder_name = bridge_->GetLocalizedString(
+        parsing_bookmarks_html_file_ ? IDS_BOOKMARK_GROUP :
+                                       IDS_BOOKMARK_GROUP_FROM_FIREFOX);
+    bridge_->AddBookmarks(bookmarks, first_folder_name);
   }
   if (!parsing_bookmarks_html_file_ && !template_urls.empty() &&
       !cancelled()) {
@@ -326,9 +325,8 @@ void Firefox2Importer::ImportBookmarks() {
   } else {
     STLDeleteContainerPointers(template_urls.begin(), template_urls.end());
   }
-  if (!favicons.empty()) {
+  if (!favicons.empty())
     bridge_->SetFavicons(favicons);
-  }
 }
 
 void Firefox2Importer::ImportPasswords() {

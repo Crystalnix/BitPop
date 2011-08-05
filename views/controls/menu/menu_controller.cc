@@ -4,6 +4,7 @@
 
 #include "views/controls/menu/menu_controller.h"
 
+#include "base/i18n/case_conversion.h"
 #include "base/i18n/rtl.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
@@ -51,18 +52,17 @@ namespace views {
 namespace {
 
 // Returns true if the mnemonic of |menu| matches key.
-bool MatchesMnemonic(MenuItemView* menu, wchar_t key) {
+bool MatchesMnemonic(MenuItemView* menu, char16 key) {
   return menu->GetMnemonic() == key;
 }
 
 // Returns true if |menu| doesn't have a mnemonic and first character of the its
 // title is |key|.
-bool TitleMatchesMnemonic(MenuItemView* menu, wchar_t key) {
+bool TitleMatchesMnemonic(MenuItemView* menu, char16 key) {
   if (menu->GetMnemonic())
     return false;
 
-  std::wstring lower_title = UTF16ToWide(
-      l10n_util::ToLower(WideToUTF16(menu->GetTitle())));
+  string16 lower_title = base::i18n::ToLower(WideToUTF16(menu->GetTitle()));
   return !lower_title.empty() && lower_title[0] == key;
 }
 
@@ -544,7 +544,7 @@ void MenuController::OnMouseReleased(SubmenuView* source,
       SendMouseReleaseToActiveView(source, event);
       return;
     }
-    if (part.menu->GetDelegate()->IsTriggerableEvent(event)) {
+    if (part.menu->GetDelegate()->IsTriggerableEvent(part.menu, event)) {
       Accept(part.menu, event.flags());
       return;
     }
@@ -827,7 +827,7 @@ bool MenuController::Dispatch(const MSG& msg) {
       return OnKeyDown(msg.wParam, msg);
 
     case WM_CHAR:
-      return !SelectByChar(static_cast<wchar_t>(msg.wParam));
+      return !SelectByChar(static_cast<char16>(msg.wParam));
 
     case WM_KEYUP:
       return true;
@@ -1325,6 +1325,14 @@ void MenuController::OpenMenu(MenuItemView* item) {
 }
 
 void MenuController::OpenMenuImpl(MenuItemView* item, bool show) {
+  if (show) {
+    int old_count = item->GetSubmenu()->child_count();
+    item->GetDelegate()->WillShowMenu(item);
+    if (old_count != item->GetSubmenu()->child_count()) {
+      // If the number of children changed then we may need to add empty items.
+      item->AddEmptyMenus();
+    }
+  }
   bool prefer_leading =
       state_.open_leading.empty() ? true : state_.open_leading.back();
   bool resulting_direction;
@@ -1342,18 +1350,21 @@ void MenuController::OpenMenuImpl(MenuItemView* item, bool show) {
 
 void MenuController::MenuChildrenChanged(MenuItemView* item) {
   DCHECK(item);
-  DCHECK(item->GetSubmenu()->IsShowing());
 
-  // Currently this only supports adjusting the bounds of the last menu.
-  DCHECK(item == state_.item->GetParentMenuItem());
+  // If the current item or pending item is a descendant of the item
+  // that changed, move the selection back to the changed item.
+  const MenuItemView* ancestor = state_.item;
+  while (ancestor && ancestor != item)
+    ancestor = ancestor->GetParentMenuItem();
+  ancestor = ancestor ? ancestor : pending_state_.item;
+  while (ancestor && ancestor != item)
+    ancestor = ancestor->GetParentMenuItem();
 
-  // Make sure the submenu isn't showing for the current item (the position may
-  // have changed or the menu removed). This also moves the selection back to
-  // the parent, which handles the case where the selected item was removed.
-  SetSelection(state_.item->GetParentMenuItem(),
-               SELECTION_OPEN_SUBMENU | SELECTION_UPDATE_IMMEDIATELY);
-
-  OpenMenuImpl(item, false);
+  if (ancestor) {
+    SetSelection(item, SELECTION_OPEN_SUBMENU | SELECTION_UPDATE_IMMEDIATELY);
+    if (item->HasSubmenu())
+      OpenMenuImpl(item, false);
+  }
 }
 
 void MenuController::BuildPathsAndCalculateDiff(
@@ -1418,7 +1429,7 @@ gfx::Rect MenuController::CalculateMenuBounds(MenuItemView* item,
 
   // Don't let the menu go to wide.
   pref.set_width(std::min(pref.width(),
-                          item->GetDelegate()->GetMaxWidthForMenu()));
+                          item->GetDelegate()->GetMaxWidthForMenu(item)));
   if (!state_.monitor_bounds.IsEmpty())
     pref.set_width(std::min(pref.width(), state_.monitor_bounds.width()));
 
@@ -1435,19 +1446,36 @@ gfx::Rect MenuController::CalculateMenuBounds(MenuItemView* item,
       x = x + state_.initial_bounds.width() - pref.width();
     if (!state_.monitor_bounds.IsEmpty() &&
         y + pref.height() > state_.monitor_bounds.bottom()) {
-      // The menu doesn't fit on screen. If the first location is above the
-      // half way point, show from the mouse location to bottom of screen.
-      // Otherwise show from the top of the screen to the location of the mouse.
-      // While odd, this behavior matches IE.
-      if (y < (state_.monitor_bounds.y() +
-               state_.monitor_bounds.height() / 2)) {
+      // The menu doesn't fit on screen. The menu position with
+      // respect to the bounds will be preserved if it has already
+      // been drawn. On the first drawing if the first location is
+      // above the half way point then show from the mouse location to
+      // bottom of screen, otherwise show from the top of the screen
+      // to the location of the mouse.  While odd, this behavior
+      // matches IE.
+      if (item->actual_menu_position() == MenuItemView::POSITION_BELOW_BOUNDS ||
+          (item->actual_menu_position() == MenuItemView::POSITION_BEST_FIT &&
+           y < (state_.monitor_bounds.y() +
+                state_.monitor_bounds.height() / 2))) {
         pref.set_height(std::min(pref.height(),
                                  state_.monitor_bounds.bottom() - y));
+        item->set_actual_menu_position(MenuItemView::POSITION_BELOW_BOUNDS);
       } else {
         pref.set_height(std::min(pref.height(),
             state_.initial_bounds.y() - state_.monitor_bounds.y()));
         y = state_.initial_bounds.y() - pref.height();
+        item->set_actual_menu_position(MenuItemView::POSITION_ABOVE_BOUNDS);
       }
+    } else if (item->actual_menu_position() ==
+               MenuItemView::POSITION_ABOVE_BOUNDS) {
+      // The menu would fit below the bounds, but it has already been
+      // drawn above so keep it there.
+      pref.set_height(std::min(pref.height(),
+          state_.initial_bounds.y() - state_.monitor_bounds.y()));
+      y = state_.initial_bounds.y() - pref.height();
+      item->set_actual_menu_position(MenuItemView::POSITION_ABOVE_BOUNDS);
+    } else {
+      item->set_actual_menu_position(MenuItemView::POSITION_BELOW_BOUNDS);
     }
   } else {
     // Not the first menu; position it relative to the bounds of the menu
@@ -1582,7 +1610,7 @@ MenuItemView* MenuController::FindNextSelectableMenuItem(MenuItemView* parent,
 
 void MenuController::OpenSubmenuChangeSelectionIfCan() {
   MenuItemView* item = pending_state_.item;
-  if (item->HasSubmenu()) {
+  if (item->HasSubmenu() && item->IsEnabled()) {
     if (item->GetSubmenu()->GetMenuItemCount() > 0) {
       SetSelection(item->GetSubmenu()->GetMenuItemAt(0),
                    SELECTION_UPDATE_IMMEDIATELY);
@@ -1607,8 +1635,8 @@ void MenuController::CloseSubmenu() {
 
 MenuController::SelectByCharDetails MenuController::FindChildForMnemonic(
     MenuItemView* parent,
-    wchar_t key,
-    bool (*match_function)(MenuItemView* menu, wchar_t mnemonic)) {
+    char16 key,
+    bool (*match_function)(MenuItemView* menu, char16 mnemonic)) {
   SubmenuView* submenu = parent->GetSubmenu();
   DCHECK(submenu);
   SelectByCharDetails details;
@@ -1659,9 +1687,9 @@ bool MenuController::AcceptOrSelect(MenuItemView* parent,
   return false;
 }
 
-bool MenuController::SelectByChar(wchar_t character) {
-  wchar_t char_array[1] = { character };
-  wchar_t key = UTF16ToWide(l10n_util::ToLower(WideToUTF16(char_array)))[0];
+bool MenuController::SelectByChar(char16 character) {
+  char16 char_array[] = { character, 0 };
+  char16 key = base::i18n::ToLower(char_array)[0];
   MenuItemView* item = pending_state_.item;
   if (!item->HasSubmenu() || !item->GetSubmenu()->IsShowing())
     item = item->GetParentMenuItem();

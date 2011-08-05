@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,7 +25,7 @@
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
 #include "content/browser/zygote_host_linux.h"
 #include "content/browser/renderer_host/render_sandbox_host_linux.h"
 #endif
@@ -109,7 +109,7 @@ void MemoryDetails::CollectChildInfoOnIOThread() {
 void MemoryDetails::CollectChildInfoOnUIThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
   const pid_t zygote_pid = ZygoteHost::GetInstance()->pid();
   const pid_t sandbox_helper_pid = RenderSandboxHostLinux::GetInstance()->pid();
 #endif
@@ -171,7 +171,7 @@ void MemoryDetails::CollectChildInfoOnUIThread() {
         }
         TabContents* contents = host_delegate->GetAsTabContents();
         if (!contents) {
-          if (host->is_extension_process()) {
+          if (host->process()->is_extension_process()) {
             const Extension* extension =
                 extension_service->GetExtensionByURL(url);
             if (extension) {
@@ -235,7 +235,7 @@ void MemoryDetails::CollectChildInfoOnUIThread() {
       }
     }
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
     if (process.pid == zygote_pid) {
       process.type = ChildProcessInfo::ZYGOTE_PROCESS;
     } else if (process.pid == sandbox_helper_pid) {

@@ -6,7 +6,7 @@
   'targets': [
     {
       'target_name': 'ui_base',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
         '../skia/skia.gyp:skia',
@@ -21,8 +21,8 @@
       ],
       'sources': [
         'base/accessibility/accessibility_types.h',
-        'base/accessibility/accessible_view_state.h',
         'base/accessibility/accessible_view_state.cc',
+        'base/accessibility/accessible_view_state.h',
         'base/animation/animation.cc',
         'base/animation/animation.h',
         'base/animation/animation_container.cc',
@@ -49,18 +49,20 @@
         'base/clipboard/clipboard_win.cc',
         'base/clipboard/scoped_clipboard_writer.cc',
         'base/clipboard/scoped_clipboard_writer.h',
+        'base/gtk/g_object_destructor_filo.cc',
+        'base/gtk/g_object_destructor_filo.h',
+        'base/gtk/gtk_im_context_util.cc',
+        'base/gtk/gtk_im_context_util.h',
         'base/ime/composition_text.cc',
         'base/ime/composition_text.h',
         'base/ime/composition_underline.h',
         'base/ime/text_input_type.h',
-        'base/gtk/gtk_im_context_util.cc',
-        'base/gtk/gtk_im_context_util.h',
         'base/range/range.cc',
         'base/range/range.h',
         'base/range/range.mm',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
             '../build/linux/system.gyp:x11',

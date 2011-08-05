@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,9 +36,18 @@ PlatformFile CreatePlatformFile(const FilePath& name, int flags,
   if (flags & PLATFORM_FILE_CREATE)
     open_flags = O_CREAT | O_EXCL;
 
+  if (created)
+    *created = false;
+
   if (flags & PLATFORM_FILE_CREATE_ALWAYS) {
     DCHECK(!open_flags);
     open_flags = O_CREAT | O_TRUNC;
+  }
+
+  if (flags & PLATFORM_FILE_OPEN_TRUNCATED) {
+    DCHECK(!open_flags);
+    DCHECK(flags & PLATFORM_FILE_WRITE);
+    open_flags = O_TRUNC;
   }
 
   if (!open_flags && !(flags & PLATFORM_FILE_OPEN) &&
@@ -59,21 +68,13 @@ PlatformFile CreatePlatformFile(const FilePath& name, int flags,
     NOTREACHED();
   }
 
-  if (flags & PLATFORM_FILE_TRUNCATE) {
-    DCHECK(flags & PLATFORM_FILE_WRITE);
-    open_flags |= O_TRUNC;
-  }
-
   COMPILE_ASSERT(O_RDONLY == 0, O_RDONLY_must_equal_zero);
 
   int descriptor =
       HANDLE_EINTR(open(name.value().c_str(), open_flags, S_IRUSR | S_IWUSR));
 
   if (flags & PLATFORM_FILE_OPEN_ALWAYS) {
-    if (descriptor > 0) {
-      if (created)
-        *created = false;
-    } else {
+    if (descriptor <= 0) {
       open_flags |= O_CREAT;
       if (flags & PLATFORM_FILE_EXCLUSIVE_READ ||
           flags & PLATFORM_FILE_EXCLUSIVE_WRITE) {

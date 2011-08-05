@@ -27,12 +27,11 @@
 #include "chrome/browser/net/proxy_service_factory.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/net/raw_host_resolver_proc.h"
-#include "chrome/common/net/url_fetcher.h"
 #include "chrome/common/pref_names.h"
 #include "content/browser/browser_thread.h"
-#include "content/browser/gpu_process_host.h"
+#include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/in_process_webkit/indexed_db_key_utility_client.h"
+#include "content/common/url_fetcher.h"
 #include "net/base/cert_verifier.h"
 #include "net/base/cookie_monster.h"
 #include "net/base/dnsrr_resolver.h"
@@ -41,17 +40,20 @@
 #include "net/base/host_resolver_impl.h"
 #include "net/base/mapped_host_resolver.h"
 #include "net/base/net_util.h"
-#include "net/proxy/proxy_config_service.h"
 #include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_auth_filter.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_network_layer.h"
 #include "net/http/http_network_session.h"
+#include "net/proxy/proxy_config_service.h"
+#include "net/proxy/proxy_script_fetcher_impl.h"
+#include "net/proxy/proxy_service.h"
+#include "net/socket/dns_cert_provenance_checker.h"
+#include "webkit/glue/webkit_glue.h"
+
 #if defined(USE_NSS)
 #include "net/ocsp/nss_ocsp.h"
 #endif  // defined(USE_NSS)
-#include "net/proxy/proxy_script_fetcher_impl.h"
-#include "webkit/glue/webkit_glue.h"
 
 namespace {
 
@@ -63,6 +65,25 @@ class URLRequestContextWithUserAgent : public net::URLRequestContext {
   virtual const std::string& GetUserAgent(
       const GURL& url) const OVERRIDE {
     return webkit_glue::GetUserAgent(url);
+  }
+};
+
+// Used for the "system" URLRequestContext. If this grows more complicated, then
+// consider inheriting directly from URLRequestContext rather than using
+// implementation inheritance.
+class SystemURLRequestContext : public URLRequestContextWithUserAgent {
+ public:
+  SystemURLRequestContext() {
+#if defined(USE_NSS)
+    net::SetURLRequestContextForOCSP(this);
+#endif  // defined(USE_NSS)
+  }
+
+ private:
+  virtual ~SystemURLRequestContext() {
+#if defined(USE_NSS)
+    net::SetURLRequestContextForOCSP(NULL);
+#endif  // defined(USE_NSS)
   }
 };
 
@@ -122,24 +143,23 @@ net::HostResolver* CreateGlobalHostResolver(net::NetLog* net_log) {
       parallelism = 20;
   }
 
-  // Use the specified DNS server for doing raw resolutions if requested
-  // from the command-line.
-  scoped_refptr<net::HostResolverProc> resolver_proc;
-  if (command_line.HasSwitch(switches::kDnsServer)) {
-    std::string dns_ip_string =
-        command_line.GetSwitchValueASCII(switches::kDnsServer);
-    net::IPAddressNumber dns_ip_number;
-    if (net::ParseIPLiteralToNumber(dns_ip_string, &dns_ip_number)) {
-      resolver_proc =
-          new chrome_common_net::RawHostResolverProc(dns_ip_number, NULL);
+  size_t retry_attempts = net::HostResolver::kDefaultRetryAttempts;
+
+  // Use the retry attempts override from the command-line, if any.
+  if (command_line.HasSwitch(switches::kHostResolverRetryAttempts)) {
+    std::string s =
+        command_line.GetSwitchValueASCII(switches::kHostResolverRetryAttempts);
+    // Parse the switch (it should be a non-negative integer).
+    int n;
+    if (base::StringToInt(s, &n) && n >= 0) {
+      retry_attempts = static_cast<size_t>(n);
     } else {
-      LOG(ERROR) << "Invalid IP address specified for --dns-server: "
-                 << dns_ip_string;
+      LOG(ERROR) << "Invalid switch for host resolver retry attempts: " << s;
     }
   }
 
   net::HostResolver* global_host_resolver =
-      net::CreateSystemHostResolver(parallelism, resolver_proc.get(), net_log);
+      net::CreateSystemHostResolver(parallelism, retry_attempts, net_log);
 
   // Determine if we should disable IPv6 support.
   if (!command_line.HasSwitch(switches::kEnableIPv6)) {
@@ -196,6 +216,8 @@ class LoggingNetworkChangeObserver
   DISALLOW_COPY_AND_ASSIGN(LoggingNetworkChangeObserver);
 };
 
+// Create a separate request context for PAC fetches to avoid reference cycles.
+// See IOThread::Globals for details.
 scoped_refptr<net::URLRequestContext>
 ConstructProxyScriptFetcherContext(IOThread::Globals* globals,
                                    net::NetLog* net_log) {
@@ -222,7 +244,7 @@ scoped_refptr<net::URLRequestContext>
 ConstructSystemRequestContext(IOThread::Globals* globals,
                               net::NetLog* net_log) {
   scoped_refptr<net::URLRequestContext> context(
-      new URLRequestContextWithUserAgent);
+      new SystemURLRequestContext);
   context->set_net_log(net_log);
   context->set_host_resolver(globals->host_resolver.get());
   context->set_cert_verifier(globals->cert_verifier.get());
@@ -314,6 +336,8 @@ IOThread::IOThread(
   pref_proxy_config_tracker_ = new PrefProxyConfigTracker(local_state);
   ChromeNetworkDelegate::InitializeReferrersEnabled(&system_enable_referrers_,
                                                     local_state);
+  ssl_config_service_manager_.reset(
+      SSLConfigServiceManager::CreateDefaultManager(local_state));
 }
 
 IOThread::~IOThread() {
@@ -433,20 +457,17 @@ void IOThread::Init() {
   globals_->system_network_delegate.reset(new ChromeNetworkDelegate(
       extension_event_router_forwarder_,
       Profile::kInvalidProfileId,
-      &system_enable_referrers_,
-      NULL));
+      &system_enable_referrers_));
   globals_->host_resolver.reset(
       CreateGlobalHostResolver(net_log_));
   globals_->cert_verifier.reset(new net::CertVerifier);
   globals_->dnsrr_resolver.reset(new net::DnsRRResolver);
-  // TODO(willchan): Use the real SSLConfigService.
-  globals_->ssl_config_service =
-      net::SSLConfigService::CreateSystemSSLConfigService();
+  globals_->ssl_config_service = GetSSLConfigService();
   globals_->http_auth_handler_factory.reset(CreateDefaultAuthHandlerFactory(
       globals_->host_resolver.get()));
   // For the ProxyScriptFetcher, we use a direct ProxyService.
-  globals_->proxy_script_fetcher_proxy_service =
-      net::ProxyService::CreateDirectWithNetLog(net_log_);
+  globals_->proxy_script_fetcher_proxy_service.reset(
+      net::ProxyService::CreateDirectWithNetLog(net_log_));
   net::HttpNetworkSession::Params session_params;
   session_params.host_resolver = globals_->host_resolver.get();
   session_params.cert_verifier = globals_->cert_verifier.get();
@@ -554,6 +575,7 @@ void IOThread::RegisterPrefs(PrefService* local_state) {
   local_state->RegisterStringPref(prefs::kAuthServerWhitelist, "");
   local_state->RegisterStringPref(prefs::kAuthNegotiateDelegateWhitelist, "");
   local_state->RegisterStringPref(prefs::kGSSAPILibraryName, "");
+  local_state->RegisterBooleanPref(prefs::kAllowCrossOriginAuthPrompt, false);
   local_state->RegisterBooleanPref(prefs::kEnableReferrers, true);
 }
 
@@ -640,18 +662,22 @@ void IOThread::ClearHostCache() {
   }
 }
 
+net::SSLConfigService* IOThread::GetSSLConfigService() {
+  return ssl_config_service_manager_->Get();
+}
+
 void IOThread::InitSystemRequestContext() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  DCHECK(!globals_->system_proxy_service);
+  DCHECK(!globals_->system_proxy_service.get());
   DCHECK(system_proxy_config_service_.get());
 
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  globals_->system_proxy_service =
+  globals_->system_proxy_service.reset(
       ProxyServiceFactory::CreateProxyService(
           net_log_,
           globals_->proxy_script_fetcher_context,
           system_proxy_config_service_.release(),
-          command_line);
+          command_line));
   net::HttpNetworkSession::Params system_params;
   system_params.host_resolver = globals_->host_resolver.get();
   system_params.cert_verifier = globals_->cert_verifier.get();

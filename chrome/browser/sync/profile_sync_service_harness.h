@@ -60,6 +60,15 @@ class ProfileSyncServiceHarness : public ProfileSyncServiceObserver {
   // ProfileSyncServiceObserver implementation.
   virtual void OnStateChanged();
 
+  // Blocks the caller until the sync backend host associated with this harness
+  // has been initialized.  Returns true if the wait was successful.
+  bool AwaitBackendInitialized();
+
+  // Blocks the caller until the datatype manager is configured and sync has
+  // been initialized (for example, after a browser restart).  Returns true if
+  // the wait was successful.
+  bool AwaitSyncRestart();
+
   // Blocks the caller until this harness has completed a single sync cycle
   // since the previous one.  Returns true if a sync cycle has completed.
   bool AwaitSyncCycleCompletion(const std::string& reason);
@@ -92,8 +101,11 @@ class ProfileSyncServiceHarness : public ProfileSyncServiceObserver {
   static bool AwaitQuiescence(
       std::vector<ProfileSyncServiceHarness*>& clients);
 
-  // If a SetPassphrase call has been issued with a valid passphrase, this
-  // will wait until the passphrase has been accepted.
+  // Blocks the caller until |service_| indicates that a passphrase is required.
+  bool AwaitPassphraseRequired();
+
+  // Blocks the caller until |service_| indicates that the passphrase set by
+  // calling SetPassphrase has been accepted.
   bool AwaitPassphraseAccepted();
 
   // Returns the ProfileSyncService member of the the sync client.
@@ -105,29 +117,34 @@ class ProfileSyncServiceHarness : public ProfileSyncServiceObserver {
   // See ProfileSyncService::ShouldPushChanges().
   bool ServiceIsPushingChanges() { return service_->ShouldPushChanges(); }
 
-  // Enables sync for a particular sync datatype.
-  void EnableSyncForDatatype(syncable::ModelType datatype);
+  // Enables sync for a particular sync datatype. Returns true on success.
+  bool EnableSyncForDatatype(syncable::ModelType datatype);
 
-  // Disables sync for a particular sync datatype.
-  void DisableSyncForDatatype(syncable::ModelType datatype);
+  // Disables sync for a particular sync datatype. Returns true on success.
+  bool DisableSyncForDatatype(syncable::ModelType datatype);
 
-  // Enables sync for all sync datatypes.
-  void EnableSyncForAllDatatypes();
+  // Enables sync for all sync datatypes. Returns true on success.
+  bool EnableSyncForAllDatatypes();
 
-  // Disables sync for all sync datatypes.
-  void DisableSyncForAllDatatypes();
+  // Disables sync for all sync datatypes. Returns true on success.
+  bool DisableSyncForAllDatatypes();
 
   // Returns a snapshot of the current sync session.
   const browser_sync::sessions::SyncSessionSnapshot*
       GetLastSessionSnapshot() const;
 
   // Encrypt the datatype |type|. This method will block while the sync backend
-  // host performs the encryption or a timeout is reached. Returns false if
-  // encryption failed, else true.
-  // Note: this method does not currently support tracking encryption status
-  // while other sync activities are being performed. Sync should be fully
-  // synced when this is called.
+  // host performs the encryption or a timeout is reached.
+  // PostCondition:
+  //   returns: True if |type| was encrypted and we are fully synced.
+  //            False if we timed out.
   bool EnableEncryptionForType(syncable::ModelType type);
+
+  // Wait until |type| is encrypted or we time out.
+  // PostCondition:
+  //   returns: True if |type| is currently encrypted and we are fully synced.
+  //            False if we timed out.
+  bool WaitForTypeEncryption(syncable::ModelType type);
 
   // Check if |type| is encrypted.
   bool IsTypeEncrypted(syncable::ModelType type);
@@ -151,12 +168,24 @@ class ProfileSyncServiceHarness : public ProfileSyncServiceObserver {
     // The sync client anticipates incoming updates leading to a new sync cycle.
     WAITING_FOR_UPDATES,
 
+    // The sync client is waiting for a passphrase to be required by the
+    // cryptographer.
+    WAITING_FOR_PASSPHRASE_REQUIRED,
+
     // The sync client is waiting for its passphrase to be accepted by the
     // cryptographer.
     WAITING_FOR_PASSPHRASE_ACCEPTED,
 
     // The sync client anticipates encryption of new datatypes.
     WAITING_FOR_ENCRYPTION,
+
+    // The sync client is waiting for the datatype manager to be configured and
+    // for sync to be fully initialized. Used after a browser restart, where a
+    // full sync cycle is not expected to occur.
+    WAITING_FOR_SYNC_CONFIGURATION,
+
+    // The sync client needs a passphrase in order to decrypt data.
+    SET_PASSPHRASE_FAILED,
 
     // The sync client cannot reach the server.
     SERVER_UNREACHABLE,
@@ -192,19 +221,28 @@ class ProfileSyncServiceHarness : public ProfileSyncServiceObserver {
   bool MatchesOtherClient(ProfileSyncServiceHarness* partner);
 
   // Logs message with relevant info about client's sync state (if available).
-  void LogClientInfo(const std::string& message);
+  // |log_level| denotes the VLOG level.
+  void LogClientInfo(const std::string& message, int log_level);
 
   // Gets the current progress indicator of the current sync session
   // for a particular datatype.
   std::string GetUpdatedTimestamp(syncable::ModelType model_type);
 
+  // Gets detailed status from |service_| in pretty-printable form.
+  std::string GetServiceStatus();
+
   // When in WAITING_FOR_ENCRYPTION state, we check to see if this type is now
   // encrypted to determine if we're done.
   syncable::ModelType waiting_for_encryption_type_;
 
+  // The WaitState in which the sync client currently is. Helps determine what
+  // action to take when RunStateChangeMachine() is called.
   WaitState wait_state_;
 
+  // Sync profile associated with this sync client.
   Profile* profile_;
+
+  // ProfileSyncService object associated with |profile_|.
   ProfileSyncService* service_;
 
   // The harness of the client whose update progress marker we're expecting

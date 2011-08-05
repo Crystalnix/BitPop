@@ -7,11 +7,12 @@
 #pragma once
 
 #include <string>
+
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/login/auth_response_handler.h"
 #include "chrome/browser/chromeos/login/client_login_response_handler.h"
 #include "chrome/browser/chromeos/login/issue_response_handler.h"
-#include "chrome/common/net/url_fetcher.h"
+#include "content/common/url_fetcher.h"
 
 class Profile;
 
@@ -31,11 +32,7 @@ class CookieFetcher : public URLFetcher::Delegate {
   // Takes ownership of |cl_handler|, |i_handler|, and |launcher|.
   CookieFetcher(Profile* profile,
                 AuthResponseHandler* cl_handler,
-                AuthResponseHandler* i_handler)
-      : profile_(profile),
-        client_login_handler_(cl_handler),
-        issue_handler_(i_handler) {
-  }
+                AuthResponseHandler* i_handler);
 
   // Given a newline-delineated SID/LSID pair of Google cookies (like
   // those that come back from ClientLogin), try to use them to fetch
@@ -49,11 +46,11 @@ class CookieFetcher : public URLFetcher::Delegate {
                                   const GURL& url,
                                   const net::URLRequestStatus& status,
                                   int response_code,
-                                  const ResponseCookies& cookies,
+                                  const net::ResponseCookies& cookies,
                                   const std::string& data);
 
  private:
-  virtual ~CookieFetcher() {}
+  virtual ~CookieFetcher();
 
   scoped_ptr<URLFetcher> fetcher_;
   Profile* profile_;

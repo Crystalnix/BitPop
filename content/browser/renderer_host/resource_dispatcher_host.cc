@@ -9,6 +9,7 @@
 #include <set>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -22,11 +23,7 @@
 #include "chrome/browser/download/download_request_limiter.h"
 #include "chrome/browser/download/download_util.h"
 #include "chrome/browser/download/save_file_manager.h"
-#include "chrome/browser/external_protocol_handler.h"
-#include "chrome/browser/net/chrome_url_request_context.h"
-#include "chrome/browser/net/url_request_tracking.h"
-#include "chrome/browser/prerender/prerender_manager.h"
-#include "chrome/browser/prerender/prerender_resource_handler.h"
+#include "chrome/browser/external_protocol/external_protocol_handler.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_host/download_resource_handler.h"
 #include "chrome/browser/renderer_host/safe_browsing_resource_handler.h"
@@ -36,10 +33,11 @@
 #include "chrome/browser/ssl/ssl_manager.h"
 #include "chrome/browser/ui/login/login_prompt.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/url_constants.h"
+#include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/cert_store.h"
 #include "content/browser/child_process_security_policy.h"
 #include "content/browser/chrome_blob_storage_context.h"
+#include "content/browser/content_browser_client.h"
 #include "content/browser/cross_site_request_manager.h"
 #include "content/browser/in_process_webkit/webkit_thread.h"
 #include "content/browser/plugin_service.h"
@@ -60,6 +58,7 @@
 #include "content/browser/worker_host/worker_service.h"
 #include "content/common/notification_service.h"
 #include "content/common/resource_messages.h"
+#include "content/common/url_constants.h"
 #include "content/common/view_messages.h"
 #include "net/base/auth.h"
 #include "net/base/cert_status_flags.h"
@@ -67,12 +66,14 @@
 #include "net/base/load_flags.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_errors.h"
+#include "net/base/registry_controlled_domain.h"
 #include "net/base/request_priority.h"
 #include "net/base/ssl_cert_request_info.h"
 #include "net/base/upload_data.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
+#include "net/url_request/url_request_job_factory.h"
 #include "webkit/appcache/appcache_interceptor.h"
 #include "webkit/appcache/appcache_interfaces.h"
 #include "webkit/blob/blob_storage_controller.h"
@@ -120,6 +121,43 @@ const int kMaxPendingDataMessages = 20;
 // This bound is 25MB, which allows for around 6000 outstanding requests.
 const int kMaxOutstandingRequestsCostPerProcess = 26214400;
 
+// All possible error codes from the network module. Note that the error codes
+// are all positive (since histograms expect positive sample values).
+const int kAllNetErrorCodes[] = {
+#define NET_ERROR(label, value) -(value),
+#include "net/base/net_error_list.h"
+#undef NET_ERROR
+};
+
+// Aborts a request before an URLRequest has actually been created.
+void AbortRequestBeforeItStarts(ResourceMessageFilter* filter,
+                                IPC::Message* sync_result,
+                                int route_id,
+                                int request_id) {
+  net::URLRequestStatus status(net::URLRequestStatus::FAILED,
+                               net::ERR_ABORTED);
+  if (sync_result) {
+    SyncLoadResult result;
+    result.status = status;
+    ResourceHostMsg_SyncLoad::WriteReplyParams(sync_result, result);
+    filter->Send(sync_result);
+  } else {
+    // Tell the renderer that this request was disallowed.
+    filter->Send(new ResourceMsg_RequestComplete(
+        route_id,
+        request_id,
+        status,
+        std::string(),   // No security info needed, connection was not
+        base::Time()));  // established.
+  }
+}
+
+GURL MaybeStripReferrer(const GURL& possible_referrer) {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kNoReferrers))
+    return GURL();
+  return possible_referrer;
+}
+
 // Consults the RendererSecurity policy to determine whether the
 // ResourceDispatcherHost should service this request.  A request might be
 // disallowed if the renderer is not authorized to retrieve the request URL or
@@ -129,12 +167,6 @@ bool ShouldServiceRequest(ChildProcessInfo::ProcessType process_type,
                           const ResourceHostMsg_Request& request_data)  {
   if (process_type == ChildProcessInfo::PLUGIN_PROCESS)
     return true;
-
-  if (request_data.resource_type == ResourceType::PREFETCH) {
-    prerender::PrerenderManager::RecordPrefetchTagObserved();
-    if (!ResourceDispatcherHost::is_prefetch_enabled())
-      return false;
-  }
 
   ChildProcessSecurityPolicy* policy =
       ChildProcessSecurityPolicy::GetInstance();
@@ -185,15 +217,10 @@ void PopulateResourceResponse(net::URLRequest* request,
       &response->response_head.appcache_manifest_url);
 }
 
-// Returns a list of all the possible error codes from the network module.
-// Note that the error codes are all positive (since histograms expect positive
-// sample values).
-std::vector<int> GetAllNetErrorCodes() {
-  std::vector<int> all_error_codes;
-#define NET_ERROR(label, value) all_error_codes.push_back(-(value));
-#include "net/base/net_error_list.h"
-#undef NET_ERROR
-  return all_error_codes;
+void RemoveDownloadFileFromChildSecurityPolicy(int child_id,
+                                               const FilePath& path) {
+  ChildProcessSecurityPolicy::GetInstance()->RevokeAllPermissionsForFile(
+      child_id, path);
 }
 
 #if defined(OS_WIN)
@@ -222,7 +249,9 @@ ResourceDispatcherHost::ResourceDispatcherHost(
       is_shutdown_(false),
       max_outstanding_requests_cost_per_process_(
           kMaxOutstandingRequestsCostPerProcess),
-      filter_(NULL) {
+      filter_(NULL),
+      observer_(NULL),
+      allow_cross_origin_auth_prompt_(false) {
   resource_queue_.Initialize(resource_queue_delegates);
 }
 
@@ -279,14 +308,18 @@ void ResourceDispatcherHost::OnShutdown() {
   }
 }
 
-bool ResourceDispatcherHost::HandleExternalProtocol(int request_id,
-                                                    int child_id,
-                                                    int route_id,
-                                                    const GURL& url,
-                                                    ResourceType::Type type,
-                                                    ResourceHandler* handler) {
-  if (!ResourceType::IsFrame(type) || net::URLRequest::IsHandledURL(url))
+bool ResourceDispatcherHost::HandleExternalProtocol(
+    int request_id,
+    int child_id,
+    int route_id,
+    const GURL& url,
+    ResourceType::Type type,
+    const net::URLRequestJobFactory& job_factory,
+    ResourceHandler* handler) {
+  if (!ResourceType::IsFrame(type) ||
+      job_factory.IsHandledURL(url)) {
     return false;
+  }
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
@@ -315,7 +348,7 @@ bool ResourceDispatcherHost::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER(ResourceHostMsg_UploadProgress_ACK, OnUploadProgressACK)
     IPC_MESSAGE_HANDLER(ResourceHostMsg_CancelRequest, OnCancelRequest)
     IPC_MESSAGE_HANDLER(ResourceHostMsg_FollowRedirect, OnFollowRedirect)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_ClosePage_ACK, OnClosePageACK)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_SwapOut_ACK, OnSwapOutACK)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP_EX()
 
@@ -354,8 +387,6 @@ void ResourceDispatcherHost::BeginRequest(
   ChildProcessInfo::ProcessType process_type = filter_->process_type();
   int child_id = filter_->child_id();
 
-  ChromeURLRequestContext* context = filter_->GetURLRequestContext(
-      request_data.resource_type);
   const content::ResourceContext& resource_context =
       filter_->resource_context();
 
@@ -367,22 +398,18 @@ void ResourceDispatcherHost::BeginRequest(
 
   if (is_shutdown_ ||
       !ShouldServiceRequest(process_type, child_id, request_data)) {
-    net::URLRequestStatus status(net::URLRequestStatus::FAILED,
-                                 net::ERR_ABORTED);
-    if (sync_result) {
-      SyncLoadResult result;
-      result.status = status;
-      ResourceHostMsg_SyncLoad::WriteReplyParams(sync_result, result);
-      filter_->Send(sync_result);
-    } else {
-      // Tell the renderer that this request was disallowed.
-      filter_->Send(new ResourceMsg_RequestComplete(
-          route_id,
-          request_id,
-          status,
-          std::string(),   // No security info needed, connection was not
-          base::Time()));  // established.
-    }
+    AbortRequestBeforeItStarts(filter_, sync_result, route_id, request_id);
+    return;
+  }
+
+  const GURL referrer = MaybeStripReferrer(request_data.referrer);
+
+  // Allow the observer to block/handle the request.
+  if (observer_ && !observer_->ShouldBeginRequest(child_id, route_id,
+                                                  request_data,
+                                                  resource_context,
+                                                  referrer)) {
+    AbortRequestBeforeItStarts(filter_, sync_result, route_id, request_id);
     return;
   }
 
@@ -393,7 +420,8 @@ void ResourceDispatcherHost::BeginRequest(
         filter_, request_data.url, sync_result, this);
   } else {
     handler = new AsyncResourceHandler(
-        filter_, route_id, request_data.url, this);
+        filter_, route_id, request_data.url, resource_context.host_zoom_map(),
+        this);
   }
 
   // The RedirectToFileResourceHandler depends on being next in the chain.
@@ -402,6 +430,7 @@ void ResourceDispatcherHost::BeginRequest(
 
   if (HandleExternalProtocol(request_id, child_id, route_id,
                              request_data.url, request_data.resource_type,
+                             *resource_context.request_context()->job_factory(),
                              handler)) {
     return;
   }
@@ -410,8 +439,7 @@ void ResourceDispatcherHost::BeginRequest(
   net::URLRequest* request = new net::URLRequest(request_data.url, this);
   request->set_method(request_data.method);
   request->set_first_party_for_cookies(request_data.first_party_for_cookies);
-  request->set_referrer(CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kNoReferrers) ? std::string() : request_data.referrer.spec());
+  request->set_referrer(referrer.spec());
   net::HttpRequestHeaders headers;
   headers.AddHeadersFromString(request_data.headers);
   request->SetExtraRequestHeaders(headers);
@@ -432,11 +460,12 @@ void ResourceDispatcherHost::BeginRequest(
     load_flags |= net::LOAD_DO_NOT_PROMPT_FOR_LOGIN;
   }
 
-  if (IsPrerenderingChildRoutePair(child_id, route_id))
-    load_flags |= net::LOAD_PRERENDER;
-
   if (sync_result)
     load_flags |= net::LOAD_IGNORE_LIMITS;
+
+  // Allow the observer to change the load flags.
+  if (observer_)
+    observer_->MutateLoadFlags(child_id, route_id, &load_flags);
 
   // Raw headers are sensitive, as they inclide Cookie/Set-Cookie, so only
   // allow requesting them if requestor has ReadRawCookies permission.
@@ -448,8 +477,10 @@ void ResourceDispatcherHost::BeginRequest(
   }
 
   request->set_load_flags(load_flags);
-  request->set_context(context);
-  request->set_priority(DetermineRequestPriority(request_data.resource_type));
+  request->set_context(
+      filter_->GetURLRequestContext(request_data.resource_type));
+  request->set_priority(DetermineRequestPriority(request_data.resource_type,
+                                                 load_flags));
 
   // Set upload data.
   uint64 upload_size = 0;
@@ -457,20 +488,6 @@ void ResourceDispatcherHost::BeginRequest(
     request->set_upload(request_data.upload_data);
     upload_size = request_data.upload_data->GetContentLength();
   }
-
-  // Install a PrerenderResourceHandler if the requested URL could
-  // be prerendered. This should be in front of the [a]syncResourceHandler,
-  // but after the BufferedResourceHandler since it depends on the MIME
-  // sniffing capabilities in the BufferedResourceHandler.
-  prerender::PrerenderResourceHandler* pre_handler =
-      prerender::PrerenderResourceHandler::MaybeCreate(
-          *request,
-          context,
-          handler,
-          ((load_flags & net::LOAD_PRERENDER) != 0),
-          child_id, route_id);
-  if (pre_handler)
-    handler = pre_handler;
 
   // Install a CrossSiteResourceHandler if this request is coming from a
   // RenderViewHost with a pending cross-site request.  We only check this for
@@ -512,15 +529,15 @@ void ResourceDispatcherHost::BeginRequest(
           process_type,
           child_id,
           route_id,
+          request_data.origin_pid,
           request_id,
           request_data.resource_type,
           upload_size,
           false,  // is download
           ResourceType::IsFrame(request_data.resource_type),  // allow_download
-          request_data.has_user_gesture);
+          request_data.has_user_gesture,
+          &resource_context);
   SetRequestInfo(request, extra_info);  // Request takes ownership.
-  chrome_browser_net::SetOriginPIDForRequest(
-      request_data.origin_pid, request);
 
   if (request->url().SchemeIs(chrome::kBlobScheme)) {
     // Hang on to a reference to ensure the blob is not released prior
@@ -582,6 +599,18 @@ void ResourceDispatcherHost::RegisterDownloadedTempFile(
   registered_temp_files_[child_id][request_id] = reference;
   ChildProcessSecurityPolicy::GetInstance()->GrantReadFile(
       child_id, reference->path());
+
+  // When the temp file is deleted, revoke permissions that the renderer has
+  // to that file. This covers an edge case where the file is deleted and then
+  // the same name is re-used for some other purpose, we don't want the old
+  // renderer to still have access to it.
+  //
+  // We do this when the file is deleted because the renderer can take a blob
+  // reference to the temp file that outlives the url loaded that it was
+  // loaded with to keep the file (and permissions) alive.
+  reference->AddDeletionCallback(
+      base::Bind(&RemoveDownloadFileFromChildSecurityPolicy,
+                 child_id));
 }
 
 void ResourceDispatcherHost::UnregisterDownloadedTempFile(
@@ -591,9 +620,10 @@ void ResourceDispatcherHost::UnregisterDownloadedTempFile(
   if (found == map.end())
     return;
 
-  ChildProcessSecurityPolicy::GetInstance()->RevokeAllPermissionsForFile(
-      child_id, found->second->path());
   map.erase(found);
+
+  // Note that we don't remove the security bits here. This will be done
+  // when all file refs are deleted (see RegisterDownloadedTempFile).
 }
 
 bool ResourceDispatcherHost::Send(IPC::Message* message) {
@@ -628,49 +658,48 @@ void ResourceDispatcherHost::OnFollowRedirect(
 ResourceHandler* ResourceDispatcherHost::CreateSafeBrowsingResourceHandler(
     ResourceHandler* handler, int child_id, int route_id,
     ResourceType::Type resource_type) {
-  return new SafeBrowsingResourceHandler(
+  return SafeBrowsingResourceHandler::Create(
       handler, child_id, route_id, resource_type, safe_browsing_, this);
 }
 
 ResourceDispatcherHostRequestInfo*
 ResourceDispatcherHost::CreateRequestInfoForBrowserRequest(
-    ResourceHandler* handler, int child_id, int route_id, bool download) {
+    ResourceHandler* handler,
+    int child_id,
+    int route_id,
+    bool download,
+    const content::ResourceContext& context) {
   return new ResourceDispatcherHostRequestInfo(handler,
                                                ChildProcessInfo::RENDER_PROCESS,
                                                child_id,
                                                route_id,
+                                               0,
                                                request_id_,
                                                ResourceType::SUB_RESOURCE,
                                                0,         // upload_size
                                                download,  // is_download
                                                download,  // allow_download
-                                               false);    // has_user_gesture
+                                               false,     // has_user_gesture
+                                               &context);
 }
 
-void ResourceDispatcherHost::OnClosePageACK(
-    const ViewMsg_ClosePage_Params& params) {
-  if (params.for_cross_site_transition) {
-    // Closes for cross-site transitions are handled such that the cross-site
-    // transition continues.
-    GlobalRequestID global_id(params.new_render_process_host_id,
-                              params.new_request_id);
-    PendingRequestList::iterator i = pending_requests_.find(global_id);
-    if (i != pending_requests_.end()) {
-      // The response we were meant to resume could have already been canceled.
-      ResourceDispatcherHostRequestInfo* info = InfoForRequest(i->second);
-      if (info->cross_site_handler())
-        info->cross_site_handler()->ResumeResponse();
-    }
-  } else {
-    // This is a tab close, so we will close the tab in OnClosePageACK.
-    DCHECK(params.new_render_process_host_id == -1);
-    DCHECK(params.new_request_id == -1);
+void ResourceDispatcherHost::OnSwapOutACK(
+    const ViewMsg_SwapOut_Params& params) {
+  // Closes for cross-site transitions are handled such that the cross-site
+  // transition continues.
+  GlobalRequestID global_id(params.new_render_process_host_id,
+                            params.new_request_id);
+  PendingRequestList::iterator i = pending_requests_.find(global_id);
+  if (i != pending_requests_.end()) {
+    // The response we were meant to resume could have already been canceled.
+    ResourceDispatcherHostRequestInfo* info = InfoForRequest(i->second);
+    if (info->cross_site_handler())
+      info->cross_site_handler()->ResumeResponse();
   }
   // Update the RenderViewHost's internal state after the ACK.
   CallRenderViewHost(params.closing_process_id,
                      params.closing_route_id,
-                     &RenderViewHost::OnClosePageACK,
-                     params.for_cross_site_transition);
+                     &RenderViewHost::OnSwapOutACK);
 }
 
 // We are explicitly forcing the download of 'url'.
@@ -681,7 +710,7 @@ void ResourceDispatcherHost::BeginDownload(
     bool prompt_for_save_location,
     int child_id,
     int route_id,
-    net::URLRequestContext* request_context) {
+    const content::ResourceContext& context) {
   if (is_shutdown_)
     return;
 
@@ -718,21 +747,23 @@ void ResourceDispatcherHost::BeginDownload(
                                                 ResourceType::MAIN_FRAME);
   }
 
-  if (!net::URLRequest::IsHandledURL(url)) {
+  const net::URLRequestContext* request_context = context.request_context();
+
+  if (!request_context->job_factory()->IsHandledURL(url)) {
     VLOG(1) << "Download request for unsupported protocol: "
             << url.possibly_invalid_spec();
     return;
   }
 
   request->set_method("GET");
-  request->set_referrer(CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kNoReferrers) ? std::string() : referrer.spec());
-  request->set_context(request_context);
+  request->set_referrer(MaybeStripReferrer(referrer).spec());
+  request->set_context(context.request_context());
   request->set_load_flags(request->load_flags() |
       net::LOAD_IS_DOWNLOAD);
 
   ResourceDispatcherHostRequestInfo* extra_info =
-      CreateRequestInfoForBrowserRequest(handler, child_id, route_id, true);
+      CreateRequestInfoForBrowserRequest(
+          handler, child_id, route_id, true, context);
   SetRequestInfo(request, extra_info);  // Request takes ownership.
 
   BeginRequestInternal(request);
@@ -744,7 +775,7 @@ void ResourceDispatcherHost::BeginSaveFile(
     const GURL& referrer,
     int child_id,
     int route_id,
-    net::URLRequestContext* request_context) {
+    const content::ResourceContext& context) {
   if (is_shutdown_)
     return;
 
@@ -755,7 +786,9 @@ void ResourceDispatcherHost::BeginSaveFile(
                                   save_file_manager_.get()));
   request_id_--;
 
-  bool known_proto = net::URLRequest::IsHandledURL(url);
+  const net::URLRequestContext* request_context = context.request_context();
+  bool known_proto =
+      request_context->job_factory()->IsHandledURL(url);
   if (!known_proto) {
     // Since any URLs which have non-standard scheme have been filtered
     // by save manager(see GURL::SchemeIsStandard). This situation
@@ -766,16 +799,16 @@ void ResourceDispatcherHost::BeginSaveFile(
 
   net::URLRequest* request = new net::URLRequest(url, this);
   request->set_method("GET");
-  request->set_referrer(CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kNoReferrers) ? std::string() : referrer.spec());
+  request->set_referrer(MaybeStripReferrer(referrer).spec());
   // So far, for saving page, we need fetch content from cache, in the
   // future, maybe we can use a configuration to configure this behavior.
   request->set_load_flags(net::LOAD_PREFERRING_CACHE);
-  request->set_context(request_context);
+  request->set_context(context.request_context());
 
   // Since we're just saving some resources we need, disallow downloading.
   ResourceDispatcherHostRequestInfo* extra_info =
-      CreateRequestInfoForBrowserRequest(handler, child_id, route_id, false);
+      CreateRequestInfoForBrowserRequest(
+          handler, child_id, route_id, false, context);
   SetRequestInfo(request, extra_info);  // Request takes ownership.
 
   BeginRequestInternal(request);
@@ -1007,7 +1040,9 @@ void ResourceDispatcherHost::OnReceivedRedirect(net::URLRequest* request,
 
   if (HandleExternalProtocol(info->request_id(), info->child_id(),
                              info->route_id(), new_url,
-                             info->resource_type(), info->resource_handler())) {
+                             info->resource_type(),
+                             *request->context()->job_factory(),
+                             info->resource_handler())) {
     // The request is complete so we can remove it.
     RemovePendingRequest(info->child_id(), info->request_id());
     return;
@@ -1028,6 +1063,28 @@ void ResourceDispatcherHost::OnAuthRequired(
     request->CancelAuth();
     return;
   }
+
+  if (observer_ && !observer_->AcceptAuthRequest(request, auth_info)) {
+    request->CancelAuth();
+    return;
+  }
+
+  // Prevent third-party content from prompting for login, unless it is
+  // a proxy that is trying to authenticate.  This is often the foundation
+  // of a scam to extract credentials for another domain from the user.
+  if (!auth_info->is_proxy) {
+    HttpAuthResourceType resource_type = HttpAuthResourceTypeOf(request);
+    UMA_HISTOGRAM_ENUMERATION("Net.HttpAuthResource",
+                              resource_type,
+                              HTTP_AUTH_RESOURCE_LAST);
+
+    if (resource_type == HTTP_AUTH_RESOURCE_BLOCKED_CROSS) {
+      request->CancelAuth();
+      return;
+    }
+  }
+
+
   // Create a login dialog on the UI thread to get authentication data,
   // or pull from cache and continue on the IO thread.
   // TODO(mpcomplete): We should block the parent tab while waiting for
@@ -1044,6 +1101,11 @@ void ResourceDispatcherHost::OnCertificateRequested(
     net::URLRequest* request,
     net::SSLCertRequestInfo* cert_request_info) {
   DCHECK(request);
+  if (observer_ && !observer_->AcceptSSLClientCertificateRequest(
+          request, cert_request_info)) {
+    request->Cancel();
+    return;
+  }
 
   if (cert_request_info->client_certs.empty()) {
     // No need to query the user if there are no certs to choose from.
@@ -1067,52 +1129,49 @@ void ResourceDispatcherHost::OnSSLCertificateError(
   SSLManager::OnSSLCertificateError(this, request, cert_error, cert);
 }
 
-void ResourceDispatcherHost::OnGetCookies(
-    net::URLRequest* request,
-    bool blocked_by_policy) {
+bool ResourceDispatcherHost::CanGetCookies(net::URLRequest* request) {
   VLOG(1) << "OnGetCookies: " << request->url().spec();
-
   int render_process_id, render_view_id;
   if (!RenderViewForRequest(request, &render_process_id, &render_view_id))
-    return;
+    return false;
 
   net::URLRequestContext* context = request->context();
-
   net::CookieMonster* cookie_monster =
       context->cookie_store()->GetCookieMonster();
   net::CookieList cookie_list =
       cookie_monster->GetAllCookiesForURL(request->url());
-  CallRenderViewHostContentSettingsDelegate(
-      render_process_id, render_view_id,
-      &RenderViewHostDelegate::ContentSettings::OnCookiesRead,
-      request->url(), cookie_list, blocked_by_policy);
+  ResourceDispatcherHostRequestInfo* info = InfoForRequest(request);
+
+  return content::GetContentClient()->browser()->AllowGetCookie(
+      request->url(), request->first_party_for_cookies(), cookie_list,
+      *info->context(), render_process_id, render_view_id);
 }
 
-void ResourceDispatcherHost::OnSetCookie(net::URLRequest* request,
-                                         const std::string& cookie_line,
-                                         const net::CookieOptions& options,
-                                         bool blocked_by_policy) {
+bool ResourceDispatcherHost::CanSetCookie(net::URLRequest* request,
+                                          const std::string& cookie_line,
+                                          net::CookieOptions* options) {
   VLOG(1) << "OnSetCookie: " << request->url().spec();
 
   int render_process_id, render_view_id;
   if (!RenderViewForRequest(request, &render_process_id, &render_view_id))
-    return;
+    return false;
 
-  CallRenderViewHostContentSettingsDelegate(
-      render_process_id, render_view_id,
-      &RenderViewHostDelegate::ContentSettings::OnCookieChanged,
-      request->url(), cookie_line, options, blocked_by_policy);
+  ResourceDispatcherHostRequestInfo* info = InfoForRequest(request);
+  return content::GetContentClient()->browser()->AllowSetCookie(
+      request->url(), request->first_party_for_cookies(), cookie_line,
+      *info->context(), render_process_id, render_view_id, options);
 }
 
 void ResourceDispatcherHost::OnResponseStarted(net::URLRequest* request) {
   VLOG(1) << "OnResponseStarted: " << request->url().spec();
   ResourceDispatcherHostRequestInfo* info = InfoForRequest(request);
-  if (PauseRequestIfNeeded(info)) {
-    VLOG(1) << "OnResponseStarted pausing: " << request->url().spec();
-    return;
-  }
 
   if (request->status().is_success()) {
+    if (PauseRequestIfNeeded(info)) {
+      VLOG(1) << "OnResponseStarted pausing: " << request->url().spec();
+      return;
+    }
+
     // We want to send a final upload progress message prior to sending
     // the response complete message even if we're waiting for an ack to
     // to a previous upload progress message.
@@ -1328,9 +1387,15 @@ void ResourceDispatcherHost::BeginRequestInternal(net::URLRequest* request) {
     return;
   }
 
-  if (!defer_start) {
-    InsertIntoResourceQueue(request, *info);
+  // TODO(cbentzel): Should we isolate this to resource handlers instead of
+  // adding an interface to the observer?
+  if (!defer_start && observer_ && filter_) {
+    defer_start = observer_->ShouldDeferStart(request,
+                                              filter_->resource_context());
   }
+
+  if (!defer_start)
+    InsertIntoResourceQueue(request, *info);
 }
 
 void ResourceDispatcherHost::InsertIntoResourceQueue(
@@ -1363,7 +1428,10 @@ void ResourceDispatcherHost::ResumeRequest(const GlobalRequestID& request_id) {
   if (!info->is_paused())
     return;
 
-  VLOG(1) << "Resuming: " << i->second->url().spec();
+  VLOG(1) << "Resuming: \"" << i->second->url().spec() << "\""
+          << " paused_read_bytes = " << info->paused_read_bytes()
+          << " called response started = " << info->called_on_response_started()
+          << " started reading = " << info->has_started_reading();
 
   info->set_is_paused(false);
 
@@ -1411,8 +1479,18 @@ bool ResourceDispatcherHost::Read(net::URLRequest* request, int* bytes_read) {
 void ResourceDispatcherHost::OnReadCompleted(net::URLRequest* request,
                                              int bytes_read) {
   DCHECK(request);
-  VLOG(1) << "OnReadCompleted: " << request->url().spec();
+  VLOG(1) << "OnReadCompleted: \"" << request->url().spec() << "\""
+          << " bytes_read = " << bytes_read;
   ResourceDispatcherHostRequestInfo* info = InfoForRequest(request);
+
+  // bytes_read == -1 always implies an error, so we want to skip the
+  // pause checks and just call OnResponseCompleted.
+  if (bytes_read == -1) {
+    DCHECK(!request->status().is_success());
+
+    OnResponseCompleted(request);
+    return;
+  }
 
   // OnReadCompleted can be called without Read (e.g., for chrome:// URLs).
   // Make sure we know that a read has begun.
@@ -1420,7 +1498,8 @@ void ResourceDispatcherHost::OnReadCompleted(net::URLRequest* request,
 
   if (PauseRequestIfNeeded(info)) {
     info->set_paused_read_bytes(bytes_read);
-    VLOG(1) << "OnReadCompleted pausing: " << request->url().spec();
+    VLOG(1) << "OnReadCompleted pausing: \"" << request->url().spec() << "\""
+            << " bytes_read = " << bytes_read;
     return;
   }
 
@@ -1436,6 +1515,9 @@ void ResourceDispatcherHost::OnReadCompleted(net::URLRequest* request,
         // Force the next CompleteRead / Read pair to run as a separate task.
         // This avoids a fast, large network request from monopolizing the IO
         // thread and starving other IO operations from running.
+        VLOG(1) << "OnReadCompleted postponing: \""
+                << request->url().spec() << "\""
+                << " bytes_read = " << bytes_read;
         info->set_paused_read_bytes(bytes_read);
         info->set_is_paused(true);
         GlobalRequestID id(info->child_id(), info->request_id());
@@ -1450,8 +1532,9 @@ void ResourceDispatcherHost::OnReadCompleted(net::URLRequest* request,
 
   if (PauseRequestIfNeeded(info)) {
     info->set_paused_read_bytes(bytes_read);
-    VLOG(1) << "OnReadCompleted (CompleteRead) pausing: "
-            << request->url().spec();
+    VLOG(1) << "OnReadCompleted (CompleteRead) pausing: \""
+            << request->url().spec() << "\""
+            << " bytes_read = " << bytes_read;
     return;
   }
 
@@ -1487,9 +1570,14 @@ void ResourceDispatcherHost::OnResponseCompleted(net::URLRequest* request) {
   if (!request->status().is_success() &&
       info->resource_type() == ResourceType::MAIN_FRAME &&
       request->status().os_error() != net::ERR_ABORTED) {
-    UMA_HISTOGRAM_CUSTOM_ENUMERATION("Net.ErrorCodesForMainFrame",
-                                     -request->status().os_error(),
-                                     GetAllNetErrorCodes());
+    // This enumeration has "2" appended to its name to distinguish it from
+    // its original version. We changed the buckets at one point (added
+    // guard buckets by using CustomHistogram::ArrayToCustomRanges).
+    UMA_HISTOGRAM_CUSTOM_ENUMERATION(
+        "Net.ErrorCodesForMainFrame2",
+        -request->status().os_error(),
+        base::CustomHistogram::ArrayToCustomRanges(
+            kAllNetErrorCodes, arraysize(kAllNetErrorCodes)));
   }
 
   std::string security_info;
@@ -1505,7 +1593,6 @@ void ResourceDispatcherHost::OnResponseCompleted(net::URLRequest* request) {
   if (info->resource_handler()->OnResponseCompleted(info->request_id(),
                                                     request->status(),
                                                     security_info)) {
-    NotifyResponseCompleted(request, info->child_id());
 
     // The request is complete so we can remove it.
     RemovePendingRequest(info->child_id(), info->request_id());
@@ -1562,14 +1649,6 @@ bool ResourceDispatcherHost::RenderViewForRequest(
   return true;
 }
 
-void ResourceDispatcherHost::AddObserver(Observer* obs) {
-  observer_list_.AddObserver(obs);
-}
-
-void ResourceDispatcherHost::RemoveObserver(Observer* obs) {
-  observer_list_.RemoveObserver(obs);
-}
-
 net::URLRequest* ResourceDispatcherHost::GetURLRequest(
     const GlobalRequestID& request_id) const {
   // This should be running in the IO loop.
@@ -1593,8 +1672,6 @@ static int GetCertID(net::URLRequest* request, int child_id) {
 void ResourceDispatcherHost::NotifyResponseStarted(net::URLRequest* request,
                                                    int child_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  // Notify the observers on the IO thread.
-  FOR_EACH_OBSERVER(Observer, observer_list_, OnRequestStarted(this, request));
 
   int render_process_id, render_view_id;
   if (!RenderViewForRequest(request, &render_process_id, &render_view_id))
@@ -1611,20 +1688,9 @@ void ResourceDispatcherHost::NotifyResponseStarted(net::URLRequest* request,
           render_process_id, render_view_id, detail));
 }
 
-void ResourceDispatcherHost::NotifyResponseCompleted(net::URLRequest* request,
-                                                     int child_id) {
-  // Notify the observers on the IO thread.
-  FOR_EACH_OBSERVER(Observer, observer_list_,
-                    OnResponseCompleted(this, request));
-}
-
 void ResourceDispatcherHost::NotifyReceivedRedirect(net::URLRequest* request,
                                                     int child_id,
                                                     const GURL& new_url) {
-  // Notify the observers on the IO thread.
-  FOR_EACH_OBSERVER(Observer, observer_list_,
-                    OnReceivedRedirect(this, request, new_url));
-
   int render_process_id, render_view_id;
   if (!RenderViewForRequest(request, &render_process_id, &render_view_id))
     return;
@@ -1874,12 +1940,18 @@ bool ResourceDispatcherHost::IsValidRequest(net::URLRequest* request) {
 
 // static
 net::RequestPriority ResourceDispatcherHost::DetermineRequestPriority(
-    ResourceType::Type type) {
+    ResourceType::Type type,
+    int load_flags) {
   // Determine request priority based on how critical this resource typically
   // is to user-perceived page load performance. Important considerations are:
   // * Can this resource block the download of other resources.
   // * Can this resource block the rendering of the page.
   // * How useful is the page to the user if this resource is not loaded yet.
+
+  // Prerender-motivated requests should be made at IDLE.
+  if (load_flags & net::LOAD_PRERENDERING)
+    return net::IDLE;
+
   switch (type) {
     // Main frames are the highest priority because they can block nearly every
     // type of other resource and there is no useful display without them.
@@ -1917,9 +1989,11 @@ net::RequestPriority ResourceDispatcherHost::DetermineRequestPriority(
     case ResourceType::FAVICON:
       return net::LOWEST;
 
-    // Prefetches are at a lower priority than even LOWEST, since they
-    // are not even required for rendering of the current page.
+    // Prefetches and prerenders are at a lower priority than even
+    // LOWEST, since they are not even required for rendering of the
+    // current page.
     case ResourceType::PREFETCH:
+    case ResourceType::PRERENDER:
       return net::IDLE;
 
     default:
@@ -1928,29 +2002,6 @@ net::RequestPriority ResourceDispatcherHost::DetermineRequestPriority(
       return net::LOW;
   }
 }
-
-void ResourceDispatcherHost::AddPrerenderChildRoutePair(int child_id,
-                                                        int route_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  DCHECK(!IsPrerenderingChildRoutePair(child_id, route_id));
-  prerender_child_route_pairs_.insert(std::make_pair(child_id, route_id));
-}
-
-void ResourceDispatcherHost::RemovePrerenderChildRoutePair(int child_id,
-                                                           int route_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  DCHECK(IsPrerenderingChildRoutePair(child_id, route_id));
-  prerender_child_route_pairs_.erase(std::make_pair(child_id, route_id));
-}
-
-bool ResourceDispatcherHost::IsPrerenderingChildRoutePair(int child_id,
-                                                          int route_id) const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  std::pair<int, int> c_r_pair = std::make_pair(child_id, route_id);
-  return (prerender_child_route_pairs_.find(c_r_pair) !=
-            prerender_child_route_pairs_.end());
-}
-
 
 // static
 bool ResourceDispatcherHost::is_prefetch_enabled() {
@@ -1964,3 +2015,30 @@ void ResourceDispatcherHost::set_is_prefetch_enabled(bool value) {
 
 // static
 bool ResourceDispatcherHost::is_prefetch_enabled_ = false;
+
+ResourceDispatcherHost::HttpAuthResourceType
+ResourceDispatcherHost::HttpAuthResourceTypeOf(net::URLRequest* request) {
+  // Use the same critera as for cookies to determine the sub-resource type
+  // that is requesting to be authenticated.
+  if (!request->first_party_for_cookies().is_valid())
+    return HTTP_AUTH_RESOURCE_TOP;
+
+  if (net::RegistryControlledDomainService::SameDomainOrHost(
+          request->first_party_for_cookies(), request->url()))
+    return HTTP_AUTH_RESOURCE_SAME_DOMAIN;
+
+  if (allow_cross_origin_auth_prompt())
+    return HTTP_AUTH_RESOURCE_ALLOWED_CROSS;
+
+  return HTTP_AUTH_RESOURCE_BLOCKED_CROSS;
+}
+
+bool ResourceDispatcherHost::allow_cross_origin_auth_prompt() {
+  return allow_cross_origin_auth_prompt_;
+}
+
+void ResourceDispatcherHost::set_allow_cross_origin_auth_prompt(bool value) {
+  allow_cross_origin_auth_prompt_ = value;
+}
+
+

@@ -182,9 +182,7 @@ class DownloadsTest(pyauto.PyUITest):
 
   def testRemoveDownload(self):
     """Verify that we can remove a download."""
-    test_dir = os.path.join(os.path.abspath(self.DataDir()), 'downloads')
-    file_path = os.path.join(test_dir, 'a_zip_file.zip')
-    file_url = self.GetFileURLForPath(file_path)
+    file_url = self.GetFileURLForDataPath('downloads', 'a_zip_file.zip')
     downloaded_pkg = os.path.join(self.GetDownloadDirectory().value(),
                                   'a_zip_file.zip')
     self._ClearLocalDownloadState(downloaded_pkg)
@@ -396,6 +394,7 @@ class DownloadsTest(pyauto.PyUITest):
                                   'a_zip_file.zip')
     self._ClearLocalDownloadState(downloaded_pkg)
     self.DownloadAndWaitForStart(file_url)
+    self.WaitForDownloadToComplete(downloaded_pkg)
     downloads = self.GetDownloadsInfo().Downloads()
     self.assertEqual(1, len(downloads))
     self.assertEqual('a_zip_file.zip', downloads[0]['file_name'])

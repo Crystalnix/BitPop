@@ -22,6 +22,7 @@
 #endif
 
 namespace views {
+namespace internal {
 
 // static
 const char RootView::kViewClassName[] = "views/RootView";
@@ -82,7 +83,7 @@ void RootView::NotifyNativeViewHierarchyChanged(bool attached,
 
 // Input -----------------------------------------------------------------------
 
-bool RootView::ProcessKeyEvent(const KeyEvent& event) {
+bool RootView::OnKeyEvent(const KeyEvent& event) {
   bool consumed = false;
 
   View* v = GetFocusManager()->GetFocusedView();
@@ -244,9 +245,7 @@ bool RootView::OnMouseDragged(const MouseEvent& event) {
   if (mouse_pressed_handler_) {
     SetMouseLocationAndFlags(e);
 
-    gfx::Point p;
-    ConvertPointToMouseHandler(e.location(), &p);
-    MouseEvent mouse_event(e.type(), p.x(), p.y(), e.flags());
+    MouseEvent mouse_event(e, this, mouse_pressed_handler_);
     return mouse_pressed_handler_->ProcessMouseDragged(mouse_event, &drag_info);
   }
   return false;
@@ -257,9 +256,7 @@ void RootView::OnMouseReleased(const MouseEvent& event) {
   UpdateCursor(e);
 
   if (mouse_pressed_handler_) {
-    gfx::Point p;
-    ConvertPointToMouseHandler(e.location(), &p);
-    MouseEvent mouse_released(e.type(), p.x(), p.y(), e.flags());
+    MouseEvent mouse_released(e, this, mouse_pressed_handler_);
     // We allow the view to delete us from ProcessMouseReleased. As such,
     // configure state such that we're done first, then call View.
     View* mouse_pressed_handler = mouse_pressed_handler_;
@@ -303,10 +300,8 @@ void RootView::OnMouseMoved(const MouseEvent& event) {
     }
     MouseEvent moved_event(e, this, mouse_move_handler_);
     mouse_move_handler_->OnMouseMoved(moved_event);
-
-    gfx::NativeCursor cursor = mouse_move_handler_->GetCursorForPoint(
-        moved_event.type(), moved_event.location());
-    widget_->SetCursor(cursor);
+    if (!(moved_event.flags() & ui::EF_IS_NON_CLIENT))
+      widget_->SetCursor(mouse_move_handler_->GetCursor(moved_event));
   } else if (mouse_move_handler_ != NULL) {
     mouse_move_handler_->OnMouseExited(e);
     widget_->SetCursor(NULL);
@@ -341,7 +336,8 @@ View::TouchStatus RootView::OnTouchEvent(const TouchEvent& event) {
   if (touch_pressed_handler_) {
     TouchEvent touch_event(e, this, touch_pressed_handler_);
     status = touch_pressed_handler_->ProcessTouchEvent(touch_event);
-    gesture_manager_->ProcessTouchEventForGesture(e, this, status);
+    if (gesture_manager_->ProcessTouchEventForGesture(e, this, status))
+      status = View::TOUCH_STATUS_SYNTH_MOUSE;
     if (status == TOUCH_STATUS_END)
       touch_pressed_handler_ = NULL;
     return status;
@@ -379,7 +375,8 @@ View::TouchStatus RootView::OnTouchEvent(const TouchEvent& event) {
     if (status != TOUCH_STATUS_START)
       touch_pressed_handler_ = NULL;
 
-    gesture_manager_->ProcessTouchEventForGesture(e, this, status);
+    if (gesture_manager_->ProcessTouchEventForGesture(e, this, status))
+      status = View::TOUCH_STATUS_SYNTH_MOUSE;
     return status;
   }
 
@@ -387,13 +384,14 @@ View::TouchStatus RootView::OnTouchEvent(const TouchEvent& event) {
   touch_pressed_handler_ = NULL;
 
   // Give the touch event to the gesture manager.
-  gesture_manager_->ProcessTouchEventForGesture(e, this, status);
+  if (gesture_manager_->ProcessTouchEventForGesture(e, this, status))
+    status = View::TOUCH_STATUS_SYNTH_MOUSE;
   return status;
 }
 #endif
 
 void RootView::SetMouseHandler(View *new_mh) {
-  // If we're clearing the mouse handler, clear explicit_mouse_handler as well.
+  // If we're clearing the mouse handler, clear explicit_mouse_handler_ as well.
   explicit_mouse_handler_ = (new_mh != NULL);
   mouse_pressed_handler_ = new_mh;
 }
@@ -401,20 +399,6 @@ void RootView::SetMouseHandler(View *new_mh) {
 void RootView::GetAccessibleState(ui::AccessibleViewState* state) {
   state->role = ui::AccessibilityTypes::ROLE_APPLICATION;
 }
-
-#if defined(TOUCH_UI)
-// Always show the mouse cursor, useful when debugging touch builds
-static bool keep_mouse_cursor;
-
-void RootView::SetKeepMouseCursor(bool keep) {
-  keep_mouse_cursor = keep;
-}
-
-bool RootView::GetKeepMouseCursor() {
-  return keep_mouse_cursor;
-}
-
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 // RootView, protected:
@@ -439,38 +423,28 @@ void RootView::OnPaint(gfx::Canvas* canvas) {
   canvas->AsCanvasSkia()->drawColor(SK_ColorBLACK, SkXfermode::kClear_Mode);
 }
 
+bool RootView::ShouldPaintToTexture() const {
+  return widget_->compositor() != NULL;
+}
+
+const ui::Compositor* RootView::GetCompositor() const {
+  return widget_->compositor();
+}
+
+ui::Compositor* RootView::GetCompositor() {
+  return widget_->compositor();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // RootView, private:
-
-// Coordinate conversion -------------------------------------------------------
-
-bool RootView::ConvertPointToMouseHandler(const gfx::Point& l, gfx::Point* p) {
-  // If the mouse_handler was set explicitly, keep sending events even if it was
-  // re-parented in a different window. (a non explicit mouse handler is
-  // automatically cleared when the control is removed from the hierarchy)
-  *p = l;
-  if (explicit_mouse_handler_) {
-    // If the mouse_pressed_handler_ is not connected, we send the
-    // event in screen coordinate system
-    ConvertPointToScreen(this, p);
-    if (mouse_pressed_handler_->GetWidget())
-      ConvertPointToView(NULL, mouse_pressed_handler_, p);
-  } else
-    ConvertPointToView(this, mouse_pressed_handler_, p);
-  return true;
-}
 
 // Input -----------------------------------------------------------------------
 
 void RootView::UpdateCursor(const MouseEvent& event) {
-  gfx::NativeCursor cursor = NULL;
-  View* v = GetEventHandlerForPoint(event.location());
-  if (v && v != this) {
-    gfx::Point l(event.location());
-    View::ConvertPointToView(this, v, &l);
-    cursor = v->GetCursorForPoint(event.type(), l);
+  if (!(event.flags() & ui::EF_IS_NON_CLIENT)) {
+    View* v = GetEventHandlerForPoint(event.location());
+    widget_->SetCursor(v->GetCursor(MouseEvent(event, this, v)));
   }
-  widget_->SetCursor(cursor);
 }
 
 void RootView::SetMouseLocationAndFlags(const MouseEvent& event) {
@@ -479,4 +453,6 @@ void RootView::SetMouseLocationAndFlags(const MouseEvent& event) {
   last_mouse_event_y_ = event.y();
 }
 
+}  // namespace internal
 }  // namespace views
+

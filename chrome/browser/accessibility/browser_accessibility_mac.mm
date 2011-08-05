@@ -47,11 +47,10 @@ void BrowserAccessibilityMac::NativeReleaseReference() {
   }
 }
 
-void BrowserAccessibilityMac::ReplaceChild(
-      BrowserAccessibility* old_acc,
-      BrowserAccessibility* new_acc) {
-  BrowserAccessibility::ReplaceChild(old_acc, new_acc);
+void BrowserAccessibilityMac::DetachTree(
+    std::vector<BrowserAccessibility*>* nodes) {
   [browser_accessibility_cocoa_ childrenChanged];
+  BrowserAccessibility::DetachTree(nodes);
 }
 
 BrowserAccessibilityCocoa* BrowserAccessibility::toBrowserAccessibilityCocoa() {

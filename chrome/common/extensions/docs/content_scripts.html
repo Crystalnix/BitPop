@@ -261,7 +261,7 @@
               <a href="#registration">Manifest</a>
               <ol>
                 <li>
-                  <a href="#include-exclude-globs">Include and exclude globs</a>
+                  <a href="#match-patterns-globs">Match patterns and globs</a>
                 </li>
               </ol>
             </li><li>
@@ -400,9 +400,6 @@ They <b>cannot</b>:
   <li>
     Use variables or functions defined by web pages or by other content scripts
   </li>
-  <li>
-    Make <a href="xhr.html">cross-site XMLHttpRequests</a>
-  </li>
 </ul>
 
 <p>
@@ -413,6 +410,9 @@ and request extension actions
 by exchanging <a href="messaging.html">messages</a>
 with their parent extension.
 Content scripts can also
+make <a href="xhr.html">cross-site XMLHttpRequests</a>
+to the same sites as their parent extensions,
+and they can
 <a href="#host-page-communication">communicate with web pages</a>
 using the shared DOM.
 For more insight into what content scripts can and can't do,
@@ -475,9 +475,22 @@ can have the following properties:</p>
     <td><code>matches</code></td>
     <td>array of strings</td>
     <td><em>Required.</em>
-    Controls the pages this content script will be injected into.
+    Specifies which pages this content script will be injected into.
     See <a href="match_patterns.html">Match Patterns</a>
-    for more details on the syntax of these strings.</td>
+    for more details on the syntax of these strings
+    and <a href="#match-patterns-globs">Match patterns and globs</a>
+    for information on how to exclude URLs.</td>
+  </tr>
+  <tr>
+    <td><code>exclude_matches</code></td>
+    <td>array of strings</td>
+    <td><em>Optional.</em>
+    Excludes pages that this content script would otherwise be
+    injected into.
+    See <a href="match_patterns.html">Match Patterns</a>
+    for more details on the syntax of these strings
+    and <a href="#match-patterns-globs">Match patterns and globs</a>
+    for information on how to exclude URLs.</td>
   </tr>
   <tr>
     <td><code>css<code></code></code></td>
@@ -491,7 +504,7 @@ can have the following properties:</p>
     <td><em>Optional.</em>
     The list of JavaScript files to be injected into matching pages. These are injected in the order they appear in this array.</td>
   </tr>
-  <tr>
+  <tr id="run_at">
     <td><code>run_at<code></code></code></td>
     <td>string</td>
     <td><em>Optional.</em>
@@ -526,25 +539,40 @@ can have the following properties:</p>
     <td><code>include_globs</code></td>
     <td>array of string</td>
     <td><em>Optional.</em>
-    Applied after <code>matches</code> to control the pages that this content script will be injected into. Intended to emulate the <a href="http://wiki.greasespot.net/Metadata_Block#.40include"><code>@include</code></a> Greasemonkey keyword. See <a href="#include-exclude-globs">Include and exclude globs</a> below for more details.</td>
+    Applied after <code>matches</code> to include only those URLs that also match this glob. Intended to emulate the <a href="http://wiki.greasespot.net/Metadata_Block#.40include"><code>@include</code></a> Greasemonkey keyword.
+    See <a href="#match-patterns-globs">Match patterns and globs</a> below for more details.</td>
   </tr>
   <tr>
     <td><code>exclude_globs</code></td>
     <td>array of string</td>
     <td><em>Optional.</em>
-    Applied after <code>matches</code> to control the pages that this content script will be injected into. Intended to emulate the <a href="http://wiki.greasespot.net/Metadata_Block#.40include"><code>@exclude</code></a> Greasemonkey keyword. See <a href="#include-exclude-globs">Include and exclude globs</a> below for more details.</td>
+    Applied after <code>matches</code> to exclude URLs that match this glob.
+    Intended to emulate the <a href="http://wiki.greasespot.net/Metadata_Block#.40include"><code>@exclude</code></a> Greasemonkey keyword.
+    See <a href="#match-patterns-globs">Match patterns and globs</a> below for more details.</td>
   </tr>
 </tbody></table>
 
-<h3 id="include-exclude-globs">Include and exclude globs</h3>
+<h3 id="match-patterns-globs">Match patterns and globs</h3>
 
 <p>
-The content script will be injected into a page if its URL matches any <code>matches</code> pattern and any <code>include_globs</code> pattern, as long as the URL doesn't also match an <code>exclude_globs</code> pattern. Because the <code>matches</code> property is required, <code>include_globs</code> and <code>exclude_globs</code> can only be used to limit which pages will be affected.
+The content script will be injected into a page if its URL matches any <code>matches</code> pattern and any <code>include_globs</code> pattern, as long as the URL doesn't also match an <code>exclude_matches</code> or <code>exclude_globs</code> pattern.
+
+Because the <code>matches</code> property is required, <code>exclude_matches</code>, <code>include_globs</code>, and <code>exclude_globs</code> can only be used to limit which pages will be affected.
 </p>
 
-<p></p>
-However, these glob properties follow a different syntax than <code>matches</code>, which is much more flexible.  Acceptable strings are URLs that may contain "wildcard" asterisks and question marks. The asterisk (*) is used to match any string of any length (including the empty string); the question mark (?) is used to match any single character.
-<p></p>
+<p>
+For example, assume <code>matches</code> is <code>["http://*.nytimes.com/*"]</code>:
+</p>
+<ul>
+<li>If <code>exclude_matches</code> is <code>["*://*/*business*"]</code>, then the content script would be injected into "http://www.nytimes.com/health" but not into "http://www.nytimes.com/business".</li>
+<li>If <code>include_globs</code> is <code>["*nytimes.com/???s/*"]</code>, then the content script would be injected into "http:/www.nytimes.com/arts/index.html" and "http://www.nytimes.com/jobs/index.html" but not into "http://www.nytimes.com/sports/index.html".</li>
+<li>If <code>exclude_globs</code> is <code>["*science*"]</code>, then the content script would be injected into "http://www.nytimes.com" but not into "http://science.nytimes.com" or "http://www.nytimes.com/science".</li>
+</ul>
+<p>
+
+</p><p>
+Glob properties follow a different, more flexible syntax than <a href="match_patterns.html">match patterns</a>.  Acceptable glob strings are URLs that may contain "wildcard" asterisks and question marks. The asterisk (*) matches any string of any length (including the empty string); the question mark (?) matches any single character.
+</p>
 
 <p>
 For example, the glob "http://???.example.com/foo/*" matches any of the following:
@@ -703,8 +731,8 @@ document.getElementById('myCustomEventDiv').addEventListener('myCustomEvent', fu
 <p>When writing a content script, you should be aware of two security issues.
 First, be careful not to introduce security vulnerabilities into the web site
 your content script is injected into.  For example, if your content script
-receives content from another web site (e.g., by <a href="messaging.html">asking your background page to make an
-XMLHttpRequest</a>), be careful to filter that content for <a href="http://en.wikipedia.org/wiki/Cross-site_scripting">cross-site
+receives content from another web site (for example, by making an <a href="messaging.html">XMLHttpRequest</a>),
+be careful to filter that content for <a href="http://en.wikipedia.org/wiki/Cross-site_scripting">cross-site
 scripting</a> attacks before injecting the content into the current page.
 For example, prefer to inject content via innerText rather than innerHTML.
 Be especially careful when retrieving HTTP content on an HTTPS page because
@@ -762,27 +790,15 @@ document.getElementById("someImage").src = imgURL;
 <h2 id="examples"> Examples </h2>
 
 <p>
-The 
-<a href="http://src.chromium.org/viewvc/chrome/trunk/src/chrome/common/extensions/docs/examples/howto/contentscript_xhr">contentscript_xhr</a> example
-shows how an extension can perform
-cross-site requests for its content script.
-You can find other simple examples of communication via messages in the
-<a href="http://src.chromium.org/viewvc/chrome/trunk/src/chrome/common/extensions/docs/examples/api/messaging/">examples/api/messaging</a>
-directory.
-</p>
-
-<p>
-See
-<a href="http://src.chromium.org/viewvc/chrome/trunk/src/chrome/common/extensions/docs/examples/api/browserAction/make_page_red/">make_page_red</a> and
-<a href="http://src.chromium.org/viewvc/chrome/trunk/src/chrome/common/extensions/docs/examples/extensions/email_this_page/">email_this_page</a>
+You can find many
+<a href="samples.html#script">examples that use content scripts</a>.
+A simple example of communication via messages is in the
+<a href="samples.html#51a83d2ba3a32e3ff1bdb624d4e18ccec4c4038e">timer sample</a>.
+See <a href="samples.html#ede3c47b7757245be42ec33fd5ca63df4b490066">make_page_red</a> and
+<a href="samples.html#028eb5364924344029bcbe1d527f132fc72b34e5">email_this_page</a>
 for examples of programmatic injection.
-
 </p>
 
-<p>
-For more examples and for help in viewing the source code, see
-<a href="samples.html">Samples</a>.
-</p>
 
 <h2 id="videos"> Videos </h2>
 
@@ -916,7 +932,7 @@ sending a request to its parent extension.
 
               <div class="summary">
                 <!-- Note: intentionally longer 80 columns -->
-                <span class="subdued">chrome.bookmarks</span><span>onEvent</span><span class="subdued">.addListener</span>(function(<span>Type param1, Type param2</span>) <span class="subdued">{...}</span>);
+                <span class="subdued">chrome.bookmarks</span><span>onEvent</span><span class="subdued">.addListener</span>(function(<span>Type param1, Type param2</span>) <span class="subdued">{...}</span><span>, Type opt_param1, Type opt_param2</span>));
               </div>
 
               <div class="description">
@@ -925,9 +941,9 @@ sending a request to its parent extension.
                   A description from the json schema def of the event goes here.
                 </p>
 
-                <!-- PARAMETERS -->
+                <!-- LISTENER PARAMETERS -->
                 <div>
-                  <h4>Parameters</h4>
+                  <h4>Listener parameters</h4>
                   <dl>
                     <div>
                       <div>
@@ -935,8 +951,28 @@ sending a request to its parent extension.
                     </div>
                   </dl>
                 </div>
-              </div> <!-- /decription -->
 
+                <!-- EXTRA PARAMETERS -->
+                <div>
+                  <h4>Extra parameters to addListener</h4>
+                  <dl>
+                    <div>
+                      <div>
+                      </div>
+                    </div>
+                  </dl>
+                </div>
+
+                <!-- LISTENER RETURN VALUE -->
+                <h4>Listener returns</h4>
+                <dl>
+                  <div>
+                    <div>
+                    </div>
+                  </div>
+                </dl>
+
+              </div> <!-- /description -->
             </div> <!-- /apiItem -->
 
           </div> <!-- /apiGroup -->

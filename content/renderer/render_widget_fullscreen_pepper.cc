@@ -6,8 +6,8 @@
 
 #include "base/message_loop.h"
 #include "content/common/view_messages.h"
-#include "content/renderer/renderer_gl_context.h"
-#include "content/renderer/gpu_channel_host.h"
+#include "content/renderer/gpu/renderer_gl_context.h"
+#include "content/renderer/gpu/gpu_channel_host.h"
 #include "content/renderer/pepper_platform_context_3d_impl.h"
 #include "content/renderer/render_thread.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
@@ -52,6 +52,9 @@ class PepperWidget : public WebWidget {
     return size_;
   }
 
+  virtual void willStartLiveResize() {
+  }
+
   virtual void resize(const WebSize& size) {
     size_ = size;
     WebRect plugin_rect(0, 0, size_.width, size_.height);
@@ -59,8 +62,16 @@ class PepperWidget : public WebWidget {
     widget_->Invalidate();
   }
 
+  virtual void willEndLiveResize() {
+  }
+
+#ifndef WEBWIDGET_HAS_ANIMATE_CHANGES
   virtual void animate() {
   }
+#else
+  virtual void animate(double frameBeginTime) {
+  }
+#endif
 
   virtual void layout() {
   }
@@ -77,7 +88,7 @@ class PepperWidget : public WebWidget {
     unsigned int texture = plugin_->GetBackingTextureId();
     gl->BindTexture(GL_TEXTURE_2D, texture);
     gl->DrawArrays(GL_TRIANGLES, 0, 3);
-    context->SwapBuffers();
+    widget_->SwapBuffers();
   }
 
   virtual void themeChanged() {
@@ -141,6 +152,10 @@ class PepperWidget : public WebWidget {
     return false;
   }
 
+  virtual bool compositionRange(size_t* location, size_t* length) {
+    return false;
+  }
+
   virtual bool confirmComposition(const WebString& text) {
     return false;
   }
@@ -154,6 +169,10 @@ class PepperWidget : public WebWidget {
   }
 
   virtual bool selectionRange(WebPoint& start, WebPoint& end) const {
+    return false;
+  }
+
+  virtual bool caretOrSelectionRange(size_t* location, size_t* length) {
     return false;
   }
 
@@ -300,6 +319,10 @@ WebWidget* RenderWidgetFullscreenPepper::CreateWebWidget() {
   return new PepperWidget(plugin_, this);
 }
 
+bool RenderWidgetFullscreenPepper::SupportsAsynchronousSwapBuffers() {
+  return context_ != NULL;
+}
+
 void RenderWidgetFullscreenPepper::CreateContext() {
   DCHECK(!context_);
   RenderThread* render_thread = RenderThread::current();
@@ -332,7 +355,9 @@ void RenderWidgetFullscreenPepper::CreateContext() {
     return;
   }
   context_->SetSwapBuffersCallback(
-      NewCallback(this, &RenderWidgetFullscreenPepper::DidFlushPaint));
+      NewCallback(this,
+          &RenderWidgetFullscreenPepper::
+              OnSwapBuffersCompleteByRendererGLContext));
   context_->SetContextLostCallback(
       NewCallback(this, &RenderWidgetFullscreenPepper::OnLostContext));
 }
@@ -439,6 +464,12 @@ bool RenderWidgetFullscreenPepper::CheckCompositing() {
   return compositing;
 }
 
+void RenderWidgetFullscreenPepper::SwapBuffers() {
+  DCHECK(context_);
+  OnSwapBuffersPosted();
+  context_->SwapBuffers();
+}
+
 void RenderWidgetFullscreenPepper::OnLostContext() {
   if (!context_)
     return;
@@ -451,4 +482,9 @@ void RenderWidgetFullscreenPepper::OnLostContext() {
   context_ = NULL;
   program_ = 0;
   buffer_ = 0;
+  OnSwapBuffersAborted();
+}
+
+void RenderWidgetFullscreenPepper::OnSwapBuffersCompleteByRendererGLContext() {
+  OnSwapBuffersComplete();
 }

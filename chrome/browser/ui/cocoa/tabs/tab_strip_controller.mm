@@ -17,20 +17,22 @@
 #include "chrome/browser/autocomplete/autocomplete.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
+#include "chrome/browser/debugger/devtools_window.h"
 #include "chrome/browser/extensions/extension_tab_helper.h"
-#include "chrome/browser/metrics/user_metrics.h"
+#include "chrome/browser/favicon/favicon_tab_helper.h"
+#include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/debugger/devtools_window.h"
-#include "chrome/browser/net/url_fixer_upper.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/sidebar/sidebar_container.h"
 #include "chrome/browser/sidebar/sidebar_manager.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
+#include "chrome/browser/tabs/tab_strip_selection_model.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_navigator.h"
-#include "chrome/browser/ui/find_bar/find_tab_helper.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/constrained_window_mac.h"
+#import "chrome/browser/ui/cocoa/image_button_cell.h"
 #import "chrome/browser/ui/cocoa/new_tab_button.h"
 #import "chrome/browser/ui/cocoa/profile_menu_button.h"
 #import "chrome/browser/ui/cocoa/tab_contents/favicon_util.h"
@@ -42,17 +44,21 @@
 #import "chrome/browser/ui/cocoa/tracking_area.h"
 #include "chrome/browser/ui/find_bar/find_bar.h"
 #include "chrome/browser/ui/find_bar/find_bar_controller.h"
+#include "chrome/browser/ui/find_bar/find_tab_helper.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/browser/ui/tabs/tab_menu_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/browser/tab_contents/navigation_controller.h"
 #include "content/browser/tab_contents/navigation_entry.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/browser/tab_contents/tab_contents_view.h"
+#include "content/browser/user_metrics.h"
 #include "content/common/notification_service.h"
 #include "grit/app_resources.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "skia/ext/skia_utils_mac.h"
 #import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -77,11 +83,6 @@ enum {
 #endif  // MAC_OS_X_VERSION_10_7
 
 namespace {
-
-// The images names used for different states of the new tab button.
-NSString* const kNewTabHoverImage = @"newtab_h.pdf";
-NSString* const kNewTabImage = @"newtab.pdf";
-NSString* const kNewTabPressedImage = @"newtab_p.pdf";
 
 // A value to indicate tab layout should use the full available width of the
 // view.
@@ -154,7 +155,7 @@ private:
 - (void)addSubviewToPermanentList:(NSView*)aView;
 - (void)regenerateSubviewList;
 - (NSInteger)indexForContentsView:(NSView*)view;
-- (void)updateFaviconForContents:(TabContents*)contents
+- (void)updateFaviconForContents:(TabContentsWrapper*)contents
                          atIndex:(NSInteger)modelIndex;
 - (void)layoutTabsWithAnimation:(BOOL)animate
              regenerateSubviews:(BOOL)doUpdate;
@@ -355,6 +356,7 @@ class NotificationBridge : public NotificationObserver {
     switchView_ = switchView;
     browser_ = browser;
     tabStripModel_ = browser_->tabstrip_model();
+    hoverTabSelector_.reset(new HoverTabSelector(tabStripModel_));
     delegate_ = delegate;
     bridge_.reset(new TabStripModelObserverBridge(tabStripModel_, self));
     tabContentsArray_.reset([[NSMutableArray alloc] init]);
@@ -389,9 +391,12 @@ class NotificationBridge : public NotificationObserver {
 
     // Set the images from code because Cocoa fails to find them in our sub
     // bundle during tests.
-    [newTabButton_ setImage:app::mac::GetCachedImageWithName(kNewTabImage)];
-    [newTabButton_ setAlternateImage:
-        app::mac::GetCachedImageWithName(kNewTabPressedImage)];
+    [[newTabButton_ cell] setImageID:IDR_NEWTAB_BUTTON
+                    forButtonState:image_button_cell::kDefaultState];
+    [[newTabButton_ cell] setImageID:IDR_NEWTAB_BUTTON_H
+                    forButtonState:image_button_cell::kHoverState];
+    [[newTabButton_ cell] setImageID:IDR_NEWTAB_BUTTON_P
+                    forButtonState:image_button_cell::kPressedState];
     newTabButtonShowingHoverImage_ = NO;
     newTabTrackingArea_.reset(
         [[CrTrackingArea alloc] initWithRect:[newTabButton_ bounds]
@@ -467,10 +472,10 @@ class NotificationBridge : public NotificationObserver {
       if (selection == currentContents) {
         // Must manually force a selection since the model won't send
         // selection messages in this scenario.
-        [self selectTabWithContents:currentContents
-                   previousContents:NULL
-                            atIndex:i
-                        userGesture:NO];
+        [self activateTabWithContents:currentContents
+                     previousContents:NULL
+                              atIndex:i
+                          userGesture:NO];
       }
     }
     // Don't lay out the tabs until after the controller has been fully
@@ -549,7 +554,7 @@ class NotificationBridge : public NotificationObserver {
   }
 
   // New content is in place, delegate should adjust itself accordingly.
-  [delegate_ onSelectTabWithContents:[controller tabContents]];
+  [delegate_ onActivateTabWithContents:[controller tabContents]];
 
   // It also restores content autoresizing properties.
   [controller ensureContentsVisible];
@@ -620,7 +625,7 @@ class NotificationBridge : public NotificationObserver {
 // |index|, this returns |index| + 2. If there are no closing tabs, this will
 // return |index|.
 - (NSInteger)indexFromModelIndex:(NSInteger)index {
-  DCHECK(index >= 0);
+  DCHECK_GE(index, 0);
   if (index < 0)
     return index;
 
@@ -637,6 +642,25 @@ class NotificationBridge : public NotificationObserver {
   return index;
 }
 
+// Given an index into |tabArray_|, return the corresponding index into
+// |tabStripModel_| or NSNotFound if the specified tab does not exist in
+// the model (if it's closing, for example).
+- (NSInteger)modelIndexFromIndex:(NSInteger)index {
+  NSInteger modelIndex = 0;
+  NSInteger arrayIndex = 0;
+  for (TabController* controller in tabArray_.get()) {
+    if (![closingControllers_ containsObject:controller]) {
+      if (arrayIndex == index)
+        return modelIndex;
+      ++modelIndex;
+    } else if (arrayIndex == index) {
+      // Tab is closing - no model index.
+      return NSNotFound;
+    }
+    ++arrayIndex;
+  }
+  return NSNotFound;
+}
 
 // Returns the index of the subview |view|. Returns -1 if not present. Takes
 // closing tabs into account such that this index will correctly match the tab
@@ -695,14 +719,28 @@ class NotificationBridge : public NotificationObserver {
 - (void)selectTab:(id)sender {
   DCHECK([sender isKindOfClass:[NSView class]]);
   int index = [self modelIndexForTabView:sender];
-  if (tabStripModel_->ContainsIndex(index))
-    tabStripModel_->ActivateTabAt(index, true);
+  NSUInteger modifiers = [[NSApp currentEvent] modifierFlags];
+  if (tabStripModel_->ContainsIndex(index)) {
+    if (modifiers & NSCommandKeyMask && modifiers & NSShiftKeyMask) {
+      tabStripModel_->AddSelectionFromAnchorTo(index);
+    } else if (modifiers & NSShiftKeyMask) {
+      tabStripModel_->ExtendSelectionTo(index);
+    } else if (modifiers & NSCommandKeyMask) {
+      tabStripModel_->ToggleSelectionAt(index);
+    } else if (!tabStripModel_->IsTabSelected(index)) {
+      tabStripModel_->ActivateTabAt(index, true);
+    }
+  }
 }
 
 // Called when the user closes a tab. Asks the model to close the tab. |sender|
 // is the TabView that is potentially going away.
 - (void)closeTab:(id)sender {
   DCHECK([sender isKindOfClass:[TabView class]]);
+
+  // Cancel any pending tab transition.
+  hoverTabSelector_->CancelTabTransition();
+
   if ([hoveredTab_ isEqual:sender]) {
     hoveredTab_ = nil;
   }
@@ -711,10 +749,7 @@ class NotificationBridge : public NotificationObserver {
   if (!tabStripModel_->ContainsIndex(index))
     return;
 
-  TabContentsWrapper* contents = tabStripModel_->GetTabContentsAt(index);
-  if (contents)
-    UserMetrics::RecordAction(UserMetricsAction("CloseTab_Mouse"),
-                              contents->tab_contents()->profile());
+  UserMetrics::RecordAction(UserMetricsAction("CloseTab_Mouse"));
   const NSInteger numberOfOpenTabs = [self numberOfOpenTabs];
   if (numberOfOpenTabs > 1) {
     bool isClosingLastTab = index == numberOfOpenTabs - 1;
@@ -767,6 +802,13 @@ class NotificationBridge : public NotificationObserver {
   if (!tabStripModel_->ContainsIndex(index))
     return NO;
   return tabStripModel_->IsContextMenuCommandEnabled(index, command) ? YES : NO;
+}
+
+// Returns a context menu model for a given controller. Caller owns the result.
+- (ui::SimpleMenuModel*)contextMenuModelForController:(TabController*)controller
+    menuDelegate:(ui::SimpleMenuModel::Delegate*)delegate {
+  int index = [self modelIndexForTabView:[controller view]];
+  return new TabMenuModel(delegate, tabStripModel_, index);
 }
 
 - (void)insertPlaceholderForTab:(TabView*)tab
@@ -833,18 +875,11 @@ class NotificationBridge : public NotificationObserver {
     } else {
       availableSpace = NSWidth([tabStripView_ frame]);
 
-      // Account for the widths of the new tab button, the incognito badge, and
-      // the fullscreen button if any/all are present.
+      // Account for the widths of the new tab button or the avatar, if any/all
+      // are present.
       availableSpace -= NSWidth([newTabButton_ frame]) + kNewTabButtonOffset;
       if (browser_->profile()->IsOffTheRecord())
         availableSpace -= kIncognitoBadgeTabStripShrink;
-      if ([[tabStripView_ window]
-          respondsToSelector:@selector(toggleFullScreen:)]) {
-        NSButton* fullscreenButton = [[tabStripView_ window]
-            standardWindowButton:NSWindowFullScreenButton];
-        if (fullscreenButton)
-          availableSpace -= [fullscreenButton frame].size.width;
-      }
     }
     availableSpace -= [self indentForControls];
   }
@@ -913,7 +948,7 @@ class NotificationBridge : public NotificationObserver {
       id target = animate ? [[tab view] animator] : [tab view];
       [target setFrame:tabFrame];
 
-      // Store the frame by identifier to aviod redundant calls to animator.
+      // Store the frame by identifier to avoid redundant calls to animator.
       NSValue* identifier = [NSValue valueWithPointer:[tab view]];
       [targetFrames_ setObject:[NSValue valueWithRect:tabFrame]
                         forKey:identifier];
@@ -1102,6 +1137,9 @@ class NotificationBridge : public NotificationObserver {
   DCHECK(modelIndex == TabStripModel::kNoTab ||
          tabStripModel_->ContainsIndex(modelIndex));
 
+  // Cancel any pending tab transition.
+  hoverTabSelector_->CancelTabTransition();
+
   // Take closing tabs into account.
   NSInteger index = [self indexFromModelIndex:modelIndex];
 
@@ -1145,7 +1183,7 @@ class NotificationBridge : public NotificationObserver {
   // dragging a tab out into a new window, we have to put the tab's favicon
   // into the right state up front as we won't be told to do it from anywhere
   // else.
-  [self updateFaviconForContents:contents->tab_contents() atIndex:modelIndex];
+  [self updateFaviconForContents:contents atIndex:modelIndex];
 
   // Send a broadcast that the number of tabs have changed.
   [[NSNotificationCenter defaultCenter]
@@ -1155,12 +1193,12 @@ class NotificationBridge : public NotificationObserver {
 
 // Called when a notification is received from the model to select a particular
 // tab. Swaps in the toolbar and content area associated with |newContents|.
-- (void)selectTabWithContents:(TabContentsWrapper*)newContents
-             previousContents:(TabContentsWrapper*)oldContents
-                      atIndex:(NSInteger)modelIndex
-                  userGesture:(bool)wasUserGesture {
+- (void)activateTabWithContents:(TabContentsWrapper*)newContents
+               previousContents:(TabContentsWrapper*)oldContents
+                        atIndex:(NSInteger)modelIndex
+                    userGesture:(bool)wasUserGesture {
   // Take closing tabs into account.
-  NSInteger index = [self indexFromModelIndex:modelIndex];
+  NSInteger activeIndex = [self indexFromModelIndex:modelIndex];
 
   if (oldContents && oldContents != newContents) {
     int oldModelIndex =
@@ -1175,17 +1213,26 @@ class NotificationBridge : public NotificationObserver {
     }
   }
 
-  // De-select all other tabs and select the new tab.
+  // First get the vector of indices, which is allays sorted in ascending order.
+  TabStripSelectionModel::SelectedIndices selection(
+      tabStripModel_->selection_model().selected_indices());
+  // Iterate through all of the tabs, selecting each as necessary.
+  TabStripSelectionModel::SelectedIndices::iterator iter = selection.begin();
   int i = 0;
   for (TabController* current in tabArray_.get()) {
-    [current setSelected:(i == index) ? YES : NO];
+    BOOL selected = iter != selection.end() &&
+        [self indexFromModelIndex:*iter] == i;
+    [current setSelected:selected];
+    [current setActive:i == activeIndex];
+    if (selected)
+      ++iter;
     ++i;
   }
 
   // Tell the new tab contents it is about to become the selected tab. Here it
   // can do things like make sure the toolbar is up to date.
   TabContentsController* newController =
-      [tabContentsArray_ objectAtIndex:index];
+      [tabContentsArray_ objectAtIndex:activeIndex];
   [newController willBecomeSelectedTab];
 
   // Relayout for new tabs and to let the selected tab grow to be larger in
@@ -1214,8 +1261,8 @@ class NotificationBridge : public NotificationObserver {
   DCHECK_EQ(oldContents->tab_contents(), [oldController tabContents]);
 
   // Simply create a new TabContentsController for |newContents| and place it
-  // into the array, replacing |oldContents|.  A TabSelectedAt notification will
-  // follow, at which point we will install the new view.
+  // into the array, replacing |oldContents|.  A ActiveTabChanged notification
+  // will follow, at which point we will install the new view.
   scoped_nsobject<TabContentsController> newController(
       [[TabContentsController alloc]
           initWithContents:newContents->tab_contents()
@@ -1235,6 +1282,9 @@ class NotificationBridge : public NotificationObserver {
 // Remove all knowledge about this tab and its associated controller, and remove
 // the view from the strip.
 - (void)removeTab:(TabController*)controller {
+  // Cancel any pending tab transition.
+  hoverTabSelector_->CancelTabTransition();
+
   NSUInteger index = [tabArray_ indexOfObject:controller];
 
   // Release the tab contents controller so those views get destroyed. This
@@ -1281,6 +1331,10 @@ class NotificationBridge : public NotificationObserver {
 // animation is complete in order to remove the tab from the model.
 - (void)startClosingTabWithAnimation:(TabController*)closingTab {
   DCHECK([NSThread isMainThread]);
+
+  // Cancel any pending tab transition.
+  hoverTabSelector_->CancelTabTransition();
+
   // Save off the controller into the set of animating tabs. This alerts
   // the layout method to not do anything with it and allows us to correctly
   // calculate offsets when working with indices into the model.
@@ -1319,6 +1373,9 @@ class NotificationBridge : public NotificationObserver {
   // Take closing tabs into account.
   NSInteger index = [self indexFromModelIndex:modelIndex];
 
+  // Cancel any pending tab transition.
+  hoverTabSelector_->CancelTabTransition();
+
   TabController* tab = [tabArray_ objectAtIndex:index];
   if (tabStripModel_->count() > 0) {
     [self startClosingTabWithAnimation:tab];
@@ -1337,16 +1394,14 @@ class NotificationBridge : public NotificationObserver {
 
 // A helper routine for creating an NSImageView to hold the favicon or app icon
 // for |contents|.
-- (NSImageView*)iconImageViewForContents:(TabContents*)contents {
-  TabContentsWrapper* wrapper =
-      TabContentsWrapper::GetCurrentWrapperForContents(contents);
-  BOOL isApp = wrapper->extension_tab_helper()->is_app();
+- (NSImageView*)iconImageViewForContents:(TabContentsWrapper*)contents {
+  BOOL isApp = contents->extension_tab_helper()->is_app();
   NSImage* image = nil;
   // Favicons come from the renderer, and the renderer draws everything in the
   // system color space.
   CGColorSpaceRef colorSpace = base::mac::GetSystemColorSpace();
   if (isApp) {
-    SkBitmap* icon = wrapper->extension_tab_helper()->GetExtensionAppIcon();
+    SkBitmap* icon = contents->extension_tab_helper()->GetExtensionAppIcon();
     if (icon)
       image = gfx::SkBitmapToNSImageWithColorSpace(*icon, colorSpace);
   } else {
@@ -1365,7 +1420,7 @@ class NotificationBridge : public NotificationObserver {
 
 // Updates the current loading state, replacing the icon view with a favicon,
 // a throbber, the default icon, or nothing at all.
-- (void)updateFaviconForContents:(TabContents*)contents
+- (void)updateFaviconForContents:(TabContentsWrapper*)contents
                          atIndex:(NSInteger)modelIndex {
   if (!contents)
     return;
@@ -1385,19 +1440,19 @@ class NotificationBridge : public NotificationObserver {
   TabController* tabController = [tabArray_ objectAtIndex:index];
 
   bool oldHasIcon = [tabController iconView] != nil;
-  bool newHasIcon = contents->ShouldDisplayFavicon() ||
+  bool newHasIcon = contents->favicon_tab_helper()->ShouldDisplayFavicon() ||
       tabStripModel_->IsMiniTab(modelIndex);  // Always show icon if mini.
 
   TabLoadingState oldState = [tabController loadingState];
   TabLoadingState newState = kTabDone;
   NSImage* throbberImage = nil;
-  if (contents->is_crashed()) {
+  if (contents->tab_contents()->is_crashed()) {
     newState = kTabCrashed;
     newHasIcon = true;
-  } else if (contents->waiting_for_response()) {
+  } else if (contents->tab_contents()->waiting_for_response()) {
     newState = kTabWaiting;
     throbberImage = throbberWaitingImage;
-  } else if (contents->is_loading()) {
+  } else if (contents->tab_contents()->is_loading()) {
     newState = kTabLoading;
     throbberImage = throbberLoadingImage;
   }
@@ -1444,7 +1499,7 @@ class NotificationBridge : public NotificationObserver {
   NSInteger index = [self indexFromModelIndex:modelIndex];
 
   if (modelIndex == tabStripModel_->active_index())
-    [delegate_ onSelectedTabChange:change];
+    [delegate_ onTabChanged:change withContents:contents->tab_contents()];
 
   if (change == TabStripModelObserver::TITLE_NOT_LOADING) {
     // TODO(sky): make this work.
@@ -1457,7 +1512,7 @@ class NotificationBridge : public NotificationObserver {
   if (change != TabStripModelObserver::LOADING_ONLY)
     [self setTabTitle:tabController withContents:contents->tab_contents()];
 
-  [self updateFaviconForContents:contents->tab_contents() atIndex:modelIndex];
+  [self updateFaviconForContents:contents atIndex:modelIndex];
 
   TabContentsController* updatedController =
       [tabContentsArray_ objectAtIndex:index];
@@ -1473,6 +1528,9 @@ class NotificationBridge : public NotificationObserver {
   // Take closing tabs into account.
   NSInteger from = [self indexFromModelIndex:modelFrom];
   NSInteger to = [self indexFromModelIndex:modelTo];
+
+  // Cancel any pending tab transition.
+  hoverTabSelector_->CancelTabTransition();
 
   scoped_nsobject<TabContentsController> movedTabContentsController(
       [[tabContentsArray_ objectAtIndex:from] retain]);
@@ -1509,26 +1567,26 @@ class NotificationBridge : public NotificationObserver {
   [tabController setPinned:tabStripModel_->IsTabPinned(modelIndex)];
   [tabController setApp:tabStripModel_->IsAppTab(modelIndex)];
   [tabController setUrl:contents->tab_contents()->GetURL()];
-  [self updateFaviconForContents:contents->tab_contents() atIndex:modelIndex];
+  [self updateFaviconForContents:contents atIndex:modelIndex];
   // If the tab is being restored and it's pinned, the mini state is set after
   // the tab has already been rendered, so re-layout the tabstrip. In all other
   // cases, the state is set before the tab is rendered so this isn't needed.
   [self layoutTabs];
 }
 
-- (void)setFrameOfSelectedTab:(NSRect)frame {
-  NSView* view = [self selectedTabView];
+- (void)setFrameOfActiveTab:(NSRect)frame {
+  NSView* view = [self activeTabView];
   NSValue* identifier = [NSValue valueWithPointer:view];
   [targetFrames_ setObject:[NSValue valueWithRect:frame]
                     forKey:identifier];
   [view setFrame:frame];
 }
 
-- (NSView*)selectedTabView {
-  int selectedIndex = tabStripModel_->active_index();
+- (NSView*)activeTabView {
+  int activeIndex = tabStripModel_->active_index();
   // Take closing tabs into account. They can't ever be selected.
-  selectedIndex = [self indexFromModelIndex:selectedIndex];
-  return [self viewAtIndex:selectedIndex];
+  activeIndex = [self indexFromModelIndex:activeIndex];
+  return [self viewAtIndex:activeIndex];
 }
 
 // Find the model index based on the x coordinate of the placeholder. If there
@@ -1571,6 +1629,8 @@ class NotificationBridge : public NotificationObserver {
 // current placeholder.
 - (void)moveTabFromIndex:(NSInteger)from {
   int toIndex = [self indexOfPlaceholder];
+  // Cancel any pending tab transition.
+  hoverTabSelector_->CancelTabTransition();
   tabStripModel_->MoveTabContentsAt(from, toIndex, true);
 }
 
@@ -1721,11 +1781,10 @@ class NotificationBridge : public NotificationObserver {
 - (void)setNewTabButtonHoverState:(BOOL)shouldShowHover {
   if (shouldShowHover && !newTabButtonShowingHoverImage_) {
     newTabButtonShowingHoverImage_ = YES;
-    [newTabButton_ setImage:
-        app::mac::GetCachedImageWithName(kNewTabHoverImage)];
+    [[newTabButton_ cell] setIsMouseInside:YES];
   } else if (!shouldShowHover && newTabButtonShowingHoverImage_) {
     newTabButtonShowingHoverImage_ = NO;
-    [newTabButton_ setImage:app::mac::GetCachedImageWithName(kNewTabImage)];
+    [[newTabButton_ cell] setIsMouseInside:NO];
   }
 }
 
@@ -1753,19 +1812,19 @@ class NotificationBridge : public NotificationObserver {
   // ones.
   NSMutableArray* subviews = [NSMutableArray arrayWithArray:permanentSubviews_];
 
-  NSView* selectedTabView = nil;
+  NSView* activeTabView = nil;
   // Go through tabs in reverse order, since |subviews| is bottom-to-top.
   for (TabController* tab in [tabArray_ reverseObjectEnumerator]) {
     NSView* tabView = [tab view];
-    if ([tab selected]) {
-      DCHECK(!selectedTabView);
-      selectedTabView = tabView;
+    if ([tab active]) {
+      DCHECK(!activeTabView);
+      activeTabView = tabView;
     } else {
       [subviews addObject:tabView];
     }
   }
-  if (selectedTabView) {
-    [subviews addObject:selectedTabView];
+  if (activeTabView) {
+    [subviews addObject:activeTabView];
   }
   [tabStripView_ setSubviews:subviews];
   [self setTabTrackingAreasEnabled:mouseInside_];
@@ -1836,8 +1895,7 @@ class NotificationBridge : public NotificationObserver {
   // Either insert a new tab or open in a current tab.
   switch (disposition) {
     case NEW_FOREGROUND_TAB: {
-      UserMetrics::RecordAction(UserMetricsAction("Tab_DropURLBetweenTabs"),
-                                browser_->profile());
+      UserMetrics::RecordAction(UserMetricsAction("Tab_DropURLBetweenTabs"));
       browser::NavigateParams params(browser_, *url, PageTransition::TYPED);
       params.disposition = disposition;
       params.tabstrip_index = index;
@@ -1847,8 +1905,7 @@ class NotificationBridge : public NotificationObserver {
       break;
     }
     case CURRENT_TAB:
-      UserMetrics::RecordAction(UserMetricsAction("Tab_DropURLOnTab"),
-                                browser_->profile());
+      UserMetrics::RecordAction(UserMetricsAction("Tab_DropURLOnTab"));
       tabStripModel_->GetTabContentsAt(index)
           ->tab_contents()->OpenURL(*url, GURL(), CURRENT_TAB,
                                     PageTransition::TYPED);
@@ -1886,7 +1943,7 @@ class NotificationBridge : public NotificationObserver {
   // If the input is plain text, classify the input and make the URL.
   AutocompleteMatch match;
   browser_->profile()->GetAutocompleteClassifier()->Classify(
-      base::SysNSStringToUTF16(text), string16(), false, &match, NULL);
+      base::SysNSStringToUTF16(text), string16(), false, false, &match, NULL);
   GURL url(match.destination_url);
 
   [self openURL:&url inView:view at:point];
@@ -1931,11 +1988,27 @@ class NotificationBridge : public NotificationObserver {
   [tabStripView_ setDropArrowPosition:arrowPos];
   [tabStripView_ setDropArrowShown:YES];
   [tabStripView_ setNeedsDisplay:YES];
+
+  // Perform a delayed tab transition if hovering directly over a tab.
+  if (index != -1 && disposition == CURRENT_TAB) {
+    NSInteger modelIndex = [self modelIndexFromIndex:index];
+    // Only start the transition if it has a valid model index (i.e. it's not
+    // in the middle of closing).
+    if (modelIndex != NSNotFound) {
+      hoverTabSelector_->StartTabTransition(modelIndex);
+      return;
+    }
+  }
+  // If a tab transition was not started, cancel the pending one.
+  hoverTabSelector_->CancelTabTransition();
 }
 
 // (URLDropTargetController protocol)
 - (void)hideDropURLsIndicatorInView:(NSView*)view {
   DCHECK_EQ(view, tabStripView_.get());
+
+  // Cancel any pending tab transition.
+  hoverTabSelector_->CancelTabTransition();
 
   if ([tabStripView_ dropArrowShown]) {
     [tabStripView_ setDropArrowShown:NO];
@@ -2052,17 +2125,6 @@ class NotificationBridge : public NotificationObserver {
   [profileMenuButton_ setProfileDisplayName:
       [NSString stringWithUTF8String:profileName.c_str()]];
   [profileMenuButton_ setHidden:NO];
-
-  NSMenu* menu = [profileMenuButton_ menu];
-  while ([menu numberOfItems] > 0) {
-    [menu removeItemAtIndex:0];
-  }
-
-  NSString* menuTitle =
-      l10n_util::GetNSStringWithFixup(IDS_PROFILES_CREATE_NEW_PROFILE_OPTION);
-  [menu addItemWithTitle:menuTitle
-                  action:NULL
-           keyEquivalent:@""];
 }
 
 @end

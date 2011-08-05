@@ -5,35 +5,63 @@
 #import "chrome/browser/renderer_host/accelerated_plugin_view_mac.h"
 
 #include "base/command_line.h"
+#include "base/debug/trace_event.h"
 #import "base/mac/scoped_nsautorelease_pool.h"
 #include "chrome/browser/renderer_host/render_widget_host_view_mac.h"
 #include "chrome/common/chrome_switches.h"
 #include "ui/gfx/gl/gl_switches.h"
+#include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
 @implementation AcceleratedPluginView
 @synthesize cachedSize = cachedSize_;
 
+- (void)drawView {
+  TRACE_EVENT1("browser", "AcceleratedPluginViewMac::drawView",
+      "frameNum", swapBuffersCount_);
+
+  if (renderWidgetHostView_) {
+    // TODO(thakis): Pixel or view coordinates for size?
+    renderWidgetHostView_->DrawAcceleratedSurfaceInstance(
+        cglContext_, pluginHandle_, [self cachedSize]);
+  }
+
+  CGLFlushDrawable(cglContext_);
+  CGLSetCurrentContext(0);
+}
+
+// Note: cglContext_ lock must be held during this call.
+- (void)ackSwapBuffers:(uint64)swapBuffersCount {
+  if (swapBuffersCount > acknowledgedSwapBuffersCount_) {
+    acknowledgedSwapBuffersCount_ = swapBuffersCount;
+    bool sendAck = (rendererId_ != 0 || routeId_ != 0);
+    if (sendAck && renderWidgetHostView_) {
+      renderWidgetHostView_->AcknowledgeSwapBuffers(
+          rendererId_,
+          routeId_,
+          gpuHostId_,
+          acknowledgedSwapBuffersCount_);
+    }
+  }
+}
+
 - (CVReturn)getFrameForTime:(const CVTimeStamp*)outputTime {
+  TRACE_EVENT0("browser", "AcceleratedPluginView::getFrameForTime");
   // There is no autorelease pool when this method is called because it will be
   // called from a background thread.
   base::mac::ScopedNSAutoreleasePool pool;
 
-  bool sendAck = (rendererId_ != 0 || routeId_ != 0);
   uint64 currentSwapBuffersCount = swapBuffersCount_;
   if (currentSwapBuffersCount == acknowledgedSwapBuffersCount_) {
     return kCVReturnSuccess;
   }
 
-  [self drawView];
+  // Called on a background thread. Synchronized via the CGL context lock.
+  CGLLockContext(cglContext_);
 
-  acknowledgedSwapBuffersCount_ = currentSwapBuffersCount;
-  if (sendAck && renderWidgetHostView_) {
-    renderWidgetHostView_->AcknowledgeSwapBuffers(
-        rendererId_,
-        routeId_,
-        gpuHostId_,
-        acknowledgedSwapBuffersCount_);
-  }
+  [self drawView];
+  [self ackSwapBuffers:currentSwapBuffersCount];
+
+  CGLUnlockContext(cglContext_);
 
   return kCVReturnSuccess;
 }
@@ -91,31 +119,32 @@ static CVReturn DrawOneAcceleratedPluginCallback(
 
     // Set up a display link to do OpenGL rendering on a background thread.
     CVDisplayLinkCreateWithActiveCGDisplays(&displayLink_);
+    CVDisplayLinkSetOutputCallback(
+        displayLink_, &DrawOneAcceleratedPluginCallback, self);
+    CVDisplayLinkSetCurrentCGDisplayFromOpenGLContext(
+        displayLink_, cglContext_, cglPixelFormat_);
+
+    [[NSNotificationCenter defaultCenter]
+         addObserver:self
+            selector:@selector(globalFrameDidChange:)
+                name:NSViewGlobalFrameDidChangeNotification
+              object:self];
   }
   return self;
 }
 
 - (void)dealloc {
   CVDisplayLinkRelease(displayLink_);
+
+  // Ack pending swaps (if any):
+  CGLLockContext(cglContext_);
+  [self ackSwapBuffers:swapBuffersCount_];
+  CGLUnlockContext(cglContext_);
+
   if (renderWidgetHostView_)
     renderWidgetHostView_->DeallocFakePluginWindowHandle(pluginHandle_);
   [[NSNotificationCenter defaultCenter] removeObserver:self];
   [super dealloc];
-}
-
-- (void)drawView {
-  // Called on a background thread. Synchronized via the CGL context lock.
-  CGLLockContext(cglContext_);
-
-  if (renderWidgetHostView_) {
-    // TODO(thakis): Pixel or view coordinates for size?
-    renderWidgetHostView_->DrawAcceleratedSurfaceInstance(
-        cglContext_, pluginHandle_, [self cachedSize]);
-  }
-
-  CGLFlushDrawable(cglContext_);
-  CGLSetCurrentContext(0);
-  CGLUnlockContext(cglContext_);
 }
 
 - (void)setCutoutRects:(NSArray*)cutout_rects {
@@ -137,6 +166,15 @@ static CVReturn DrawOneAcceleratedPluginCallback(
     gpuHostId_ = gpuHostId;
     swapBuffersCount_ = count;
   }
+  // If this view is not visible, we have to ack now. Otherwise,
+  // the ack will not be sent until the tab is made visible, which means it will
+  // look like the tab is loading (busy cursor) until it is clicked.
+  if (![self window]) {
+    // Ack pending swaps (if any):
+    CGLLockContext(cglContext_);
+    [self ackSwapBuffers:swapBuffersCount_];
+    CGLUnlockContext(cglContext_);
+  }
 }
 
 - (void)onRenderWidgetHostViewGone {
@@ -144,6 +182,8 @@ static CVReturn DrawOneAcceleratedPluginCallback(
     return;
 
   CGLLockContext(cglContext_);
+  // Ack pending swaps (if any):
+  [self ackSwapBuffers:swapBuffersCount_];
   // Deallocate the plugin handle while we still can.
   renderWidgetHostView_->DeallocFakePluginWindowHandle(pluginHandle_);
   renderWidgetHostView_ = NULL;
@@ -151,44 +191,45 @@ static CVReturn DrawOneAcceleratedPluginCallback(
 }
 
 - (void)drawRect:(NSRect)rect {
+  TRACE_EVENT0("browser", "AcceleratedPluginView::drawRect");
   const NSRect* dirtyRects;
   int dirtyRectCount;
   [self getRectsBeingDrawn:&dirtyRects count:&dirtyRectCount];
 
-  [NSGraphicsContext saveGraphicsState];
+  {
+    gfx::ScopedNSGraphicsContextSaveGState scopedGState;
 
-  // Mask out any cutout rects--somewhat counterintuitively cutout rects are
-  // places where clearColor is *not* drawn. The trick is that drawing nothing
-  // lets the parent view (i.e., the web page) show through, whereas drawing
-  // clearColor punches a hole in the window (letting OpenGL show through).
-  if ([cutoutRects_.get() count] > 0) {
-    NSBezierPath* path = [NSBezierPath bezierPath];
-    // Trace the bounds clockwise to give a base clip rect of the whole view.
-    NSRect bounds = [self bounds];
-    [path moveToPoint:bounds.origin];
-    [path lineToPoint:NSMakePoint(NSMinX(bounds), NSMaxY(bounds))];
-    [path lineToPoint:NSMakePoint(NSMaxX(bounds), NSMaxY(bounds))];
-    [path lineToPoint:NSMakePoint(NSMaxX(bounds), NSMinY(bounds))];
-    [path closePath];
+    // Mask out any cutout rects--somewhat counterintuitively cutout rects are
+    // places where clearColor is *not* drawn. The trick is that drawing nothing
+    // lets the parent view (i.e., the web page) show through, whereas drawing
+    // clearColor punches a hole in the window (letting OpenGL show through).
+    if ([cutoutRects_.get() count] > 0) {
+      NSBezierPath* path = [NSBezierPath bezierPath];
+      // Trace the bounds clockwise to give a base clip rect of the whole view.
+      NSRect bounds = [self bounds];
+      [path moveToPoint:bounds.origin];
+      [path lineToPoint:NSMakePoint(NSMinX(bounds), NSMaxY(bounds))];
+      [path lineToPoint:NSMakePoint(NSMaxX(bounds), NSMaxY(bounds))];
+      [path lineToPoint:NSMakePoint(NSMaxX(bounds), NSMinY(bounds))];
+      [path closePath];
 
-    // Then trace each cutout rect counterclockwise to remove that region from
-    // the clip region.
-    for (NSValue* rectWrapper in cutoutRects_.get()) {
-      [path appendBezierPathWithRect:[rectWrapper rectValue]];
+      // Then trace each cutout rect counterclockwise to remove that region from
+      // the clip region.
+      for (NSValue* rectWrapper in cutoutRects_.get()) {
+        [path appendBezierPathWithRect:[rectWrapper rectValue]];
+      }
+
+      [path addClip];
     }
 
-    [path addClip];
-
-    [NSGraphicsContext restoreGraphicsState];
+    // Punch a hole so that the OpenGL view shows through.
+    [[NSColor clearColor] set];
+    NSRectFillList(dirtyRects, dirtyRectCount);
   }
 
-  // Punch a hole so that the OpenGL view shows through.
-  [[NSColor clearColor] set];
-  NSRectFillList(dirtyRects, dirtyRectCount);
-
-  [NSGraphicsContext restoreGraphicsState];
-
+  CGLLockContext(cglContext_);
   [self drawView];
+  CGLUnlockContext(cglContext_);
 }
 
 - (void)rightMouseDown:(NSEvent*)event {
@@ -223,43 +264,52 @@ static CVReturn DrawOneAcceleratedPluginCallback(
   }
 }
 
+- (void)prepareForGLRendering {
+  TRACE_EVENT0("browser", "AcceleratedPluginView::prepareForGLRendering");
+
+  // If we're using OpenGL, make sure it is connected.
+  if ([glContext_ view] != self) {
+    [glContext_ setView:self];
+  }
+}
+
 - (void)renewGState {
+  TRACE_EVENT0("browser", "AcceleratedPluginView::renewGState");
   // Synchronize with window server to avoid flashes or corrupt drawing.
   [[self window] disableScreenUpdatesUntilFlush];
   [self globalFrameDidChange:nil];
   [super renewGState];
 }
 
+- (void)setUpGState {
+  TRACE_EVENT0("browser", "AcceleratedPluginView::setUpGState");
+  [self prepareForGLRendering];
+}
+
+// TODO(jbates): is lockFocus needed anymore? it seems redundant with
+//               setUpGState in traces.
 - (void)lockFocus {
+  TRACE_EVENT0("browser", "AcceleratedPluginView::lockFocus");
   [super lockFocus];
-
-  // If we're using OpenGL, make sure it is connected and that the display link
-  // is running.
-  if ([glContext_ view] != self) {
-    [glContext_ setView:self];
-
-    [[NSNotificationCenter defaultCenter]
-         addObserver:self
-            selector:@selector(globalFrameDidChange:)
-                name:NSViewGlobalFrameDidChangeNotification
-              object:self];
-    CVDisplayLinkSetOutputCallback(
-        displayLink_, &DrawOneAcceleratedPluginCallback, self);
-    CVDisplayLinkSetCurrentCGDisplayFromOpenGLContext(
-        displayLink_, cglContext_, cglPixelFormat_);
-    CVDisplayLinkStart(displayLink_);
-  }
+  [self prepareForGLRendering];
   [glContext_ makeCurrentContext];
 }
 
 - (void)viewWillMoveToWindow:(NSWindow*)newWindow {
+  TRACE_EVENT1("browser", "AcceleratedPluginView::viewWillMoveToWindow",
+               "newWindow", newWindow);
   // Stop the display link thread while the view is not visible.
   if (newWindow) {
-    if (displayLink_ && !CVDisplayLinkIsRunning(displayLink_))
+    if (!CVDisplayLinkIsRunning(displayLink_))
       CVDisplayLinkStart(displayLink_);
   } else {
-    if (displayLink_ && CVDisplayLinkIsRunning(displayLink_))
+    if (CVDisplayLinkIsRunning(displayLink_))
       CVDisplayLinkStop(displayLink_);
+
+    // Ack pending swaps (if any):
+    CGLLockContext(cglContext_);
+    [self ackSwapBuffers:swapBuffersCount_];
+    CGLUnlockContext(cglContext_);
   }
 
   // Inform the window hosting this accelerated view that it needs to be
@@ -273,6 +323,7 @@ static CVReturn DrawOneAcceleratedPluginCallback(
 }
 
 - (void)viewDidHide {
+  TRACE_EVENT0("browser", "AcceleratedPluginView::viewDidHide");
   [super viewDidHide];
 
   if ([[self window] respondsToSelector:@selector(underlaySurfaceRemoved)]) {
@@ -281,6 +332,7 @@ static CVReturn DrawOneAcceleratedPluginCallback(
 }
 
 - (void)viewDidUnhide {
+  TRACE_EVENT0("browser", "AcceleratedPluginView::viewDidUnhide");
   [super viewDidUnhide];
 
   if ([[self window] respondsToSelector:@selector(underlaySurfaceRemoved)]) {
@@ -289,11 +341,13 @@ static CVReturn DrawOneAcceleratedPluginCallback(
 }
 
 - (void)setFrame:(NSRect)frameRect {
+  TRACE_EVENT0("browser", "AcceleratedPluginViewMac::setFrame");
   [self setCachedSize:frameRect.size];
   [super setFrame:frameRect];
 }
 
 - (void)setFrameSize:(NSSize)newSize {
+  TRACE_EVENT0("browser", "AcceleratedPluginView::newSize");
   [self setCachedSize:newSize];
   [super setFrameSize:newSize];
 }
@@ -313,6 +367,7 @@ static CVReturn DrawOneAcceleratedPluginCallback(
 }
 
 - (void)viewDidMoveToSuperview {
+  TRACE_EVENT0("browser", "AcceleratedPluginView::viewDidMoveToSuperview");
   if (![self superview])
     [self onRenderWidgetHostViewGone];
 }

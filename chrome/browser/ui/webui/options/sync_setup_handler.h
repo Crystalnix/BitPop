@@ -27,25 +27,19 @@ class SyncSetupHandler : public OptionsPageUIHandler,
   virtual void ShowGaiaSuccessAndSettingUp();
   virtual void ShowConfigure(const DictionaryValue& args);
   virtual void ShowPassphraseEntry(const DictionaryValue& args);
-  virtual void ShowFirstPassphrase(const DictionaryValue& args);
   virtual void ShowSettingUp();
   virtual void ShowSetupDone(const std::wstring& user);
-  virtual void ShowFirstTimeDone(const std::wstring& user);
 
-  virtual void SetFlow(SyncSetupFlow* flow) {
-    flow_ = flow;
-  }
+  virtual void SetFlow(SyncSetupFlow* flow);
 
  private:
   // Callbacks from the page.
-  void OnDidShowPage(const ListValue* args);
   void OnDidClosePage(const ListValue* args);
   void HandleSubmitAuth(const ListValue* args);
   void HandleConfigure(const ListValue* args);
   void HandlePassphraseEntry(const ListValue* args);
   void HandlePassphraseCancel(const ListValue* args);
-  void HandleFirstPassphrase(const ListValue* args);
-  void HandleGoToDashboard(const ListValue* args);
+  void HandleAttachHandler(const ListValue* args);
 
   // Weak reference.
   SyncSetupFlow* flow_;

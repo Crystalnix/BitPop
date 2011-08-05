@@ -8,6 +8,7 @@
 
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "chrome/browser/sync/glue/frontend_data_type_controller.h"
 
 namespace browser_sync {
@@ -21,16 +22,16 @@ class PreferenceDataTypeController : public FrontendDataTypeController {
   virtual ~PreferenceDataTypeController();
 
   // FrontendDataTypeController implementation.
-  virtual syncable::ModelType type() const;
+  virtual syncable::ModelType type() const OVERRIDE;
 
  private:
   // FrontendDataTypeController implementations.
-  virtual void CreateSyncComponents();
+  virtual void CreateSyncComponents() OVERRIDE;
   virtual void RecordUnrecoverableError(
       const tracked_objects::Location& from_here,
-      const std::string& message);
-  virtual void RecordAssociationTime(base::TimeDelta time);
-  virtual void RecordStartFailure(StartResult result);
+      const std::string& message) OVERRIDE;
+  virtual void RecordAssociationTime(base::TimeDelta time) OVERRIDE;
+  virtual void RecordStartFailure(StartResult result) OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(PreferenceDataTypeController);
 };

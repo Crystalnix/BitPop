@@ -10,7 +10,7 @@
 
 #include "base/basictypes.h"
 #include "chrome/browser/extensions/image_loading_tracker.h"
-#include "chrome/browser/favicon_service.h"
+#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/common/extensions/extension.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -62,6 +62,10 @@ class ExtensionIconSource : public ChromeURLDataManager::DataSource,
                          Extension::Icons icon_size,
                          ExtensionIconSet::MatchType match,
                          bool grayscale);
+
+  // A public utility function for accessing the bitmap of the image specified
+  // by |resource_id|.
+  static SkBitmap* LoadImageByResourceId(int resource_id);
 
   // ChromeURLDataManager::DataSource
 

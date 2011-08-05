@@ -100,7 +100,7 @@ void MessageBoxView::ViewHierarchyChanged(bool is_add,
 bool MessageBoxView::AcceleratorPressed(
     const Accelerator& accelerator) {
   // We only accepts Ctrl-C.
-  DCHECK(accelerator.GetKeyCode() == 'C' && accelerator.IsCtrlDown());
+  DCHECK(accelerator.key_code() == 'C' && accelerator.IsCtrlDown());
 
   // We must not intercept Ctrl-C when we have a text box and it's focused.
   if (prompt_field_ && prompt_field_->HasFocus())
@@ -129,7 +129,8 @@ void MessageBoxView::Init(int dialog_flags,
     // Determine the alignment and directionality based on the first character
     // with strong directionality.
     base::i18n::TextDirection direction =
-        base::i18n::GetFirstStrongCharacterDirection(message_label_->GetText());
+        base::i18n::GetFirstStrongCharacterDirection(
+            WideToUTF16(message_label_->GetText()));
     Label::Alignment alignment;
     if (direction == base::i18n::RIGHT_TO_LEFT)
       alignment = Label::ALIGN_RIGHT;

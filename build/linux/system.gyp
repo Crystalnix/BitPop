@@ -1,4 +1,4 @@
-# Copyright (c) 2009 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -13,13 +13,13 @@
         'pkg-config': 'pkg-config'
       },
     }],
-    [ 'OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+    [ 'os_posix==1 and OS!="mac"', {
       'variables': {
         # We use our own copy of libssl3, although we still need to link against
         # the rest of NSS.
         'use_system_ssl%': 0,
       },
-    }, {  # OS!="linux"
+    }, {
       'variables': {
         'use_system_ssl%': 1,
       },
@@ -74,12 +74,17 @@
       }]]
     },
     {
-      'target_name': 'nss',
+      'target_name': 'ssl',
       'type': 'settings',
       'conditions': [
         ['_toolset=="target"', {
           'conditions': [
-            ['use_system_ssl==0', {
+            ['use_openssl==1', {
+              'dependencies': [
+                '../../third_party/openssl/openssl.gyp:openssl',
+              ],
+            }],
+            ['use_openssl==0 and use_system_ssl==0', {
               'dependencies': [
                 '../../net/third_party/nss/ssl.gyp:ssl',
                 '../../third_party/zlib/zlib.gyp:zlib',
@@ -106,7 +111,8 @@
                   '<!@(<(pkg-config) --libs-only-l nss | sed -e "s/-lssl3//")',
                 ],
               },
-            }, {
+            }],
+            ['use_openssl==0 and use_system_ssl==1', {
               'direct_dependent_settings': {
                 'cflags': [
                   '<!@(<(pkg-config) --cflags nss)',
@@ -123,8 +129,8 @@
                   '<!@(<(pkg-config) --libs-only-l nss)',
                 ],
               },
-            }
-          ]]
+            }],
+          ]
         }],
       ],
     },
@@ -212,6 +218,41 @@
       }]]
     },
     {
+      'target_name': 'gio',
+      'type': 'settings',
+      'conditions': [
+        ['use_gio==1 and _toolset=="target"', {
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags gio-2.0)',
+            ],
+            'defines': [
+              'USE_GIO',
+            ],
+            'conditions': [
+              ['linux_link_gsettings==0', {
+                'defines': ['DLOPEN_GSETTINGS'],
+              }],
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other gio-2.0)',
+            ],
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l gio-2.0)',
+            ],
+            'conditions': [
+              ['linux_link_gsettings==0', {
+                'libraries': [
+                  '-ldl',
+                ],
+              }],
+            ],
+          },
+      }]]
+    },
+    {
       'target_name': 'x11',
       'type': 'settings',
       'conditions': [
@@ -265,6 +306,23 @@
             ],
             'libraries': [
               '<!@(<(pkg-config) --libs-only-l xext)',
+            ],
+          },
+      }]]
+    },
+    {
+      'target_name': 'libgcrypt',
+      'type': 'settings',
+      'conditions': [
+        ['_toolset=="target"', {
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(libgcrypt-config --cflags)',
+            ],
+          },
+          'link_settings': {
+            'libraries': [
+              '<!@(libgcrypt-config --libs)',
             ],
           },
       }]]
@@ -350,21 +408,22 @@
       'target_name': 'ibus',
       'type': 'settings',
       'conditions': [
-        ['"<!@(<(pkg-config) --atleast-version=1.3.99 ibus-1.0 || echo $?)"==""', {
+        ['use_ibus==1', {
           'variables': {
-            'ibus': 1
+            'ibus_min_version': '1.3.99.20110425',
           },
           'direct_dependent_settings': {
+            'defines': ['HAVE_IBUS=1'],
             'cflags': [
-              '<!@(<(pkg-config) --cflags ibus-1.0)',
+              '<!@(<(pkg-config) --cflags "ibus-1.0 >= <(ibus_min_version)")',
             ],
           },
           'link_settings': {
             'ldflags': [
-              '<!@(<(pkg-config) --libs-only-L --libs-only-other ibus-1.0)',
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other "ibus-1.0 >= <(ibus_min_version)")',
             ],
             'libraries': [
-              '<!@(<(pkg-config) --libs-only-l ibus-1.0)',
+              '<!@(<(pkg-config) --libs-only-l "ibus-1.0 >= <(ibus_min_version)")',
             ],
           },
         }],

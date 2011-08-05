@@ -14,7 +14,7 @@
 #include "remoting/host/capturer.h"
 #include "remoting/host/client_session.h"
 #include "remoting/host/desktop_environment.h"
-#include "remoting/host/heartbeat_sender.h"
+#include "remoting/host/host_status_observer.h"
 #include "remoting/jingle_glue/jingle_client.h"
 #include "remoting/jingle_glue/jingle_thread.h"
 #include "remoting/protocol/session_manager.h"
@@ -69,11 +69,15 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
  public:
   // Factory methods that must be used to create ChromotingHost instances.
   // Default capturer and input stub are used if it is not specified.
-  static ChromotingHost* Create(ChromotingHostContext* context,
-                                MutableHostConfig* config);
+  // Returned instance takes ownership of |access_verifier| and |environment|,
+  // and adds a reference to |config|. It does NOT take ownership of |context|.
   static ChromotingHost* Create(ChromotingHostContext* context,
                                 MutableHostConfig* config,
-                                DesktopEnvironment* environment);
+                                AccessVerifier* access_verifier);
+  static ChromotingHost* Create(ChromotingHostContext* context,
+                                MutableHostConfig* config,
+                                DesktopEnvironment* environment,
+                                AccessVerifier* access_verifier);
 
   // Asynchronously start the host process.
   //
@@ -89,17 +93,15 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
   // Asynchronously shutdown the host process.
   void Shutdown();
 
-  // This method is called if a client is connected to this object.
-  void OnClientConnected(protocol::ConnectionToClient* client);
-
-  // This method is called if a client is disconnected from the host.
-  void OnClientDisconnected(protocol::ConnectionToClient* client);
+  void AddStatusObserver(const scoped_refptr<HostStatusObserver>& observer);
 
   ////////////////////////////////////////////////////////////////////////////
   // protocol::ConnectionToClient::EventHandler implementations
   virtual void OnConnectionOpened(protocol::ConnectionToClient* client);
   virtual void OnConnectionClosed(protocol::ConnectionToClient* client);
   virtual void OnConnectionFailed(protocol::ConnectionToClient* client);
+  virtual void OnSequenceNumberUpdated(protocol::ConnectionToClient* client,
+                                       int64 sequence_number);
 
   ////////////////////////////////////////////////////////////////////////////
   // JingleClient::Callback implementations
@@ -121,14 +123,23 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
   // |config| is transferred to the object. Must be called before Start().
   void set_protocol_config(protocol::CandidateSessionConfig* config);
 
-  // This setter is only used in unit test to simulate client connection.
-  void AddClient(ClientSession* client);
+  void set_me2mom(bool is_me2mom) {
+    is_me2mom_ = is_me2mom;
+  }
 
  private:
   friend class base::RefCountedThreadSafe<ChromotingHost>;
+  friend class ChromotingHostTest;
 
-  ChromotingHost(ChromotingHostContext* context, MutableHostConfig* config,
-                 DesktopEnvironment* environment);
+  typedef std::vector<scoped_refptr<HostStatusObserver> > StatusObserverList;
+  typedef std::vector<scoped_refptr<ClientSession> > ClientList;
+
+  // Takes ownership of |access_verifier| and |environment|, and adds a
+  // reference to |config|. Does NOT take ownership of |context|.
+  ChromotingHost(ChromotingHostContext* context,
+                 MutableHostConfig* config,
+                 DesktopEnvironment* environment,
+                 AccessVerifier* access_verifier);
   virtual ~ChromotingHost();
 
   enum State {
@@ -140,6 +151,9 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
   // Callback for protocol::SessionManager::Close().
   void OnServerClosed();
 
+  // This method is called if a client is disconnected from the host.
+  void OnClientDisconnected(protocol::ConnectionToClient* client);
+
   // Creates encoder for the specified configuration.
   Encoder* CreateEncoder(const protocol::SessionConfig* config);
 
@@ -148,6 +162,9 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
   bool HasAuthenticatedClients() const;
 
   void EnableCurtainMode(bool enable);
+
+  void ProcessPreAuthentication(
+      const scoped_refptr<protocol::ConnectionToClient>& connection);
 
   // The context that the chromoting host runs on.
   ChromotingHostContext* context_;
@@ -164,13 +181,12 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
 
   scoped_refptr<protocol::SessionManager> session_manager_;
 
-  // Objects that takes care of sending heartbeats to the chromoting bot.
-  scoped_refptr<HeartbeatSender> heartbeat_sender_;
+  StatusObserverList status_observers_;
 
-  AccessVerifier access_verifier_;
+  scoped_ptr<AccessVerifier> access_verifier_;
 
   // The connections to remote clients.
-  std::vector<scoped_refptr<ClientSession> > clients_;
+  ClientList clients_;
 
   // Session manager for the host process.
   scoped_refptr<ScreenRecorder> recorder_;
@@ -192,6 +208,10 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
 
   // Whether or not the host is currently curtained.
   bool is_curtained_;
+
+  // Whether or not the host is running in "Me2Mom" mode, in which connections
+  // are pre-authenticated, and hence the local login challenge can be bypassed.
+  bool is_me2mom_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromotingHost);
 };

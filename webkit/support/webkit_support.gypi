@@ -1,4 +1,4 @@
-# Copyright (c) 2010 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -9,8 +9,9 @@
   'targets': [
     {
       'target_name': 'webkit_support',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
+        '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/ui/ui.gyp:ui_gfx',
         '<(DEPTH)/media/media.gyp:media',
         '<(DEPTH)/skia/skia.gyp:skia',
@@ -71,11 +72,16 @@
 
     {
       'target_name': 'webkit_support_common',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
+        '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/crypto/crypto.gyp:crypto',
         '<(DEPTH)/skia/skia.gyp:skia',
+        '<(DEPTH)/ui/ui.gyp:ui_base',
         'glue',
+      ],
+      'export_dependent_settings': [
+        '<(DEPTH)/base/base.gyp:base',
       ],
       'sources': [
         '<(DEPTH)/webkit/tools/test_shell/mac/DumpRenderTreePasteboard.h',

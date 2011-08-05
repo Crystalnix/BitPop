@@ -4,37 +4,57 @@
  */
 
 .tile-page {
-  margin-top: 50px;
+  display: -webkit-box;
+  padding-top: 100px;
   text-align: center;
   width: 100%;
+  -webkit-box-orient: vertical;
 }
 
 .tile-page-title {
-  display: inline-block;
+  /* TODO(estade): title is hidden for now. We may remove it later. */
+  display: none;
   font-size: 25px;
   height: 50px;
-  opacity: 0.3;
 }
 
 .tile-grid {
-  height: 100%;
   position: relative;
-  width: 100%;
+  z-index: 100;
+  -webkit-box-flex: 1;
 }
 
 .tile {
   display: inline-block;
   position: absolute;
-  /* Animate effects to/from the grabbed state, and the position when drop
-     is cancelled.  I'd like to also animate movement when an app is
-     re-positioned, but since chrome is doing the layout there is no property
-     to animate. */
-  -webkit-transition: -webkit-transform, opacity;
-  -webkit-transition-duration: 200ms;
   /* Don't offer the context menu on long-press. */
   -webkit-touch-callout: none;
+  -webkit-user-drag: element;
 }
 
-.resizing-tile-page .tile {
+.doppleganger {
+  left: 0 !important;
+  top: 0 !important;
+}
+
+.tile.dragging {
+  opacity: 0;
+}
+
+.tile.drag-representation {
+  pointer-events: none;
+  z-index: 10;
+}
+
+.drag-target {
+  background-color: green;
+}
+
+.animating-tile-page .tile,
+.tile.drag-representation.placing {
   -webkit-transition: left 200ms, top 200ms;
+}
+
+.animating-tile-page .top-margin {
+  -webkit-transition: margin-bottom 200ms;
 }

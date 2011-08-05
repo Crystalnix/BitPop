@@ -10,8 +10,8 @@
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
+#include "base/scoped_temp_dir.h"
 #include "base/string_number_conversions.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_creator.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
@@ -88,7 +88,7 @@ const Extension* ExtensionBrowserTest::LoadExtensionImpl(
   // The call to OnExtensionInstalled ensures the other extension prefs
   // are set up with the defaults.
   service->extension_prefs()->OnExtensionInstalled(
-      extension, Extension::ENABLED, false);
+      extension, Extension::ENABLED);
   service->SetIsIncognitoEnabled(extension->id(), incognito_enabled);
   service->SetAllowFileAccess(extension, fileaccess_enabled);
 
@@ -236,7 +236,7 @@ bool ExtensionBrowserTest::InstallOrUpdateExtension(const std::string& id,
       return false;
 
     scoped_refptr<CrxInstaller> installer(
-        new CrxInstaller(service, install_ui));
+        service->MakeCrxInstaller(install_ui));
     installer->set_expected_id(id);
     installer->InstallCrx(crx_path);
 

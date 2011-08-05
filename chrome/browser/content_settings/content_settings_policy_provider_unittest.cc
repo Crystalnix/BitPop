@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -68,7 +68,6 @@ TEST_F(PolicyDefaultProviderTest, ObserveManagedSettingsChange) {
   prefs->SetManagedPref(prefs::kManagedDefaultImagesSetting,
                         Value::CreateIntegerValue(CONTENT_SETTING_BLOCK));
   EXPECT_EQ(profile.GetHostContentSettingsMap(), observer.last_notifier);
-  EXPECT_EQ(ContentSettingsPattern(), observer.last_pattern);
   EXPECT_EQ(CONTENT_SETTINGS_TYPE_DEFAULT, observer.last_type);
   EXPECT_TRUE(observer.last_update_all);
   EXPECT_TRUE(observer.last_update_all_types);
@@ -78,7 +77,6 @@ TEST_F(PolicyDefaultProviderTest, ObserveManagedSettingsChange) {
   prefs->RemoveManagedPref(prefs::kManagedDefaultImagesSetting);
   EXPECT_EQ(profile.GetHostContentSettingsMap(), observer.last_notifier);
   EXPECT_EQ(CONTENT_SETTINGS_TYPE_DEFAULT, observer.last_type);
-  EXPECT_EQ(ContentSettingsPattern(), observer.last_pattern);
   EXPECT_TRUE(observer.last_update_all);
   EXPECT_TRUE(observer.last_update_all_types);
   EXPECT_EQ(2, observer.counter);
@@ -108,9 +106,10 @@ TEST_F(PolicyProviderTest, Default) {
   prefs->SetManagedPref(prefs::kManagedImagesBlockedForUrls,
                         value);
 
-  PolicyProvider provider(static_cast<Profile*>(&profile));
+  PolicyProvider provider(&profile, NULL);
 
-  ContentSettingsPattern yt_url_pattern("www.youtube.com");
+  ContentSettingsPattern yt_url_pattern =
+      ContentSettingsPattern::FromString("www.youtube.com");
   GURL youtube_url("http://www.youtube.com");
   GURL google_url("http://mail.google.com");
 
@@ -145,7 +144,7 @@ TEST_F(PolicyProviderTest, ResourceIdentifier) {
   prefs->SetManagedPref(prefs::kManagedPluginsAllowedForUrls,
                         value);
 
-  PolicyProvider provider(static_cast<Profile*>(&profile));
+  PolicyProvider provider(&profile, NULL);
 
   GURL youtube_url("http://www.youtube.com");
   GURL google_url("http://mail.google.com");

@@ -10,8 +10,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/extensions/extension_bookmark_manager_api.h"
-#include "chrome/browser/extensions/extension_function_dispatcher.h"
-#include "chrome/browser/favicon_service.h"
+#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/common/extensions/extension.h"
 #include "content/browser/webui/web_ui.h"
 
@@ -21,15 +20,12 @@ class PrefService;
 class Profile;
 class RenderViewHost;
 class TabContents;
-struct ExtensionHostMsg_DomMessage_Params;
 
 // This class implements WebUI for extensions and allows extensions to put UI in
 // the main tab contents area. For example, each extension can specify an
 // "options_page", and that page is displayed in the tab contents area and is
 // hosted by this class.
-class ExtensionWebUI
-    : public WebUI,
-      public ExtensionFunctionDispatcher::Delegate {
+class ExtensionWebUI : public WebUI {
  public:
   static const char kExtensionURLOverrides[];
 
@@ -37,27 +33,12 @@ class ExtensionWebUI
 
   virtual ~ExtensionWebUI();
 
-  ExtensionFunctionDispatcher* extension_function_dispatcher() const {
-    return extension_function_dispatcher_.get();
-  }
-
-  // WebUI
-  virtual void RenderViewCreated(RenderViewHost* render_view_host);
-  virtual void RenderViewReused(RenderViewHost* render_view_host);
-  virtual void ProcessWebUIMessage(
-      const ExtensionHostMsg_DomMessage_Params& params);
-
-  // ExtensionFunctionDispatcher::Delegate
-  virtual Browser* GetBrowser();
-  virtual gfx::NativeView GetNativeViewOfHost();
-  virtual gfx::NativeWindow GetCustomFrameNativeWindow();
-  virtual TabContents* associated_tab_contents() const;
-
   virtual ExtensionBookmarkManagerEventRouter*
       extension_bookmark_manager_event_router();
 
   // BrowserURLHandler
   static bool HandleChromeURLOverride(GURL* url, Profile* profile);
+  static bool HandleChromeURLOverrideReverse(GURL* url, Profile* profile);
 
   // Register and unregister a dictionary of one or more overrides.
   // Page names are the keys, and chrome-extension: URLs are the values.
@@ -85,15 +66,6 @@ class ExtensionWebUI
                                            Profile* profile,
                                            ListValue* list,
                                            Value* override);
-
-  // When the RenderViewHost changes (RenderViewCreated and RenderViewReused),
-  // we need to reset the ExtensionFunctionDispatcher so it's talking to the
-  // right one, as well as being linked to the correct URL.
-  void ResetExtensionFunctionDispatcher(RenderViewHost* render_view_host);
-
-  void ResetExtensionBookmarkManagerEventRouter();
-
-  scoped_ptr<ExtensionFunctionDispatcher> extension_function_dispatcher_;
 
   // TODO(aa): This seems out of place. Why is it not with the event routers for
   // the other extension APIs?

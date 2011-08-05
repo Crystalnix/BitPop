@@ -94,7 +94,7 @@
 #   persistent IDs for all fields (but not for groups!) are needed. These are
 #   specified by the 'id' keys of each policy. NEVER CHANGE EXISTING IDs,
 #   because doing so would break the deployed wire format!
-#   For your editing convenience: highest ID currently used: 85
+#   For your editing convenience: highest ID currently used: 89
 #
 # Placeholders:
 #   The following placeholder strings are automatically substituted:
@@ -102,6 +102,12 @@
 #     $2 -> Google Chrome OS / Chromium OS
 #     $3 -> Google Chrome Frame / Chromium Frame
 #     $6 is reserved for doc_writer
+#
+# Device Policy:
+#   An additional flag device_only (optional, defaults to False) indicates
+#   that this policy is only supported as a device-level Cloud Policy.
+#   In that case no entry in the UserPolicy Protobuf is generated and
+#   it is assumed that it will be added to the DevicePolicy Protobuf manually.
 #
   'policy_definitions': [
     {
@@ -139,7 +145,7 @@
           'caption': '''Use New Tab Page as homepage''',
           'desc': '''Configures the type of the default home page in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> and prevents users from changing home page preferences. The home page can either be set to a URL you specify or set to the New Tab Page.
 
-          If you enable this setting, always the New Tab Page is used for the home page, and the home page URL location is ignored.
+          If you enable this setting, the New Tab Page is always used for the home page, and the home page URL location is ignored.
 
           If you disable this setting, the user's homepage will never be the New Tab Page, unless its URL is set to 'chrome://newtab'.
 
@@ -478,7 +484,7 @@
       'type': 'string',
       'supported_on': ['chrome.win:11-', 'chrome.mac:11-'],
       'features': {'dynamic_refresh': 0},
-      'example_value': '${user_home}\Chrome',
+      'example_value': '${users}/${user_name}/Chrome',
       'id': 63,
       'caption': '''Set user data directory''',
       'desc': '''Configures the directory that <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use for storing user data.
@@ -487,11 +493,24 @@
       'label': '''Set user data directory''',
     },
     {
+      'name': 'DiskCacheDir',
+      'type': 'string',
+      'supported_on': ['chrome.*:13-'],
+      'features': {'dynamic_refresh': 0},
+      'example_value': '${user_home}/Chrome_cache',
+      'id': 88,
+      'caption': '''Set disk cache directory''',
+      'desc': '''Configures the directory that <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use for storing cached files on the disk.
+
+      If you set this policy, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use the provided directory regardless whether the user has specified the '--disk-cache-dir' flag or not.''',
+      'label': '''Set disk cache directory''',
+    },
+    {
       'name': 'DownloadDirectory',
       'type': 'string',
       'supported_on': ['chrome.*:11-'],
       'features': {'dynamic_refresh': 1},
-      'example_value': '${user_home}\Chrome',
+      'example_value': '/home/${user_name}/Downloads',
       'id': 64,
       'caption': '''Set download directory''',
       'desc': '''Configures the directory that <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use for downloading files.
@@ -748,6 +767,16 @@
           'id': 31,
           'caption': '''GSSAPI library name''',
           'desc': '''Specifies which GSSAPI library to use for HTTP Authentication. You can set either just a library name, or a full path. If no setting is provided, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will fall back to using a default library name.''',
+        },
+        {
+          'name': 'AllowCrossOriginAuthPrompt',
+          'type': 'main',
+          'supported_on': ['chrome.*:13-'],
+          'features': {'dynamic_refresh': 1},
+          'example_value': False,
+          'id': 89,
+          'caption': '''Cross-origin HTTP Basic Auth propmts''',
+          'desc': '''Controls whether third-party sub-content on a page is allowed to pop-up an HTTP Basic Auth dialog box.  Typically this is disabled as a phishing defense.''',
         },
       ],
     },
@@ -1451,6 +1480,20 @@
       If this setting is not set, users will be asked for permission to run outdated plugins.''',
     },
     {
+      'name': 'AlwaysAuthorizePlugins',
+      'type': 'main',
+      'supported_on': ['chrome.*:13-', 'chrome_os:0.13-'],
+      'features': {'dynamic_refresh': 1},
+      'example_value': True,
+      'id': 86,
+      'caption': '''Always runs plugins that require authorization''',
+      'desc': '''Allows <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> to run plugins that require authorization.
+
+      If you enable this setting, plugins that are not outdated always run.
+
+      If this setting is disabled or not set, users will be asked for permission to run plugins that require authorization. These are plugins that can compromise security.''',
+    },
+    {
       'name': 'BookmarkBarEnabled',
       'type': 'main',
       'supported_on': ['chrome.*:12-', 'chrome_os:0.12-'],
@@ -1483,7 +1526,7 @@
     {
       'name': 'AllowFileSelectionDialogs',
       'type': 'main',
-      'supported_on': ['chrome.*:12-', 'chrome_os:0.11-'],
+      'supported_on': ['chrome.*:12-'],
       'features': {'dynamic_refresh': 1},
       'example_value': True,
       'id': 84,
@@ -1495,6 +1538,19 @@
       If you disable this setting, whenever the user perfoms an action which would provoke a file selection dialog (like importing bookmarks, uploading files, saving links, etc.) a message is displayed instead and the user is assumed to have clicked Cancel on the file selection dialog.
 
       If this setting is not set, users can open file selection dialogs as normal.''',
+    },
+    {
+      'name': 'GCFUserDataDir',
+      'type': 'string',
+      'supported_on': ['chrome_frame:12-'],
+      'features': {'dynamic_refresh': 0},
+      'example_value': '${user_home}/Chrome Frame',
+      'id': 87,
+      'caption': '''Set <ph name="PRODUCT_NAME">$3<ex>Google Chrome Frame</ex></ph> user data directory''',
+      'desc': '''Configures the directory that <ph name="PRODUCT_NAME">$3<ex>Google Chrome Frame</ex></ph> will use for storing user data.
+
+      If you set this policy, <ph name="PRODUCT_NAME">$3<ex>Google Chrome Frame</ex></ph> will use the provided directory.''',
+      'label': '''Set user data directory''',
     },
   ],
   'messages': {

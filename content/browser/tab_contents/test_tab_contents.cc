@@ -7,46 +7,16 @@
 #include <utility>
 
 #include "chrome/browser/browser_url_handler.h"
-#include "chrome/browser/tab_contents/infobar_delegate.h"
 #include "content/browser/renderer_host/mock_render_process_host.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/renderer_host/test_render_view_host.h"
 #include "content/browser/site_instance.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_source.h"
 #include "content/common/page_transition_types.h"
 
 TestTabContents::TestTabContents(Profile* profile, SiteInstance* instance)
     : TabContents(profile, instance, MSG_ROUTING_NONE, NULL, NULL),
-      transition_cross_site(false) {
-  // Listen for infobar events so we can call InfoBarClosed() on the infobar
-  // delegates and give them an opportunity to delete themselves.  (Since we
-  // have no InfobarContainer in TestTabContents, InfoBarClosed() is not called
-  // most likely leading to the infobar delegates being leaked.)
-  Source<TabContents> source(this);
-  registrar_.Add(this, NotificationType::TAB_CONTENTS_INFOBAR_REMOVED,
-                 source);
-  registrar_.Add(this, NotificationType::TAB_CONTENTS_INFOBAR_REPLACED,
-                 source);
-}
-
-void TestTabContents::Observe(NotificationType type,
-                              const NotificationSource& source,
-                              const NotificationDetails& details) {
-  // TabContents does not handle TAB_CONTENTS_INFOBAR_* so we don't pass it
-  // these notifications.
-  switch (type.value) {
-    case NotificationType::TAB_CONTENTS_INFOBAR_REMOVED:
-      Details<InfoBarDelegate>(details).ptr()->InfoBarClosed();
-      break;
-    case NotificationType::TAB_CONTENTS_INFOBAR_REPLACED:
-      Details<std::pair<InfoBarDelegate*, InfoBarDelegate*> >(details).ptr()->
-          first->InfoBarClosed();
-      break;
-    default:
-      TabContents::Observe(type, source, details);
-      break;
-  }
+      transition_cross_site(false),
+      delegate_view_override_(NULL) {
 }
 
 TestRenderViewHost* TestTabContents::pending_rvh() const {
@@ -72,7 +42,7 @@ void TestTabContents::NavigateAndCommit(const GURL& url) {
   controller().LoadURL(url, GURL(), PageTransition::LINK);
   GURL loaded_url(url);
   bool reverse_on_redirect = false;
-  BrowserURLHandler::RewriteURLIfNecessary(
+  BrowserURLHandler::GetInstance()->RewriteURLIfNecessary(
       &loaded_url, profile(), &reverse_on_redirect);
 
   // LoadURL created a navigation entry, now simulate the RenderView sending
@@ -85,9 +55,10 @@ void TestTabContents::CommitPendingNavigation() {
   // notifying that it has unloaded so the pending RVH is resumed and can
   // navigate.
   ProceedWithCrossSiteNavigation();
+  RenderViewHost* old_rvh = render_manager_.current_host();
   TestRenderViewHost* rvh = pending_rvh();
   if (!rvh)
-    rvh = static_cast<TestRenderViewHost*>(render_manager_.current_host());
+    rvh = static_cast<TestRenderViewHost*>(old_rvh);
 
   const NavigationEntry* entry = controller().pending_entry();
   DCHECK(entry);
@@ -98,10 +69,23 @@ void TestTabContents::CommitPendingNavigation() {
         static_cast<MockRenderProcessHost*>(rvh->process())->max_page_id() + 1;
   }
   rvh->SendNavigate(page_id, entry->url());
+
+  // Simulate the SwapOut_ACK that fires if you commit a cross-site navigation
+  // without making any network requests.
+  if (old_rvh != rvh)
+    old_rvh->OnSwapOutACK();
 }
 
 void TestTabContents::ProceedWithCrossSiteNavigation() {
   if (!pending_rvh())
     return;
-  render_manager_.ShouldClosePage(true, true);
+  TestRenderViewHost* rvh = static_cast<TestRenderViewHost*>(
+      render_manager_.current_host());
+  rvh->SendShouldCloseACK(true);
+}
+
+RenderViewHostDelegate::View* TestTabContents::GetViewDelegate() {
+  if (delegate_view_override_)
+    return delegate_view_override_;
+  return TabContents::GetViewDelegate();
 }

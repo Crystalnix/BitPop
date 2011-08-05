@@ -12,6 +12,7 @@
 #include "ui/gfx/font.h"
 #include "ui/gfx/native_theme_win.h"
 #include "views/controls/combobox/combobox.h"
+#include "views/controls/combobox/native_combobox_views.h"
 #include "views/widget/widget.h"
 
 using ui::ComboboxModel;  // TODO(beng): remove
@@ -139,6 +140,20 @@ void NativeComboboxWin::SetFocus() {
   OnFocus();
 }
 
+bool NativeComboboxWin::HandleKeyPressed(const views::KeyEvent& event) {
+  return false;
+}
+
+bool NativeComboboxWin::HandleKeyReleased(const views::KeyEvent& event) {
+  return false;
+}
+
+void NativeComboboxWin::HandleFocus() {
+}
+
+void NativeComboboxWin::HandleBlur() {
+}
+
 gfx::NativeView NativeComboboxWin::GetTestingHandle() const {
   return native_view();
 }
@@ -195,6 +210,8 @@ void NativeComboboxWin::UpdateFont() {
 // static
 NativeComboboxWrapper* NativeComboboxWrapper::CreateWrapper(
     Combobox* combobox) {
+  if (NativeComboboxViews::IsComboboxViewsEnabled())
+    return new NativeComboboxViews(combobox);
   return new NativeComboboxWin(combobox);
 }
 

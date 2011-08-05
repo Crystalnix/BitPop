@@ -6,12 +6,10 @@
 #define CONTENT_BROWSER_TAB_CONTENTS_TAB_CONTENTS_DELEGATE_H_
 #pragma once
 
+#include <set>
 #include <string>
 
 #include "base/basictypes.h"
-#include "chrome/browser/automation/automation_resource_routing_delegate.h"
-#include "chrome/common/content_settings_types.h"
-#include "chrome/common/instant_types.h"
 #include "content/browser/tab_contents/navigation_entry.h"
 #include "content/common/navigation_types.h"
 #include "content/common/page_transition_types.h"
@@ -29,7 +27,6 @@ class HistoryAddPageArgs;
 }
 
 struct ContextMenuParams;
-class DownloadItem;
 class GURL;
 class HtmlDialogUIDelegate;
 struct NativeWebKeyboardEvent;
@@ -39,8 +36,10 @@ class TabContents;
 
 // Objects implement this interface to get notified about changes in the
 // TabContents and to provide necessary functionality.
-class TabContentsDelegate : public AutomationResourceRoutingDelegate {
+class TabContentsDelegate {
  public:
+  TabContentsDelegate();
+
   // Opens a new URL inside the passed in TabContents (if source is 0 open
   // in the current front-most tab), unless |disposition| indicates the url
   // should be opened in a new tab or window.
@@ -105,11 +104,14 @@ class TabContentsDelegate : public AutomationResourceRoutingDelegate {
   // caller, and it is safe to call "source->set_delegate(someone_else);".
   virtual void DetachContents(TabContents* source);
 
-  // Called to determine if the TabContents is contained in a popup window.
-  virtual bool IsPopup(const TabContents* source) const;
+  // Called to determine if the TabContents is contained in a popup window
+  // or a panel window.
+  virtual bool IsPopupOrPanel(const TabContents* source) const;
 
   // If |source| is constrained, returns the tab containing it.  Otherwise
-  // returns |source|.
+  // returns |source|. TODO(avi): Remove in favor of GetConstrainingContents on
+  // ContentSettingsTabHelperDelegate once uses of it in TabContents are
+  // removed.
   virtual TabContents* GetConstrainingContents(TabContents* source);
 
   // Returns true if constrained windows should be focused. Default is true.
@@ -130,12 +132,6 @@ class TabContentsDelegate : public AutomationResourceRoutingDelegate {
   // Request the delegate to change the zoom level of the current tab.
   virtual void ContentsZoomChange(bool zoom_in);
 
-  // Notifies the delegate that something has changed about what content the
-  // TabContents is blocking.  Interested parties should call
-  // TabContents::IsContentBlocked() to see if something they care about has
-  // changed.
-  virtual void OnContentSettingsChange(TabContents* source);
-
   // Check whether this contents is inside a window dedicated to running a web
   // application.
   virtual bool IsApplication() const;
@@ -147,13 +143,6 @@ class TabContentsDelegate : public AutomationResourceRoutingDelegate {
   // Whether the specified tab can be reloaded.
   // Reloading can be disabled e. g. for the DevTools window.
   virtual bool CanReloadContents(TabContents* source) const;
-
-  // Show a dialog with HTML content. |delegate| contains a pointer to the
-  // delegate who knows how to display the dialog (which file URL and JSON
-  // string input to use during initialization). |parent_window| is the window
-  // that should be parent of the dialog, or NULL for the default.
-  virtual void ShowHtmlDialog(HtmlDialogUIDelegate* delegate,
-                              gfx::NativeWindow parent_window);
 
   // Invoked prior to showing before unload handler confirmation dialog.
   virtual void WillRunBeforeUnloadConfirm();
@@ -170,11 +159,6 @@ class TabContentsDelegate : public AutomationResourceRoutingDelegate {
   virtual void BeforeUnloadFired(TabContents* tab,
                                  bool proceed,
                                  bool* proceed_to_fire_unload);
-
-  // Send IPC to external host. Default implementation is do nothing.
-  virtual void ForwardMessageToExternalHost(const std::string& message,
-                                            const std::string& origin,
-                                            const std::string& target);
 
   // If the delegate is hosting tabs externally.
   virtual bool IsExternalTabContainer() const;
@@ -214,10 +198,6 @@ class TabContentsDelegate : public AutomationResourceRoutingDelegate {
   // render view widget during various animations (e.g. infobar closing).
   // This is used to make painting look smoother.
   virtual int GetExtraRenderViewHeight() const;
-
-  virtual bool CanDownload(int request_id);
-
-  virtual void OnStartDownload(DownloadItem* download, TabContents* tab);
 
   // Returns true if the context menu operation was handled by the delegate.
   virtual bool HandleContextMenu(const ContextMenuParams& params);
@@ -263,12 +243,6 @@ class TabContentsDelegate : public AutomationResourceRoutingDelegate {
   // Shows the repost form confirmation dialog box.
   virtual void ShowRepostFormWarningDialog(TabContents* tab_contents);
 
-  // Shows the Content Settings page for a given content type.
-  virtual void ShowContentSettingsPage(ContentSettingsType content_type);
-
-  // Shows the cookies collected in the tab contents.
-  virtual void ShowCollectedCookiesDialog(TabContents* tab_contents);
-
   // Allows delegate to override navigation to the history entries.
   // Returns true to allow TabContents to continue with the default processing.
   virtual bool OnGoToEntryOffset(int offset);
@@ -285,9 +259,6 @@ class TabContentsDelegate : public AutomationResourceRoutingDelegate {
   // Notifies the delegate about the creation of a new TabContents. This
   // typically happens when popups are created.
   virtual void TabContentsCreated(TabContents* new_contents);
-
-  // Returns whether infobars are enabled. Overrideable by child classes.
-  virtual bool infobars_enabled();
 
   // Whether the renderer should report its preferred size when it changes by
   // calling UpdatePreferredSize().
@@ -311,6 +282,18 @@ class TabContentsDelegate : public AutomationResourceRoutingDelegate {
 
  protected:
   virtual ~TabContentsDelegate();
+
+ private:
+  friend class TabContents;
+
+  // Called when |this| becomes the TabContentsDelegate for |source|.
+  void Attach(TabContents* source);
+
+  // Called when |this| is no longer the TabContentsDelegate for |source|.
+  void Detach(TabContents* source);
+
+  // The TabContents that this is currently a delegate for.
+  std::set<TabContents*> attached_contents_;
 };
 
 #endif  // CONTENT_BROWSER_TAB_CONTENTS_TAB_CONTENTS_DELEGATE_H_

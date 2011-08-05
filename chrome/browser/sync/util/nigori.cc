@@ -103,7 +103,7 @@ bool Nigori::InitByDerivation(const std::string& hostname,
       kDerivedKeySizeInBits));
   DCHECK(mac_key_.get());
 
-  return true;
+  return user_key_.get() && encryption_key_.get() && mac_key_.get();
 }
 
 bool Nigori::InitByImport(const std::string& user_key,
@@ -168,7 +168,8 @@ std::string GenerateRandomString(size_t size) {
 
 // Enc[Kenc,Kmac](value)
 bool Nigori::Encrypt(const std::string& value, std::string* encrypted) const {
-  DCHECK_LT(0U, value.size());
+  if (0U >= value.size())
+    return false;
 
   std::string iv = GenerateRandomString(kIvSize);
 

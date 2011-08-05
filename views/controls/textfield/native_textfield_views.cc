@@ -12,12 +12,14 @@
 #include "base/utf_string_conversions.h"
 #include "grit/app_strings.h"
 #include "ui/base/clipboard/clipboard.h"
+#include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/range/range.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/insets.h"
 #include "views/background.h"
 #include "views/border.h"
+#include "views/controls/focusable_border.h"
 #include "views/controls/menu/menu_2.h"
 #include "views/controls/textfield/textfield.h"
 #include "views/controls/textfield/textfield_controller.h"
@@ -26,6 +28,7 @@
 #include "views/ime/input_method.h"
 #include "views/metrics.h"
 #include "views/views_delegate.h"
+#include "views/widget/widget.h"
 
 #if defined(OS_LINUX)
 #include "ui/gfx/gtk_util.h"
@@ -36,23 +39,19 @@ namespace {
 // A global flag to switch the Textfield wrapper to TextfieldViews.
 bool textfield_view_enabled = false;
 
-// Color setttings for text, border, backgrounds and cursor.
+// Color setttings for text, backgrounds and cursor.
 // These are tentative, and should be derived from theme, system
 // settings and current settings.
 const SkColor kSelectedTextColor = SK_ColorWHITE;
 const SkColor kReadonlyTextColor = SK_ColorDKGRAY;
 const SkColor kFocusedSelectionColor = SK_ColorBLUE;
 const SkColor kUnfocusedSelectionColor = SK_ColorLTGRAY;
-const SkColor kFocusedBorderColor = SK_ColorCYAN;
-const SkColor kDefaultBorderColor = SK_ColorGRAY;
 const SkColor kCursorColor = SK_ColorBLACK;
 
 // Parameters to control cursor blinking.
 const int kCursorVisibleTimeMs = 800;
 const int kCursorInvisibleTimeMs = 500;
 
-// A switch to enable NativeTextfieldViews;
-const char kEnableViewsBasedTextfieldSwitch[] = "enable-textfield-views";
 }  // namespace
 
 namespace views {
@@ -63,14 +62,16 @@ const char NativeTextfieldViews::kViewClassName[] =
 NativeTextfieldViews::NativeTextfieldViews(Textfield* parent)
     : textfield_(parent),
       ALLOW_THIS_IN_INITIALIZER_LIST(model_(new TextfieldViewsModel(this))),
-      text_border_(new TextfieldBorder()),
+      text_border_(new FocusableBorder()),
       text_offset_(0),
       insert_(true),
       is_cursor_visible_(false),
       skip_input_method_cancel_composition_(false),
+      initiating_drag_(false),
       ALLOW_THIS_IN_INITIALIZER_LIST(cursor_timer_(this)),
-      last_mouse_press_time_(base::Time::FromInternalValue(0)),
-      click_state_(NONE) {
+      aggregated_clicks_(0),
+      last_click_time_(base::Time::FromInternalValue(0)),
+      last_click_location_(0, 0) {
   set_border(text_border_);
 
   // Multiline is not supported.
@@ -79,6 +80,7 @@ NativeTextfieldViews::NativeTextfieldViews(Textfield* parent)
   DCHECK_NE(parent->style(), Textfield::STYLE_LOWERCASE);
 
   SetContextMenuController(this);
+  SetDragController(this);
 }
 
 NativeTextfieldViews::~NativeTextfieldViews() {
@@ -87,35 +89,141 @@ NativeTextfieldViews::~NativeTextfieldViews() {
 ////////////////////////////////////////////////////////////////////////////////
 // NativeTextfieldViews, View overrides:
 
-bool NativeTextfieldViews::OnMousePressed(const views::MouseEvent& event) {
+bool NativeTextfieldViews::OnMousePressed(const MouseEvent& event) {
   OnBeforeUserAction();
-  if (HandleMousePressed(event))
-    SchedulePaint();
-  OnAfterUserAction();
-  return true;
-}
+  textfield_->RequestFocus();
 
-bool NativeTextfieldViews::OnMouseDragged(const views::MouseEvent& event) {
-  OnBeforeUserAction();
-  size_t pos = FindCursorPosition(event.location());
-  if (model_->MoveCursorTo(pos, true)) {
-    UpdateCursorBoundsAndTextOffset();
+  if (event.IsOnlyLeftMouseButton()) {
+    base::TimeDelta time_delta = event.time_stamp() - last_click_time_;
+    gfx::Point location_delta = event.location().Subtract(last_click_location_);
+    if (time_delta.InMilliseconds() <= GetDoubleClickInterval() &&
+        !ExceededDragThreshold(location_delta.x(), location_delta.y())) {
+      aggregated_clicks_ = (aggregated_clicks_ + 1) % 3;
+    } else {
+      aggregated_clicks_ = 0;
+    }
+    last_click_time_ = event.time_stamp();
+    last_click_location_ = event.location();
+
+    initiating_drag_ = false;
+    switch(aggregated_clicks_) {
+      case 0:
+        if (!IsPointInSelection(event.location()))
+          MoveCursorTo(event.location(), event.IsShiftDown());
+        else
+          initiating_drag_ = true;
+        break;
+      case 1:
+        model_->SelectWord();
+        break;
+      case 2:
+        model_->SelectAll();
+        break;
+      default:
+        NOTREACHED();
+    }
     SchedulePaint();
   }
+
   OnAfterUserAction();
   return true;
 }
 
-bool NativeTextfieldViews::OnKeyPressed(const views::KeyEvent& event) {
+bool NativeTextfieldViews::OnMouseDragged(const MouseEvent& event) {
+  // Don't adjust the cursor on a potential drag and drop.
+  if (initiating_drag_)
+    return true;
+
+  OnBeforeUserAction();
+  if (MoveCursorTo(event.location(), true))
+    SchedulePaint();
+  OnAfterUserAction();
+  return true;
+}
+
+void NativeTextfieldViews::OnMouseReleased(const MouseEvent& event) {
+  OnBeforeUserAction();
+  // Cancel suspected drag initiations, the user was clicking in the selection.
+  if (initiating_drag_ && MoveCursorTo(event.location(), false))
+    SchedulePaint();
+  initiating_drag_ = false;
+  OnAfterUserAction();
+}
+
+bool NativeTextfieldViews::OnKeyPressed(const KeyEvent& event) {
   // OnKeyPressed/OnKeyReleased/OnFocus/OnBlur will never be invoked on
   // NativeTextfieldViews as it will never gain focus.
   NOTREACHED();
   return false;
 }
 
-bool NativeTextfieldViews::OnKeyReleased(const views::KeyEvent& event) {
+bool NativeTextfieldViews::OnKeyReleased(const KeyEvent& event) {
   NOTREACHED();
   return false;
+}
+
+bool NativeTextfieldViews::GetDropFormats(
+    int* formats,
+    std::set<OSExchangeData::CustomFormat>* custom_formats) {
+  if (!textfield_->IsEnabled() || textfield_->read_only())
+    return false;
+  // TODO(msw): Can we support URL, FILENAME, etc.?
+  *formats = ui::OSExchangeData::STRING;
+  return true;
+}
+
+bool NativeTextfieldViews::CanDrop(const OSExchangeData& data) {
+  return textfield_->IsEnabled() && !textfield_->read_only() &&
+         data.HasString();
+}
+
+int NativeTextfieldViews::OnDragUpdated(const DropTargetEvent& event) {
+  // TODO(msw): retain unfocused selection, render secondary cursor...
+  DCHECK(CanDrop(event.data()));
+  if (initiating_drag_) {
+    if (IsPointInSelection(event.location()))
+      return ui::DragDropTypes::DRAG_NONE;
+    return event.IsControlDown() ? ui::DragDropTypes::DRAG_COPY :
+                                   ui::DragDropTypes::DRAG_MOVE;
+  }
+  return ui::DragDropTypes::DRAG_COPY | ui::DragDropTypes::DRAG_MOVE;
+}
+
+int NativeTextfieldViews::OnPerformDrop(const DropTargetEvent& event) {
+  DCHECK(CanDrop(event.data()));
+  DCHECK(!initiating_drag_ || !IsPointInSelection(event.location()));
+  OnBeforeUserAction();
+  skip_input_method_cancel_composition_ = true;
+
+  size_t drop_destination = FindCursorPosition(event.location());
+  string16 text;
+  event.data().GetString(&text);
+
+  // We'll delete the current selection for a drag and drop within this view.
+  bool move = initiating_drag_ && !event.IsControlDown() &&
+              event.source_operations() & ui::DragDropTypes::DRAG_MOVE;
+  if (move) {
+    ui::Range selected_range;
+    model_->GetSelectedRange(&selected_range);
+    // Adjust the drop destination if it is on or after the current selection.
+    if (selected_range.GetMax() <= drop_destination)
+      drop_destination -= selected_range.length();
+    else if (selected_range.GetMin() <= drop_destination)
+      drop_destination = selected_range.GetMin();
+    model_->DeleteSelectionAndInsertTextAt(text, drop_destination);
+  } else {
+    model_->MoveCursorTo(drop_destination, false);
+    // Drop always inserts a text even if insert_ == false.
+    model_->InsertText(text);
+  }
+  skip_input_method_cancel_composition_ = false;
+  UpdateAfterChange(true, true);
+  OnAfterUserAction();
+  return move ? ui::DragDropTypes::DRAG_MOVE : ui::DragDropTypes::DRAG_COPY;
+}
+
+void NativeTextfieldViews::OnDragDone() {
+  initiating_drag_ = false;
 }
 
 void NativeTextfieldViews::OnPaint(gfx::Canvas* canvas) {
@@ -134,24 +242,50 @@ void NativeTextfieldViews::OnBlur() {
   NOTREACHED();
 }
 
-gfx::NativeCursor NativeTextfieldViews::GetCursorForPoint(
-    ui::EventType event_type,
-    const gfx::Point& p) {
+gfx::NativeCursor NativeTextfieldViews::GetCursor(const MouseEvent& event) {
+  bool text = !initiating_drag_ && (event.type() == ui::ET_MOUSE_DRAGGED ||
+                                    !IsPointInSelection(event.location()));
 #if defined(OS_WIN)
   static HCURSOR ibeam = LoadCursor(NULL, IDC_IBEAM);
-  return ibeam;
+  static HCURSOR arrow = LoadCursor(NULL, IDC_ARROW);
+  return text ? ibeam : arrow;
 #else
-  return gfx::GetCursor(GDK_XTERM);
+  return text ? gfx::GetCursor(GDK_XTERM) : NULL;
 #endif
 }
 
 /////////////////////////////////////////////////////////////////
-// NativeTextfieldViews, views::ContextMenuController overrides:
+// NativeTextfieldViews, ContextMenuController overrides:
 void NativeTextfieldViews::ShowContextMenuForView(View* source,
                                                   const gfx::Point& p,
                                                   bool is_mouse_gesture) {
   InitContextMenuIfRequired();
   context_menu_menu_->RunContextMenuAt(p);
+}
+
+/////////////////////////////////////////////////////////////////
+// NativeTextfieldViews, views::DragController overrides:
+void NativeTextfieldViews::WriteDragDataForView(views::View* sender,
+                                                const gfx::Point& press_pt,
+                                                OSExchangeData* data) {
+  DCHECK_NE(ui::DragDropTypes::DRAG_NONE,
+            GetDragOperationsForView(sender, press_pt));
+  data->SetString(GetSelectedText());
+}
+
+int NativeTextfieldViews::GetDragOperationsForView(views::View* sender,
+                                                   const gfx::Point& p) {
+  if (!textfield_->IsEnabled() || !IsPointInSelection(p))
+    return ui::DragDropTypes::DRAG_NONE;
+  if (sender == this && !textfield_->read_only())
+    return ui::DragDropTypes::DRAG_MOVE | ui::DragDropTypes::DRAG_COPY;
+  return ui::DragDropTypes::DRAG_COPY;
+}
+
+bool NativeTextfieldViews::CanStartDragForView(View* sender,
+                                               const gfx::Point& press_pt,
+                                               const gfx::Point& p) {
+  return IsPointInSelection(press_pt);
 }
 
 /////////////////////////////////////////////////////////////////
@@ -288,7 +422,7 @@ size_t NativeTextfieldViews::GetCursorPosition() const {
   return model_->cursor_pos();
 }
 
-bool NativeTextfieldViews::HandleKeyPressed(const views::KeyEvent& e) {
+bool NativeTextfieldViews::HandleKeyPressed(const KeyEvent& e) {
   TextfieldController* controller = textfield_->GetController();
   bool handled = false;
   if (controller)
@@ -296,7 +430,7 @@ bool NativeTextfieldViews::HandleKeyPressed(const views::KeyEvent& e) {
   return handled || HandleKeyEvent(e);
 }
 
-bool NativeTextfieldViews::HandleKeyReleased(const views::KeyEvent& e) {
+bool NativeTextfieldViews::HandleKeyReleased(const KeyEvent& e) {
   return true;
 }
 
@@ -340,7 +474,7 @@ bool NativeTextfieldViews::IsCommandIdEnabled(int command_id) const {
     case IDS_APP_COPY:
       return model_->HasSelection();
     case IDS_APP_PASTE:
-      views::ViewsDelegate::views_delegate->GetClipboard()
+      ViewsDelegate::views_delegate->GetClipboard()
           ->ReadText(ui::Clipboard::BUFFER_STANDARD, &result);
       return editable && !result.empty();
     case IDS_APP_DELETE:
@@ -372,7 +506,7 @@ void NativeTextfieldViews::ExecuteCommand(int command_id) {
       break;
     case IDS_APP_PASTE:
       if (editable)
-        text_changed = model_->Paste();
+        text_changed = Paste();
       break;
     case IDS_APP_DELETE:
       if (editable)
@@ -396,9 +530,7 @@ bool NativeTextfieldViews::IsTextfieldViewsEnabled() {
 #if defined(TOUCH_UI)
   return true;
 #else
-  return textfield_view_enabled ||
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          kEnableViewsBasedTextfieldSwitch);
+  return textfield_view_enabled || Widget::IsPureViews();
 #endif
 }
 
@@ -705,7 +837,7 @@ void NativeTextfieldViews::PaintTextAndCursor(gfx::Canvas* canvas) {
 }
 
 bool NativeTextfieldViews::HandleKeyEvent(const KeyEvent& key_event) {
-  // TODO(oshima): handle IME.
+  // TODO(oshima): Refactor and consolidate with ExecuteCommand.
   if (key_event.type() == ui::ET_KEY_PRESSED) {
     ui::KeyboardCode key_code = key_event.key_code();
     // TODO(oshima): shift-tab does not work. Figure out why and fix.
@@ -719,6 +851,14 @@ bool NativeTextfieldViews::HandleKeyEvent(const KeyEvent& key_event) {
     bool text_changed = false;
     bool cursor_changed = false;
     switch (key_code) {
+      case ui::VKEY_Z:
+        if (control && editable)
+          cursor_changed = text_changed = model_->Undo();
+        break;
+      case ui::VKEY_Y:
+        if (control && editable)
+          cursor_changed = text_changed = model_->Redo();
+        break;
       case ui::VKEY_A:
         if (control) {
           model_->SelectAll();
@@ -735,7 +875,7 @@ bool NativeTextfieldViews::HandleKeyEvent(const KeyEvent& key_event) {
         break;
       case ui::VKEY_V:
         if (control && editable)
-          cursor_changed = text_changed = model_->Paste();
+          cursor_changed = text_changed = Paste();
         break;
       case ui::VKEY_RIGHT:
         control ? model_->MoveCursorToNextWord(selection)
@@ -844,45 +984,20 @@ size_t NativeTextfieldViews::FindCursorPosition(const gfx::Point& point) const {
   return left_pos;
 }
 
-bool NativeTextfieldViews::HandleMousePressed(const views::MouseEvent& e) {
-  textfield_->RequestFocus();
-  base::TimeDelta time_delta = e.time_stamp() - last_mouse_press_time_;
-  gfx::Point location_delta = e.location().Subtract(last_mouse_press_location_);
-  last_mouse_press_time_ = e.time_stamp();
-  last_mouse_press_location_ = e.location();
-  if (e.IsLeftMouseButton()) {
-    if (!ExceededDragThreshold(location_delta.x(), location_delta.y())
-      && time_delta.InMilliseconds() <= GetDoubleClickInterval()) {
-      // Multiple mouse press detected. Check for double or triple.
-      switch (click_state_) {
-        case TRACKING_DOUBLE_CLICK:
-          click_state_ = TRACKING_TRIPLE_CLICK;
-          model_->SelectWord();
-          return true;
-        case TRACKING_TRIPLE_CLICK:
-          click_state_ = NONE;
-          model_->SelectAll();
-          return true;
-        case NONE:
-          click_state_ = TRACKING_DOUBLE_CLICK;
-          SetCursorForMouseClick(e);
-          return true;
-      }
-    } else {
-      // Single mouse press.
-      click_state_ = TRACKING_DOUBLE_CLICK;
-      SetCursorForMouseClick(e);
-      return true;
-    }
-  }
-  return false;
+bool NativeTextfieldViews::IsPointInSelection(const gfx::Point& point) const {
+  ui::Range range;
+  GetSelectedRange(&range);
+  size_t pos = FindCursorPosition(point);
+  return (pos >= range.GetMin() && pos < range.GetMax());
 }
 
-void NativeTextfieldViews::SetCursorForMouseClick(const views::MouseEvent& e) {
-  size_t pos = FindCursorPosition(e.location());
-  if (model_->MoveCursorTo(pos, false)) {
+bool NativeTextfieldViews::MoveCursorTo(const gfx::Point& point, bool select) {
+  size_t pos = FindCursorPosition(point);
+  if (model_->MoveCursorTo(pos, select)) {
     UpdateCursorBoundsAndTextOffset();
+    return true;
   }
+  return false;
 }
 
 void NativeTextfieldViews::PropagateTextChange() {
@@ -918,13 +1033,15 @@ void NativeTextfieldViews::InitContextMenuIfRequired() {
 }
 
 void NativeTextfieldViews::OnTextInputTypeChanged() {
-  DCHECK(textfield_->GetInputMethod());
-  textfield_->GetInputMethod()->OnTextInputTypeChanged(textfield_);
+  // TODO(suzhe): changed from DCHECK. See http://crbug.com/81320.
+  if (textfield_->GetInputMethod())
+    textfield_->GetInputMethod()->OnTextInputTypeChanged(textfield_);
 }
 
 void NativeTextfieldViews::OnCaretBoundsChanged() {
-  DCHECK(textfield_->GetInputMethod());
-  textfield_->GetInputMethod()->OnCaretBoundsChanged(textfield_);
+  // TODO(suzhe): changed from DCHECK. See http://crbug.com/81320.
+  if (textfield_->GetInputMethod())
+    textfield_->GetInputMethod()->OnCaretBoundsChanged(textfield_);
 }
 
 void NativeTextfieldViews::OnBeforeUserAction() {
@@ -939,6 +1056,19 @@ void NativeTextfieldViews::OnAfterUserAction() {
     controller->OnAfterUserAction(textfield_);
 }
 
+bool NativeTextfieldViews::Paste() {
+  const bool success = model_->Paste();
+
+  // Calls TextfieldController::ContentsChanged() explicitly if the paste action
+  // did not change the content at all. See http://crbug.com/79002
+  if (success && model_->text() == textfield_->text()) {
+    TextfieldController* controller = textfield_->GetController();
+    if (controller)
+      controller->ContentsChanged(textfield_, textfield_->text());
+  }
+  return success;
+}
+
 // static
 bool NativeTextfieldViews::ShouldInsertChar(char16 ch, int flags) {
   // Filter out all control characters, including tab and new line characters,
@@ -948,60 +1078,6 @@ bool NativeTextfieldViews::ShouldInsertChar(char16 ch, int flags) {
   // flag that we don't care about.
   return ((ch >= 0x20 && ch < 0x7F) || ch > 0x9F) &&
       (flags & ~(ui::EF_SHIFT_DOWN | ui::EF_CAPS_LOCK_DOWN)) != ui::EF_ALT_DOWN;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-//
-// TextifieldBorder
-//
-///////////////////////////////////////////////////////////////////////////////
-
-NativeTextfieldViews::TextfieldBorder::TextfieldBorder()
-    : has_focus_(false),
-      insets_(4, 4, 4, 4) {
-}
-
-void NativeTextfieldViews::TextfieldBorder::Paint(
-    const View& view, gfx::Canvas* canvas) const {
-  SkRect rect;
-  rect.set(SkIntToScalar(0), SkIntToScalar(0),
-           SkIntToScalar(view.width()), SkIntToScalar(view.height()));
-  SkScalar corners[8] = {
-    // top-left
-    SkIntToScalar(insets_.left()),
-    SkIntToScalar(insets_.top()),
-    // top-right
-    SkIntToScalar(insets_.right()),
-    SkIntToScalar(insets_.top()),
-    // bottom-right
-    SkIntToScalar(insets_.right()),
-    SkIntToScalar(insets_.bottom()),
-    // bottom-left
-    SkIntToScalar(insets_.left()),
-    SkIntToScalar(insets_.bottom()),
-  };
-  SkPath path;
-  path.addRoundRect(rect, corners);
-  SkPaint paint;
-  paint.setStyle(SkPaint::kStroke_Style);
-  paint.setFlags(SkPaint::kAntiAlias_Flag);
-  // TODO(oshima): Copy what WebKit does for focused border.
-  paint.setColor(has_focus_ ? kFocusedBorderColor : kDefaultBorderColor);
-  paint.setStrokeWidth(SkIntToScalar(has_focus_ ? 2 : 1));
-
-  canvas->AsCanvasSkia()->drawPath(path, paint);
-}
-
-void NativeTextfieldViews::TextfieldBorder::GetInsets(gfx::Insets* insets) const
-{
-  *insets = insets_;
-}
-
-void NativeTextfieldViews::TextfieldBorder::SetInsets(int top,
-                                                      int left,
-                                                      int bottom,
-                                                      int right) {
-  insets_.Set(top, left, bottom, right);
 }
 
 }  // namespace views

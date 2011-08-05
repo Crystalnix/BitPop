@@ -129,6 +129,10 @@ const char kWebKitTextAreasAreResizable[] =
     "webkit.webprefs.text_areas_are_resizable";
 const char kWebKitJavaEnabled[] = "webkit.webprefs.java_enabled";
 const char kWebkitTabsToLinks[] = "webkit.webprefs.tabs_to_links";
+const char kWebKitAllowDisplayingInsecureContent[] =
+    "webkit.webprefs.allow_displaying_insecure_content";
+const char kWebKitAllowRunningInsecureContent[] =
+    "webkit.webprefs.allow_running_insecure_content";
 
 // Boolean which specifies whether the bookmark bar is visible on all tabs.
 const char kShowBookmarkBar[] = "bookmark_bar.show_on_all_tabs";
@@ -478,11 +482,6 @@ const char kShowPlanNotifications[] =
 const char kShow3gPromoNotification[] =
     "settings.internet.mobile.show_3g_promo_notification";
 
-// An integer pref which shows number of times carrier deal promo
-// notification has been shown to user.
-const char kCarrierDealPromoShown[] =
-    "settings.internet.mobile.carrier_deal_promo_shown";
-
 // Map of timestamps of the last used file browser tasks.
 const char kLastUsedFileBrowserHandlers[] =
     "filebrowser.handler.lastused";
@@ -579,6 +578,10 @@ const char kPluginsShowDetails[] = "plugins.show_details";
 // Boolean that indicates whether outdated plugins are allowed or not.
 const char kPluginsAllowOutdated[] = "plugins.allow_outdated";
 
+// Boolean that indicates whether plugins that require authorization should
+// be always allowed or not.
+const char kPluginsAlwaysAuthorize[] = "plugins.always_authorize";
+
 // Boolean that indicates whether we should check if we are the default browser
 // on start-up.
 const char kCheckDefaultBrowser[] = "browser.check_default_browser";
@@ -636,9 +639,6 @@ const char kContentSettingsPatterns[] = "profile.content_settings.patterns";
 // regardless of other content settings.
 const char kBlockThirdPartyCookies[] = "profile.block_third_party_cookies";
 
-// Boolean that is true if non-sandboxed plug-ins should be blocked.
-const char kBlockNonsandboxedPlugins[] = "profile.block_nonsandboxed_plugins";
-
 // Boolean that is true when all locally stored site data (e.g. cookies, local
 // storage, etc..) should be deleted on exit.
 const char kClearSiteDataOnExit[] = "profile.clear_site_data_on_exit";
@@ -677,6 +677,9 @@ const char kEditBookmarksEnabled[] = "bookmarks.editing_enabled";
 // side of the browser window.
 const char kUseVerticalTabs[] = "tabs.use_vertical_tabs";
 
+// Boolean that is true when the compact navigation bar is to be used.
+const char kUseCompactNavigationBar[] = "tabs.use_compact_navigation_bar";
+
 // Boolean that is true when the translate feature is enabled.
 const char kEnableTranslate[] = "translate.enabled";
 
@@ -711,6 +714,16 @@ const char kEnableReferrers[] = "enable_referrers";
 
 // *************** LOCAL STATE ***************
 // These are attached to the machine/installation
+
+// Directory of the last profile used.
+const char kProfileLastUsed[] = "profile.last_used";
+
+// Maps profile data directories to login names.
+const char kProfileDirectoryMap[] = "profile.directory_map";
+
+// Total number of profiles created for this Chrome build. Used to tag profile
+// directories.
+const char kProfilesNumCreated[] = "profile.profiles_created";
 
 // Prefs for SSLConfigServicePref.
 const char kCertRevocationCheckingEnabled[] = "ssl.rev_checking.enabled";
@@ -1124,6 +1137,9 @@ const char kNTPPromoLine[] = "ntp.promo_line";
 const char kNTPPromoStart[] = "ntp.promo_start";
 const char kNTPPromoEnd[] = "ntp.promo_end";
 
+// Boolean indicating whether the web store is active for the current locale.
+const char kNTPWebStoreEnabled[] = "ntp.webstore_enabled";
+
 // The id of the last web store promo actually displayed on the NTP.
 const char kNTPWebStorePromoLastId[] = "ntp.webstore_last_promo_id";
 
@@ -1139,8 +1155,14 @@ const char kNTPWebStorePromoButton[] = "ntp.webstorepromo.button";
 // The button link for the NTP web store promo.
 const char kNTPWebStorePromoLink[] = "ntp.webstorepromo.link";
 
+// The image URL for the NTP web store promo logo.
+const char kNTPWebStorePromoLogo[] = "ntp.webstorepromo.logo";
+
 // The "hide this" link text for the NTP web store promo.
 const char kNTPWebStorePromoExpire[] = "ntp.webstorepromo.expire";
+
+// Specifies what users should maximize the NTP web store promo.
+const char kNTPWebStorePromoUserGroup[] = "ntp.webstorepromo.usergroup";
 
 // The most up-to-date GPU blacklist downloaded from the web, which replaces
 // the one that's installed with chrome.
@@ -1225,8 +1247,6 @@ const char kCloudPrintServiceURL[] = "cloud_print.service_url";
 const char kCloudPrintDialogWidth[] = "cloud_print.dialog_size.width";
 const char kCloudPrintDialogHeight[] = "cloud_print.dialog_size.height";
 
-const char kRemotingHasSetupCompleted[] = "remoting.has_setup_completed";
-
 // The list of BackgroundContents that should be loaded when the browser
 // launches.
 const char kRegisteredBackgroundContents[] = "background_contents.registered";
@@ -1250,6 +1270,10 @@ const char kAuthNegotiateDelegateWhitelist[] =
 // String that specifies the name of a custom GSSAPI library to load.
 const char kGSSAPILibraryName[] = "auth.gssapi_library_name";
 
+// Boolean that specifies whether to allow basic auth prompting on cross-
+// domain sub-content requests.
+const char kAllowCrossOriginAuthPrompt[] = "auth.allow_cross_origin_prompt";
+
 #if defined(OS_CHROMEOS)
 // Dictionary for transient storage of settings that should go into signed
 // settings storage before owner has been assigned.
@@ -1258,10 +1282,18 @@ const char kSignedSettingsTempStorage[] = "signed_settings_temp_storage";
 // The hardware keyboard layout of the device. This should look like
 // "xkb:us::eng".
 const char kHardwareKeyboardLayout[] = "intl.hardware_keyboard";
+
+// An integer pref which shows number of times carrier deal promo
+// notification has been shown to user.
+const char kCarrierDealPromoShown[] =
+    "settings.internet.mobile.carrier_deal_promo_shown";
 #endif
 
 // Whether there is a Flash version installed that supports clearing LSO data.
 const char kClearPluginLSODataEnabled[] = "browser.clear_lso_data_enabled";
+
+// String which specifies where to store the disk cache.
+const char kDiskCacheDir[] = "browser.disk_cache_dir";
 
 // *************** SERVICE PREFS ***************
 // These are attached to the service process.
@@ -1283,9 +1315,8 @@ const char kCloudPrintPrintSystemSettings[] =
 // A boolean indicating whether we should poll for print jobs when don't have
 // an XMPP connection (false by default).
 const char kCloudPrintEnableJobPoll[] = "cloud_print.enable_job_poll";
-
-// Used by the service process to determine if the remoting host is enabled.
-const char kRemotingHostEnabled[] = "remoting.host_enabled";
+const char kCloudPrintRobotRefreshToken[] = "cloud_print.robot_refresh_token";
+const char kCloudPrintRobotEmail[] = "cloud_print.robot_email";
 
 // Preference to story proxy settings.
 const char kProxy[] = "proxy";
@@ -1328,16 +1359,22 @@ const char kManagedPopupsAllowedForUrls[] =
 const char kManagedPopupsBlockedForUrls[] =
     "profile.managed_popups_blocked_for_urls";
 
-// Dictionary for storing the set of known background pages (keys are extension
-// IDs of background page owners, value is a boolean that is true if the user
-// needs to acknowledge this page.
-const char kKnownBackgroundPages[] = "background_pages.known";
-
-// Dictionary that maps URL schemes (protocols) to URL handlers.
-const char kRegisteredProtocolHandlers[] = "registered_protocol_handlers";
-
 // Set to true if the user created a login item so we should not modify it when
 // uninstalling background apps.
 const char kUserCreatedLoginItem[] = "background_mode.user_created_login_item";
 
+// Set to true if background mode is enabled on this browser.
+const char kBackgroundModeEnabled[] = "background_mode.enabled";
+
+// List of protocol handlers.
+const char kRegisteredProtocolHandlers[] =
+  "custom_handlers.registered_protocol_handlers";
+
+// List of protocol handlers the user has requested not to be asked about again.
+const char kIgnoredProtocolHandlers[] =
+  "custom_handlers.ignored_protocol_handlers";
+
+// Whether user-specified handlers for protocols and content types can be
+// specified.
+const char kCustomHandlersEnabled[] = "custom_handlers.enabled";
 }  // namespace prefs

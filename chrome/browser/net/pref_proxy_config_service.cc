@@ -116,7 +116,7 @@ bool PrefProxyConfigTracker::PrefConfigToNetConfig(
   switch (mode) {
     case ProxyPrefs::MODE_SYSTEM:
       // Use system settings.
-      return true;
+      return false;
     case ProxyPrefs::MODE_DIRECT:
       // Ignore all the other proxy config preferences if the use of a proxy
       // has been explicitly disabled.
@@ -137,6 +137,9 @@ bool PrefProxyConfigTracker::PrefConfigToNetConfig(
         return true;
       }
       config->set_pac_url(proxy_pac_url);
+      bool pac_mandatory = false;
+      proxy_dict.GetPacMandatory(&pac_mandatory);
+      config->set_pac_mandatory(pac_mandatory);
       return true;
     }
     case ProxyPrefs::MODE_FIXED_SERVERS: {
@@ -266,5 +269,7 @@ void PrefProxyConfigService::RegisterObservers() {
 // static
 void PrefProxyConfigService::RegisterPrefs(PrefService* pref_service) {
   DictionaryValue* default_settings = ProxyConfigDictionary::CreateSystem();
-  pref_service->RegisterDictionaryPref(prefs::kProxy, default_settings);
+  pref_service->RegisterDictionaryPref(prefs::kProxy,
+                                       default_settings,
+                                       PrefService::UNSYNCABLE_PREF);
 }

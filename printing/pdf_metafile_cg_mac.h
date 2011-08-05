@@ -11,6 +11,7 @@
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/mac/scoped_cftyperef.h"
+#include "base/threading/thread_checker.h"
 #include "printing/metafile.h"
 
 class FilePath;
@@ -24,7 +25,7 @@ class Point;
 namespace printing {
 
 // This class creates a graphics context that renders into a PDF data stream.
-class PdfMetafileCg : public Metafile {
+class PdfMetafileCg : public Metafile, public base::ThreadChecker {
  public:
   PdfMetafileCg();
   virtual ~PdfMetafileCg();
@@ -34,11 +35,11 @@ class PdfMetafileCg : public Metafile {
   virtual bool InitFromData(const void* src_buffer, uint32 src_buffer_size);
 
   // Not implemented on mac.
-  virtual skia::PlatformDevice* StartPageForVectorCanvas(
-      const gfx::Size& page_size, const gfx::Point& content_origin,
+  virtual SkDevice* StartPageForVectorCanvas(
+      const gfx::Size& page_size, const gfx::Rect& content_area,
       const float& scale_factor);
   virtual bool StartPage(const gfx::Size& page_size,
-                         const gfx::Point& content_origin,
+                         const gfx::Rect& content_area,
                          const float& scale_factor);
   virtual bool FinishPage();
   virtual bool FinishDocument();
@@ -79,6 +80,9 @@ class PdfMetafileCg : public Metafile {
 
   // Whether or not a page is currently open.
   bool page_is_open_;
+
+  // Whether this instantiation of the PdfMetafileCg owns the thread_pdf_docs.
+  bool thread_pdf_docs_owned_;
 
   DISALLOW_COPY_AND_ASSIGN(PdfMetafileCg);
 };

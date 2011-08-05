@@ -14,8 +14,7 @@
 
 class Extension;
 class ExtensionServiceInterface;
-class Profile;
-class ProfileSyncService;
+struct ExtensionSyncData;
 
 namespace sync_api {
 struct UserShare;
@@ -27,11 +26,10 @@ class ExtensionSpecifics;
 
 namespace browser_sync {
 
-class ExtensionData;
 struct ExtensionSyncTraits;
 
-// A map from extension IDs to ExtensionData objects.
-typedef std::map<std::string, ExtensionData> ExtensionDataMap;
+// A map from extension IDs to ExtensionSyncData objects.
+typedef std::map<std::string, ExtensionSyncData> ExtensionDataMap;
 
 // Fills in |has_children| with whether or not the root node with the
 // given tag has child nodes.  Returns true iff the lookup succeeded.
@@ -47,7 +45,7 @@ bool RootNodeHasChildren(const char* tag,
 // extensions to be synced.  Returns true iff this was successful; if
 // unsuccessful, the contents of |extension_data_map| are undefined.
 bool SlurpExtensionData(const ExtensionSyncTraits& traits,
-                        const ExtensionServiceInterface& extensions_service,
+                        const ExtensionServiceInterface& extension_service,
                         sync_api::UserShare* user_share,
                         ExtensionDataMap* extension_data_map);
 
@@ -59,15 +57,18 @@ bool SlurpExtensionData(const ExtensionSyncTraits& traits,
 // function is returned is that the updates were successfully started.
 bool FlushExtensionData(const ExtensionSyncTraits& traits,
                         const ExtensionDataMap& extension_data_map,
-                        ExtensionServiceInterface* extensions_service,
+                        ExtensionServiceInterface* extension_service,
                         sync_api::UserShare* user_share);
 
 // Updates the server data for the given extension.  Returns true iff
 // this was successful; if unsuccessful, an error string is put into
 // |error|.
+//
+// TODO(akalin): Remove dependence on Extension once we have the
+// ExtensionService push changes onto us.
 bool UpdateServerData(const ExtensionSyncTraits& traits,
                       const Extension& extension,
-                      const ExtensionServiceInterface& extensions_service,
+                      const ExtensionServiceInterface& extension_service,
                       sync_api::UserShare* user_share,
                       std::string* error);
 

@@ -3,14 +3,13 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/notifications/balloon_host.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/notifications/balloon.h"
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_preferences_util.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_factory.h"
+#include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
 #include "content/browser/renderer_host/browser_render_process_host.h"
@@ -22,6 +21,7 @@
 #include "content/common/notification_type.h"
 #include "content/common/renderer_preferences.h"
 #include "content/common/view_messages.h"
+#include "ipc/ipc_message.h"
 #include "webkit/glue/webpreferences.h"
 
 BalloonHost::BalloonHost(Balloon* balloon)
@@ -29,20 +29,12 @@ BalloonHost::BalloonHost(Balloon* balloon)
       balloon_(balloon),
       initialized_(false),
       should_notify_on_disconnect_(false),
-      enable_web_ui_(false) {
-  DCHECK(balloon_);
-
-  // If the notification is for an extension URL, make sure to use the extension
-  // process to render it, so that it can communicate with other views in the
-  // extension.
-  const GURL& balloon_url = balloon_->notification().content_url();
-  if (balloon_url.SchemeIs(chrome::kExtensionScheme)) {
-    site_instance_ =
-      balloon_->profile()->GetExtensionProcessManager()->GetSiteInstanceForURL(
-          balloon_url);
-  } else {
-    site_instance_ = SiteInstance::CreateSiteInstance(balloon_->profile());
-  }
+      enable_web_ui_(false),
+      ALLOW_THIS_IN_INITIALIZER_LIST(
+          extension_function_dispatcher_(GetProfile(), this)) {
+  CHECK(balloon_);
+  site_instance_ = SiteInstance::CreateSiteInstanceForURL(balloon_->profile(),
+                                                          GetURL());
 }
 
 void BalloonHost::Shutdown() {
@@ -63,7 +55,9 @@ gfx::NativeView BalloonHost::GetNativeViewOfHost() {
   return NULL;
 }
 
-TabContents* BalloonHost::associated_tab_contents() const { return NULL; }
+TabContents* BalloonHost::GetAssociatedTabContents() const {
+  return NULL;
+}
 
 const string16& BalloonHost::GetSource() const {
   return balloon_->notification().display_source();
@@ -98,12 +92,9 @@ void BalloonHost::RenderViewCreated(RenderViewHost* render_view_host) {
   render_view_host->Send(new ViewMsg_DisableScrollbarsForSmallWindows(
       render_view_host->routing_id(), balloon_->min_scrollbar_size()));
   render_view_host->WasResized();
-#if !defined(OS_MACOSX)
-  // TODO(levin): Make all of the code that went in originally with this change
-  // to be cross-platform. See http://crbug.com/64720
-  render_view_host->EnablePreferredSizeChangedMode(
-      kPreferredSizeWidth | kPreferredSizeHeightThisIsSlow);
-#endif
+  render_view_host->Send(new ViewMsg_EnablePreferredSizeChangedMode(
+      render_view_host->routing_id(),
+      kPreferredSizeWidth | kPreferredSizeHeightThisIsSlow));
 }
 
 void BalloonHost::RenderViewReady(RenderViewHost* render_view_host) {
@@ -131,11 +122,17 @@ RenderViewHostDelegate::View* BalloonHost::GetViewDelegate() {
   return this;
 }
 
-void BalloonHost::ProcessWebUIMessage(
-    const ExtensionHostMsg_DomMessage_Params& params) {
-  if (extension_function_dispatcher_.get()) {
-    extension_function_dispatcher_->HandleRequest(params);
-  }
+bool BalloonHost::OnMessageReceived(const IPC::Message& message) {
+  bool handled = true;
+  IPC_BEGIN_MESSAGE_MAP(BalloonHost, message)
+    IPC_MESSAGE_HANDLER(ExtensionHostMsg_Request, OnRequest)
+    IPC_MESSAGE_UNHANDLED(handled = false)
+  IPC_END_MESSAGE_MAP()
+  return handled;
+}
+
+void BalloonHost::OnRequest(const ExtensionHostMsg_Request_Params& params) {
+  extension_function_dispatcher_.Dispatch(params, render_view_host_);
 }
 
 // RenderViewHostDelegate::View methods implemented to allow links to
@@ -195,22 +192,8 @@ void BalloonHost::Init() {
   DCHECK(!render_view_host_) << "BalloonViewHost already initialized.";
   RenderViewHost* rvh = new RenderViewHost(
       site_instance_.get(), this, MSG_ROUTING_NONE, NULL);
-  if (GetProfile()->GetExtensionService()) {
-    extension_function_dispatcher_.reset(
-        ExtensionFunctionDispatcher::Create(
-            rvh, this, balloon_->notification().content_url()));
-  }
-  if (extension_function_dispatcher_.get()) {
-    rvh->AllowBindings(BindingsPolicy::EXTENSION);
-    rvh->set_is_extension_process(true);
-    const Extension* installed_app =
-        GetProfile()->GetExtensionService()->GetInstalledApp(
-            balloon_->notification().content_url());
-    static_cast<BrowserRenderProcessHost*>(rvh->process())->set_installed_app(
-        installed_app);
-  } else if (enable_web_ui_) {
+  if (enable_web_ui_)
     rvh->AllowBindings(BindingsPolicy::WEB_UI);
-  }
 
   // Do platform-specific initialization.
   render_view_host_ = rvh;
@@ -219,10 +202,6 @@ void BalloonHost::Init() {
 
   rvh->set_view(render_widget_host_view());
   rvh->CreateRenderView(string16());
-#if defined(OS_MACOSX)
-  registrar_.Add(this, NotificationType::RENDER_WIDGET_HOST_DID_PAINT,
-      Source<RenderWidgetHost>(render_view_host_));
-#endif
   rvh->NavigateToURL(balloon_->notification().content_url());
 
   initialized_ = true;
@@ -244,16 +223,6 @@ void BalloonHost::ClearInspectorSettings() {
   RenderViewHostDelegateHelper::ClearInspectorSettings(GetProfile());
 }
 
-void BalloonHost::Observe(NotificationType type,
-    const NotificationSource& source,
-    const NotificationDetails& details) {
-  if (type == NotificationType::RENDER_WIDGET_HOST_DID_PAINT) {
-    registrar_.RemoveAll();
-    render_view_host_->EnablePreferredSizeChangedMode(
-        kPreferredSizeWidth | kPreferredSizeHeightThisIsSlow);
-  }
-}
-
 BalloonHost::~BalloonHost() {
   DCHECK(!render_view_host_);
 }
@@ -266,4 +235,8 @@ void BalloonHost::NotifyDisconnect() {
   NotificationService::current()->Notify(
       NotificationType::NOTIFY_BALLOON_DISCONNECTED,
       Source<BalloonHost>(this), NotificationService::NoDetails());
+}
+
+bool BalloonHost::IsRenderViewReady() const {
+  return should_notify_on_disconnect_;
 }

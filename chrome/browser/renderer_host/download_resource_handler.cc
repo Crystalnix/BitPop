@@ -10,10 +10,11 @@
 #include "base/metrics/histogram.h"
 #include "base/metrics/stats_counters.h"
 #include "base/stringprintf.h"
+#include "chrome/browser/download/download_create_info.h"
 #include "chrome/browser/download/download_item.h"
 #include "chrome/browser/download/download_file_manager.h"
+#include "chrome/browser/download/download_process_handle.h"
 #include "chrome/browser/download/download_util.h"
-#include "chrome/browser/history/download_create_info.h"
 #include "content/browser/browser_thread.h"
 #include "content/browser/renderer_host/global_request_id.h"
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
@@ -88,9 +89,9 @@ bool DownloadResourceHandler::OnResponseStarted(int request_id,
   info->state = DownloadItem::IN_PROGRESS;
   info->download_id = download_id_;
   info->has_user_gesture = request_info->has_user_gesture();
-  info->child_id = global_id_.child_id;
-  info->render_view_id = render_view_id_;
-  info->request_id = global_id_.request_id;
+  info->process_handle = DownloadProcessHandle(global_id_.child_id,
+                                               render_view_id_,
+                                               global_id_.request_id);
   info->content_disposition = content_disposition_;
   info->mime_type = response->response_head.mime_type;
   // TODO(ahendrickson) -- Get the last modified time and etag, so we can
@@ -104,8 +105,6 @@ bool DownloadResourceHandler::OnResponseStarted(int request_id,
 
   info->prompt_user_for_save_location =
       save_as_ && save_info_.file_path.empty();
-  info->is_dangerous_file = false;
-  info->is_dangerous_url = false;
   info->referrer_charset = request_->context()->referrer_charset();
   info->save_info = save_info_;
   BrowserThread::PostTask(

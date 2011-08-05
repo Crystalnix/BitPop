@@ -7,6 +7,7 @@
 #pragma once
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "chrome/browser/ui/gtk/owned_widget_gtk.h"
 #include "content/common/notification_observer.h"
 #include "content/common/notification_registrar.h"
@@ -14,7 +15,7 @@
 class InfoBar;
 class InfoBarDelegate;
 class Profile;
-class TabContents;
+class TabContentsWrapper;
 
 typedef struct _GtkWidget GtkWidget;
 
@@ -29,7 +30,7 @@ class InfoBarContainerGtk : public NotificationObserver {
   // Changes the TabContents for which this container is showing InfoBars. Can
   // be NULL, in which case we will simply detach ourselves from the old tab
   // contents.
-  void ChangeTabContents(TabContents* contents);
+  void ChangeTabContents(TabContentsWrapper* contents);
 
   // Remove the specified InfoBarDelegate from the selected TabContents. This
   // will notify us back and cause us to close the View. This is called from
@@ -41,15 +42,10 @@ class InfoBarContainerGtk : public NotificationObserver {
   int TotalHeightOfAnimatingBars() const;
 
  private:
-  // Overridden from NotificationObserver:
+  // NotificationObserver:
   virtual void Observe(NotificationType type,
                        const NotificationSource& source,
-                       const NotificationDetails& details);
-
-  // Constructs the InfoBars needed to reflect the state of the current
-  // TabContents associated with this container. No animations are run during
-  // this process.
-  void UpdateInfoBars();
+                       const NotificationDetails& details) OVERRIDE;
 
   // Makes the calls to show an arrow for |delegate| (either on the browser
   // toolbar or on the next infobar up).
@@ -74,7 +70,7 @@ class InfoBarContainerGtk : public NotificationObserver {
   Profile* profile_;
 
   // The TabContents for which we are currently showing InfoBars.
-  TabContents* tab_contents_;
+  TabContentsWrapper* tab_contents_;
 
   // VBox that holds the info bars.
   OwnedWidgetGtk container_;

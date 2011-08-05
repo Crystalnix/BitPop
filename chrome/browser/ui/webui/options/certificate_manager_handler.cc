@@ -10,10 +10,10 @@
 #include "base/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/certificate_viewer.h"
 #include "chrome/browser/ui/crypto_module_password_dialog.h"
 #include "chrome/browser/ui/gtk/certificate_dialogs.h"
 #include "content/browser/browser_thread.h"  // for FileAccessProvider
-#include "content/browser/certificate_viewer.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/browser/tab_contents/tab_contents_view.h"
 #include "grit/generated_resources.h"
@@ -669,8 +669,13 @@ void CertificateManagerHandler::ImportPersonalFileRead(
 }
 
 void CertificateManagerHandler::ImportPersonalSlotUnlocked() {
+  // Determine if the private key should be unextractable after the import.
+  // We do this by checking the value of |use_hardware_backed_| which is set
+  // to true if importing into a hardware module. Currently, this only happens
+  // for Chrome OS when the "Import and Bind" option is chosen.
+  bool is_extractable = !use_hardware_backed_;
   int result = certificate_manager_model_->ImportFromPKCS12(
-      module_, file_data_, password_);
+      module_, file_data_, password_, is_extractable);
   ImportExportCleanup();
   web_ui_->CallJavascriptFunction("CertificateRestoreOverlay.dismiss");
   switch (result) {

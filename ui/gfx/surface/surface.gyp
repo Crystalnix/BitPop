@@ -10,11 +10,13 @@
       ['exclude', '/(gtk|win|x11)_[^/]*\\.cc$'],
     ],
     'conditions': [
-      ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {'sources/': [
-        ['include', '/gtk/'],
-        ['include', '_(gtk|linux|posix|skia|x)\\.cc$'],
-        ['include', '/(gtk|x11)_[^/]*\\.cc$'],
-      ]}],
+      ['toolkit_uses_gtk == 1', {
+        'sources/': [
+          ['include', '/gtk/'],
+          ['include', '_(gtk|linux|posix|skia|x)\\.cc$'],
+          ['include', '/(gtk|x11)_[^/]*\\.cc$'],
+        ],
+      }],
       ['OS=="mac"', {'sources/': [
         ['include', '/cocoa/'],
         ['include', '_(cocoa|mac|posix)\\.(cc|mm?)$'],
@@ -34,7 +36,7 @@
   'targets': [
     {
       'target_name': 'surface',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '6C99567D-6F02-43B5-BB35-D8E3F8D0D6D2',
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',

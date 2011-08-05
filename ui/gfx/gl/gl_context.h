@@ -8,56 +8,43 @@
 
 #include <string>
 
-#include "build/build_config.h"
-#include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/size.h"
+#include "base/basictypes.h"
+#include "base/memory/ref_counted.h"
 
 namespace gfx {
 
 class GLSurface;
 
 // Encapsulates an OpenGL context, hiding platform specific management.
-class GLContext {
+class GLContext : public base::RefCounted<GLContext> {
  public:
-  GLContext() {}
-  virtual ~GLContext() {}
+  GLContext();
+
+  // Initializes the GL context to be compatible with the given surface. The GL
+  // context can be made with other surface's of the same type. The compatible
+  // surface is only needed for certain platforms like WGL, OSMesa and GLX. It
+  // should be specific for all platforms though.
+  virtual bool Initialize(GLContext* shared_context,
+                          GLSurface* compatible_surface) = 0;
 
   // Destroys the GL context.
   virtual void Destroy() = 0;
 
-  // Makes the GL context current on the current thread.
-  virtual bool MakeCurrent() = 0;
+  // Makes the GL context and a surface current on the current thread.
+  virtual bool MakeCurrent(GLSurface* surface) = 0;
 
-  // Releases this GL context as current on the current thread. TODO(apatrick):
-  // implement this in the other GLContexts.
-  virtual void ReleaseCurrent();
+  // Releases this GL context and surface as current on the current thread.
+  virtual void ReleaseCurrent(GLSurface* surface) = 0;
 
-  // Returns true if this context is current.
-  virtual bool IsCurrent() = 0;
-
-  // Returns true if this context is offscreen.
-  virtual bool IsOffscreen() = 0;
-
-  // Swaps front and back buffers. This has no effect for off-screen
-  // contexts.
-  virtual bool SwapBuffers() = 0;
-
-  // Get the size of the back buffer.
-  virtual gfx::Size GetSize() = 0;
-
-  // Get the surface. TODO(apatrick): remove this when contexts are split from
-  // surfaces.
-  virtual GLSurface* GetSurface();
+  // Returns true if this context and surface is current. Pass a null surface
+  // if the current surface is not important.
+  virtual bool IsCurrent(GLSurface* surface) = 0;
 
   // Get the underlying platform specific GL context "handle".
   virtual void* GetHandle() = 0;
 
   // Set swap interval. This context must be current.
   virtual void SetSwapInterval(int interval) = 0;
-
-  // Returns the internal frame buffer object name if the context is backed by
-  // FBO. Otherwise returns 0.
-  virtual unsigned int GetBackingFrameBufferObject();
 
   // Returns space separated list of extensions. The context must be current.
   virtual std::string GetExtensions();
@@ -66,26 +53,20 @@ class GLContext {
   // context must be current.
   bool HasExtension(const char* name);
 
-  static bool InitializeOneOff();
-
-#if !defined(OS_MACOSX)
-  // Create a GL context that renders directly to a view.
-  static GLContext* CreateViewGLContext(gfx::PluginWindowHandle window,
-                                        bool multisampled);
-#endif
-
-  // Create a GL context used for offscreen rendering. It is initially backed by
-  // a 1x1 pbuffer. Use it to create an FBO to do useful rendering.
-  // |share_context|, if non-NULL, is a context which the internally created
-  // OpenGL context shares textures and other resources.
-  static GLContext* CreateOffscreenGLContext(GLContext* shared_context);
+  // Create a GL context that is compatible with the given surface.
+  // |share_context|, if non-NULL, is a context which the
+  // internally created OpenGL context shares textures and other resources.
+  static scoped_refptr<GLContext> CreateGLContext(
+      GLContext* shared_context,
+      GLSurface* compatible_surface);
 
   static bool LosesAllContextsOnContextLost();
 
  protected:
-  bool InitializeCommon();
+  virtual ~GLContext();
 
  private:
+  friend class base::RefCounted<GLContext>;
   DISALLOW_COPY_AND_ASSIGN(GLContext);
 };
 

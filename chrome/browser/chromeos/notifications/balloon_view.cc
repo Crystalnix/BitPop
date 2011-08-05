@@ -33,8 +33,7 @@
 #include "views/controls/label.h"
 #include "views/controls/menu/menu_2.h"
 #include "views/controls/menu/view_menu_delegate.h"
-#include "views/widget/root_view.h"
-#include "views/widget/widget_gtk.h"
+#include "views/widget/widget.h"
 
 namespace {
 // Menu commands
@@ -267,19 +266,22 @@ void BalloonViewImpl::Layout() {
 void BalloonViewImpl::ViewHierarchyChanged(
     bool is_add, View* parent, View* child) {
   if (is_add && GetWidget() && !control_view_host_.get() && controls_) {
-    views::Widget::CreateParams params(
-        views::Widget::CreateParams::TYPE_CONTROL);
-    params.delete_on_destroy = false;
-    control_view_host_.reset(views::Widget::CreateWidget(params));
-    static_cast<views::WidgetGtk*>(control_view_host_.get())->
-        EnableDoubleBuffer(true);
-    control_view_host_->Init(GetParentNativeView(), gfx::Rect());
+    control_view_host_.reset(new views::Widget);
+    views::Widget::InitParams params(
+        views::Widget::InitParams::TYPE_CONTROL);
+    params.double_buffer = true;
+    params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+    params.parent = GetParentNativeView();
+    control_view_host_->Init(params);
     NotificationControlView* control = new NotificationControlView(this);
     control_view_host_->SetContentsView(control);
   }
-  if (!is_add && this == child && control_view_host_.get() && controls_) {
+  if (!is_add && this == child && control_view_host_.get() && controls_)
     control_view_host_.release()->CloseNow();
-  }
+}
+
+gfx::Size BalloonViewImpl::GetPreferredSize() {
+  return gfx::Size(1000, 1000);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

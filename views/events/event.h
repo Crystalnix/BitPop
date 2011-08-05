@@ -24,8 +24,17 @@ using ui::OSExchangeData;
 
 namespace views {
 
-class RootView;
 class View;
+
+namespace internal {
+class NativeWidgetView;
+class RootView;
+}
+
+#if defined(OS_WIN)
+bool IsClientMouseEvent(const views::NativeEvent& native_event);
+bool IsNonClientMouseEvent(const views::NativeEvent& native_event);
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -99,10 +108,13 @@ class Event {
 
   Event(const Event& model)
       : native_event_(model.native_event()),
+        native_event_2_(model.native_event_2()),
         type_(model.type()),
         time_stamp_(model.time_stamp()),
         flags_(model.flags()) {
   }
+
+  void set_type(ui::EventType type) { type_ = type; }
 
  private:
   void operator=(const Event&);
@@ -148,10 +160,14 @@ class LocatedEvent : public Event {
 
   // This constructor is to allow converting the location of an event from the
   // widget's coordinate system to the RootView's coordinate system.
-  LocatedEvent(const LocatedEvent& model, RootView* root);
+  LocatedEvent(const LocatedEvent& model, View* root);
 
   gfx::Point location_;
 };
+
+#if defined(TOUCH_UI)
+class TouchEvent;
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -170,21 +186,20 @@ class MouseEvent : public LocatedEvent {
   // from |source| coordinate system to |target| coordinate system.
   MouseEvent(const MouseEvent& model, View* source, View* target);
 
+#if defined(TOUCH_UI)
+  // Creates a new MouseEvent from a TouchEvent. The location of the TouchEvent
+  // is the same as the MouseEvent. Other attributes (e.g. type, flags) are
+  // mapped from the TouchEvent to appropriate MouseEvent attributes.
+  // GestureManager uses this to convert TouchEvents that are not handled by any
+  // view.
+  MouseEvent(const TouchEvent& touch, FromNativeEvent2 from_native);
+#endif
+
   // TODO(msw): Kill this legacy constructor when we update uses.
   // Create a new mouse event
   MouseEvent(ui::EventType type, int x, int y, int flags)
       : LocatedEvent(type, gfx::Point(x, y), flags) {
   }
-
-  // TODO(msw): Kill this legacy constructor when we update uses.
-  // Create a new mouse event from a type and a point. If source / target views
-  // are provided, the point will be converted from |source| coordinate system
-  // to |target| coordinate system.
-  MouseEvent(ui::EventType type,
-             View* source,
-             View* target,
-             const gfx::Point &l,
-             int flags);
 
   // Conveniences to quickly test what button is down
   bool IsOnlyLeftMouseButton() const {
@@ -215,12 +230,13 @@ class MouseEvent : public LocatedEvent {
   }
 
  protected:
-  MouseEvent(const MouseEvent& model, RootView* root)
+  MouseEvent(const MouseEvent& model, View* root)
       : LocatedEvent(model, root) {
   }
 
  private:
-  friend class RootView;
+  friend class internal::NativeWidgetView;
+  friend class internal::RootView;
 
   DISALLOW_COPY_AND_ASSIGN(MouseEvent);
 };
@@ -261,9 +277,9 @@ class TouchEvent : public LocatedEvent {
   float ratio() const { return ratio_; }
 
  private:
-  friend class RootView;
+  friend class internal::RootView;
 
-  TouchEvent(const TouchEvent& model, RootView* root);
+  TouchEvent(const TouchEvent& model, View* root);
 
   // The identity (typically finger) of the touch starting at 0 and incrementing
   // for each separable additional touch that the hardware can detect.
@@ -362,9 +378,10 @@ class MouseWheelEvent : public MouseEvent {
   int offset() const { return offset_; }
 
  private:
-  friend class RootView;
+  friend class internal::RootView;
+  friend class internal::NativeWidgetView;
 
-  MouseWheelEvent(const MouseWheelEvent& model, RootView* root)
+  MouseWheelEvent(const MouseWheelEvent& model, View* root)
       : MouseEvent(model, root),
         offset_(model.offset_) {
   }
@@ -391,6 +408,7 @@ class DropTargetEvent : public LocatedEvent {
       : LocatedEvent(ui::ET_DROP_TARGET_EVENT, gfx::Point(x, y), 0),
         data_(data),
         source_operations_(source_operations) {
+    // TODO(msw): Hook up key state flags for CTRL + drag and drop, etc.
   }
 
   const OSExchangeData& data() const { return data_; }

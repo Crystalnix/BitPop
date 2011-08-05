@@ -27,7 +27,7 @@ const char kTimezoneFilesDir[] = "/usr/share/zoneinfo/";
 
 // The system command that returns the hardware class.
 const char kHardwareClassKey[] = "hardware_class";
-const char* kHardwareClassTool[] = { "/usr/bin/hardware_class" };
+const char* kHardwareClassTool[] = { "crossystem", "hwid" };
 const char kUnknownHardwareClass[] = "unknown";
 
 // Command to get machine hardware info and key/value delimiters.
@@ -40,10 +40,6 @@ const char kMachineHardwareInfoDelim[] = " \n";
 const char* kMachineOSInfoTool[] = { "cat", "/etc/lsb-release" };
 const char kMachineOSInfoEq[] = "=";
 const char kMachineOSInfoDelim[] = "\n";
-
-// Command to get  HWID and key.
-const char kHwidKey[] = "hwid";
-const char* kHwidTool[] = { "cat", "/sys/devices/platform/chromeos_acpi/HWID" };
 
 // Command to get VPD info and key/value delimiters.
 const char* kVpdTool[] = { "cat", "/var/log/vpd_2.0.txt" };
@@ -203,7 +199,6 @@ void SystemAccessImpl::UpdateMachineStatistics() {
                                      kMachineOSInfoTool,
                                      kMachineOSInfoEq,
                                      kMachineOSInfoDelim);
-  parser.GetSingleValueFromTool(arraysize(kHwidTool), kHwidTool, kHwidKey);
   parser.ParseNameValuePairsFromTool(
       arraysize(kVpdTool), kVpdTool, kVpdEq, kVpdDelim);
 }

@@ -10,8 +10,8 @@
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
-#include "net/socket/client_socket.h"
 #include "net/socket/ssl_client_socket.h"
+#include "net/socket/stream_socket.h"
 #include "third_party/libjingle/source/talk/base/asyncsocket.h"
 #include "third_party/libjingle/source/talk/base/ssladapter.h"
 
@@ -26,20 +26,20 @@ class SSLSocketAdapter;
 // TODO(sergeyu): Write unittests for this code!
 
 // This class provides a wrapper to libjingle's talk_base::AsyncSocket that
-// implements Chromium's net::ClientSocket interface.  It's used by
+// implements Chromium's net::StreamSocket interface.  It's used by
 // SSLSocketAdapter to enable Chromium's SSL implementation to work over
 // libjingle's socket class.
-class TransportSocket : public net::ClientSocket, public sigslot::has_slots<> {
+class TransportSocket : public net::StreamSocket, public sigslot::has_slots<> {
  public:
   TransportSocket(talk_base::AsyncSocket* socket,
                   SSLSocketAdapter *ssl_adapter);
-  ~TransportSocket();
+  virtual ~TransportSocket();
 
   void set_addr(const talk_base::SocketAddress& addr) {
     addr_ = addr;
   }
 
-  // net::ClientSocket implementation
+  // net::StreamSocket implementation
 
   virtual int Connect(net::CompletionCallback* callback);
   virtual void Disconnect();
@@ -92,7 +92,7 @@ class TransportSocket : public net::ClientSocket, public sigslot::has_slots<> {
 class SSLSocketAdapter : public talk_base::SSLAdapter {
  public:
   explicit SSLSocketAdapter(talk_base::AsyncSocket* socket);
-  ~SSLSocketAdapter();
+  virtual ~SSLSocketAdapter();
 
   // StartSSL returns 0 if successful, or non-zero on failure.
   // If StartSSL is called while the socket is closed or connecting, the SSL

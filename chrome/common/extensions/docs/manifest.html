@@ -378,6 +378,7 @@ are <b>name</b> and <b>version</b>.
   "<a href="background_pages.html">background_page</a>": "<em>aFile</em>.html",
   "<a href="override.html">chrome_url_overrides</a>": {...},
   "<a href="content_scripts.html">content_scripts</a>": [...],
+  "<a href="fileBrowserHandler.html">file_browser_handlers</a>": [...],
   "<a href="#homepage_url">homepage_url</a>": "http://<em>path/to/homepage</em>",
   "<a href="#incognito">incognito</a>": "spanning" <em>or</em> "split",
   "<a href="#key">key</a>": "<em>publicKey</em>",
@@ -635,8 +636,9 @@ or packaged app can use.
 <p class="note">
 <strong>Note:</strong>
 Hosted apps can use the
-"background", "geolocation", "notifications", and "unlimitedStorage" permissions,
-but not any other permissions listed in this table.
+"background", "clipboardRead", "clipboardWrite", "geolocation", "notifications",
+and "unlimitedStorage" permissions, but not any other permissions listed in this
+table.
 </p>
 
 <table>
@@ -704,6 +706,19 @@ but not any other permissions listed in this table.
        </td>
 </tr>
 <tr>
+  <td> "clipboardRead" </td>
+  <td> Required if the extension uses
+       <code>document.execCommand('paste')</code>. </td>
+</tr>
+<tr>
+  <td> "clipboardWrite" </td>
+  <td> Indicates the app or extension uses
+       <code>document.execCommand('copy')</code> or
+       <code>document.execCommand('cut')</code>. This permission is <b>required
+       for hosted apps</b>; it's recommended for extensions and packaged apps.
+       </td>
+</tr>
+<tr>
   <td> "contextMenus" </td>
   <td> Required if the extension uses the
        <a href="contextMenus.html">chrome.contextMenus</a> module. </td>
@@ -717,6 +732,11 @@ but not any other permissions listed in this table.
   <td> "experimental" </td>
   <td> Required if the extension uses any
        <a href="http://code.google.com/chrome/extensions/dev/experimental.html">chrome.experimental.* APIs</a>.</td>
+</tr>
+<tr>
+  <td id="fileBrowserHandler"> "fileBrowserHandler" </td>
+  <td> Required if the extension uses the
+       <a href="fileBrowserHandler.html">fileBrowserhandler</a> module. </td>
 </tr>
 <tr>
   <td id="geolocation"> "geolocation" </td>
@@ -935,7 +955,7 @@ For more information, see
 
               <div class="summary">
                 <!-- Note: intentionally longer 80 columns -->
-                <span class="subdued">chrome.bookmarks</span><span>onEvent</span><span class="subdued">.addListener</span>(function(<span>Type param1, Type param2</span>) <span class="subdued">{...}</span>);
+                <span class="subdued">chrome.bookmarks</span><span>onEvent</span><span class="subdued">.addListener</span>(function(<span>Type param1, Type param2</span>) <span class="subdued">{...}</span><span>, Type opt_param1, Type opt_param2</span>));
               </div>
 
               <div class="description">
@@ -944,9 +964,9 @@ For more information, see
                   A description from the json schema def of the event goes here.
                 </p>
 
-                <!-- PARAMETERS -->
+                <!-- LISTENER PARAMETERS -->
                 <div>
-                  <h4>Parameters</h4>
+                  <h4>Listener parameters</h4>
                   <dl>
                     <div>
                       <div>
@@ -954,8 +974,28 @@ For more information, see
                     </div>
                   </dl>
                 </div>
-              </div> <!-- /decription -->
 
+                <!-- EXTRA PARAMETERS -->
+                <div>
+                  <h4>Extra parameters to addListener</h4>
+                  <dl>
+                    <div>
+                      <div>
+                      </div>
+                    </div>
+                  </dl>
+                </div>
+
+                <!-- LISTENER RETURN VALUE -->
+                <h4>Listener returns</h4>
+                <dl>
+                  <div>
+                    <div>
+                    </div>
+                  </div>
+                </dl>
+
+              </div> <!-- /description -->
             </div> <!-- /apiItem -->
 
           </div> <!-- /apiGroup -->

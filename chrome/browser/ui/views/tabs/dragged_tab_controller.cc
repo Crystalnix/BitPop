@@ -10,7 +10,6 @@
 #include "base/callback.h"
 #include "base/i18n/rtl.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
@@ -24,6 +23,7 @@
 #include "chrome/browser/ui/views/tabs/tab.h"
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
 #include "content/browser/tab_contents/tab_contents.h"
+#include "content/browser/user_metrics.h"
 #include "content/common/notification_details.h"
 #include "content/common/notification_source.h"
 #include "grit/theme_resources.h"
@@ -35,15 +35,10 @@
 #include "ui/gfx/canvas_skia.h"
 #include "views/events/event.h"
 #include "views/screen.h"
-#include "views/widget/root_view.h"
 #include "views/widget/widget.h"
 #include "views/window/window.h"
 
-#if defined(OS_WIN)
-#include "views/widget/widget_win.h"
-#endif
-
-#if defined(OS_LINUX)
+#if defined(TOOLKIT_USES_GTK)
 #include <gdk/gdk.h>  // NOLINT
 #include <gdk/gdkkeysyms.h>  // NOLINT
 #endif
@@ -203,14 +198,15 @@ class DraggedTabController::DockDisplayer : public ui::AnimationDelegate {
         hidden_(false),
         in_enable_area_(info.in_enable_area()) {
 #if defined(OS_WIN)
+    popup_ = new views::Widget;
     // TODO(sky): This should "just work" on Gtk now.
-    views::Widget::CreateParams params(views::Widget::CreateParams::TYPE_POPUP);
+    views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
     params.transparent = true;
     params.keep_on_top = true;
-    popup_ = views::Widget::CreateWidget(params);
-    popup_->SetOpacity(0x00);
-    popup_->Init(NULL, info.GetPopupRect());
+    params.bounds = info.GetPopupRect();
+    popup_->Init(params);
     popup_->SetContentsView(new DockView(info.type()));
+    popup_->SetOpacity(0x00);
     if (info.in_enable_area())
       animation_.Reset(1);
     else
@@ -264,23 +260,15 @@ class DraggedTabController::DockDisplayer : public ui::AnimationDelegate {
   virtual void AnimationEnded(const ui::Animation* animation) {
     if (!hidden_)
       return;
-#if defined(OS_WIN)
-    static_cast<views::WidgetWin*>(popup_)->Close();
-#else
-    NOTIMPLEMENTED();
-#endif
+    popup_->Close();
     delete this;
   }
 
   virtual void UpdateLayeredAlpha() {
-#if defined(OS_WIN)
     double scale = in_enable_area_ ? 1 : .5;
-    static_cast<views::WidgetWin*>(popup_)->SetOpacity(
-        static_cast<BYTE>(animation_.GetCurrentValue() * scale * 255.0));
+    popup_->SetOpacity(static_cast<unsigned char>(animation_.GetCurrentValue() *
+        scale * 255.0));
     popup_->GetRootView()->SchedulePaint();
-#else
-    NOTIMPLEMENTED();
-#endif
   }
 
  private:
@@ -538,7 +526,7 @@ void DraggedTabController::DidProcessMessage(const MSG& msg) {
   if (msg.message == WM_KEYDOWN && msg.wParam == VK_ESCAPE)
     EndDrag(true);
 }
-#else
+#elif defined(TOOLKIT_USES_GTK)
 void DraggedTabController::WillProcessEvent(GdkEvent* event) {
 }
 
@@ -1238,48 +1226,41 @@ void DraggedTabController::CompleteDrag() {
         GetTabsMatchingDraggedContents(attached_tabstrip_));
   } else {
     if (dock_info_.type() != DockInfo::NONE) {
-      Profile* profile = GetModel(source_tabstrip_)->profile();
       switch (dock_info_.type()) {
         case DockInfo::LEFT_OF_WINDOW:
-          UserMetrics::RecordAction(UserMetricsAction("DockingWindow_Left"),
-                                    profile);
+          UserMetrics::RecordAction(UserMetricsAction("DockingWindow_Left"));
           break;
 
         case DockInfo::RIGHT_OF_WINDOW:
-          UserMetrics::RecordAction(UserMetricsAction("DockingWindow_Right"),
-                                    profile);
+          UserMetrics::RecordAction(UserMetricsAction("DockingWindow_Right"));
           break;
 
         case DockInfo::BOTTOM_OF_WINDOW:
-          UserMetrics::RecordAction(UserMetricsAction("DockingWindow_Bottom"),
-                                    profile);
+          UserMetrics::RecordAction(UserMetricsAction("DockingWindow_Bottom"));
           break;
 
         case DockInfo::TOP_OF_WINDOW:
-          UserMetrics::RecordAction(UserMetricsAction("DockingWindow_Top"),
-                                    profile);
+          UserMetrics::RecordAction(UserMetricsAction("DockingWindow_Top"));
           break;
 
         case DockInfo::MAXIMIZE:
-          UserMetrics::RecordAction(UserMetricsAction("DockingWindow_Maximize"),
-                                    profile);
+          UserMetrics::RecordAction(
+              UserMetricsAction("DockingWindow_Maximize"));
           break;
 
         case DockInfo::LEFT_HALF:
-          UserMetrics::RecordAction(UserMetricsAction("DockingWindow_LeftHalf"),
-                                    profile);
+          UserMetrics::RecordAction(
+              UserMetricsAction("DockingWindow_LeftHalf"));
           break;
 
         case DockInfo::RIGHT_HALF:
           UserMetrics::RecordAction(
-              UserMetricsAction("DockingWindow_RightHalf"),
-              profile);
+              UserMetricsAction("DockingWindow_RightHalf"));
           break;
 
         case DockInfo::BOTTOM_HALF:
           UserMetrics::RecordAction(
-              UserMetricsAction("DockingWindow_BottomHalf"),
-              profile);
+              UserMetricsAction("DockingWindow_BottomHalf"));
           break;
 
         default:
@@ -1363,7 +1344,7 @@ gfx::Point DraggedTabController::GetCursorScreenPoint() const {
 #if defined(OS_WIN)
   DWORD pos = GetMessagePos();
   return gfx::Point(pos);
-#else
+#elif defined(TOOLKIT_USES_GTK)
   gint x, y;
   gdk_display_get_pointer(gdk_display_get_default(), NULL, &x, &y, NULL);
   return gfx::Point(x, y);

@@ -4,6 +4,7 @@
 
 #include "chrome/browser/browsing_data_indexed_db_helper.h"
 
+#include "base/callback_old.h"
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
@@ -84,7 +85,7 @@ void BrowsingDataIndexedDBHelperImpl::StartFetching(
 
 void BrowsingDataIndexedDBHelperImpl::CancelNotification() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  completion_callback_.reset(NULL);
+  completion_callback_.reset();
 }
 
 void BrowsingDataIndexedDBHelperImpl::DeleteIndexedDBFile(
@@ -301,4 +302,9 @@ void CannedBrowsingDataIndexedDBHelper::NotifyInUIThread() {
     completion_callback_.reset();
   }
   is_fetching_ = false;
+}
+
+void CannedBrowsingDataIndexedDBHelper::CancelNotification() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  completion_callback_.reset();
 }

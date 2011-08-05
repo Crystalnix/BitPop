@@ -53,6 +53,11 @@ class PPAPITest : public UITest {
     // TODO(dumi): remove this switch once we have a quota management
     // system in place.
     launch_arguments_.AppendSwitch(switches::kUnlimitedQuotaForFiles);
+
+#if defined(ENABLE_P2P_APIS)
+    // Enable P2P API.
+    launch_arguments_.AppendSwitch(switches::kEnableP2PApi);
+#endif // ENABLE_P2P_APIS
   }
 
   void RunTest(const std::string& test_case) {
@@ -66,8 +71,9 @@ class PPAPITest : public UITest {
     EXPECT_TRUE(file_util::PathExists(test_path));
 
     GURL::Replacements replacements;
-    replacements.SetQuery(test_case.c_str(),
-                          url_parse::Component(0, test_case.size()));
+    std::string query("testcase=");
+    query += test_case;
+    replacements.SetQuery(query.c_str(), url_parse::Component(0, query.size()));
     GURL test_url = net::FilePathToFileURL(test_path);
     RunTestURL(test_url.ReplaceComponents(replacements));
   }
@@ -77,7 +83,8 @@ class PPAPITest : public UITest {
         net::TestServer::TYPE_HTTP,
         FilePath(FILE_PATH_LITERAL("ppapi/tests")));
     ASSERT_TRUE(test_server.Start());
-    RunTestURL(test_server.GetURL("files/test_case.html?" + test_case));
+    RunTestURL(
+        test_server.GetURL("files/test_case.html?testcase=" + test_case));
   }
 
  private:
@@ -109,6 +116,14 @@ class PPAPITest : public UITest {
   }
 };
 
+TEST_F(PPAPITest, Broker) {
+  RunTest("Broker");
+}
+
+TEST_F(PPAPITest, CursorControl) {
+  RunTest("CursorControl");
+}
+
 TEST_F(PPAPITest, FAILS_Instance) {
   RunTest("Instance");
 }
@@ -117,9 +132,7 @@ TEST_F(PPAPITest, Graphics2D) {
   RunTest("Graphics2D");
 }
 
-// TODO(brettw) bug 51344: this is flaky on bots. Seems to timeout navigating.
-// Possibly all the image allocations slow things down on a loaded bot too much.
-TEST_F(PPAPITest, FLAKY_ImageData) {
+TEST_F(PPAPITest, ImageData) {
   RunTest("ImageData");
 }
 
@@ -127,18 +140,15 @@ TEST_F(PPAPITest, Buffer) {
   RunTest("Buffer");
 }
 
-// Flakey, http:L//crbug.com/57053
-TEST_F(PPAPITest, FLAKY_URLLoader) {
+TEST_F(PPAPITest, URLLoader) {
   RunTestViaHTTP("URLLoader");
 }
 
-// Flaky, http://crbug.com/51012
-TEST_F(PPAPITest, FLAKY_PaintAggregator) {
+TEST_F(PPAPITest,PaintAggregator) {
   RunTestViaHTTP("PaintAggregator");
 }
 
-// Flaky, http://crbug.com/48544.
-TEST_F(PPAPITest, FLAKY_Scrollbar) {
+TEST_F(PPAPITest, Scrollbar) {
   RunTest("Scrollbar");
 }
 
@@ -150,15 +160,16 @@ TEST_F(PPAPITest, CharSet) {
   RunTest("CharSet");
 }
 
-TEST_F(PPAPITest, Var) {
-  RunTest("Var");
+TEST_F(PPAPITest, VarDeprecated) {
+  RunTest("VarDeprecated");
 }
 
 TEST_F(PPAPITest, PostMessage) {
   RunTest("PostMessage");
 }
 
-TEST_F(PPAPITest, FileIO) {
+// http://crbug.com/83443
+TEST_F(PPAPITest, FAILS_FileIO) {
   RunTestViaHTTP("FileIO");
 }
 
@@ -166,11 +177,12 @@ TEST_F(PPAPITest, FileRef) {
   RunTestViaHTTP("FileRef");
 }
 
-// http://crbug.com/63239
-TEST_F(PPAPITest, DISABLED_DirectoryReader) {
+TEST_F(PPAPITest, DirectoryReader) {
   RunTestViaHTTP("DirectoryReader");
 }
 
+#if defined(ENABLE_P2P_APIS)
 TEST_F(PPAPITest, Transport) {
   RunTest("Transport");
 }
+#endif // ENABLE_P2P_APIS

@@ -33,29 +33,12 @@
 #include "base/win/registry.h"
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
 #include "base/files/file_path_watcher.h"
 #endif
 
-#if defined(OS_CHROMEOS)
-namespace chromeos {
-class PluginSelectionPolicy;
-}
-#endif
-
-namespace IPC {
-class Message;
-}
-
-class MessageLoop;
 struct PepperPluginInfo;
 class PluginDirWatcherDelegate;
-class Profile;
-class ResourceDispatcherHost;
-
-namespace net {
-class URLRequestContext;
-}  // namespace net
 
 // This must be created on the main thread but it's only called on the IO/file
 // thread.
@@ -69,10 +52,6 @@ class PluginService
     GURL url;
     webkit::npapi::WebPluginInfo plugin;
   };
-
-  // Initializes the global instance; should be called on startup from the main
-  // thread.
-  static void InitGlobalInstance(Profile* profile);
 
   // Returns the PluginService singleton.
   static PluginService* GetInstance();
@@ -94,7 +73,8 @@ class PluginService
   PluginProcessHost* FindOrStartNpapiPluginProcess(
       const FilePath& plugin_path);
   PpapiPluginProcessHost* FindOrStartPpapiPluginProcess(
-      const FilePath& plugin_path);
+      const FilePath& plugin_path,
+      PpapiPluginProcessHost::Client* client);
   PpapiBrokerProcessHost* FindOrStartPpapiBrokerProcess(
       const FilePath& plugin_path);
 
@@ -111,14 +91,14 @@ class PluginService
   void OpenChannelToPpapiBroker(const FilePath& path,
                                 PpapiBrokerProcessHost::Client* client);
 
-  // Gets the first allowed plugin in the list of plugins that matches
-  // the given url and mime type.  Must be called on the FILE thread.
-  bool GetFirstAllowedPluginInfo(int render_process_id,
-                                 int render_view_id,
-                                 const GURL& url,
-                                 const std::string& mime_type,
-                                 webkit::npapi::WebPluginInfo* info,
-                                 std::string* actual_mime_type);
+  // Gets the plugin in the list of plugins that matches the given url and mime
+  // type.  Must be called on the FILE thread.
+  bool GetPluginInfo(int render_process_id,
+                     int render_view_id,
+                     const GURL& url,
+                     const std::string& mime_type,
+                     webkit::npapi::WebPluginInfo* info,
+                     std::string* actual_mime_type);
 
   // Safe to be called from any thread.
   void OverridePluginForTab(const OverriddenPlugin& plugin);
@@ -138,16 +118,13 @@ class PluginService
   // NOTE: can only be called on the UI thread.
   static void PurgePluginListCache(bool reload_pages);
 
-  // The UI thread's message loop
-  MessageLoop* main_message_loop() { return main_message_loop_; }
-
  private:
   friend struct DefaultSingletonTraits<PluginService>;
 
   // Creates the PluginService object, but doesn't actually build the plugin
   // list yet.  It's generated lazily.
   PluginService();
-  ~PluginService();
+  virtual ~PluginService();
 
   // base::WaitableEventWatcher::Delegate implementation.
   virtual void OnWaitableEventSignaled(base::WaitableEvent* waitable_event);
@@ -174,16 +151,13 @@ class PluginService
       const FilePath& plugin_path,
       PluginProcessHost::Client* client);
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
   // Registers a new FilePathWatcher for a given path.
   static void RegisterFilePathWatcher(
       base::files::FilePathWatcher* watcher,
       const FilePath& path,
       base::files::FilePathWatcher::Delegate* delegate);
 #endif
-
-  // The main thread's message loop.
-  MessageLoop* main_message_loop_;
 
   // The browser's UI locale.
   const std::string ui_locale_;
@@ -195,10 +169,6 @@ class PluginService
 
   NotificationRegistrar registrar_;
 
-#if defined(OS_CHROMEOS)
-  scoped_refptr<chromeos::PluginSelectionPolicy> plugin_selection_policy_;
-#endif
-
 #if defined(OS_WIN)
   // Registry keys for getting notifications when new plugins are installed.
   base::win::RegKey hkcu_key_;
@@ -209,7 +179,7 @@ class PluginService
   base::WaitableEventWatcher hklm_watcher_;
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
   ScopedVector<base::files::FilePathWatcher> file_watchers_;
   scoped_refptr<PluginDirWatcherDelegate> file_watcher_delegate_;
 #endif

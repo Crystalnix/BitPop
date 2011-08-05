@@ -6,8 +6,6 @@
 #define VIEWS_VIEW_H_
 #pragma once
 
-#include "build/build_config.h"
-
 #include <algorithm>
 #include <map>
 #include <set>
@@ -16,6 +14,7 @@
 
 #include "base/i18n/rtl.h"
 #include "base/memory/scoped_ptr.h"
+#include "build/build_config.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
@@ -24,7 +23,6 @@
 #include "views/border.h"
 
 using ui::OSExchangeData;
-
 
 namespace gfx {
 class Canvas;
@@ -35,12 +33,12 @@ class Path;
 namespace ui {
 struct AccessibleViewState;
 class Compositor;
+class Texture;
 class ThemeProvider;
 class Transform;
 
 typedef unsigned int TextureID;
 }
-using ui::ThemeProvider;
 
 #if defined(OS_WIN)
 class NativeViewAccessibilityWin;
@@ -54,11 +52,14 @@ class FocusManager;
 class FocusTraversable;
 class InputMethod;
 class LayoutManager;
-class RootView;
 class ScrollView;
 class TextInputClient;
 class Widget;
 class Window;
+
+namespace internal {
+class RootView;
+}
 
 // ContextMenuController is responsible for showing the context menu for a
 // View. To use a ContextMenuController invoke SetContextMenuController on a
@@ -150,8 +151,11 @@ class View : public AcceleratorTarget {
     TOUCH_STATUS_CONTINUE,     // The touch event is part of a previously
                                // started touch sequence.
     TOUCH_STATUS_END,          // The touch event ended the touch sequence.
-    TOUCH_STATUS_CANCEL        // The touch event was cancelled, but didn't
+    TOUCH_STATUS_CANCEL,       // The touch event was cancelled, but didn't
                                // terminate the touch sequence.
+    TOUCH_STATUS_SYNTH_MOUSE   // The touch event was not processed, but a
+                               // synthetic mouse event generated from the
+                               // unused touch event was handled.
   };
 #endif
 
@@ -169,25 +173,16 @@ class View : public AcceleratorTarget {
 
   // FATE TBD ------------------------------------------------------------------
   // TODO(beng): Figure out what these methods are for and delete them.
-
-  // TODO(beng): this one isn't even google3-style. wth.
-  virtual Widget* child_widget();
+  virtual Widget* GetChildWidget();
 
   // Creation and lifetime -----------------------------------------------------
 
   View();
   virtual ~View();
 
-  // Set whether this view is owned by its parent. A view that is owned by its
-  // parent is automatically deleted when the parent is deleted. The default is
-  // true. Set to false if the view is owned by another object and should not
-  // be deleted by its parent.
-  void set_parent_owned(bool is_parent_owned) {
-    is_parent_owned_ = is_parent_owned;
-  }
-
-  // Return whether a view is owned by its parent.
-  bool IsParentOwned() const { return is_parent_owned_; }
+  // By default a View is owned by its parent unless specified otherwise here.
+  bool parent_owned() const { return parent_owned_; }
+  void set_parent_owned(bool parent_owned) { parent_owned_ = parent_owned; }
 
   // Tree operations -----------------------------------------------------------
 
@@ -239,10 +234,6 @@ class View : public AcceleratorTarget {
   // hierarchy beneath this view.
   virtual bool ContainsNativeView(gfx::NativeView native_view) const;
 
-  // TODO(beng): REMOVE (RootView->internal API)
-  // Get the containing RootView
-  virtual RootView* GetRootView();
-
   // Size and disposition ------------------------------------------------------
   // Methods for obtaining and modifying the position and size of the view.
   // Position is in the coordinate system of the view's parent.
@@ -287,15 +278,14 @@ class View : public AcceleratorTarget {
   // function takes into account the mirroring setting for each View and
   // therefore it will return the mirrored version of the visible bounds if
   // need be.
-  // TODO(beng): const.
-  gfx::Rect GetVisibleBounds();
+  gfx::Rect GetVisibleBounds() const;
 
   // Return the bounds of the View in screen coordinate system.
   gfx::Rect GetScreenBounds() const;
 
   // Returns the baseline of this view, or -1 if this view has no baseline. The
   // return value is relative to the preferred height.
-  virtual int GetBaseline();
+  virtual int GetBaseline() const;
 
   // Get the size the View would like to be, if enough space were available.
   virtual gfx::Size GetPreferredSize();
@@ -314,7 +304,7 @@ class View : public AcceleratorTarget {
   virtual int GetHeightForWidth(int w);
 
   // Set whether the receiving view is visible. Painting is scheduled as needed
-  virtual void SetVisible(bool flag);
+  virtual void SetVisible(bool visible);
 
   // Return whether a view is visible
   virtual bool IsVisible() const;
@@ -326,7 +316,7 @@ class View : public AcceleratorTarget {
   // Set whether this view is enabled. A disabled view does not receive keyboard
   // or mouse inputs. If flag differs from the current value, SchedulePaint is
   // invoked.
-  virtual void SetEnabled(bool flag);
+  void SetEnabled(bool enabled);
 
   // Returns whether the view is enabled.
   virtual bool IsEnabled() const;
@@ -345,24 +335,8 @@ class View : public AcceleratorTarget {
   void set_clip_y(float y) { clip_y_ = y; }
   void set_clip(float x, float y) { clip_x_ = x; clip_y_ = y; }
 
-  void SetRotation(float degree);
-
-  void SetScaleX(float x);
-  void SetScaleY(float y);
-  void SetScale(float x, float y);
-
-  void SetTranslateX(float x);
-  void SetTranslateY(float y);
-  void SetTranslate(float x, float y);
-
-  // The following functions apply the transformations on top of the existing
-  // transform.
-  void ConcatRotation(float degree);
-  void ConcatScale(float x, float y);
-  void ConcatTranslate(float x, float y);
-
-  // Reset the transformation matrix.
-  void ResetTransform();
+  // Sets the transform to the supplied transform.
+  void SetTransform(const ui::Transform& transform);
 
   // RTL positioning -----------------------------------------------------------
 
@@ -528,9 +502,6 @@ class View : public AcceleratorTarget {
   // the hierarchy beneath it.
   virtual void Paint(gfx::Canvas* canvas);
 
-  // Paint this View immediately.
-  virtual void PaintNow();
-
   // The background object is owned by this object and may be NULL.
   void set_background(Background* b) { background_.reset(b); }
   const Background* background() const { return background_.get(); }
@@ -541,7 +512,7 @@ class View : public AcceleratorTarget {
   const Border* border() const { return border_.get(); }
 
   // Get the theme provider from the parent widget.
-  virtual ThemeProvider* GetThemeProvider() const;
+  virtual ui::ThemeProvider* GetThemeProvider() const;
 
   // RTL painting --------------------------------------------------------------
 
@@ -583,14 +554,12 @@ class View : public AcceleratorTarget {
   // Returns the deepest visible descendant that contains the specified point.
   virtual View* GetEventHandlerForPoint(const gfx::Point& point);
 
-  // Return the cursor that should be used for this view or NULL if
-  // the default cursor should be used. The provided point is in the
-  // receiver's coordinate system. The caller is responsible for managing the
-  // lifetime of the returned object, though that lifetime may vary from
-  // platform to platform. On Windows, the cursor is a shared resource but in
-  // Gtk, the framework destroys the returned cursor after setting it.
-  virtual gfx::NativeCursor GetCursorForPoint(ui::EventType event_type,
-                                              const gfx::Point& p);
+  // Return the cursor that should be used for this view or the default cursor.
+  // The event location is in the receiver's coordinate system. The caller is
+  // responsible for managing the lifetime of the returned object, though that
+  // lifetime may vary from platform to platform. On Windows, the cursor is a
+  // shared resource, but Gtk destroys the returned cursor after setting it.
+  virtual gfx::NativeCursor GetCursor(const MouseEvent& event);
 
   // Convenience to test whether a point is within this view's bounds
   virtual bool HitTest(const gfx::Point& l) const;
@@ -755,7 +724,9 @@ class View : public AcceleratorTarget {
   // Set whether this view can be made focusable if the user requires
   // full keyboard access, even though it's not normally focusable.
   // Note that this is false by default.
-  virtual void set_accessibility_focusable(bool accessibility_focusable);
+  void set_accessibility_focusable(bool accessibility_focusable) {
+    accessibility_focusable_ = accessibility_focusable;
+  }
 
   // Convenience method to retrieve the FocusManager associated with the
   // Widget that contains this view.  This can return NULL if this view is not
@@ -966,21 +937,9 @@ class View : public AcceleratorTarget {
   // its ancestors. This is used for clipping NativeViewHost.
   virtual void OnVisibleBoundsChanged();
 
-  // TODO(beng): eliminate in protected.
-  // Whether this view is enabled.
-  bool enabled_;
-
-  // Attributes ----------------------------------------------------------------
-
-  // TODO(beng): Eliminate in protected
-  // The id of this View. Used to find this View.
-  int id_;
-
-  // TODO(beng): Eliminate in protected
-  // The group of this view. Some view subclasses use this id to find other
-  // views of the same group. For example radio button uses this information
-  // to find other radio buttons.
-  int group_;
+  // Override to be notified when the enabled state of this View has
+  // changed. The default implementation calls SchedulePaint() on this View.
+  virtual void OnEnabledChanged();
 
   // Tree operations -----------------------------------------------------------
 
@@ -1015,7 +974,7 @@ class View : public AcceleratorTarget {
   // it - like registering accelerators, for example.
   virtual void NativeViewHierarchyChanged(bool attached,
                                           gfx::NativeView native_view,
-                                          RootView* root_view);
+                                          internal::RootView* root_view);
 
   // Painting ------------------------------------------------------------------
 
@@ -1042,8 +1001,29 @@ class View : public AcceleratorTarget {
 
   // Accelerated painting ------------------------------------------------------
 
+#if !defined(COMPOSITOR_2)
   // Performs accelerated painting using the compositor.
   virtual void PaintComposite(ui::Compositor* compositor);
+#else
+  // If our texture is out of date invokes Paint() with a canvas that is then
+  // copied to the texture. If the texture is not out of date recursively
+  // descends in case any children needed their textures updated.
+  //
+  // This is invoked internally by Widget and painting code.
+  void PaintToTexture(const gfx::Rect& dirty_rect);
+
+  // Instructs the compositor to show our texture and all children textures.
+  //
+  // This is invoked internally by Widget and painting code.
+  void PaintComposite();
+#endif
+
+  // Returns true if this view should paint using a texture.
+  virtual bool ShouldPaintToTexture() const;
+
+  // Returns the Compositor.
+  virtual const ui::Compositor* GetCompositor() const;
+  virtual ui::Compositor* GetCompositor();
 
   // Input ---------------------------------------------------------------------
 
@@ -1076,21 +1056,17 @@ class View : public AcceleratorTarget {
   // Whether the view can be focused.
   bool focusable_;
 
-  // Whether this view is focusable if the user requires full keyboard access,
-  // even though it may not be normally focusable.
-  bool accessibility_focusable_;
-
   // System events -------------------------------------------------------------
 
   // Called when the UI theme has changed, overriding allows individual Views to
   // do special cleanup and processing (such as dropping resource caches).
   // To dispatch a theme changed notification, call Widget::ThemeChanged().
-  virtual void OnThemeChanged() { }
+  virtual void OnThemeChanged() {}
 
   // Called when the locale has changed, overriding allows individual Views to
   // update locale-dependent strings.
   // To dispatch a locale changed notification, call Widget::LocaleChanged().
-  virtual void OnLocaleChanged() { }
+  virtual void OnLocaleChanged() {}
 
   // Tooltips ------------------------------------------------------------------
 
@@ -1127,9 +1103,10 @@ class View : public AcceleratorTarget {
   static int GetVerticalDragThreshold();
 
  private:
-  friend class RootView;
+  friend class internal::RootView;
   friend class FocusManager;
   friend class ViewStorage;
+  friend class Widget;
 
   // Used to track a drag. RootView passes this into
   // ProcessMousePressed/Dragged.
@@ -1162,10 +1139,6 @@ class View : public AcceleratorTarget {
                          bool update_tool_tip,
                          bool delete_removed_view);
 
-  // Sets the parent View. This is called automatically by AddChild and is
-  // thus private.
-  void SetParent(View* parent);
-
   // Call ViewHierarchyChanged for all child views on all parents
   void PropagateRemoveNotifications(View* parent);
 
@@ -1176,7 +1149,7 @@ class View : public AcceleratorTarget {
   // children.
   void PropagateNativeViewHierarchyChanged(bool attached,
                                            gfx::NativeView native_view,
-                                           RootView* root_view);
+                                           internal::RootView* root_view);
 
   // Takes care of registering/unregistering accelerators if
   // |register_accelerators| true and calls ViewHierarchyChanged().
@@ -1215,8 +1188,11 @@ class View : public AcceleratorTarget {
 
   // Transformations -----------------------------------------------------------
 
-  // Initialize the transform matrix when necessary.
-  void InitTransform();
+  // Returns in |transform| the transform to get from coordinates of |ancestor|
+  // to this. Returns true if |ancestor| is found. If |ancestor| is not found,
+  // or NULL, |transform| is set to convert from root view coordinates to this.
+  bool GetTransformRelativeTo(const View* ancestor,
+                              ui::Transform* transform) const;
 
   // Coordinate conversion -----------------------------------------------------
 
@@ -1239,6 +1215,11 @@ class View : public AcceleratorTarget {
   // point was successfully from the ancestor's coordinate system to the view's
   // coordinate system.
   bool ConvertPointFromAncestor(const View* ancestor, gfx::Point* point) const;
+
+  // Accelerated painting ------------------------------------------------------
+
+  // Releases the texture of this and recurses through all children.
+  void ResetTexture();
 
   // Input ---------------------------------------------------------------------
 
@@ -1297,16 +1278,37 @@ class View : public AcceleratorTarget {
   // supported drag operations. When done, OnDragDone is invoked.
   void DoDrag(const MouseEvent& event, const gfx::Point& press_pt);
 
+  // Debugging -----------------------------------------------------------------
+
+#if defined(TOUCH_DEBUG)
+  // Returns string containing a graph of the views hierarchy in graphViz DOT
+  // language (http://graphviz.org/). Can be called within debugger and save
+  // to a file to compile/view.
+  // Note: Assumes initial call made with first = true.
+  std::string PrintViewGraph(bool first);
+#endif
+
   //////////////////////////////////////////////////////////////////////////////
 
   // Creation and lifetime -----------------------------------------------------
 
-  // Whether this view is owned by its parent.
-  bool is_parent_owned_;
+  // True if the hierarchy (i.e. the parent View) is responsible for deleting
+  // this View. Default is true.
+  bool parent_owned_;
+
+  // Attributes ----------------------------------------------------------------
+
+  // The id of this View. Used to find this View.
+  int id_;
+
+  // The group of this view. Some view subclasses use this id to find other
+  // views of the same group. For example radio button uses this information
+  // to find other radio buttons.
+  int group_;
 
   // Tree operations -----------------------------------------------------------
 
-  // This view's parent
+  // This view's parent.
   View* parent_;
 
   // This view's children.
@@ -1318,8 +1320,11 @@ class View : public AcceleratorTarget {
   // This View's bounds in the parent coordinate system.
   gfx::Rect bounds_;
 
-  // Visible state
+  // Whether this view is visible.
   bool is_visible_;
+
+  // Whether this view is enabled.
+  bool enabled_;
 
   // Whether or not RegisterViewForVisibleBoundsNotification on the RootView
   // has been invoked.
@@ -1364,6 +1369,7 @@ class View : public AcceleratorTarget {
 
   // Accelerated painting ------------------------------------------------------
 
+#if !defined(COMPOSITOR_2)
   // Each transformed view will maintain its own canvas.
   scoped_ptr<gfx::Canvas> canvas_;
 
@@ -1371,6 +1377,17 @@ class View : public AcceleratorTarget {
   // TODO(sadrul): This will eventually be replaced by an abstract texture
   //               object.
   ui::TextureID texture_id_;
+#else
+  scoped_ptr<ui::Texture> texture_;
+
+  // If not empty and Paint() is invoked, the canvas is created with the
+  // specified size.
+  // TODO(sky): this should be passed in.
+  gfx::Rect texture_clip_rect_;
+#endif
+
+  // Is the texture out of date?
+  bool texture_needs_updating_;
 
   // Accelerators --------------------------------------------------------------
 
@@ -1394,6 +1411,10 @@ class View : public AcceleratorTarget {
 
   // Next view to be focused when the Shift-Tab key combination is pressed.
   View* previous_focusable_view_;
+
+  // Whether this view is focusable if the user requires full keyboard access,
+  // even though it may not be normally focusable.
+  bool accessibility_focusable_;
 
   // Context menus -------------------------------------------------------------
 

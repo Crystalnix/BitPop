@@ -19,6 +19,7 @@ CommandBufferService::CommandBufferService()
       get_offset_(0),
       put_offset_(0),
       token_(0),
+      generation_(0),
       error_(error::kNoError) {
   // Element zero is always NULL.
   registered_objects_.push_back(Buffer());
@@ -97,11 +98,13 @@ CommandBufferService::State CommandBufferService::GetState() {
   state.put_offset = put_offset_;
   state.token = token_;
   state.error = error_;
+  state.generation = ++generation_;
 
   return state;
 }
 
-CommandBufferService::State CommandBufferService::FlushSync(int32 put_offset) {
+CommandBufferService::State CommandBufferService::FlushSync(
+    int32 put_offset, int32 last_known_get) {
   if (put_offset < 0 || put_offset > num_entries_) {
     error_ = gpu::error::kOutOfBounds;
     return GetState();
@@ -110,14 +113,23 @@ CommandBufferService::State CommandBufferService::FlushSync(int32 put_offset) {
   put_offset_ = put_offset;
 
   if (put_offset_change_callback_.get()) {
-    put_offset_change_callback_->Run();
+    put_offset_change_callback_->Run(last_known_get == get_offset_);
   }
 
   return GetState();
 }
 
 void CommandBufferService::Flush(int32 put_offset) {
-  FlushSync(put_offset);
+  if (put_offset < 0 || put_offset > num_entries_) {
+    error_ = gpu::error::kOutOfBounds;
+    return;
+  }
+
+  put_offset_ = put_offset;
+
+  if (put_offset_change_callback_.get()) {
+    put_offset_change_callback_->Run(false);
+  }
 }
 
 void CommandBufferService::SetGetOffset(int32 get_offset) {
@@ -237,12 +249,19 @@ void CommandBufferService::SetToken(int32 token) {
 void CommandBufferService::SetParseError(error::Error error) {
   if (error_ == error::kNoError) {
     error_ = error;
+    if (parse_error_callback_.get())
+      parse_error_callback_->Run();
   }
 }
 
 void CommandBufferService::SetPutOffsetChangeCallback(
-    Callback0::Type* callback) {
+    Callback1<bool>::Type* callback) {
   put_offset_change_callback_.reset(callback);
+}
+
+void CommandBufferService::SetParseErrorCallback(
+    Callback0::Type* callback) {
+  parse_error_callback_.reset(callback);
 }
 
 }  // namespace gpu

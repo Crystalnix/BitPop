@@ -43,6 +43,9 @@ const char Toolbar5Importer::kT5FrontEndUrlTemplate[] =
     "http://www.google.com/notebook/toolbar?cmd=list&tok={auth_token}&"
     "num={max_num}&min={max_timestamp}&all=0&zx={random_number}";
 
+// Importer methods.
+
+// The constructor should set the initial state to NOT_USED.
 Toolbar5Importer::Toolbar5Importer()
     : state_(NOT_USED),
       items_to_import_(importer::NONE),
@@ -72,13 +75,13 @@ void Toolbar5Importer::StartImport(
   ContinueImport();
 }
 
-// The public cancel method serves two functions, as a callback from the UI as
-// well as an internal callback in case of cancel.  An internal callback is
-// required since the URLFetcher must be destroyed from the thread it was
+// The public cancel method serves two functions, as a callback from the UI
+// as well as an internal callback in case of cancel.  An internal callback
+// is required since the URLFetcher must be destroyed from the thread it was
 // created.
 void Toolbar5Importer::Cancel() {
-  // In the case when the thread is not importing messages we are to cancel as
-  // soon as possible.
+  // In the case when the thread is not importing messages we are to
+  // cancel as soon as possible.
   Importer::Cancel();
 
   // If we are conducting network operations, post a message to the importer
@@ -97,7 +100,7 @@ void Toolbar5Importer::OnURLFetchComplete(
     const GURL& url,
     const net::URLRequestStatus& status,
     int response_code,
-    const ResponseCookies& cookies,
+    const net::ResponseCookies& cookies,
     const std::string& data) {
   if (cancelled()) {
     EndImport();
@@ -553,8 +556,6 @@ void  Toolbar5Importer::AddBookmarksToChrome(
   if (!bookmarks.empty() && !cancelled()) {
     const string16& first_folder_name =
         bridge_->GetLocalizedString(IDS_BOOKMARK_GROUP_FROM_GOOGLE_TOOLBAR);
-    int options = ProfileWriter::ADD_IF_UNIQUE |
-        (import_to_bookmark_bar() ? ProfileWriter::IMPORT_TO_BOOKMARK_BAR : 0);
-    bridge_->AddBookmarkEntries(bookmarks, first_folder_name, options);
+    bridge_->AddBookmarks(bookmarks, first_folder_name);
   }
 }

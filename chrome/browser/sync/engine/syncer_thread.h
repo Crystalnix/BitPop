@@ -15,8 +15,10 @@
 #include "base/threading/thread.h"
 #include "base/time.h"
 #include "base/timer.h"
+#include "chrome/browser/sync/engine/configure_reason.h"
 #include "chrome/browser/sync/engine/nudge_source.h"
 #include "chrome/browser/sync/engine/polling_constants.h"
+#include "chrome/browser/sync/engine/syncapi.h"
 #include "chrome/browser/sync/engine/syncer.h"
 #include "chrome/browser/sync/syncable/model_type_payload_map.h"
 #include "chrome/browser/sync/engine/net/server_connection_manager.h"
@@ -72,7 +74,8 @@ class SyncerThread : public sessions::SyncSession::Delegate,
       const base::TimeDelta& delay, NudgeSource source,
       const syncable::ModelTypePayloadMap& types_with_payloads,
       const tracked_objects::Location& nudge_location);
-  void ScheduleConfig(const syncable::ModelTypeBitSet& types);
+  void ScheduleConfig(const syncable::ModelTypeBitSet& types,
+      sync_api::ConfigureReason reason);
   void ScheduleClearUserData();
 
   // Change status of notifications in the SyncSessionContext.
@@ -94,7 +97,7 @@ class SyncerThread : public sessions::SyncSession::Delegate,
 
   // ServerConnectionEventListener implementation.
   // TODO(tim): schedule a nudge when valid connection detected? in 1 minute?
-  virtual void OnServerConnectionEvent(const ServerConnectionEvent2& event);
+  virtual void OnServerConnectionEvent(const ServerConnectionEvent& event);
 
  private:
   enum JobProcessDecision {
@@ -138,25 +141,25 @@ class SyncerThread : public sessions::SyncSession::Delegate,
     // that came in.
     tracked_objects::Location nudge_location;
   };
-  friend class SyncerThread2Test;
-  friend class SyncerThread2WhiteboxTest;
+  friend class SyncerThreadTest;
+  friend class SyncerThreadWhiteboxTest;
 
-  FRIEND_TEST_ALL_PREFIXES(SyncerThread2WhiteboxTest,
+  FRIEND_TEST_ALL_PREFIXES(SyncerThreadWhiteboxTest,
       DropNudgeWhileExponentialBackOff);
-  FRIEND_TEST_ALL_PREFIXES(SyncerThread2WhiteboxTest, SaveNudge);
-  FRIEND_TEST_ALL_PREFIXES(SyncerThread2WhiteboxTest, ContinueNudge);
-  FRIEND_TEST_ALL_PREFIXES(SyncerThread2WhiteboxTest, DropPoll);
-  FRIEND_TEST_ALL_PREFIXES(SyncerThread2WhiteboxTest, ContinuePoll);
-  FRIEND_TEST_ALL_PREFIXES(SyncerThread2WhiteboxTest, ContinueConfiguration);
-  FRIEND_TEST_ALL_PREFIXES(SyncerThread2WhiteboxTest,
+  FRIEND_TEST_ALL_PREFIXES(SyncerThreadWhiteboxTest, SaveNudge);
+  FRIEND_TEST_ALL_PREFIXES(SyncerThreadWhiteboxTest, ContinueNudge);
+  FRIEND_TEST_ALL_PREFIXES(SyncerThreadWhiteboxTest, DropPoll);
+  FRIEND_TEST_ALL_PREFIXES(SyncerThreadWhiteboxTest, ContinuePoll);
+  FRIEND_TEST_ALL_PREFIXES(SyncerThreadWhiteboxTest, ContinueConfiguration);
+  FRIEND_TEST_ALL_PREFIXES(SyncerThreadWhiteboxTest,
                            SaveConfigurationWhileThrottled);
-  FRIEND_TEST_ALL_PREFIXES(SyncerThread2WhiteboxTest,
+  FRIEND_TEST_ALL_PREFIXES(SyncerThreadWhiteboxTest,
                            SaveNudgeWhileThrottled);
-  FRIEND_TEST_ALL_PREFIXES(SyncerThread2WhiteboxTest,
+  FRIEND_TEST_ALL_PREFIXES(SyncerThreadWhiteboxTest,
                            ContinueClearUserDataUnderAllCircumstances);
-  FRIEND_TEST_ALL_PREFIXES(SyncerThread2WhiteboxTest,
+  FRIEND_TEST_ALL_PREFIXES(SyncerThreadWhiteboxTest,
                            ContinueCanaryJobConfig);
-  FRIEND_TEST_ALL_PREFIXES(SyncerThread2WhiteboxTest,
+  FRIEND_TEST_ALL_PREFIXES(SyncerThreadWhiteboxTest,
       ContinueNudgeWhileExponentialBackOff);
 
   // A component used to get time delays associated with exponential backoff.
@@ -330,7 +333,6 @@ class SyncerThread : public sessions::SyncSession::Delegate,
 
   DISALLOW_COPY_AND_ASSIGN(SyncerThread);
 };
-
 
 }  // namespace browser_sync
 

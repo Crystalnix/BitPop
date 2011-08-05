@@ -18,10 +18,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "jingle/notifier/base/resolving_client_socket_factory.h"
-#include "net/base/capturing_net_log.h"
 #include "net/base/cert_verifier.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
 #include "net/base/ssl_config_service.h"
 #include "net/socket/socket_test_util.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -116,8 +114,8 @@ net::IPAddressNumber Uint32ToIPAddressNumber(uint32 ip) {
 net::AddressList SocketAddressToAddressList(
     const talk_base::SocketAddress& address) {
   DCHECK_NE(address.ip(), 0U);
-  return net::AddressList(Uint32ToIPAddressNumber(address.ip()),
-                          address.port(), false);
+  return net::AddressList::CreateFromIPAddress(
+      Uint32ToIPAddressNumber(address.ip()), address.port());
 }
 
 class MockXmppClientSocketFactory : public ResolvingClientSocketFactory {
@@ -130,10 +128,10 @@ class MockXmppClientSocketFactory : public ResolvingClientSocketFactory {
   }
 
   // ResolvingClientSocketFactory implementation.
-  virtual net::ClientSocket* CreateTransportClientSocket(
-      const net::HostPortPair& host_and_port, net::NetLog* net_log) {
+  virtual net::StreamSocket* CreateTransportClientSocket(
+      const net::HostPortPair& host_and_port) {
     return mock_client_socket_factory_->CreateTransportClientSocket(
-        address_list_, net_log, net::NetLog::Source());
+        address_list_, NULL, net::NetLog::Source());
   }
 
   virtual net::SSLClientSocket* CreateSSLClientSocket(
@@ -157,7 +155,6 @@ class ChromeAsyncSocketTest
  protected:
   ChromeAsyncSocketTest()
       : ssl_socket_data_provider_(true, net::OK),
-        capturing_net_log_(net::CapturingNetLog::kUnbounded),
         addr_(0xaabbccdd, 35) {}
 
   virtual ~ChromeAsyncSocketTest() {}
@@ -176,8 +173,7 @@ class ChromeAsyncSocketTest
             SocketAddressToAddressList(addr_)));
     chrome_async_socket_.reset(
         new ChromeAsyncSocket(mock_xmpp_client_socket_factory.release(),
-                              14, 20,
-                              &capturing_net_log_)),
+                              14, 20)),
 
     chrome_async_socket_->SignalConnected.connect(
         this, &ChromeAsyncSocketTest::OnConnect);
@@ -431,7 +427,6 @@ class ChromeAsyncSocketTest
   AsyncSocketDataProvider async_socket_data_provider_;
   net::SSLSocketDataProvider ssl_socket_data_provider_;
 
-  net::CapturingNetLog capturing_net_log_;
   scoped_ptr<ChromeAsyncSocket> chrome_async_socket_;
   std::deque<SignalSocketState> signal_socket_states_;
   const talk_base::SocketAddress addr_;

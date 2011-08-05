@@ -28,6 +28,8 @@
           'common/app_mode_common_mac.h',
           'common/app_mode_common_mac.mm',
           'common/attrition_experiments.h',
+          'common/attributed_string_coder_mac.h',
+          'common/attributed_string_coder_mac.mm',
           'common/auto_start_linux.cc',
           'common/auto_start_linux.h',
           'common/autofill_messages.h',
@@ -37,13 +39,13 @@
           'common/child_process_logging_win.cc',
           'common/chrome_version_info.cc',
           'common/chrome_version_info.h',
-          'common/content_restriction.h',
           'common/content_settings.cc',
           'common/content_settings.h',
           'common/content_settings_helper.cc',
           'common/content_settings_helper.h',
           'common/content_settings_types.h',
-          'common/devtools_messages.h',
+          'common/external_ipc_fuzzer.h',
+          'common/external_ipc_fuzzer.cc',
           'common/guid.cc',
           'common/guid.h',
           'common/guid_posix.cc',
@@ -67,8 +69,6 @@
           'common/profiling.h',
           'common/ref_counted_util.h',
           'common/safe_browsing/safebrowsing_messages.h',
-          'common/sandbox_policy.cc',
-          'common/sandbox_policy.h',
           'common/switch_utils.cc',
           'common/switch_utils.h',
           'common/time_format.cc',
@@ -82,7 +82,7 @@
   'targets': [
     {
       'target_name': 'common',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '899F1280-3441-4D1F-BA04-CCD6208D9146',
       'variables': {
         'chrome_common_target': 1,
@@ -106,10 +106,12 @@
         'default_plugin/default_plugin.gyp:default_plugin',
         'safe_browsing_csd_proto',
         'theme_resources',
+        'theme_resources_standard',
         '../app/app.gyp:app_base',
         '../app/app.gyp:app_resources',
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
+        '../base/base.gyp:base_static',
         '../build/temp_gyp/googleurl.gyp:googleurl',
         '../content/content.gyp:content_common',
         '../ipc/ipc.gyp:ipc',
@@ -134,10 +136,14 @@
         'common/automation_messages_internal.h',
         'common/badge_util.cc',
         'common/badge_util.h',
+        'common/bzip2_error_handler.cc',
         'common/chrome_content_client.cc',
         'common/chrome_content_client.h',
         'common/chrome_content_plugin_client.cc',
         'common/chrome_content_plugin_client.h',
+        'common/cloud_print/cloud_print_proxy_info.cc',
+        'common/cloud_print/cloud_print_proxy_info.h',
+        'common/common_api.h',
         'common/common_glue.cc',
         'common/common_message_generator.cc',
         'common/common_message_generator.h',
@@ -155,8 +161,6 @@
         'common/extensions/extension_constants.h',
         'common/extensions/extension_error_utils.cc',
         'common/extensions/extension_error_utils.h',
-        'common/extensions/extension_extent.cc',
-        'common/extensions/extension_extent.h',
         'common/extensions/extension_file_util.cc',
         'common/extensions/extension_file_util.h',
         'common/extensions/extension_icon_set.cc',
@@ -179,11 +183,13 @@
         'common/extensions/extension_unpacker.cc',
         'common/extensions/extension_unpacker.h',
         'common/extensions/file_browser_handler.cc',
-        'common/extensions/file_browser_hanlder.h',
+        'common/extensions/file_browser_handler.h',
         'common/extensions/update_manifest.cc',
         'common/extensions/update_manifest.h',
         'common/extensions/url_pattern.cc',
         'common/extensions/url_pattern.h',
+        'common/extensions/url_pattern_set.cc',
+        'common/extensions/url_pattern_set.h',
         'common/extensions/user_script.cc',
         'common/extensions/user_script.h',
         'common/favicon_url.cc',
@@ -205,14 +211,13 @@
         'common/pref_store.cc',
         'common/pref_store.h',
         'common/print_messages.h',
-        'common/remoting/chromoting_host_info.cc',
-        'common/remoting/chromoting_host_info.h',
+        'common/random.cc',
+        'common/random.h',
         'common/render_messages.cc',
         'common/render_messages.h',
         '<(protoc_out_dir)/chrome/common/safe_browsing/csd.pb.cc',
         '<(protoc_out_dir)/chrome/common/safe_browsing/csd.pb.h',
         'common/search_provider.h',
-        'common/security_style.h',
         'common/service_messages.h',
         'common/service_process_util.cc',
         'common/service_process_util.h',
@@ -226,13 +231,13 @@
         'common/spellcheck_messages.h',
         'common/sqlite_utils.cc',
         'common/sqlite_utils.h',
+        'common/text_input_client_messages.cc',
+        'common/text_input_client_messages.h',
         'common/thumbnail_score.cc',
         'common/thumbnail_score.h',
         'common/url_constants.cc',
         'common/url_constants.h',
         'common/utility_messages.h',
-        'common/view_types.cc',
-        'common/view_types.h',
         'common/visitedlink_common.cc',
         'common/visitedlink_common.h',
         'common/web_apps.cc',
@@ -245,7 +250,7 @@
         'common/zip.h',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
           ],
@@ -261,7 +266,7 @@
             ],
           },
         },],
-        [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd" or OS == "solaris"', {
+        ['os_posix == 1 and OS != "mac"', {
           'include_dirs': [
             '<(SHARED_INTERMEDIATE_DIR)',
           ],
@@ -323,33 +328,25 @@
             '../third_party/GTM',
           ],
         }],
-        ['OS!="win"', {
-          'sources!': [
-            'common/sandbox_policy.cc',
-          ],
-        }],
         ['remoting==1', {
           'dependencies': [
-            '../remoting/remoting.gyp:chromoting_plugin',
+            '../remoting/remoting.gyp:remoting_client_plugin',
           ],
         }],
       ],
       'export_dependent_settings': [
         '../app/app.gyp:app_base',
+        '../base/base.gyp:base',
       ],
     },
     {
       'target_name': 'common_net',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         'common/net/http_return.h',
         'common/net/net_resource_provider.cc',
         'common/net/net_resource_provider.h',
         'common/net/predictor_common.h',
-        'common/net/raw_host_resolver_proc.cc',
-        'common/net/raw_host_resolver_proc.h',
-        'common/net/url_fetcher.cc',
-        'common/net/url_fetcher.h',
         'common/net/gaia/gaia_auth_consumer.cc',
         'common/net/gaia/gaia_auth_consumer.h',
         'common/net/gaia/gaia_auth_fetcher.cc',
@@ -377,19 +374,9 @@
         '../third_party/icu/icu.gyp:icuuc',
       ],
       'conditions': [
-        [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd"', {
-            'conditions': [
-              ['use_openssl==1', {
-                 'dependencies': [
-                   '../third_party/openssl/openssl.gyp:openssl',
-                 ],
-               },
-               { # else !use_openssl
-                'dependencies': [
-                  '../build/linux/system.gyp:nss',
-                ],
-               },
-              ],
+        ['os_posix == 1 and OS != "mac"', {
+            'dependencies': [
+              '../build/linux/system.gyp:ssl',
             ],
           },
           {  # else: OS is not in the above list
@@ -458,6 +445,7 @@
       'export_dependent_settings': [
         '../third_party/protobuf/protobuf.gyp:protobuf_lite',
       ],
+      'hard_dependency': 1,
     },
   ],
   'conditions': [
@@ -465,7 +453,7 @@
       'targets': [
         {
           'target_name': 'common_nacl_win64',
-          'type': '<(library)',
+          'type': 'static_library',
           'msvs_guid': '3AB5C5E9-470C-419B-A0AE-C7381FB632FA',
           'variables': {
             'chrome_common_target': 1,
@@ -511,7 +499,6 @@
             '../content/common/socket_stream_dispatcher_dummy.cc',
           ],
           'export_dependent_settings': [
-            '../app/app.gyp:app_base_nacl_win64',
             'app/policy/cloud_policy_codegen.gyp:policy_win64',
           ],
           # TODO(gregoryd): This could be shared with the 32-bit target, but

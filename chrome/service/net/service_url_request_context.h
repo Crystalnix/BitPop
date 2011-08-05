@@ -8,8 +8,8 @@
 
 #include <string>
 
+#include "base/memory/scoped_ptr.h"
 #include "net/base/cookie_monster.h"
-#include "net/base/cookie_policy.h"
 #include "net/base/host_resolver.h"
 #include "net/base/ssl_config_service_defaults.h"
 #include "net/disk_cache/disk_cache.h"
@@ -17,12 +17,16 @@
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_layer.h"
-#include "net/proxy/proxy_service.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "net/url_request/url_request_context_storage.h"
 
 namespace base {
 class MessageLoopProxy;
+}
+
+namespace net {
+class ProxyConfigService;
 }
 
 // Subclass of net::URLRequestContext which can be used to store extra
@@ -31,8 +35,10 @@ class MessageLoopProxy;
 //
 class ServiceURLRequestContext : public net::URLRequestContext {
  public:
-  explicit ServiceURLRequestContext(const std::string& user_agent,
-                                    net::ProxyService* net_proxy_service);
+  // This context takes ownership of |net_proxy_config_service|.
+  explicit ServiceURLRequestContext(
+      const std::string& user_agent,
+      net::ProxyConfigService* net_proxy_config_service);
 
   // Overridden from net::URLRequestContext:
   virtual const std::string& GetUserAgent(const GURL& url) const;
@@ -42,6 +48,7 @@ class ServiceURLRequestContext : public net::URLRequestContext {
 
  private:
   std::string user_agent_;
+  net::URLRequestContextStorage storage_;
 };
 
 class ServiceURLRequestContextGetter : public net::URLRequestContextGetter {
@@ -61,12 +68,10 @@ class ServiceURLRequestContextGetter : public net::URLRequestContextGetter {
   ServiceURLRequestContextGetter();
   virtual ~ServiceURLRequestContextGetter();
 
-  void CreateProxyService();
-
   std::string user_agent_;
   scoped_refptr<net::URLRequestContext> url_request_context_;
   scoped_refptr<base::MessageLoopProxy> io_message_loop_proxy_;
-  scoped_refptr<net::ProxyService> proxy_service_;
+  scoped_ptr<net::ProxyConfigService> proxy_config_service_;
 };
 
 #endif  // CHROME_SERVICE_NET_SERVICE_URL_REQUEST_CONTEXT_H_

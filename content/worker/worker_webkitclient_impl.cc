@@ -14,6 +14,7 @@
 #include "content/common/webmessageportchannel_impl.h"
 #include "content/worker/worker_thread.h"
 #include "ipc/ipc_sync_message_filter.h"
+#include "net/base/mime_util.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebBlobRegistry.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebURL.h"
@@ -178,22 +179,27 @@ WebSharedWorkerRepository* WorkerWebKitClientImpl::sharedWorkerRepository() {
 
 WebKitClient::FileHandle WorkerWebKitClientImpl::databaseOpenFile(
     const WebString& vfs_file_name, int desired_flags) {
-  return DatabaseUtil::databaseOpenFile(vfs_file_name, desired_flags);
+  return DatabaseUtil::DatabaseOpenFile(vfs_file_name, desired_flags);
 }
 
 int WorkerWebKitClientImpl::databaseDeleteFile(
     const WebString& vfs_file_name, bool sync_dir) {
-  return DatabaseUtil::databaseDeleteFile(vfs_file_name, sync_dir);
+  return DatabaseUtil::DatabaseDeleteFile(vfs_file_name, sync_dir);
 }
 
 long WorkerWebKitClientImpl::databaseGetFileAttributes(
     const WebString& vfs_file_name) {
-  return DatabaseUtil::databaseGetFileAttributes(vfs_file_name);
+  return DatabaseUtil::DatabaseGetFileAttributes(vfs_file_name);
 }
 
 long long WorkerWebKitClientImpl::databaseGetFileSize(
     const WebString& vfs_file_name) {
-  return DatabaseUtil::databaseGetFileSize(vfs_file_name);
+  return DatabaseUtil::DatabaseGetFileSize(vfs_file_name);
+}
+
+long long WorkerWebKitClientImpl::databaseGetSpaceAvailableForOrigin(
+    const WebString& origin_identifier) {
+  return DatabaseUtil::DatabaseGetSpaceAvailable(origin_identifier);
 }
 
 WebMimeRegistry::SupportsType WorkerWebKitClientImpl::supportsMIMEType(
@@ -230,6 +236,14 @@ WebString WorkerWebKitClientImpl::mimeTypeForExtension(
   std::string mime_type;
   SendSyncMessageFromAnyThread(new MimeRegistryMsg_GetMimeTypeFromExtension(
       webkit_glue::WebStringToFilePathString(file_extension), &mime_type));
+  return ASCIIToUTF16(mime_type);
+}
+
+WebString WorkerWebKitClientImpl::wellKnownMimeTypeForExtension(
+    const WebString& file_extension) {
+  std::string mime_type;
+  net::GetWellKnownMimeTypeFromExtension(
+      webkit_glue::WebStringToFilePathString(file_extension), &mime_type);
   return ASCIIToUTF16(mime_type);
 }
 

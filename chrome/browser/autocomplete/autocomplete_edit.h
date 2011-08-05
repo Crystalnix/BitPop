@@ -19,10 +19,10 @@
 class AutocompleteController;
 class AutocompleteEditController;
 class AutocompleteEditModel;
-class AutocompleteEditView;
 class AutocompletePopupModel;
 class AutocompleteResult;
 class InstantController;
+class OmniboxView;
 class Profile;
 class SkBitmap;
 class TabContentsWrapper;
@@ -55,7 +55,7 @@ class AutocompleteEditController {
   // status of any keyword- or hint-related state.
   virtual void OnChanged() = 0;
 
-  // Called when the selection of the AutocompleteEditView changes.
+  // Called when the selection of the OmniboxView changes.
   virtual void OnSelectionBoundsChanged() = 0;
 
   // Called whenever the user starts or stops an input session (typing,
@@ -100,10 +100,10 @@ class AutocompleteEditModel : public AutocompleteControllerDelegate {
     const bool is_keyword_hint;
   };
 
-  AutocompleteEditModel(AutocompleteEditView* view,
+  AutocompleteEditModel(OmniboxView* view,
                         AutocompleteEditController* controller,
                         Profile* profile);
-  ~AutocompleteEditModel();
+  virtual ~AutocompleteEditModel();
 
   AutocompleteController* autocomplete_controller() const {
     return autocomplete_controller_.get();
@@ -230,13 +230,10 @@ class AutocompleteEditModel : public AutocompleteControllerDelegate {
   // Navigates to the destination last supplied to CanPasteAndGo.
   void PasteAndGo();
 
-  // Returns the url set by way of CanPasteAndGo.
-  const GURL& paste_and_go_url() const { return paste_and_go_url_; }
-
   // Returns true if this is a paste-and-search rather than paste-and-go (or
   // nothing).
   bool is_paste_and_search() const {
-    return (paste_and_go_transition_ != PageTransition::TYPED);
+    return (paste_and_go_match_.transition != PageTransition::TYPED);
   }
 
   // Asks the browser to load the popup's currently selected item, using the
@@ -248,12 +245,11 @@ class AutocompleteEditModel : public AutocompleteControllerDelegate {
                    bool for_drop);
 
   // Asks the browser to load the item at |index|, with the given properties.
-  void OpenURL(const GURL& url,
-               WindowOpenDisposition disposition,
-               PageTransition::Type transition,
-               const GURL& alternate_nav_url,
-               size_t index,
-               const string16& keyword);
+  void OpenMatch(const AutocompleteMatch& match,
+                 WindowOpenDisposition disposition,
+                 const GURL& alternate_nav_url,
+                 size_t index,
+                 const string16& keyword);
 
   bool has_focus() const { return has_focus_; }
 
@@ -318,9 +314,9 @@ class AutocompleteEditModel : public AutocompleteControllerDelegate {
       const string16& keyword,
       bool is_keyword_hint);
 
-  // Called by the AutocompleteEditView after something changes, with details
-  // about what state changes occured.  Updates internal state, updates the
-  // popup if necessary, and returns true if any significant changes occurred.
+  // Called by the OmniboxView after something changes, with details about what
+  // state changes occured.  Updates internal state, updates the popup if
+  // necessary, and returns true if any significant changes occurred.
   // If |allow_keyword_ui_change| is false then the change should not affect
   // keyword ui state, even if the text matches a keyword exactly. This value
   // may be false when the user is composing a text with an IME.
@@ -439,7 +435,7 @@ class AutocompleteEditModel : public AutocompleteControllerDelegate {
 
   scoped_ptr<AutocompleteController> autocomplete_controller_;
 
-  AutocompleteEditView* view_;
+  OmniboxView* view_;
 
   AutocompletePopupModel* popup_;
 
@@ -528,8 +524,7 @@ class AutocompleteEditModel : public AutocompleteControllerDelegate {
   bool is_keyword_hint_;
 
   // Paste And Go-related state.  See CanPasteAndGo().
-  mutable GURL paste_and_go_url_;
-  mutable PageTransition::Type paste_and_go_transition_;
+  mutable AutocompleteMatch paste_and_go_match_;
   mutable GURL paste_and_go_alternate_nav_url_;
 
   Profile* profile_;

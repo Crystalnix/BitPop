@@ -13,7 +13,6 @@
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/background_page_tracker.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/prefs/pref_service.h"
@@ -21,6 +20,7 @@
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/sync_ui_util.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
+#include "chrome/browser/task_manager/task_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/toolbar/encoding_menu_controller.h"
 #include "chrome/browser/upgrade_detector.h"
@@ -38,18 +38,13 @@
 #include "ui/base/models/button_menu_item_model.h"
 #include "ui/base/resource/resource_bundle.h"
 
-#if defined(OS_LINUX)
+#if defined(TOOLKIT_USES_GTK)
 #include <gtk/gtk.h>
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #endif
 
 #if defined(OS_MACOSX)
 #include "chrome/browser/ui/browser_window.h"
-#endif
-
-#if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/cros/update_library.h"
 #endif
 
 #if defined(OS_WIN)
@@ -154,10 +149,6 @@ ToolsMenuModel::ToolsMenuModel(ui::SimpleMenuModel::Delegate* delegate,
 ToolsMenuModel::~ToolsMenuModel() {}
 
 void ToolsMenuModel::Build(Browser* browser) {
-  AddCheckItemWithStringId(IDC_SHOW_BOOKMARK_BAR, IDS_SHOW_BOOKMARK_BAR);
-
-  AddSeparator();
-
 #if !defined(OS_CHROMEOS)
 #if defined(OS_MACOSX)
   AddItemWithStringId(IDC_CREATE_SHORTCUTS, IDS_CREATE_APPLICATION_MAC);
@@ -196,6 +187,29 @@ void ToolsMenuModel::Build(Browser* browser) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// BookmarkSubMenuModel
+
+BookmarkSubMenuModel::BookmarkSubMenuModel(
+    ui::SimpleMenuModel::Delegate* delegate, Browser* browser)
+    : SimpleMenuModel(delegate) {
+  Build(browser);
+}
+
+BookmarkSubMenuModel::~BookmarkSubMenuModel() {}
+
+void BookmarkSubMenuModel::Build(Browser* browser) {
+  AddCheckItemWithStringId(IDC_SHOW_BOOKMARK_BAR, IDS_SHOW_BOOKMARK_BAR);
+  AddItemWithStringId(IDC_SHOW_BOOKMARK_MANAGER, IDS_BOOKMARK_MANAGER);
+  AddItemWithStringId(IDC_IMPORT_SETTINGS, IDS_IMPORT_SETTINGS_TITLE);
+#if defined(OS_MACOSX) || defined(TOOLKIT_VIEWS)
+  AddSeparator();
+#else
+  // TODO: add submenu for bookmarks themselves, restore separator.
+#endif
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
 // WrenchMenuModel
 
 WrenchMenuModel::WrenchMenuModel(ui::AcceleratorProvider* provider,
@@ -210,7 +224,7 @@ WrenchMenuModel::WrenchMenuModel(ui::AcceleratorProvider* provider,
   tabstrip_model_->AddObserver(this);
 
   registrar_.Add(this, NotificationType::ZOOM_LEVEL_CHANGED,
-                 Source<Profile>(browser_->profile()));
+                 Source<HostZoomMap>(browser_->profile()->GetHostZoomMap()));
   registrar_.Add(this, NotificationType::NAV_ENTRY_COMMITTED,
                  NotificationService::AllSources());
 }
@@ -251,7 +265,7 @@ string16 WrenchMenuModel::GetLabelForCommandId(int command_id) const {
 #endif
     case IDC_VIEW_BACKGROUND_PAGES: {
       string16 num_background_pages = base::FormatNumber(
-          BackgroundPageTracker::GetInstance()->GetBackgroundPageCount());
+          TaskManager::GetBackgroundPageCount());
       return l10n_util::GetStringFUTF16(IDS_VIEW_BACKGROUND_PAGES,
                                         num_background_pages);
     }
@@ -273,28 +287,15 @@ string16 WrenchMenuModel::GetLabelForCommandId(int command_id) const {
 
 bool WrenchMenuModel::GetIconForCommandId(int command_id,
                                           SkBitmap* icon) const {
+  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
   switch (command_id) {
     case IDC_UPGRADE_DIALOG: {
-      ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-      int resource_id;
-      UpgradeDetector::UpgradeNotificationAnnoyanceLevel stage =
-          UpgradeDetector::GetInstance()->upgrade_notification_stage();
-      switch (stage) {
-        case UpgradeDetector::UPGRADE_ANNOYANCE_SEVERE:
-          resource_id = IDR_UPDATE_MENU4;
-          break;
-        case UpgradeDetector::UPGRADE_ANNOYANCE_HIGH:
-          resource_id = IDR_UPDATE_MENU3;
-          break;
-        case UpgradeDetector::UPGRADE_ANNOYANCE_ELEVATED:
-          resource_id = IDR_UPDATE_MENU2;
-          break;
-        default:
-          resource_id = IDR_UPDATE_MENU;
-          break;
+      if (UpgradeDetector::GetInstance()->notify_upgrade()) {
+        *icon = rb.GetNativeImageNamed(
+            UpgradeDetector::GetInstance()->GetIconResourceID(
+                UpgradeDetector::UPGRADE_ICON_TYPE_MENU_ICON));
+        return true;
       }
-      *icon = *rb.GetBitmapNamed(resource_id);
-      break;
     }
     default:
       break;
@@ -326,12 +327,7 @@ bool WrenchMenuModel::IsCommandIdEnabled(int command_id) const {
 
 bool WrenchMenuModel::IsCommandIdVisible(int command_id) const {
   if (command_id == IDC_UPGRADE_DIALOG) {
-#if defined(OS_CHROMEOS)
-    return (chromeos::CrosLibrary::Get()->GetUpdateLibrary()->status().status
-            == chromeos::UPDATE_STATUS_UPDATED_NEED_REBOOT);
-#else
     return UpgradeDetector::GetInstance()->notify_upgrade();
-#endif
   } else if (command_id == IDC_VIEW_INCOMPATIBILITIES) {
 #if defined(OS_WIN)
     EnumerateModulesModel* loaded_modules =
@@ -344,8 +340,7 @@ bool WrenchMenuModel::IsCommandIdVisible(int command_id) const {
     return false;
 #endif
   } else if (command_id == IDC_VIEW_BACKGROUND_PAGES) {
-    BackgroundPageTracker* tracker = BackgroundPageTracker::GetInstance();
-    return tracker->GetBackgroundPageCount() > 0;
+    return TaskManager::GetBackgroundPageCount() > 0;
   }
   return true;
 }
@@ -356,10 +351,10 @@ bool WrenchMenuModel::GetAcceleratorForCommandId(
   return provider_->GetAcceleratorForCommandId(command_id, accelerator);
 }
 
-void WrenchMenuModel::TabSelectedAt(TabContentsWrapper* old_contents,
-                                    TabContentsWrapper* new_contents,
-                                    int index,
-                                    bool user_gesture) {
+void WrenchMenuModel::ActiveTabChanged(TabContentsWrapper* old_contents,
+                                       TabContentsWrapper* new_contents,
+                                       int index,
+                                       bool user_gesture) {
   // The user has switched between tabs and the new tab may have a different
   // zoom setting.
   UpdateZoomControls();
@@ -411,7 +406,7 @@ void WrenchMenuModel::Build() {
 #endif
 
   AddSeparator();
-#if defined(OS_MACOSX) || (defined(OS_LINUX) && !defined(TOOLKIT_VIEWS))
+#if defined(OS_POSIX) && !defined(TOOLKIT_VIEWS)
   // WARNING: Mac does not use the ButtonMenuItemModel, but instead defines the
   // layout for this menu item in Toolbar.xib. It does, however, use the
   // command_id value from AddButtonItem() to identify this special item.
@@ -426,7 +421,7 @@ void WrenchMenuModel::Build() {
 #endif
 
   AddSeparator();
-#if defined(OS_MACOSX) || (defined(OS_LINUX) && !defined(TOOLKIT_VIEWS))
+#if defined(OS_POSIX) && !defined(TOOLKIT_VIEWS)
   // WARNING: See above comment.
   zoom_menu_item_model_.reset(
       new ui::ButtonMenuItemModel(IDS_ZOOM_MENU, this));
@@ -455,7 +450,10 @@ void WrenchMenuModel::Build() {
                          tools_menu_model_.get());
 
   AddSeparator();
-  AddItemWithStringId(IDC_SHOW_BOOKMARK_MANAGER, IDS_BOOKMARK_MANAGER);
+
+  bookmark_sub_menu_model_.reset(new BookmarkSubMenuModel(this, browser_));
+  AddSubMenuWithStringId(IDC_BOOKMARKS_MENU, IDS_BOOKMARKS_MENU,
+                         bookmark_sub_menu_model_.get());
   AddItemWithStringId(IDC_SHOW_HISTORY, IDS_SHOW_HISTORY);
   AddItemWithStringId(IDC_SHOW_DOWNLOADS, IDS_SHOW_DOWNLOADS);
   AddSeparator();
@@ -464,7 +462,7 @@ void WrenchMenuModel::Build() {
   AddItemWithStringId(IDC_OPTIONS, IDS_SETTINGS);
 #elif defined(OS_MACOSX)
   AddItemWithStringId(IDC_OPTIONS, IDS_PREFERENCES);
-#elif defined(OS_LINUX)
+#elif defined(TOOLKIT_USES_GTK)
   string16 preferences = gtk_util::GetStockPreferencesMenuLabel();
   if (!preferences.empty())
     AddItem(IDC_OPTIONS, preferences);
@@ -481,7 +479,7 @@ void WrenchMenuModel::Build() {
 #endif
   AddItem(IDC_ABOUT, l10n_util::GetStringFUTF16(IDS_ABOUT, product_name));
   string16 num_background_pages = base::FormatNumber(
-      BackgroundPageTracker::GetInstance()->GetBackgroundPageCount());
+      TaskManager::GetBackgroundPageCount());
   AddItem(IDC_VIEW_BACKGROUND_PAGES, l10n_util::GetStringFUTF16(
       IDS_VIEW_BACKGROUND_PAGES, num_background_pages));
   AddItem(IDC_UPGRADE_DIALOG, l10n_util::GetStringFUTF16(

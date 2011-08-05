@@ -4,29 +4,29 @@
 
 #include "skia/ext/platform_canvas.h"
 
-#include "skia/ext/bitmap_platform_device_mac.h"
+#include "skia/ext/bitmap_platform_device.h"
 #include "third_party/skia/include/core/SkTypes.h"
 
 namespace skia {
 
-PlatformCanvas::PlatformCanvas(int width, int height, bool is_opaque)
-    : SkCanvas(SkNEW(BitmapPlatformDeviceFactory)) {
+PlatformCanvas::PlatformCanvas(int width, int height, bool is_opaque) {
+  setDeviceFactory(SkNEW(BitmapPlatformDeviceFactory))->unref();
   initialize(width, height, is_opaque);
 }
 
 PlatformCanvas::PlatformCanvas(int width,
                                int height,
                                bool is_opaque,
-                               CGContextRef context)
-    : SkCanvas(SkNEW(BitmapPlatformDeviceFactory)) {
+                               CGContextRef context) {
+  setDeviceFactory(SkNEW(BitmapPlatformDeviceFactory))->unref();
   initialize(context, width, height, is_opaque);
 }
 
 PlatformCanvas::PlatformCanvas(int width,
                                int height,
                                bool is_opaque,
-                               uint8_t* data)
-    : SkCanvas(SkNEW(BitmapPlatformDeviceFactory)) {
+                               uint8_t* data) {
+  setDeviceFactory(SkNEW(BitmapPlatformDeviceFactory))->unref();
   initialize(width, height, is_opaque, data);
 }
 
@@ -47,14 +47,6 @@ bool PlatformCanvas::initialize(CGContextRef context,
                                 bool is_opaque) {
   return initializeWithDevice(BitmapPlatformDevice::Create(
       context, width, height, is_opaque));
-}
-
-CGContextRef PlatformCanvas::beginPlatformPaint() const {
-  return getTopPlatformDevice().BeginPlatformPaint();
-}
-
-void PlatformCanvas::endPlatformPaint() const {
-  getTopPlatformDevice().EndPlatformPaint();
 }
 
 }  // namespace skia

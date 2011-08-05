@@ -7,12 +7,13 @@
 #include "base/shared_memory.h"
 #include "base/timer.h"
 #include "build/build_config.h"
-#include "chrome/common/render_messages.h"
 #include "chrome/test/testing_profile.h"
 #include "content/browser/browser_thread.h"
 #include "content/browser/renderer_host/backing_store.h"
 #include "content/browser/renderer_host/test_render_view_host.h"
 #include "content/common/notification_details.h"
+#include "content/common/notification_observer.h"
+#include "content/common/notification_registrar.h"
 #include "content/common/notification_source.h"
 #include "content/common/view_messages.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -426,7 +427,7 @@ TEST_F(RenderWidgetHostTest, ResizeThenCrash) {
 
 // Tests setting custom background
 TEST_F(RenderWidgetHostTest, Background) {
-#if defined(OS_WIN) || defined(OS_LINUX)
+#if !defined(OS_MACOSX)
   scoped_ptr<RenderWidgetHostView> view(
       RenderWidgetHostView::CreateViewForWidget(host_.get()));
   host_->set_view(view.get());

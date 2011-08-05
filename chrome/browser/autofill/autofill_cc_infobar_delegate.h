@@ -12,13 +12,15 @@
 #include "base/string16.h"
 #include "chrome/browser/autofill/autofill_metrics.h"
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
-#include "content/browser/tab_contents/navigation_controller.h"
 #include "webkit/glue/window_open_disposition.h"
 
 class CreditCard;
 class PersonalDataManager;
 class SkBitmap;
 class TabContents;
+namespace content {
+struct LoadCommittedDetails;
+}
 
 // An InfoBar delegate that enables the user to allow or deny storing credit
 // card information gathered from a form submission.
@@ -32,21 +34,20 @@ class AutofillCCInfoBarDelegate : public ConfirmInfoBarDelegate {
  private:
   virtual ~AutofillCCInfoBarDelegate();
 
-  void LogUserAction(AutofillMetrics::CreditCardInfoBarMetric user_action);
+  void LogUserAction(AutofillMetrics::InfoBarMetric user_action);
 
   // ConfirmInfoBarDelegate:
   virtual bool ShouldExpire(
-      const NavigationController::LoadCommittedDetails& details) const;
-  virtual void InfoBarClosed();
-  virtual void InfoBarDismissed();
-  virtual SkBitmap* GetIcon() const;
-  virtual Type GetInfoBarType() const;
-  virtual string16 GetMessageText() const;
-  virtual string16 GetButtonLabel(InfoBarButton button) const;
-  virtual bool Accept();
-  virtual bool Cancel();
-  virtual string16 GetLinkText();
-  virtual bool LinkClicked(WindowOpenDisposition disposition);
+      const content::LoadCommittedDetails& details) const OVERRIDE;
+  virtual void InfoBarDismissed() OVERRIDE;
+  virtual gfx::Image* GetIcon() const OVERRIDE;
+  virtual Type GetInfoBarType() const OVERRIDE;
+  virtual string16 GetMessageText() const OVERRIDE;
+  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual bool Accept() OVERRIDE;
+  virtual bool Cancel() OVERRIDE;
+  virtual string16 GetLinkText() OVERRIDE;
+  virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
 
   // The credit card that should be saved if the user accepts the infobar.
   scoped_ptr<const CreditCard> credit_card_;

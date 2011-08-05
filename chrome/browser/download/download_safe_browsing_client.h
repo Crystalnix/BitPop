@@ -6,12 +6,10 @@
 #define CHROME_BROWSER_DOWNLOAD_DOWNLOAD_SAFE_BROWSING_CLIENT_H_
 #pragma once
 
-#include "base/callback.h"
+#include "base/callback_old.h"
 #include "base/memory/ref_counted.h"
 #include "base/time.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
-
-struct DownloadCreateInfo;
 
 // This is a helper class used by DownloadManager to check a download URL with
 // SafeBrowsingService. The client is refcounted and will be  released once
@@ -32,7 +30,7 @@ class DownloadSBClient
     : public SafeBrowsingService::Client,
       public base::RefCountedThreadSafe<DownloadSBClient> {
  public:
-  typedef Callback2<DownloadCreateInfo*, bool>::Type UrlDoneCallback;
+  typedef Callback2<int32, bool>::Type UrlDoneCallback;
   typedef Callback2<int32, bool>::Type HashDoneCallback;
 
   DownloadSBClient(int32 download_id,
@@ -43,7 +41,7 @@ class DownloadSBClient
   // For each DownloadSBClient instance, either CheckDownloadUrl or
   // CheckDownloadHash can be called, and be called only once.
   // DownloadSBClient instance.
-  void CheckDownloadUrl(DownloadCreateInfo* info, UrlDoneCallback* callback);
+  void CheckDownloadUrl(UrlDoneCallback* callback);
   void CheckDownloadHash(const std::string& hash, HashDoneCallback* callback);
 
  private:
@@ -76,23 +74,31 @@ class DownloadSBClient
   };
 
   friend class base::RefCountedThreadSafe<DownloadSBClient>;
+  friend class DownloadSBClientTest_UrlHit_Test;
+  friend class DownloadSBClientTest_DigestHit_Test;
+
+  // Set the |sb_service_| manually for testing purposes.
+  void SetSBService(SafeBrowsingService* service) {
+    sb_service_ = service;
+  }
+
   virtual ~DownloadSBClient();
 
   // Call DownloadManager on UI thread for download URL or hash check.
   void SafeBrowsingCheckUrlDone(SafeBrowsingService::UrlCheckResult result);
-  void SafeBrowsingCheckHashDone(SafeBrowsingService::UrlCheckResult result);
+  void SafeBrowsingCheckHashDone(SafeBrowsingService::UrlCheckResult result,
+                                 const std::string& hash);
 
-  // Report malware hits to safebrowsing service.
-  void ReportMalware(SafeBrowsingService::UrlCheckResult result);
+  // Report malware hits to safebrowsing service.  |hash| should be empty if
+  // this is an URL check result.
+  void ReportMalware(SafeBrowsingService::UrlCheckResult result,
+                     const std::string& hash);
 
   // Update the UMA stats.
   void UpdateDownloadCheckStats(SBStatsType stat_type);
 
   scoped_ptr<UrlDoneCallback> url_done_callback_;
   scoped_ptr<HashDoneCallback> hash_done_callback_;
-
-  // Not owned by this class.
-  DownloadCreateInfo* info_;
 
   int32 download_id_;
   scoped_refptr<SafeBrowsingService> sb_service_;

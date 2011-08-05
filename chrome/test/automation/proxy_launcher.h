@@ -9,9 +9,10 @@
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/process.h"
+#include "base/scoped_temp_dir.h"
 #include "base/time.h"
 
 class AutomationProxy;
@@ -56,11 +57,8 @@ class ProxyLauncher {
     // Profile theme type.
     ProfileType profile_type;
 
-    // Path to the browser executable.
-    FilePath browser_directory;
-
-    // Command line arguments passed to the browser.
-    CommandLine arguments;
+    // Command line to launch the browser.
+    CommandLine command;
 
     // Should we supply the testing channel id on the command line?
     bool include_testing_id;
@@ -82,21 +80,23 @@ class ProxyLauncher {
   virtual void TerminateConnection() = 0;
 
   // Launches the browser and IPC testing connection in server mode.
-  void LaunchBrowserAndServer(const LaunchState& state,
-                              bool wait_for_initial_loads);
+  // Returns true on success.
+  bool LaunchBrowserAndServer(const LaunchState& state,
+                              bool wait_for_initial_loads) WARN_UNUSED_RESULT;
 
   // Launches the IPC testing connection in client mode,
   // which then attempts to connect to a browser.
-  void ConnectToRunningBrowser(bool wait_for_initial_loads);
+  // Returns true on success.
+  bool ConnectToRunningBrowser(bool wait_for_initial_loads) WARN_UNUSED_RESULT;
 
   // Paired with LaunchBrowserAndServer().
   // Closes the browser and IPC testing server.
   void CloseBrowserAndServer();
 
-  // Launches the browser with the given command line.
+  // Launches the browser with the given command line. Returns true on success.
   // TODO(phajdan.jr): Make LaunchBrowser private. Tests should use
   // LaunchAnotherBrowserBlockUntilClosed.
-  void LaunchBrowser(const LaunchState& state);
+  bool LaunchBrowser(const LaunchState& state) WARN_UNUSED_RESULT;
 
 #if !defined(OS_MACOSX)
   // This function is not defined on the Mac because the concept
@@ -116,13 +116,6 @@ class ProxyLauncher {
   // Check that no processes related to Chrome exist, displaying
   // the given message if any do.
   void AssertAppNotRunning(const std::wstring& error_message);
-
-  // Returns true when the browser process is running, independent if any
-  // renderer process exists or not. It will returns false if an user closed the
-  // window or if the browser process died by itself.
-  // TODO(phajdan.jr): Get rid of IsBrowserRunning, it is difficult
-  // to make it simple and reliable.
-  bool IsBrowserRunning();
 
   // Wait for the browser process to shut down on its own (i.e. as a result of
   // some action that your test has taken). If it has exited within |timeout|,
@@ -183,13 +176,6 @@ class ProxyLauncher {
     disable_breakpad_ = value;
   }
 
-  // Get/Set a flag to run the plugin processes inside the sandbox when running
-  // the tests
-  static bool safe_plugins() { return safe_plugins_; }
-  static void set_safe_plugins(bool value) {
-    safe_plugins_ = value;
-  }
-
   static bool show_error_dialogs() { return show_error_dialogs_; }
   static void set_show_error_dialogs(bool value) {
     show_error_dialogs_ = value;
@@ -233,20 +219,15 @@ class ProxyLauncher {
   }
 
  private:
-  void WaitForBrowserLaunch(bool wait_for_initial_loads);
+  bool WaitForBrowserLaunch(bool wait_for_initial_loads) WARN_UNUSED_RESULT;
 
   // Prepare command line that will be used to launch the child browser process.
   void PrepareTestCommandline(CommandLine* command_line,
                               bool include_testing_id);
 
-  bool LaunchBrowserHelper(const LaunchState& state, bool wait,
-                           base::ProcessHandle* process);
-
-  // Wait a certain amount of time for all the app processes to exit,
-  // forcibly killing them if they haven't exited by then.
-  // It has the side-effect of killing every browser window opened in your
-  // session, even those unrelated in the test.
-  void CleanupAppProcesses();
+  bool LaunchBrowserHelper(const LaunchState& state,
+                           bool wait,
+                           base::ProcessHandle* process) WARN_UNUSED_RESULT;
 
   scoped_ptr<AutomationProxy> automation_proxy_;
 
@@ -274,9 +255,6 @@ class ProxyLauncher {
 
   // If true, runs the renderer outside the sandbox.
   static bool no_sandbox_;
-
-  // If true, runs plugin processes inside the sandbox.
-  static bool safe_plugins_;
 
   // If true, write full memory dump during crash.
   static bool full_memory_dump_;

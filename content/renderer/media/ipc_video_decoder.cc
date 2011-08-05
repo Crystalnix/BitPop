@@ -6,7 +6,7 @@
 
 #include "base/task.h"
 #include "content/common/child_process.h"
-#include "content/renderer/renderer_gl_context.h"
+#include "content/renderer/gpu/renderer_gl_context.h"
 #include "media/base/callback.h"
 #include "media/base/filters.h"
 #include "media/base/filter_host.h"
@@ -66,7 +66,7 @@ void IpcVideoDecoder::Initialize(media::DemuxerStream* demuxer_stream,
   // Create a hardware video decoder handle.
   decode_engine_.reset(gl_context_->CreateVideoDecodeEngine());
 
-  media::VideoCodecConfig config(
+  media::VideoDecoderConfig config(
       media::CodecIDToVideoCodec(av_stream->codec->codec_id),
       width, height,
       av_stream->r_frame_rate.num,
@@ -102,8 +102,8 @@ void IpcVideoDecoder::Flush(media::FilterCallback* callback) {
 }
 
 void IpcVideoDecoder::Seek(base::TimeDelta time,
-                           media::FilterCallback* callback) {
-  seek_callback_.reset(callback);
+                           const media::FilterStatusCB& cb) {
+  seek_cb_ = cb;
   decode_engine_->Seek();
 }
 
@@ -155,8 +155,7 @@ void IpcVideoDecoder::OnFlushComplete() {
 
 void IpcVideoDecoder::OnSeekComplete() {
   DCHECK_EQ(ChildProcess::current()->io_message_loop(), MessageLoop::current());
-  seek_callback_->Run();
-  seek_callback_.reset();
+  ResetAndRunCB(&seek_cb_, media::PIPELINE_OK);
 }
 
 void IpcVideoDecoder::OnError() {
@@ -199,5 +198,5 @@ void IpcVideoDecoder::ConsumeVideoFrame(
 // This method is called by VideoDecodeEngine to request a video frame. The
 // request is passed to demuxer.
 void IpcVideoDecoder::ProduceVideoSample(scoped_refptr<media::Buffer> buffer) {
-  demuxer_stream_->Read(NewCallback(this, &IpcVideoDecoder::OnReadComplete));
+  demuxer_stream_->Read(base::Bind(&IpcVideoDecoder::OnReadComplete, this));
 }

@@ -7,16 +7,15 @@
 #pragma once
 
 #include "chrome/browser/chromeos/login/login_status_consumer.h"
-#include "chrome/common/net/gaia/gaia_auth_consumer.h"
 #include "testing/gmock/include/gmock/gmock.h"
-#include "testing/gtest/include/gtest/gtest.h"
 
 namespace chromeos {
 
 class MockConsumer : public LoginStatusConsumer {
  public:
-  MockConsumer() {}
-  ~MockConsumer() {}
+  MockConsumer();
+  virtual ~MockConsumer();
+
   MOCK_METHOD1(OnLoginFailure, void(const LoginFailure& error));
   MOCK_METHOD4(OnLoginSuccess, void(
       const std::string& username,
@@ -30,54 +29,30 @@ class MockConsumer : public LoginStatusConsumer {
   // The following functions can be used in gmock Invoke() clauses.
 
   // Compatible with LoginStatusConsumer::OnOffTheRecordLoginSuccess()
-  static void OnGuestSuccessQuit() {
-    MessageLoop::current()->Quit();
-  }
-
-  static void OnGuestSuccessQuitAndFail() {
-    ADD_FAILURE() << "Guest Login should have failed!";
-    MessageLoop::current()->Quit();
-  }
+  static void OnGuestSuccessQuit();
+  static void OnGuestSuccessQuitAndFail();
 
   // Compatible with LoginStatusConsumer::OnLoginSuccess()
   static void OnSuccessQuit(
       const std::string& username,
       const std::string& password,
       const GaiaAuthConsumer::ClientLoginResult& credentials,
-      bool pending_requests) {
-    MessageLoop::current()->Quit();
-  }
-
+      bool pending_requests);
   static void OnSuccessQuitAndFail(
       const std::string& username,
       const std::string& password,
       const GaiaAuthConsumer::ClientLoginResult& credentials,
-      bool pending_requests) {
-    ADD_FAILURE() << "Login should NOT have succeeded!";
-    MessageLoop::current()->Quit();
-  }
+      bool pending_requests);
 
   // Compatible with LoginStatusConsumer::OnLoginFailure()
-  static void OnFailQuit(const LoginFailure& error) {
-    MessageLoop::current()->Quit();
-  }
-
-  static void OnFailQuitAndFail(const LoginFailure& error) {
-    ADD_FAILURE() << "Login should not have failed!";
-    MessageLoop::current()->Quit();
-  }
+  static void OnFailQuit(const LoginFailure& error);
+  static void OnFailQuitAndFail(const LoginFailure& error);
 
   // Compatible with LoginStatusConsumer::OnPasswordChangeDetected()
   static void OnMigrateQuit(
-      const GaiaAuthConsumer::ClientLoginResult& credentials) {
-    MessageLoop::current()->Quit();
-  }
-
+      const GaiaAuthConsumer::ClientLoginResult& credentials);
   static void OnMigrateQuitAndFail(
-      const GaiaAuthConsumer::ClientLoginResult& credentials) {
-    ADD_FAILURE() << "Should not have detected a PW change!";
-    MessageLoop::current()->Quit();
-  }
+      const GaiaAuthConsumer::ClientLoginResult& credentials);
 };
 
 }  // namespace chromeos

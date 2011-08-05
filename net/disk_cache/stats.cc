@@ -151,7 +151,7 @@ bool Stats::Init(BackendImpl* backend, uint32* storage_addr) {
       // Stats may be reused when the cache is re-created, but we want only one
       // histogram at any given time.
       size_histogram_ =
-          StatsHistogram::StatsHistogramFactoryGet("DiskCache.SizeStats");
+          StatsHistogram::FactoryGet("DiskCache.SizeStats");
       size_histogram_->Init(this);
     }
   }
@@ -175,17 +175,17 @@ void Stats::ModifyStorageStats(int32 old_size, int32 new_size) {
 }
 
 void Stats::OnEvent(Counters an_event) {
-  DCHECK(an_event > MIN_COUNTER || an_event < MAX_COUNTER);
+  DCHECK(an_event >= MIN_COUNTER && an_event < MAX_COUNTER);
   counters_[an_event]++;
 }
 
 void Stats::SetCounter(Counters counter, int64 value) {
-  DCHECK(counter > MIN_COUNTER || counter < MAX_COUNTER);
+  DCHECK(counter >= MIN_COUNTER && counter < MAX_COUNTER);
   counters_[counter] = value;
 }
 
 int64 Stats::GetCounter(Counters counter) const {
-  DCHECK(counter > MIN_COUNTER || counter < MAX_COUNTER);
+  DCHECK(counter >= MIN_COUNTER && counter < MAX_COUNTER);
   return counters_[counter];
 }
 
@@ -197,7 +197,7 @@ void Stats::GetItems(StatsItems* items) {
     items->push_back(item);
   }
 
-  for (int i = MIN_COUNTER + 1; i < MAX_COUNTER; i++) {
+  for (int i = MIN_COUNTER; i < MAX_COUNTER; i++) {
     item.first = kCounterNames[i];
     item.second = base::StringPrintf("0x%" PRIx64, counters_[i]);
     items->push_back(item);

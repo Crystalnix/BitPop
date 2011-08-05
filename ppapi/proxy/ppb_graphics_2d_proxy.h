@@ -15,6 +15,7 @@
 #include "ppapi/cpp/completion_callback.h"
 #include "ppapi/proxy/host_resource.h"
 #include "ppapi/proxy/interface_proxy.h"
+#include "ppapi/proxy/plugin_resource.h"
 #include "ppapi/proxy/proxy_non_thread_safe_ref_count.h"
 
 struct PPB_Graphics2D;
@@ -31,6 +32,10 @@ class PPB_Graphics2D_Proxy : public InterfaceProxy {
 
   static const Info* GetInfo();
 
+  static PP_Resource CreateProxyResource(PP_Instance instance,
+                                         const PP_Size& size,
+                                         PP_Bool is_always_opaque);
+
   const PPB_Graphics2D* ppb_graphics_2d_target() const {
     return static_cast<const PPB_Graphics2D*>(target_interface());
   }
@@ -40,10 +45,6 @@ class PPB_Graphics2D_Proxy : public InterfaceProxy {
 
  private:
   // Plugin->renderer message handlers.
-  void OnMsgCreate(PP_Module module,
-                   const PP_Size& size,
-                   PP_Bool is_always_opaque,
-                   HostResource* result);
   void OnMsgPaintImageData(const HostResource& graphics_2d,
                            const HostResource& image_data,
                            const PP_Point& top_left,

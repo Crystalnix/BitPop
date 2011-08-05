@@ -19,7 +19,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
-#include "chrome/common/net/test_url_fetcher_factory.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/renderer/translate_helper.h"
 #include "chrome/test/in_process_browser_test.h"
@@ -27,6 +26,7 @@
 #include "content/browser/renderer_host/mock_render_process_host.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/tab_contents/tab_contents.h"
+#include "content/common/test_url_fetcher_factory.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 
@@ -87,8 +87,7 @@ class AutofillTest : public InProcessBrowserTest {
         browser()->profile()->GetPersonalDataManager();
     ASSERT_TRUE(personal_data_manager);
 
-    std::vector<AutofillProfile> profiles(1, profile);
-    personal_data_manager->SetProfiles(&profiles);
+    personal_data_manager->AddProfile(profile);
   }
 
   void ExpectFieldValue(const std::wstring& field_name,
@@ -138,18 +137,21 @@ class AutofillTest : public InProcessBrowserTest {
         "  };"
         "})();";
 
-    fetcher->delegate()->OnURLFetchComplete(fetcher, fetcher->original_url(),
-        status, success ? 200 : 500,
-        ResponseCookies(),
-        script);
+    fetcher->delegate()->OnURLFetchComplete(fetcher,
+                                            fetcher->original_url(),
+                                            status, success ? 200 : 500,
+                                            net::ResponseCookies(),
+                                            script);
   }
 
   void FocusFirstNameField() {
+    LOG(WARNING) << "Clicking on the tab.";
     ASSERT_NO_FATAL_FAILURE(ui_test_utils::ClickOnView(browser(),
                                                        VIEW_ID_TAB_CONTAINER));
     ASSERT_TRUE(ui_test_utils::IsViewFocused(browser(),
                                              VIEW_ID_TAB_CONTAINER_FOCUS_VIEW));
 
+    LOG(WARNING) << "Focusing the first name field.";
     bool result = false;
     ASSERT_TRUE(ui_test_utils::ExecuteJavaScriptAndExtractBool(
         render_view_host(), L"",
@@ -174,6 +176,7 @@ class AutofillTest : public InProcessBrowserTest {
 
     // Start filling the first name field with "M" and wait for the popup to be
     // shown.
+    LOG(WARNING) << "Typing 'M' to bring up the Autofill popup.";
     ASSERT_TRUE(ui_test_utils::SendKeyPressAndWait(
         browser(), ui::VKEY_M, false, true, false, false,
         NotificationType::AUTOFILL_DID_SHOW_SUGGESTIONS,
@@ -181,6 +184,7 @@ class AutofillTest : public InProcessBrowserTest {
 
     // Press the down arrow to select the suggestion and preview the autofilled
     // form.
+    LOG(WARNING) << "Simulating down arrow press to initiate Autofill preview.";
     ASSERT_TRUE(ui_test_utils::SendKeyPressAndWait(
         browser(), ui::VKEY_DOWN, false, false, false, false,
         NotificationType::AUTOFILL_DID_FILL_FORM_DATA,
@@ -200,6 +204,7 @@ class AutofillTest : public InProcessBrowserTest {
     // displayed: http://crbug.com/57220
 
     // Press Enter to accept the autofill suggestions.
+    LOG(WARNING) << "Simulating Return press to fill the form.";
     ASSERT_TRUE(ui_test_utils::SendKeyPressAndWait(
         browser(), ui::VKEY_RETURN, false, false, false, false,
         NotificationType::AUTOFILL_DID_FILL_FORM_DATA,
@@ -377,26 +382,42 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, AutofillFormsDistinguishedById) {
 
 // Test that form filling works after reloading the current page.
 // This test brought to you by http://crbug.com/69204
-IN_PROC_BROWSER_TEST_F(AutofillTest, AutofillAfterReload) {
+#if defined(OS_MACOSX)
+// Sometimes times out on Mac: http://crbug.com/81451
+#define MAYBE_AutofillAfterReload DISABLED_AutofillAfterReload
+#else
+#define MAYBE_AutofillAfterReload AutofillAfterReload
+#endif
+IN_PROC_BROWSER_TEST_F(AutofillTest, MAYBE_AutofillAfterReload) {
+  LOG(WARNING) << "Creating test profile.";
   CreateTestProfile();
 
   // Load the test page.
+  LOG(WARNING) << "Bringing browser window to front.";
   ASSERT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
+  LOG(WARNING) << "Navigating to URL.";
   ASSERT_NO_FATAL_FAILURE(ui_test_utils::NavigateToURL(browser(),
       GURL(std::string(kDataURIPrefix) + kTestFormString)));
 
   // Reload the page.
+  LOG(WARNING) << "Reloading the page.";
   TabContents* tab =
       browser()->GetSelectedTabContentsWrapper()->tab_contents();
   tab->controller().Reload(false);
   ui_test_utils::WaitForLoadStop(tab);
 
   // Invoke Autofill.
+  LOG(WARNING) << "Trying to fill the form.";
   TryBasicFormFill();
 }
 
+#if defined(OS_MACOSX)
 // Test that autofill works after page translation.
+// http://crbug.com/81451
+IN_PROC_BROWSER_TEST_F(AutofillTest, DISABLED_AutofillAfterTranslate) {
+#else
 IN_PROC_BROWSER_TEST_F(AutofillTest, AutofillAfterTranslate) {
+#endif
   CreateTestProfile();
 
   GURL url(std::string(kDataURIPrefix) +
@@ -436,8 +457,9 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, AutofillAfterTranslate) {
   // Get translation bar.
   render_view_host()->OnMessageReceived(ViewHostMsg_TranslateLanguageDetermined(
       0, "ja", true));
-  TranslateInfoBarDelegate* infobar = browser()->GetSelectedTabContents()->
-      GetInfoBarDelegateAt(0)->AsTranslateInfoBarDelegate();
+  TranslateInfoBarDelegate* infobar =
+      browser()->GetSelectedTabContentsWrapper()->
+        GetInfoBarDelegateAt(0)->AsTranslateInfoBarDelegate();
 
   ASSERT_TRUE(infobar != NULL);
   EXPECT_EQ(TranslateInfoBarDelegate::BEFORE_TRANSLATE, infobar->type());

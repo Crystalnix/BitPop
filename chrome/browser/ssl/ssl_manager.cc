@@ -6,7 +6,6 @@
 
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/load_from_memory_cache_details.h"
-#include "chrome/browser/net/url_request_tracking.h"
 #include "chrome/browser/ssl/ssl_cert_error_handler.h"
 #include "chrome/browser/ssl/ssl_policy.h"
 #include "chrome/browser/ssl/ssl_request_info.h"
@@ -14,7 +13,7 @@
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
 #include "content/browser/renderer_host/resource_dispatcher_host_request_info.h"
 #include "content/browser/renderer_host/resource_request_details.h"
-#include "content/browser/tab_contents/navigation_controller.h"
+#include "content/browser/tab_contents/navigation_details.h"
 #include "content/browser/tab_contents/navigation_entry.h"
 #include "content/browser/tab_contents/provisional_load_details.h"
 #include "content/browser/tab_contents/tab_contents.h"
@@ -132,8 +131,8 @@ SSLManager::~SSLManager() {
 
 void SSLManager::DidCommitProvisionalLoad(
     const NotificationDetails& in_details) {
-  NavigationController::LoadCommittedDetails* details =
-      Details<NavigationController::LoadCommittedDetails>(in_details).ptr();
+  content::LoadCommittedDetails* details =
+      Details<content::LoadCommittedDetails>(in_details).ptr();
 
   NavigationEntry* entry = controller_->GetActiveEntry();
 

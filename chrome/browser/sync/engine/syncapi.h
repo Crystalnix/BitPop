@@ -43,11 +43,12 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/callback.h"
+#include "base/callback_old.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/tracked.h"
 #include "build/build_config.h"
+#include "chrome/browser/sync/engine/configure_reason.h"
 #include "chrome/browser/sync/protocol/password_specifics.pb.h"
 #include "chrome/browser/sync/syncable/autofill_migration.h"
 #include "chrome/browser/sync/syncable/model_type.h"
@@ -106,6 +107,29 @@ class BaseTransaction;
 class HttpPostProviderFactory;
 class SyncManager;
 class WriteTransaction;
+
+syncable::ModelTypeSet GetEncryptedTypes(
+    const sync_api::BaseTransaction* trans);
+
+
+// Reasons due to which browser_sync::Cryptographer might require a passphrase.
+enum PassphraseRequiredReason {
+  REASON_PASSPHRASE_NOT_REQUIRED = 0,  // Initial value.
+  REASON_ENCRYPTION = 1,               // The cryptographer requires a
+                                       // passphrase for its first attempt at
+                                       // encryption. Happens only during
+                                       // migration or upgrade.
+  REASON_DECRYPTION = 2,               // The cryptographer requires a
+                                       // passphrase for its first attempt at
+                                       // decryption.
+  REASON_SET_PASSPHRASE_FAILED = 3,    // The cryptographer requires a new
+                                       // passphrase because its attempt at
+                                       // decryption with the cached passphrase
+                                       // was unsuccessful.
+};
+
+// Returns the string representation of a PassphraseRequiredReason value.
+std::string PassphraseRequiredReasonToString(PassphraseRequiredReason reason);
 
 // A UserShare encapsulates the syncable pieces that represent an authenticated
 // user and their data (share).
@@ -233,6 +257,8 @@ class BaseNode {
   // Getter specific to the SESSIONS datatype.  Returns protobuf
   // data.  Can only be called if GetModelType() == SESSIONS.
   const sync_pb::SessionSpecifics& GetSessionSpecifics() const;
+
+  const sync_pb::EntitySpecifics& GetEntitySpecifics() const;
 
   // Returns the local external ID associated with the node.
   int64 GetExternalId() const;
@@ -404,6 +430,9 @@ class WriteNode : public BaseNode {
   // Set the session specifics (windows, tabs, navigations etc.).
   // Should only be called if GetModelType() == SESSIONS.
   void SetSessionSpecifics(const sync_pb::SessionSpecifics& specifics);
+
+  // Generic set specifics method. Will extract the model type from |specifics|.
+  void SetEntitySpecifics(const sync_pb::EntitySpecifics& specifics);
 
   // Resets the EntitySpecifics for this node based on the unencrypted data.
   // Will encrypt if necessary.
@@ -690,7 +719,7 @@ class SyncManager {
 
     // Notifications counters updated by the actions in synapi.
     int notifications_received;
-    int notifications_sent;
+    int notifiable_commits;
 
     // The max number of consecutive errors from any component.
     int max_consecutive_errors;
@@ -712,6 +741,18 @@ class SyncManager {
     // Of updates_received, how many were tombstones.
     int tombstone_updates_received;
     bool disk_full;
+
+    // Total number of overwrites due to conflict resolver since browser start.
+    int num_local_overwrites_total;
+    int num_server_overwrites_total;
+
+    // Count of empty and non empty getupdates;
+    int nonempty_get_updates;
+    int empty_get_updates;
+
+    // Count of useless and useful syncs we perform.
+    int useless_sync_cycles;
+    int useful_sync_cycles;
   };
 
   // An interface the embedding application implements to receive notifications
@@ -779,18 +820,13 @@ class SyncManager {
     virtual void OnUpdatedToken(const std::string& token) = 0;
 
     // Called when user interaction is required to obtain a valid passphrase.
-    // If the passphrase is required to decrypt something that has
-    // already been encrypted (and thus has to match the existing key),
-    // |for_decryption| will be true.  If the passphrase is needed for
-    // encryption, |for_decryption| will be false.
-    virtual void OnPassphraseRequired(bool for_decryption) = 0;
-
-    // Called only by SyncInternal::SetPassphrase to indiciate that an attempted
-    // passphrase failed to decrypt pending keys. This is different from
-    // OnPassphraseRequired in that it denotes we finished an attempt to set
-    // a passphrase. OnPassphraseRequired means we have data we could not
-    // decrypt yet, and can come from numerous places.
-    virtual void OnPassphraseFailed() = 0;
+    // - If the passphrase is required for encryption, |reason| will be
+    //   REASON_ENCRYPTION.
+    // - If the passphrase is required for the decryption of data that has
+    //   already been encrypted, |reason| will be REASON_DECRYPTION.
+    // - If the passphrase is required because decryption failed, and a new
+    //   passphrase is required, |reason| will be REASON_SET_PASSPHRASE_FAILED.
+    virtual void OnPassphraseRequired(PassphraseRequiredReason reason) = 0;
 
     // Called when the passphrase provided by the user has been accepted and is
     // now used to encrypt sync data.  |bootstrap_token| is an opaque base64
@@ -888,10 +924,8 @@ class SyncManager {
   // Called when the user disables or enables a sync type.
   void UpdateEnabledTypes();
 
-  // Start the SyncerThread.
-  // TODO(tim): With the new impl, this would mean starting "NORMAL" operation.
-  // Rename this when switched over or at least update comment.
-  void StartSyncing();
+  // Put the syncer in normal mode ready to perform nudges and polls.
+  void StartSyncingNormally();
 
   // Attempt to set the passphrase. If the passphrase is valid,
   // OnPassphraseAccepted will be fired to notify the ProfileSyncService and the
@@ -919,8 +953,9 @@ class SyncManager {
 
   // For the new SyncerThread impl, this switches the mode of operation to
   // CONFIGURATION_MODE and schedules a config task to fetch updates for
-  // |types|. It is an error to call this with legacy SyncerThread in use.
-  void RequestConfig(const syncable::ModelTypeBitSet& types);
+  // |types|.
+  void RequestConfig(const syncable::ModelTypeBitSet& types,
+     sync_api::ConfigureReason reason);
 
   // Request a nudge of the syncer, which will cause the syncer thread
   // to run at the next available opportunity.
@@ -943,32 +978,34 @@ class SyncManager {
   // manager).  Never returns NULL.  The following events are sent by
   // the returned backend:
   //
-  // onSyncNotificationStateChange(boolean notificationsEnabled):
+  // onNotificationStateChange({ enabled: (boolean) }):
   //   Sent when notifications are enabled or disabled.
   //
-  // onSyncIncomingNotification(array changedTypes):
+  // onIncomingNotification({ changedTypes: (array) }):
   //   Sent when an incoming notification arrives.  |changedTypes|
-  //   contains a list of sync types (strings) which have changed.
+  //   is a list of sync types (strings) which have changed.
   //
   // The following messages are processed by the returned backend:
   //
   // getNotificationState():
-  //   If there is a parent router, sends the
-  //   onGetNotificationStateFinished(boolean notificationsEnabled)
-  //   event to |sender| via the parent router with whether or not
-  //   notifications are enabled.
+  //   callback(boolean notificationsEnabled):
+  //     notificationsEnabled: whether or not notifications are
+  //     enabled.
   //
   // getRootNode():
-  //   If there is a parent router, sends the
-  //   onGetRootNodeFinished(dictionary nodeInfo) event to |sender|
-  //   via the parent router with information on the root node.
+  //   callback(dictionary nodeInfo):
+  //     nodeInfo: Information on the root node.
   //
-  // getNodeById(string id):
-  //   If there is a parent router, sends the
-  //   onGetNodeByIdFinished(dictionary nodeInfo) event to |sender|
-  //   via the parent router with information on the node with the
-  //   given id (metahandle), if the id is valid and a node with that
-  //   id exists.  Otherwise, calls onGetNodeByIdFinished(null).
+  // getNodesById(array idList):
+  //   idList: A list of IDs as strings.
+  //   callback(array nodeList):
+  //     nodeList: Information on each node for each valid id in
+  //     idList.  Not guaranteed to be in any order.
+  //
+  // getChildNodeIds(string id):
+  //   id: The id of the node for which to return the child node ids.
+  //   callback(array idList):
+  //     idList: The child node IDs of the node with the given id.
   //
   // All other messages are dropped.
   browser_sync::JsBackend* GetJsBackend();
@@ -995,9 +1032,19 @@ class SyncManager {
 
   UserShare* GetUserShare() const;
 
+  // Inform the cryptographer of the most recent passphrase and set of encrypted
+  // types (from nigori node), then ensure all data that needs encryption is
+  // encrypted with the appropriate passphrase.
+  // Note: opens a transaction and can trigger ON_PASSPHRASE_REQUIRED, so must
+  // only be called after syncapi has been initialized.
+  void RefreshEncryption();
+
   // Uses a read-only transaction to determine if the directory being synced has
   // any remaining unsynced items.
   bool HasUnsyncedItems() const;
+
+  // Logs the list of unsynced meta handles.
+  void LogUnsyncedItems(int level) const;
 
   // Functions used for testing.
 

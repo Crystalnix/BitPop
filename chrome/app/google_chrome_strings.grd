@@ -178,8 +178,11 @@ Chrome supports. -->
       <message name="IDS_PRODUCT_NAME" desc="The Chrome application name">
         Google Chrome
       </message>
+      <message name="IDS_SHORT_PRODUCT_NAME" desc="The Chrome application short name">
+        Chrome
+      </message>
       <message name="IDS_SXS_SHORTCUT_NAME" desc="The Chrome short cut name for SxS channel">
-        Google Chrome Canary Build
+        Google Chrome Canary
       </message>
       <message name="IDS_PRODUCT_DESCRIPTION" desc="Browser description">
         Google Chrome is a web browser that runs web pages and applications with lightning speed. It's fast, stable, and easy to use. Browse the web more safely with malware and phishing protection built into Google Chrome.
@@ -205,12 +208,12 @@ Chrome supports. -->
         <message name="IDS_CHROME_FRAME_MENU_ABOUT" desc="About Chrome Frame label">
           About Chrome Frame...
         </message>
-	<message name="IDS_CHROME_FRAME_READY_MODE_LEARN_MORE_URL" desc="Link to knowledge-base article about Chrome Frame Ready Mode">
-	  http://www.google.com/support/chrome/bin/answer.py?hl=[GRITLANGCODE]&amp;answer=161796
-	</message>
-	<message name="IDS_CHROME_FRAME_READY_MODE_PROMPT" desc="Ready Mode prompt message">
-	  This site recommends Google Chrome Frame (already installed).
-	</message>
+        <message name="IDS_CHROME_FRAME_READY_MODE_LEARN_MORE_URL" desc="Link to knowledge-base article about Chrome Frame Ready Mode">
+          http://www.google.com/support/chrome/bin/answer.py?hl=[GRITLANGCODE]&amp;answer=161796
+        </message>
+        <message name="IDS_CHROME_FRAME_READY_MODE_PROMPT" desc="Ready Mode prompt message">
+          This site recommends Google Chrome Frame (already installed).
+        </message>
       </if>
       <message name="IDS_INSTANT_OPT_IN_TITLE" desc="Title of the instant opt-in dialog">
         Google Chrome Instant
@@ -342,6 +345,19 @@ Chrome supports. -->
           Please sign out of Chrome OS and sign in again for this change to take effect.
         </message>
       </if>
+      <if expr="pp_ifdef('use_titlecase')">
+        <message name="IDS_STATUS_TRAY_KEEP_CHROME_RUNNING_IN_BACKGROUND" desc="In Title Case: The checkbox in the status tray context menu that controls whether chrome keeps running in the background after the last window is closed">
+          Let Google Chrome Run In The Background
+        </message>
+      </if>
+      <if expr="not pp_ifdef('use_titlecase')">
+        <message name="IDS_STATUS_TRAY_KEEP_CHROME_RUNNING_IN_BACKGROUND" desc="The checkbox in the status tray context menu that controls whether chrome keeps running in the background after the last window is closed">
+          Let Google Chrome run in the background
+        </message>
+      </if>
+      <message name="IDS_OPTIONS_BACKGROUND_ENABLE_BACKGROUND_MODE" desc="The label of the check-box that enables background mode">
+        Continue running background apps when Google Chrome is closed
+      </message>
       <message name="IDS_CANT_WRITE_USER_DIRECTORY_SUMMARY" desc="Summary of problem displayed in dialog when we can't create a directory for this user.">
         Google Chrome cannot read and write to its data directory:\n\n<ph name="USER_DATA_DIRECTORY">$1<ex>C:\Documents and Settings\devint\Local Settings\Application Data\Google\Chrome</ex></ph>
       </message>
@@ -415,6 +431,9 @@ Chrome supports. -->
       <message name="IDS_INSTALL_INSUFFICIENT_RIGHTS" desc="Error displayed when a non admin user tries to attempt system level install/uninstall.">
         You do not have appropriate rights for system-level install. Try running the installer again as Administrator.
       </message>
+      <message name="IDS_INSTALL_NO_PRODUCTS_TO_UPDATE" desc="Error displayed if the installer is not provided one or more products to install/update.">
+        No installation of Google Chrome or Google Chrome Frame found to update.
+      </message>
       <message name="IDS_INSTALL_APP_CONFLICT" desc="Error displayed if installation fails due to another existing application.">
         A conflict with another installed application has been detected.
       </message>
@@ -438,6 +457,9 @@ Chrome supports. -->
       </message>
       <message name="IDS_INSTALL_READY_MODE_REQUIRES_CHROME" desc="Chrome Frame in ready mode requires Chrome.">
         Invalid arguments. Google Chrome Frame cannot be installed in ready mode without also installing Google Chrome.
+      </message>
+      <message name="IDS_INSTALL_INCONSISTENT_UPDATE_POLICY" desc="Error during install if the update policies settings in Group Policy are inconsistent.">
+        Google Chrome or Google Chrome Frame cannot be updated on account of inconsistent Google Update Group Policy settings. Use the Group Policy Editor to set the update policy override for the Google Chrome Binaries application and try again.
       </message>
       <!-- Options Dialog -->
       <message name="IDS_OPTIONS_IMPROVE_BROWSING_EXPERIENCE" desc="The text in the options panel that describes how we use web services to improve browsing experience.">
@@ -501,11 +523,15 @@ Chrome supports. -->
       </message>
       <!-- chrome://crashes strings -->
       <message name="IDS_CRASHES_DISABLED_MESSAGE" desc="The explanatory message for chrome://crashes when crash reporting is disabled">
-        This page only shows information on your recent crashes if you <ph name="BEGIN_LINK">&lt;a href="https://google.com/support/chrome/bin/answer.py?answer=96817"&gt;</ph>enable crash reporting<ph name="END_LINK">&lt;/a&gt;</ph>.
+        This page only shows information on your recent crashes if you <ph name="BEGIN_LINK">&lt;a href="https://www.google.com/support/chrome/bin/answer.py?answer=96817"&gt;</ph>enable crash reporting<ph name="END_LINK">&lt;/a&gt;</ph>.
+      </message>
+      <!-- Print Preview -->
+      <message name="IDS_PRINT_PREVIEW_NO_PLUGIN" desc="Message to display when the PDF viewer is missing.">
+        Google Chrome cannot show the print preview when the built-in PDF viewer is disabled. In order to see the preview, please visit <ph name="BEGIN_LINK">&lt;a target="_blank" rel="noreferrer" href="$1"&gt;</ph>$1<ph name="END_LINK">&lt;/a&gt;</ph>, enable the "Chrome PDF Viewer", and try again.
       </message>
 
       <if expr="os == 'darwin'">
-        <message name="IDS_SHORT_PRODUCT_NAME" desc="The application's short name, used for the Mac's application menu, activity monitor, etc. This should be less than 16 characters. Example: Chrome, not Google Chrome.">
+        <message name="IDS_APP_MENU_PRODUCT_NAME" desc="The application's short name, used for the Mac's application menu, activity monitor, etc. This should be less than 16 characters. Example: Chrome, not Google Chrome.">
           Chrome
         </message>
         <message name="IDS_HELPER_NAME" desc="The helper application's name.  Should contain the Chrome application name (IDS_PRODUCT_NAME). Example: Google Chrome Helper.">

@@ -9,6 +9,8 @@
 #include <string>
 #include <vector>
 
+#include "base/callback.h"
+#include "base/tracked_objects.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_module.h"
@@ -17,6 +19,10 @@
 #include "ppapi/proxy/interface_id.h"
 #include "ppapi/proxy/interface_proxy.h"
 #include "ppapi/proxy/plugin_var_tracker.h"
+
+namespace ppapi {
+class WebKitForwarding;
+}
 
 namespace pp {
 namespace proxy {
@@ -42,16 +48,6 @@ class Dispatcher : public ProxyChannel {
   typedef const void* (*GetInterfaceFunc)(const char*);
   typedef int32_t (*InitModuleFunc)(PP_Module, GetInterfaceFunc);
 
-  class Delegate : public ProxyChannel::Delegate {
-   public:
-    // Returns the set used for globally uniquifying PP_Instances. This same
-    // set must be returned for all channels. This is required only for the
-    // plugin side, for the host side, the return value may be NULL.
-    //
-    // DEREFERENCE ONLY ON THE I/O THREAD.
-    virtual std::set<PP_Instance>* GetGloballySeenInstanceIDSet() = 0;
-  };
-
   virtual ~Dispatcher();
 
   // Returns true if the dispatcher is on the plugin side, or false if it's the
@@ -69,7 +65,7 @@ class Dispatcher : public ProxyChannel {
   // TODO(brettw) remove this. It's a hack to support the Flash
   // ModuleLocalThreadAdapter. When the thread stuff is sorted out, this
   // implementation detail should be hidden.
-  MessageLoop* GetIPCMessageLoop();
+  base::MessageLoopProxy* GetIPCMessageLoop();
 
   // Adds the given filter to the IO thread. Takes ownership of the pointer.
   // TODO(brettw) remove this. It's a hack to support the Flash

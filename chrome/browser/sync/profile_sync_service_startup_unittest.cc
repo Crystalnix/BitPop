@@ -46,16 +46,16 @@ ACTION_P(InvokeCallback, callback_result) {
 class ProfileSyncServiceStartupTest : public testing::Test {
  public:
   ProfileSyncServiceStartupTest()
-      : ui_thread_(BrowserThread::UI, &message_loop_) {}
+      : ui_thread_(BrowserThread::UI, &ui_loop_),
+        io_thread_(BrowserThread::IO) {}
 
   virtual ~ProfileSyncServiceStartupTest() {
-    // The PSS has some deletes that are scheduled on the main thread
-    // so we must delete the service and run the message loop.
-    service_.reset();
-    MessageLoop::current()->RunAllPending();
   }
 
   virtual void SetUp() {
+    base::Thread::Options options;
+    options.message_loop_type = MessageLoop::TYPE_IO;
+    io_thread_.StartWithOptions(options);
     profile_.CreateRequestContext();
     service_.reset(new TestProfileSyncService(&factory_, &profile_,
                                               "test", true, NULL));
@@ -65,13 +65,13 @@ class ProfileSyncServiceStartupTest : public testing::Test {
 
   virtual void TearDown() {
     service_->RemoveObserver(&observer_);
-    {
-      // The request context gets deleted on the I/O thread. To prevent a leak
-      // supply one here.
-      BrowserThread io_thread(BrowserThread::IO, MessageLoop::current());
-      profile_.ResetRequestContext();
-    }
-    MessageLoop::current()->RunAllPending();
+    service_.reset();
+    profile_.ResetRequestContext();
+    // Pump messages posted by the sync core thread (which may end up
+    // posting on the IO thread).
+    ui_loop_.RunAllPending();
+    io_thread_.Stop();
+    ui_loop_.RunAllPending();
   }
 
  protected:
@@ -82,8 +82,9 @@ class ProfileSyncServiceStartupTest : public testing::Test {
     return data_type_manager;
   }
 
-  MessageLoop message_loop_;
+  MessageLoop ui_loop_;
   BrowserThread ui_thread_;
+  BrowserThread io_thread_;
   TestingProfile profile_;
   ProfileSyncFactoryMock factory_;
   scoped_ptr<TestProfileSyncService> service_;
@@ -92,7 +93,7 @@ class ProfileSyncServiceStartupTest : public testing::Test {
 
 TEST_F(ProfileSyncServiceStartupTest, SKIP_MACOSX(StartFirstTime)) {
   DataTypeManagerMock* data_type_manager = SetUpDataTypeManager();
-  EXPECT_CALL(*data_type_manager, Configure(_)).Times(0);
+  EXPECT_CALL(*data_type_manager, Configure(_, _)).Times(0);
 
   // We've never completed startup.
   profile_.GetPrefs()->ClearPref(prefs::kSyncHasSetupCompleted);
@@ -108,7 +109,7 @@ TEST_F(ProfileSyncServiceStartupTest, SKIP_MACOSX(StartFirstTime)) {
   Mock::VerifyAndClearExpectations(data_type_manager);
 
   // Then start things up.
-  EXPECT_CALL(*data_type_manager, Configure(_)).Times(3);
+  EXPECT_CALL(*data_type_manager, Configure(_, _)).Times(3);
   EXPECT_CALL(*data_type_manager, state()).
       WillOnce(Return(DataTypeManager::CONFIGURED));
   EXPECT_CALL(*data_type_manager, Stop()).Times(1);
@@ -126,7 +127,7 @@ TEST_F(ProfileSyncServiceStartupTest, SKIP_MACOSX(StartFirstTime)) {
 
 TEST_F(ProfileSyncServiceStartupTest, SKIP_MACOSX(StartNormal)) {
   DataTypeManagerMock* data_type_manager = SetUpDataTypeManager();
-  EXPECT_CALL(*data_type_manager, Configure(_)).Times(2);
+  EXPECT_CALL(*data_type_manager, Configure(_, _)).Times(2);
   EXPECT_CALL(*data_type_manager, state()).
       WillOnce(Return(DataTypeManager::CONFIGURED));
   EXPECT_CALL(*data_type_manager, Stop()).Times(1);
@@ -154,7 +155,7 @@ TEST_F(ProfileSyncServiceStartupTest, SKIP_MACOSX(ManagedStartup)) {
 
 TEST_F(ProfileSyncServiceStartupTest, SKIP_MACOSX(SwitchManaged)) {
   DataTypeManagerMock* data_type_manager = SetUpDataTypeManager();
-  EXPECT_CALL(*data_type_manager, Configure(_)).Times(2);
+  EXPECT_CALL(*data_type_manager, Configure(_, _)).Times(2);
   EXPECT_CALL(observer_, OnStateChanged()).Times(AnyNumber());
 
   profile_.GetTokenService()->IssueAuthTokenForTest(
@@ -179,7 +180,7 @@ TEST_F(ProfileSyncServiceStartupTest, SKIP_MACOSX(SwitchManaged)) {
 
 TEST_F(ProfileSyncServiceStartupTest, ClearServerData) {
   DataTypeManagerMock* data_type_manager = SetUpDataTypeManager();
-  EXPECT_CALL(*data_type_manager, Configure(_)).Times(2);
+  EXPECT_CALL(*data_type_manager, Configure(_, _)).Times(2);
   EXPECT_CALL(observer_, OnStateChanged()).Times(AnyNumber());
 
   profile_.GetTokenService()->IssueAuthTokenForTest(
@@ -248,7 +249,7 @@ TEST_F(ProfileSyncServiceStartupTest, SKIP_MACOSX(StartFailure)) {
       DataTypeManager::ASSOCIATION_FAILED;
   browser_sync::DataTypeManager::ConfigureResultWithErrorLocation result(
       configure_result, FROM_HERE, syncable::ModelTypeSet());
-  EXPECT_CALL(*data_type_manager, Configure(_)).
+  EXPECT_CALL(*data_type_manager, Configure(_, _)).
       WillRepeatedly(DoAll(NotifyFromDataTypeManager(data_type_manager,
                          NotificationType::SYNC_CONFIGURE_START),
                      NotifyFromDataTypeManagerWithResult(data_type_manager,

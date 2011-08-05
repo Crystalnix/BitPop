@@ -17,6 +17,12 @@
 
 using ui::OSExchangeData;
 
+namespace gfx {
+
+class Font;
+
+}  // namespace gfx
+
 namespace views {
 
 class DropTargetEvent;
@@ -52,6 +58,9 @@ class MenuDelegate {
   // The string shown for the menu item. This is only invoked when an item is
   // added with an empty label.
   virtual std::wstring GetLabel(int id) const;
+
+  // The font for the menu item label.
+  virtual const gfx::Font& GetLabelFont(int id) const;
 
   // The tooltip shown for the menu item. This is invoked when the user
   // hovers over the item, and no tooltip text has been set for that item.
@@ -96,7 +105,7 @@ class MenuDelegate {
 
   // Returns true if the specified mouse event is one the user can use
   // to trigger, or accept, the mouse. Defaults to left or right mouse buttons.
-  virtual bool IsTriggerableEvent(const MouseEvent& e);
+  virtual bool IsTriggerableEvent(MenuItemView* view, const MouseEvent& e);
 
   // Invoked to determine if drops can be accepted for a submenu. This is
   // ONLY invoked for menus that have submenus and indicates whether or not
@@ -175,7 +184,10 @@ class MenuDelegate {
                                        MenuButton** button);
 
   // Returns the max width menus can grow to be.
-  virtual int GetMaxWidthForMenu();
+  virtual int GetMaxWidthForMenu(MenuItemView* menu);
+
+  // Invoked prior to a menu being shown.
+  virtual void WillShowMenu(MenuItemView* menu);
 };
 
 }  // namespace views

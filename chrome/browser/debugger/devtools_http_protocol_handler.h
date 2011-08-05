@@ -65,8 +65,6 @@ class DevToolsHttpProtocolHandler
                                   const std::string& data);
   virtual void OnClose(int connection_id);
 
-  virtual void OnRootRequestUI(int connection_id,
-                             const net::HttpServerRequestInfo& info);
   virtual void OnJsonRequestUI(int connection_id,
                              const net::HttpServerRequestInfo& info);
   virtual void OnWebSocketRequestUI(int connection_id,
@@ -97,7 +95,7 @@ class DevToolsHttpProtocolHandler
 
   std::string ip_;
   int port_;
-  std::string overriden_frontend_url_;
+  std::string overridden_frontend_url_;
   scoped_refptr<net::HttpServer> server_;
   typedef std::map<net::URLRequest*, int>
       RequestToSocketMap;

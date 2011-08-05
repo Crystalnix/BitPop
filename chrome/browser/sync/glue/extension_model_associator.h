@@ -23,9 +23,8 @@ namespace browser_sync {
 // the sync extensions model.
 class ExtensionModelAssociator : public AssociatorInterface {
  public:
-  // Does not take ownership of sync_service.
-  ExtensionModelAssociator(const ExtensionSyncTraits& traits,
-                           ExtensionServiceInterface* extension_service,
+  // Does not take ownership of |extension_service| or |user_share|.
+  ExtensionModelAssociator(ExtensionServiceInterface* extension_service,
                            sync_api::UserShare* user_share);
   virtual ~ExtensionModelAssociator();
 
@@ -36,10 +35,7 @@ class ExtensionModelAssociator : public AssociatorInterface {
   virtual bool AssociateModels();
   virtual bool DisassociateModels();
   virtual bool SyncModelHasUserCreatedNodes(bool* has_nodes);
-  virtual void AbortAssociation() {
-    // No implementation needed, this associator runs on the main
-    // thread.
-  }
+  virtual void AbortAssociation();
   virtual bool CryptoReadyIfNecessary();
  private:
   const ExtensionSyncTraits traits_;

@@ -15,6 +15,7 @@
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_folder_view.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_folder_window.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_folder_target.h"
+#import "chrome/browser/ui/cocoa/bookmarks/bookmark_menu_cocoa_controller.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/event_utils.h"
 #include "ui/base/theme_provider.h"
@@ -389,11 +390,7 @@ struct LayoutMetrics {
       [button setTarget:self];
       [button setAction:@selector(openBookmark:)];
       // Add a tooltip.
-      NSString* title = base::SysUTF16ToNSString(node->GetTitle());
-      std::string urlString = node->GetURL().possibly_invalid_spec();
-      NSString* tooltip = [NSString stringWithFormat:@"%@\n%s", title,
-                                    urlString.c_str()];
-      [button setToolTip:tooltip];
+      [button setToolTip:[BookmarkMenuCocoaController tooltipForNode:node]];
       [button setAcceptsTrackIn:YES];
     }
   } else {
@@ -1064,6 +1061,10 @@ struct LayoutMetrics {
 // See comments above kDragHoverCloseDelay (bookmark_bar_controller.h)
 // for more details.
 - (void)openBookmarkFolderFromButtonAndCloseOldOne:(id)sender {
+  // Ignore if sender button is in a window that's just been hidden - that
+  // would leave us with an orphaned menu. BUG 69002
+  if ([[sender window] isVisible] != YES)
+    return;
   // If an old submenu exists, close it immediately.
   [self closeBookmarkFolder:sender];
 
@@ -1923,8 +1924,7 @@ static BOOL ValueInRangeInclusive(CGFloat low, CGFloat value, CGFloat high) {
   NSInteger buttonCount = [buttons_ count];
   if (buttonCount) {
     BookmarkButton* subButton = [folderController_ parentButton];
-    for (NSInteger i = buttonIndex; i < buttonCount; ++i) {
-      BookmarkButton* aButton = [buttons_ objectAtIndex:i];
+    for (NSButton* aButton in buttons_.get()) {
       // If this button is showing its menu then we need to move the menu, too.
       if (aButton == subButton)
         [folderController_ offsetFolderMenuWindow:NSMakeSize(0.0,

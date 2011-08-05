@@ -4,8 +4,13 @@
 
 #include "content/browser/tab_contents/tab_contents_delegate.h"
 
-#include "chrome/common/url_constants.h"
+#include "base/logging.h"
+#include "content/browser/tab_contents/tab_contents.h"
+#include "content/common/url_constants.h"
 #include "ui/gfx/rect.h"
+
+TabContentsDelegate::TabContentsDelegate() {
+}
 
 std::string TabContentsDelegate::GetNavigationHeaders(const GURL& url) {
   return std::string();
@@ -17,7 +22,7 @@ void TabContentsDelegate::LoadProgressChanged(double progress) {
 void TabContentsDelegate::DetachContents(TabContents* source) {
 }
 
-bool TabContentsDelegate::IsPopup(const TabContents* source) const {
+bool TabContentsDelegate::IsPopupOrPanel(const TabContents* source) const {
   return false;
 }
 
@@ -38,18 +43,12 @@ void TabContentsDelegate::ContentsMouseEvent(
 
 void TabContentsDelegate::ContentsZoomChange(bool zoom_in) { }
 
-void TabContentsDelegate::OnContentSettingsChange(TabContents* source) { }
-
 bool TabContentsDelegate::IsApplication() const { return false; }
 
 void TabContentsDelegate::ConvertContentsToApplication(TabContents* source) { }
 
 bool TabContentsDelegate::CanReloadContents(TabContents* source) const {
   return true;
-}
-
-void TabContentsDelegate::ShowHtmlDialog(HtmlDialogUIDelegate* delegate,
-                                         gfx::NativeWindow parent_window) {
 }
 
 void TabContentsDelegate::WillRunBeforeUnloadConfirm() {
@@ -63,12 +62,6 @@ void TabContentsDelegate::BeforeUnloadFired(TabContents* tab,
                                             bool proceed,
                                             bool* proceed_to_fire_unload) {
   *proceed_to_fire_unload = true;
-}
-
-void TabContentsDelegate::ForwardMessageToExternalHost(
-    const std::string& message,
-    const std::string& origin,
-    const std::string& target) {
 }
 
 bool TabContentsDelegate::IsExternalTabContainer() const { return false; }
@@ -97,14 +90,6 @@ void TabContentsDelegate::TabContentsFocused(TabContents* tab_content) {
 
 int TabContentsDelegate::GetExtraRenderViewHeight() const {
   return 0;
-}
-
-bool TabContentsDelegate::CanDownload(int request_id) {
-  return true;
-}
-
-void TabContentsDelegate::OnStartDownload(DownloadItem* download,
-                                          TabContents* tab) {
 }
 
 bool TabContentsDelegate::HandleContextMenu(const ContextMenuParams& params) {
@@ -171,14 +156,6 @@ void TabContentsDelegate::ShowRepostFormWarningDialog(
     TabContents* tab_contents) {
 }
 
-void TabContentsDelegate::ShowContentSettingsPage(
-    ContentSettingsType content_type) {
-}
-
-void TabContentsDelegate::ShowCollectedCookiesDialog(
-    TabContents* tab_contents) {
-}
-
 bool TabContentsDelegate::OnGoToEntryOffset(int offset) {
   return true;
 }
@@ -194,10 +171,6 @@ gfx::NativeWindow TabContentsDelegate::GetFrameNativeWindow() {
 }
 
 void TabContentsDelegate::TabContentsCreated(TabContents* new_contents) {
-}
-
-bool TabContentsDelegate::infobars_enabled() {
-  return true;
 }
 
 bool TabContentsDelegate::ShouldEnablePreferredSizeNotifications() {
@@ -218,4 +191,19 @@ void TabContentsDelegate::WorkerCrashed() {
 }
 
 TabContentsDelegate::~TabContentsDelegate() {
+  while (!attached_contents_.empty()) {
+    TabContents* tab_contents = *attached_contents_.begin();
+    tab_contents->set_delegate(NULL);
+  }
+  DCHECK(attached_contents_.empty());
+}
+
+void TabContentsDelegate::Attach(TabContents* tab_contents) {
+  DCHECK(attached_contents_.find(tab_contents) == attached_contents_.end());
+  attached_contents_.insert(tab_contents);
+}
+
+void TabContentsDelegate::Detach(TabContents* tab_contents) {
+  DCHECK(attached_contents_.find(tab_contents) != attached_contents_.end());
+  attached_contents_.erase(tab_contents);
 }

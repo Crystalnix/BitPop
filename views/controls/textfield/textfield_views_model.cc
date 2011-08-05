@@ -8,6 +8,7 @@
 
 #include "base/i18n/break_iterator.h"
 #include "base/logging.h"
+#include "base/stl_util-inl.h"
 #include "base/utf_string_conversions.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
@@ -18,6 +19,197 @@
 
 namespace views {
 
+namespace internal {
+
+// An edit object holds enough information/state to undo/redo the
+// change. Two edits are merged when possible, for example, when
+// you type new characters in sequence.  |Commit()| can be used to
+// mark an edit as an independent edit and it shouldn't be merged.
+// (For example, when you did undo/redo, or a text is appended via
+// API)
+class Edit {
+ public:
+  enum Type {
+    INSERT_EDIT,
+    DELETE_EDIT,
+    REPLACE_EDIT
+  };
+
+  virtual ~Edit() {
+  }
+
+  // Revert the change made by this edit in |model|.
+  void Undo(TextfieldViewsModel* model) {
+    size_t old_cursor = delete_backward_ ? old_text_end() : old_text_start_;
+    model->ModifyText(new_text_start_, new_text_end(),
+                      old_text_, old_text_start_,
+                      old_cursor);
+  }
+
+  // Apply the change of this edit to the |model|.
+  void Redo(TextfieldViewsModel* model) {
+    model->ModifyText(old_text_start_, old_text_end(),
+                      new_text_, new_text_start_,
+                      new_text_end());
+  }
+
+  // Try to merge the edit into this edit. Returns true if merge was
+  // successful, or false otherwise. Merged edit will be deleted after
+  // redo and should not be reused.
+  bool Merge(Edit* edit) {
+    return mergeable_ && edit->mergeable() && DoMerge(edit);
+  }
+
+  // Commits the edit and marks as un-mergeable.
+  void Commit() { mergeable_ = false; }
+
+ private:
+  friend class InsertEdit;
+  friend class ReplaceEdit;
+  friend class DeleteEdit;
+
+  Edit(Type type,
+       bool mergeable,
+       string16 old_text,
+       size_t old_text_start,
+       bool delete_backward,
+       string16 new_text,
+       size_t new_text_start)
+      : type_(type),
+        mergeable_(mergeable),
+        old_text_(old_text),
+        old_text_start_(old_text_start),
+        delete_backward_(delete_backward),
+        new_text_(new_text),
+        new_text_start_(new_text_start) {
+  }
+
+  // A template method pattern that provides specific merge
+  // implementation for each type of edit.
+  virtual bool DoMerge(Edit* edit) = 0;
+
+  Type type() { return type_; }
+
+  // Can this edit be merged?
+  bool mergeable() { return mergeable_; }
+
+  // Returns the end index of the |old_text_|.
+  size_t old_text_end() { return old_text_start_ + old_text_.length(); }
+
+  // Returns the end index of the |new_text_|.
+  size_t new_text_end() { return new_text_start_ + new_text_.length(); }
+
+  Type type_;
+
+  // True if the edit can be marged.
+  bool mergeable_;
+  // Deleted text by this edit.
+  string16 old_text_;
+  // The index of |old_text_|.
+  size_t old_text_start_;
+  // True if the deletion is made backward.
+  bool delete_backward_;
+  // Added text.
+  string16 new_text_;
+  // The index of |new_text_|
+  size_t new_text_start_;
+
+  DISALLOW_COPY_AND_ASSIGN(Edit);
+};
+
+class InsertEdit : public Edit {
+ public:
+  InsertEdit(bool mergeable, const string16& new_text, size_t at)
+      : Edit(INSERT_EDIT, mergeable, string16(), at, false, new_text, at) {
+  }
+
+  // Edit implementation.
+  virtual bool DoMerge(Edit* edit) OVERRIDE {
+    if (edit->type() != INSERT_EDIT || new_text_end() != edit->new_text_start_)
+      return false;
+    // If continuous edit, merge it.
+    // TODO(oshima): gtk splits edits between whitespace. Find out what
+    // we want to here and implement if necessary.
+    new_text_ += edit->new_text_;
+    return true;
+  }
+};
+
+class ReplaceEdit : public Edit {
+ public:
+  ReplaceEdit(bool mergeable,
+              const string16& old_text,
+              size_t old_text_start,
+              bool backward,
+              const string16& new_text,
+              size_t new_text_start)
+      : Edit(REPLACE_EDIT, mergeable,
+             old_text,
+             old_text_start,
+             backward,
+             new_text,
+             new_text_start) {
+  }
+
+  // Edit implementation.
+  virtual bool DoMerge(Edit* edit) OVERRIDE {
+    if (edit->type() == DELETE_EDIT ||
+        new_text_end() != edit->old_text_start_ ||
+        edit->old_text_start_ != edit->new_text_start_)
+      return false;
+    old_text_ += edit->old_text_;
+    new_text_ += edit->new_text_;
+    return true;
+  }
+};
+
+class DeleteEdit : public Edit {
+ public:
+  DeleteEdit(bool mergeable,
+             const string16& text,
+             size_t text_start,
+             bool backward)
+      : Edit(DELETE_EDIT, mergeable,
+             text,
+             text_start,
+             backward,
+             string16(),
+             text_start) {
+  }
+
+  // Edit implementation.
+  virtual bool DoMerge(Edit* edit) OVERRIDE {
+    if (edit->type() != DELETE_EDIT)
+      return false;
+
+    if (delete_backward_) {
+      // backspace can be merged only with backspace at the
+      // same position.
+      if (!edit->delete_backward_ || old_text_start_ != edit->old_text_end())
+        return false;
+      old_text_start_ = edit->old_text_start_;
+      old_text_ = edit->old_text_ + old_text_;
+    } else {
+      // delete can be merged only with delete at the same
+      // position.
+      if (edit->delete_backward_ || old_text_start_ != edit->old_text_start_)
+        return false;
+      old_text_ += edit->old_text_;
+    }
+    return true;
+  }
+};
+
+}  // namespace internal
+
+using internal::Edit;
+using internal::DeleteEdit;
+using internal::InsertEdit;
+using internal::ReplaceEdit;
+
+/////////////////////////////////////////////////////////////////
+// TextfieldViewsModel: public
+
 TextfieldViewsModel::Delegate::~Delegate() {
 }
 
@@ -27,10 +219,12 @@ TextfieldViewsModel::TextfieldViewsModel(Delegate* delegate)
       selection_start_(0),
       composition_start_(0),
       composition_end_(0),
-      is_password_(false) {
+      is_password_(false),
+      current_edit_(edit_history_.end()) {
 }
 
 TextfieldViewsModel::~TextfieldViewsModel() {
+  ClearEditHistory();
 }
 
 void TextfieldViewsModel::GetFragments(TextFragments* fragments) const {
@@ -145,42 +339,29 @@ bool TextfieldViewsModel::SetText(const string16& text) {
     changed = true;
   }
   if (text_ != text) {
-    text_ = text;
-    if (cursor_pos_ > text.length()) {
-      cursor_pos_ = text.length();
-    }
-    changed = true;
+    if (changed) // no need to remember composition.
+      Undo();
+    SelectAll();
+    InsertTextInternal(text, false);
+    cursor_pos_ = 0;
   }
   ClearSelection();
   return changed;
 }
 
-void TextfieldViewsModel::InsertText(const string16& text) {
-  if (HasCompositionText())
-    ClearCompositionText();
-  else if (HasSelection())
-    DeleteSelection();
-  text_.insert(cursor_pos_, text);
-  cursor_pos_ += text.size();
-  ClearSelection();
-}
-
-void TextfieldViewsModel::ReplaceText(const string16& text) {
-  if (HasCompositionText())
-    ClearCompositionText();
-  else if (!HasSelection())
-    SelectRange(ui::Range(cursor_pos_, cursor_pos_ + text.length()));
-  InsertText(text);
-}
-
 void TextfieldViewsModel::Append(const string16& text) {
   if (HasCompositionText())
     ConfirmCompositionText();
-  text_ += text;
+  size_t save = cursor_pos_;
+  MoveCursorToEnd(false);
+  InsertText(text);
+  cursor_pos_ = save;
+  ClearSelection();
 }
 
 bool TextfieldViewsModel::Delete() {
   if (HasCompositionText()) {
+    // No undo/redo for composition text.
     ClearCompositionText();
     return true;
   }
@@ -189,7 +370,7 @@ bool TextfieldViewsModel::Delete() {
     return true;
   }
   if (text_.length() > cursor_pos_) {
-    text_.erase(cursor_pos_, 1);
+    ExecuteAndRecordDelete(cursor_pos_, cursor_pos_ + 1, true);
     return true;
   }
   return false;
@@ -197,6 +378,7 @@ bool TextfieldViewsModel::Delete() {
 
 bool TextfieldViewsModel::Backspace() {
   if (HasCompositionText()) {
+    // No undo/redo for composition text.
     ClearCompositionText();
     return true;
   }
@@ -205,9 +387,7 @@ bool TextfieldViewsModel::Backspace() {
     return true;
   }
   if (cursor_pos_ > 0) {
-    cursor_pos_--;
-    text_.erase(cursor_pos_, 1);
-    ClearSelection();
+    ExecuteAndRecordDelete(cursor_pos_, cursor_pos_ - 1, true);
     return true;
   }
   return false;
@@ -251,7 +431,7 @@ void TextfieldViewsModel::MoveCursorToPreviousWord(bool select) {
   // This is probably fast enough for our usage, but we may
   // want to modify WordIterator so that it can start from the
   // middle of string and advance backwards.
-  base::BreakIterator iter(&text_, base::BreakIterator::BREAK_WORD);
+  base::i18n::BreakIterator iter(text_, base::i18n::BreakIterator::BREAK_WORD);
   bool success = iter.Init();
   DCHECK(success);
   if (!success)
@@ -283,7 +463,7 @@ void TextfieldViewsModel::MoveCursorToPreviousWord(bool select) {
 void TextfieldViewsModel::MoveCursorToNextWord(bool select) {
   if (HasCompositionText())
     ConfirmCompositionText();
-  base::BreakIterator iter(&text_, base::BreakIterator::BREAK_WORD);
+  base::i18n::BreakIterator iter(text_, base::i18n::BreakIterator::BREAK_WORD);
   bool success = iter.Init();
   DCHECK(success);
   if (!success)
@@ -301,32 +481,21 @@ void TextfieldViewsModel::MoveCursorToNextWord(bool select) {
 }
 
 void TextfieldViewsModel::MoveCursorToHome(bool select) {
-  if (HasCompositionText())
-    ConfirmCompositionText();
-  cursor_pos_ = 0;
-  if (!select)
-    ClearSelection();
+  MoveCursorTo(0, select);
 }
 
 void TextfieldViewsModel::MoveCursorToEnd(bool select) {
-  if (HasCompositionText())
-    ConfirmCompositionText();
-  cursor_pos_ = text_.length();
-  if (!select)
-    ClearSelection();
+  MoveCursorTo(text_.length(), select);
 }
 
 bool TextfieldViewsModel::MoveCursorTo(size_t pos, bool select) {
   if (HasCompositionText())
     ConfirmCompositionText();
-  bool cursor_changed = false;
-  if (cursor_pos_ != pos) {
-    cursor_pos_ = pos;
-    cursor_changed = true;
-  }
+  bool changed = cursor_pos_ != pos || select != HasSelection();
+  cursor_pos_ = pos;
   if (!select)
     ClearSelection();
-  return cursor_changed;
+  return changed;
 }
 
 gfx::Rect TextfieldViewsModel::GetCursorBounds(const gfx::Font& font) const {
@@ -410,6 +579,54 @@ void TextfieldViewsModel::ClearSelection() {
   selection_start_ = cursor_pos_;
 }
 
+bool TextfieldViewsModel::CanUndo() {
+  return edit_history_.size() && current_edit_ != edit_history_.end();
+}
+
+bool TextfieldViewsModel::CanRedo() {
+  if (!edit_history_.size())
+    return false;
+  // There is no redo iff the current edit is the last element
+  // in the history.
+  EditHistory::iterator iter = current_edit_;
+  return iter == edit_history_.end() || // at the top.
+      ++iter != edit_history_.end();
+}
+
+bool TextfieldViewsModel::Undo() {
+  if (!CanUndo())
+    return false;
+  DCHECK(!HasCompositionText());
+  if (HasCompositionText())  // safe guard for release build.
+    ClearCompositionText();
+
+  string16 old = text_;
+  (*current_edit_)->Commit();
+  (*current_edit_)->Undo(this);
+
+  if (current_edit_ == edit_history_.begin())
+    current_edit_ = edit_history_.end();
+  else
+    current_edit_--;
+  return old != text_;
+}
+
+bool TextfieldViewsModel::Redo() {
+  if (!CanRedo())
+    return false;
+  DCHECK(!HasCompositionText());
+  if (HasCompositionText()) // safe guard for release build.
+    ClearCompositionText();
+
+  if (current_edit_ == edit_history_.end())
+    current_edit_ = edit_history_.begin();
+  else
+    current_edit_ ++;
+  string16 old = text_;
+  (*current_edit_)->Redo(this);
+  return old != text_;
+}
+
 bool TextfieldViewsModel::Cut() {
   if (!HasCompositionText() && HasSelection()) {
     ui::ScopedClipboardWriter(views::ViewsDelegate::views_delegate
@@ -432,13 +649,7 @@ bool TextfieldViewsModel::Paste() {
   views::ViewsDelegate::views_delegate->GetClipboard()
       ->ReadText(ui::Clipboard::BUFFER_STANDARD, &result);
   if (!result.empty()) {
-    if (HasCompositionText())
-      ConfirmCompositionText();
-    else if (HasSelection())
-      DeleteSelection();
-    text_.insert(cursor_pos_, result);
-    cursor_pos_ += result.length();
-    ClearSelection();
+    InsertTextInternal(result, false);
     return true;
   }
   return false;
@@ -451,11 +662,14 @@ bool TextfieldViewsModel::HasSelection() const {
 void TextfieldViewsModel::DeleteSelection() {
   DCHECK(!HasCompositionText());
   DCHECK(HasSelection());
-  size_t n = std::abs(static_cast<long>(cursor_pos_ - selection_start_));
-  size_t begin = std::min(cursor_pos_, selection_start_);
-  text_.erase(begin, n);
-  cursor_pos_ = begin;
-  ClearSelection();
+  ExecuteAndRecordDelete(selection_start_, cursor_pos_, false);
+}
+
+void TextfieldViewsModel::DeleteSelectionAndInsertTextAt(
+    const string16& text, size_t position) {
+  if (HasCompositionText())
+    ClearCompositionText();
+  ExecuteAndRecordReplaceAt(text, position, false);
 }
 
 string16 TextfieldViewsModel::GetTextFromRange(const ui::Range& range) const {
@@ -499,6 +713,11 @@ void TextfieldViewsModel::SetCompositionText(
 
 void TextfieldViewsModel::ConfirmCompositionText() {
   DCHECK(HasCompositionText());
+  string16 new_text =
+      text_.substr(composition_start_, composition_end_ - composition_start_);
+  // TODO(oshima): current behavior on ChromeOS is a bit weird and not
+  // sure exactly how this should work. Find out and fix if necessary.
+  AddOrMergeEditHistory(new InsertEdit(false, new_text, composition_start_));
   cursor_pos_ = composition_end_;
   composition_start_ = composition_end_ = string16::npos;
   composition_underlines_.clear();
@@ -529,6 +748,9 @@ bool TextfieldViewsModel::HasCompositionText() const {
   return composition_start_ != composition_end_;
 }
 
+/////////////////////////////////////////////////////////////////
+// TextfieldViewsModel: private
+
 string16 TextfieldViewsModel::GetVisibleText(size_t begin, size_t end) const {
   DCHECK(end >= begin);
   if (is_password_)
@@ -546,6 +768,133 @@ size_t TextfieldViewsModel::GetSafePosition(size_t position) const {
     return text_.length();
   }
   return position;
+}
+
+void TextfieldViewsModel::InsertTextInternal(const string16& text,
+                                             bool mergeable) {
+  if (HasCompositionText()) {
+    ClearCompositionText();
+    ExecuteAndRecordInsert(text, mergeable);
+  } else if (HasSelection()) {
+    ExecuteAndRecordReplace(text, mergeable);
+  } else {
+    ExecuteAndRecordInsert(text, mergeable);
+  }
+}
+
+void TextfieldViewsModel::ReplaceTextInternal(const string16& text,
+                                              bool mergeable) {
+  if (HasCompositionText())
+    ClearCompositionText();
+  else if (!HasSelection())
+    SelectRange(ui::Range(cursor_pos_ + text.length(), cursor_pos_));
+  // Edit history is recorded in InsertText.
+  InsertTextInternal(text, mergeable);
+}
+
+void TextfieldViewsModel::ClearEditHistory() {
+  STLDeleteContainerPointers(edit_history_.begin(),
+                             edit_history_.end());
+  edit_history_.clear();
+  current_edit_ = edit_history_.end();
+}
+
+void TextfieldViewsModel::ClearRedoHistory() {
+  if (edit_history_.begin() == edit_history_.end())
+    return;
+  if (current_edit_ == edit_history_.end()) {
+    ClearEditHistory();
+    return;
+  }
+  EditHistory::iterator delete_start = current_edit_;
+  delete_start++;
+  STLDeleteContainerPointers(delete_start,
+                             edit_history_.end());
+  edit_history_.erase(delete_start, edit_history_.end());
+}
+
+void TextfieldViewsModel::ExecuteAndRecordDelete(size_t from,
+                                                 size_t to,
+                                                 bool mergeable) {
+  size_t old_text_start = std::min(from, to);
+  const string16 text = text_.substr(old_text_start,
+                                     std::abs(static_cast<long>(from - to)));
+  Edit* edit = new DeleteEdit(mergeable,
+                              text,
+                              old_text_start,
+                              (from > to));
+  bool delete_edit = AddOrMergeEditHistory(edit);
+  edit->Redo(this);
+  if (delete_edit)
+    delete edit;
+}
+
+void TextfieldViewsModel::ExecuteAndRecordReplace(const string16& text,
+                                                  bool mergeable) {
+  size_t at = std::min(cursor_pos_, selection_start_);
+  ExecuteAndRecordReplaceAt(text, at, mergeable);
+}
+
+void TextfieldViewsModel::ExecuteAndRecordReplaceAt(const string16& text,
+                                                    size_t at,
+                                                    bool mergeable) {
+  size_t text_start = std::min(cursor_pos_, selection_start_);
+  Edit* edit = new ReplaceEdit(mergeable,
+                               GetSelectedText(),
+                               text_start,
+                               selection_start_ > cursor_pos_,
+                               text,
+                               at);
+  bool delete_edit = AddOrMergeEditHistory(edit);
+  edit->Redo(this);
+  if (delete_edit)
+    delete edit;
+}
+
+void TextfieldViewsModel::ExecuteAndRecordInsert(const string16& text,
+                                                 bool mergeable) {
+  Edit* edit = new InsertEdit(mergeable, text, cursor_pos_);
+  bool delete_edit = AddOrMergeEditHistory(edit);
+  edit->Redo(this);
+  if (delete_edit)
+    delete edit;
+}
+
+bool TextfieldViewsModel::AddOrMergeEditHistory(Edit* edit) {
+  ClearRedoHistory();
+
+  if (current_edit_ != edit_history_.end() && (*current_edit_)->Merge(edit)) {
+    // If a current edit exists and has been merged with a new edit,
+    // don't add to the history, and return true to delete |edit| after
+    // redo.
+    return true;
+  }
+  edit_history_.push_back(edit);
+  if (current_edit_ == edit_history_.end()) {
+    // If there is no redoable edit, this is the 1st edit because
+    // RedoHistory has been already deleted.
+    DCHECK_EQ(1u, edit_history_.size());
+    current_edit_ = edit_history_.begin();
+  } else {
+    current_edit_++;
+  }
+  return false;
+}
+
+void TextfieldViewsModel::ModifyText(size_t delete_from,
+                                     size_t delete_to,
+                                     const string16& new_text,
+                                     size_t new_text_insert_at,
+                                     size_t new_cursor_pos) {
+  DCHECK_LE(delete_from, delete_to);
+  if (delete_from != delete_to)
+    text_.erase(delete_from, delete_to - delete_from);
+  if (!new_text.empty())
+    text_.insert(new_text_insert_at, new_text);
+  cursor_pos_ = new_cursor_pos;
+  ClearSelection();
+  // TODO(oshima): mac selects the text that is just undone (but gtk doesn't).
+  // This looks fine feature and we may want to do the same.
 }
 
 }  // namespace views

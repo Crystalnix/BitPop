@@ -131,12 +131,7 @@ class InterstitialPage : public NotificationObserver,
   virtual void UpdateTitle(RenderViewHost* render_view_host,
                            int32 page_id,
                            const std::wstring& title);
-  virtual void DomOperationResponse(const std::string& json_string,
-                                    int automation_id);
   virtual RendererPreferences GetRendererPrefs(Profile* profile) const;
-
-  // Invoked when the page sent a command through DOMAutomation.
-  virtual void CommandReceived(const std::string& command) {}
 
   // Invoked with the NavigationEntry that is going to be added to the
   // navigation controller.
@@ -145,9 +140,13 @@ class InterstitialPage : public NotificationObserver,
   // |create_navigation_entry| set to true.
   virtual void UpdateEntry(NavigationEntry* entry) {}
 
+  bool enabled() const { return enabled_; }
   TabContents* tab() const { return tab_; }
   const GURL& url() const { return url_; }
   RenderViewHost* render_view_host() const { return render_view_host_; }
+  void set_renderer_preferences(const RendererPreferences& prefs) {
+    renderer_preferences_ = prefs;
+  }
 
   // Creates the RenderViewHost containing the interstitial content.
   // Overriden in unit tests.
@@ -156,6 +155,9 @@ class InterstitialPage : public NotificationObserver,
   // Creates the TabContentsView that shows the interstitial RVH.
   // Overriden in unit tests.
   virtual TabContentsView* CreateTabContentsView();
+
+  // Notification magic.
+  NotificationRegistrar notification_registrar_;
 
  private:
   // AutomationProvider needs access to Proceed and DontProceed to simulate
@@ -206,9 +208,6 @@ class InterstitialPage : public NotificationObserver,
   // Whether the Proceed or DontProceed methods have been called yet.
   ActionState action_taken_;
 
-  // Notification magic.
-  NotificationRegistrar notification_registrar_;
-
   // The RenderViewHost displaying the interstitial contents.
   RenderViewHost* render_view_host_;
 
@@ -219,6 +218,10 @@ class InterstitialPage : public NotificationObserver,
   // Whether or not we should change the title of the tab when hidden (to revert
   // it to its original value).
   bool should_revert_tab_title_;
+
+  // Whether or not the tab was loading resources when the interstitial was
+  // shown.  We restore this state if the user proceeds from the interstitial.
+  bool tab_was_loading_;
 
   // Whether the ResourceDispatcherHost has been notified to cancel/resume the
   // resource requests blocked for the RenderViewHost.

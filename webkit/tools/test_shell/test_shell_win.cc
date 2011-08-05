@@ -479,7 +479,7 @@ void TestShell::LoadURLForFrame(const GURL& url,
   if (!url.is_valid())
     return;
 
-  TRACE_EVENT_BEGIN("url.load", this, url.spec());
+  TRACE_EVENT_BEGIN_ETW("url.load", this, url.spec());
 
   if (IsSVGTestURL(url)) {
     SizeToSVG();
@@ -640,7 +640,7 @@ bool TestShell::PromptForSaveFile(const wchar_t* prompt_title,
   info.lStructSize = sizeof(info);
   info.hwndOwner = m_mainWnd;
   info.hInstance = instance_handle_;
-  info.lpstrFilter = L"*.txt";
+  info.lpstrFilter = L"*.txt\0";
   info.lpstrFile = path_buf;
   info.nMaxFile = arraysize(path_buf);
   info.lpstrTitle = prompt_title;

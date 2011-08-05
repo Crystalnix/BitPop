@@ -10,9 +10,9 @@
 #include <string>
 #include <vector>
 
-#include "chrome/common/net/url_fetcher.h"
 #include "content/common/notification_observer.h"
 #include "content/common/notification_registrar.h"
+#include "content/common/url_fetcher.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/host_resolver_proc.h"
 #include "net/base/network_change_notifier.h"
@@ -46,7 +46,7 @@ class IntranetRedirectDetector
   // since there aren't useful public functions on this object for consumers to
   // access anyway).
   IntranetRedirectDetector();
-  ~IntranetRedirectDetector();
+  virtual ~IntranetRedirectDetector();
 
   // Returns the current redirect origin.  This will be empty if no redirection
   // is in place.
@@ -70,7 +70,7 @@ class IntranetRedirectDetector
                                   const GURL& url,
                                   const net::URLRequestStatus& status,
                                   int response_code,
-                                  const ResponseCookies& cookies,
+                                  const net::ResponseCookies& cookies,
                                   const std::string& data);
 
   // NetworkChangeNotifier::IPAddressObserver

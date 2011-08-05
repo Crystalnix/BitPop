@@ -8,12 +8,15 @@
 #include "base/i18n/number_formatting.h"
 #include "base/i18n/rtl.h"
 #include "base/process_util.h"
+#include "base/stringprintf.h"
 #include "base/string_number_conversions.h"
-#include "base/string_util.h"
 #include "base/threading/thread.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/background_contents_service.h"
+#include "chrome/browser/background_contents_service_factory.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/net/url_request_tracking.h"
+#include "chrome/browser/extensions/extension_host.h"
+#include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/task_manager/task_manager_resource_providers.h"
@@ -25,13 +28,12 @@
 #include "content/browser/browser_thread.h"
 #include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
+#include "content/browser/renderer_host/resource_dispatcher_host_request_info.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/common/result_codes.h"
 #include "grit/app_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
-#include "net/url_request/url_request.h"
-#include "net/url_request/url_request_job.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "unicode/coll.h"
@@ -80,7 +82,6 @@ TaskManagerModel::TaskManagerModel(TaskManager* task_manager)
   AddResourceProvider(
       new TaskManagerBackgroundContentsResourceProvider(task_manager));
   AddResourceProvider(new TaskManagerTabContentsResourceProvider(task_manager));
-  AddResourceProvider(new TaskManagerPrerenderResourceProvider(task_manager));
   AddResourceProvider(
       new TaskManagerChildProcessResourceProvider(task_manager));
   AddResourceProvider(
@@ -137,7 +138,7 @@ double TaskManagerModel::GetCPUUsage(int index) const {
 
 string16 TaskManagerModel::GetResourceCPUUsage(int index) const {
   CHECK_LT(index, ResourceCount());
-  return UTF8ToUTF16(StringPrintf(
+  return UTF8ToUTF16(base::StringPrintf(
 #if defined(OS_MACOSX)
       // Activity Monitor shows %cpu with one decimal digit -- be
       // consistent with that.
@@ -210,6 +211,15 @@ string16 TaskManagerModel::GetResourceWebCoreCSSCacheSize(
   const WebKit::WebCache::ResourceTypeStats stats(
       resources_[index]->GetWebCoreCacheStats());
   return FormatStatsSize(stats.cssStyleSheets);
+}
+
+string16 TaskManagerModel::GetResourceFPS(
+    int index) const {
+  CHECK_LT(index, ResourceCount());
+  if (!resources_[index]->ReportsFPS())
+    return l10n_util::GetStringUTF16(IDS_TASK_MANAGER_NA_CELL_TEXT);
+  double fps = resources_[index]->GetFPS();
+  return UTF8ToUTF16(base::StringPrintf("%.0f", fps));
 }
 
 string16 TaskManagerModel::GetResourceSqliteMemoryUsed(int index) const {
@@ -347,6 +357,9 @@ int TaskManagerModel::CompareValues(int row1, int row2, int col_id) const {
     DCHECK_EQ(IDS_TASK_MANAGER_WEBCORE_CSS_CACHE_COLUMN, col_id);
     return ValueCompare<size_t>(stats1.cssStyleSheets.size,
                                 stats2.cssStyleSheets.size);
+  } else if (col_id == IDS_TASK_MANAGER_FPS_COLUMN) {
+    return ValueCompare<float>(resources_[row1]->GetFPS(),
+                               resources_[row2]->GetFPS());
   } else if (col_id == IDS_TASK_MANAGER_GOATS_TELEPORTED_COLUMN) {
     return ValueCompare<int>(GetGoatsTeleported(row1),
                              GetGoatsTeleported(row2));
@@ -497,13 +510,6 @@ void TaskManagerModel::StartUpdating() {
   }
   update_state_ = TASK_PENDING;
 
-  // Register jobs notifications so we can compute network usage (it must be
-  // done from the IO thread).
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(
-         this, &TaskManagerModel::RegisterForJobDoneNotifications));
-
   // Notify resource providers that we are updating.
   for (ResourceProviderList::iterator iter = providers_.begin();
        iter != providers_.end(); ++iter) {
@@ -528,12 +534,6 @@ void TaskManagerModel::StopUpdating() {
     (*iter)->StopUpdating();
   }
 
-  // Unregister jobs notification (must be done from the IO thread).
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(
-          this, &TaskManagerModel::UnregisterForJobDoneNotifications));
-
   // Must clear the resources before the next attempt to start updating.
   Clear();
 }
@@ -544,14 +544,6 @@ void TaskManagerModel::AddResourceProvider(
   // AddRef matched with Release in destructor.
   provider->AddRef();
   providers_.push_back(provider);
-}
-
-void TaskManagerModel::RegisterForJobDoneNotifications() {
-  net::g_url_request_job_tracker.AddObserver(this);
-}
-
-void TaskManagerModel::UnregisterForJobDoneNotifications() {
-  net::g_url_request_job_tracker.RemoveObserver(this);
 }
 
 void TaskManagerModel::AddResource(TaskManager::Resource* resource) {
@@ -698,6 +690,18 @@ void TaskManagerModel::NotifyResourceTypeStats(
   }
 }
 
+void TaskManagerModel::NotifyFPS(base::ProcessId renderer_id,
+                                 int routing_id,
+                                 float fps) {
+  for (ResourceList::iterator it = resources_.begin();
+       it != resources_.end(); ++it) {
+    if (base::GetProcId((*it)->GetProcess()) == renderer_id &&
+        (*it)->GetRoutingId() == routing_id) {
+      (*it)->NotifyFPS(fps);
+    }
+  }
+}
+
 void TaskManagerModel::NotifyV8HeapStats(base::ProcessId renderer_id,
                                          size_t v8_memory_allocated,
                                          size_t v8_memory_used) {
@@ -833,41 +837,25 @@ void TaskManagerModel::BytesRead(BytesReadParam param) {
 }
 
 
-// In order to retrieve the network usage, we register for net::URLRequestJob
-// notifications. Every time we get notified some bytes were read we bump a
-// counter of read bytes for the associated resource. When the timer ticks,
-// we'll compute the actual network usage (see the Refresh method).
-void TaskManagerModel::OnJobAdded(net::URLRequestJob* job) {
-}
-
-void TaskManagerModel::OnJobRemoved(net::URLRequestJob* job) {
-}
-
-void TaskManagerModel::OnJobDone(net::URLRequestJob* job,
-                                 const net::URLRequestStatus& status) {
-}
-
-void TaskManagerModel::OnJobRedirect(net::URLRequestJob* job,
-                                     const GURL& location,
-                                     int status_code) {
-}
-
-void TaskManagerModel::OnBytesRead(net::URLRequestJob* job, const char* buf,
-                                   int byte_count) {
+void TaskManagerModel::NotifyBytesRead(const net::URLRequest& request,
+                                       int byte_count) {
   // Only net::URLRequestJob instances created by the ResourceDispatcherHost
   // have a render view associated.  All other jobs will have -1 returned for
   // the render process child and routing ids - the jobs may still match a
   // resource based on their origin id, otherwise BytesRead() will attribute
   // the activity to the Browser resource.
   int render_process_host_child_id = -1, routing_id = -1;
-  ResourceDispatcherHost::RenderViewForRequest(job->request(),
+  ResourceDispatcherHost::RenderViewForRequest(&request,
                                                &render_process_host_child_id,
                                                &routing_id);
 
   // Get the origin PID of the request's originator.  This will only be set for
   // plugins - for renderer or browser initiated requests it will be zero.
-  int origin_pid =
-      chrome_browser_net::GetOriginPIDForRequest(job->request());
+  int origin_pid = 0;
+  const ResourceDispatcherHostRequestInfo* info =
+      ResourceDispatcherHost::InfoForRequest(&request);
+  if (info)
+    origin_pid = info->origin_pid();
 
   // This happens in the IO thread, post it to the UI thread.
   BrowserThread::PostTask(
@@ -876,8 +864,8 @@ void TaskManagerModel::OnBytesRead(net::URLRequestJob* job, const char* buf,
           this,
           &TaskManagerModel::BytesRead,
           BytesReadParam(origin_pid,
-          render_process_host_child_id,
-          routing_id, byte_count)));
+                         render_process_host_child_id,
+                         routing_id, byte_count)));
 }
 
 bool TaskManagerModel::GetProcessMetricsForRow(
@@ -978,9 +966,7 @@ void TaskManager::OpenAboutMemory() {
     // non-tabbed window, the call to OpenURL above will have opened a
     // TabContents in a tabbed browser, so we need to grab it with GetLastActive
     // before the call to show().
-    if (browser->type() & (Browser::TYPE_APP |
-                           Browser::TYPE_DEVTOOLS |
-                           Browser::TYPE_POPUP)) {
+    if (!browser->is_type_tabbed()) {
       browser = BrowserList::GetLastActive();
       DCHECK(browser);
     }
@@ -1001,4 +987,53 @@ bool TaskManagerModel::GetAndCacheMemoryMetrics(
 
   memory_usage_map_.insert(std::make_pair(handle, *usage));
   return true;
+}
+
+namespace {
+
+// Counts the number of extension background pages associated with this profile.
+int CountExtensionBackgroundPagesForProfile(Profile* profile) {
+  int count = 0;
+  ExtensionProcessManager* manager = profile->GetExtensionProcessManager();
+  if (!manager)
+    return count;
+  for (ExtensionProcessManager::const_iterator iter = manager->begin();
+       iter != manager->end();
+       ++iter) {
+    if ((*iter)->GetRenderViewType() == ViewType::EXTENSION_BACKGROUND_PAGE)
+      count++;
+  }
+  return count;
+}
+
+}  // namespace
+
+// static
+int TaskManager::GetBackgroundPageCount() {
+  int count = 0;
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  if (!profile_manager)  // Null when running unit tests.
+    return count;
+  std::vector<Profile*> profiles(profile_manager->GetLoadedProfiles());
+  for (std::vector<Profile*>::const_iterator iter = profiles.begin();
+       iter != profiles.end();
+       ++iter) {
+    Profile* profile = *iter;
+    // Count the number of Background Contents (background pages for hosted
+    // apps). Incognito windows do not support hosted apps, so just check the
+    // main profile.
+    BackgroundContentsService* background_contents_service =
+        BackgroundContentsServiceFactory::GetForProfile(profile);
+    if (background_contents_service)
+      count += background_contents_service->GetBackgroundContents().size();
+
+    // Count the number of extensions with background pages (including
+    // incognito).
+    count += CountExtensionBackgroundPagesForProfile(profile);
+    if (profile->HasOffTheRecordProfile()) {
+      count += CountExtensionBackgroundPagesForProfile(
+          profile->GetOffTheRecordProfile());
+    }
+  }
+  return count;
 }

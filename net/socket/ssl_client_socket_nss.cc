@@ -183,7 +183,6 @@ namespace net {
 #define EnterFunction(x)
 #define LeaveFunction(x)
 #define GotoState(s) next_handshake_state_ = s
-#define LogData(s, len)
 #else
 #define EnterFunction(x)\
     VLOG(1) << (void *)this << " " << __FUNCTION__ << " enter " << x\
@@ -196,9 +195,6 @@ namespace net {
       VLOG(1) << (void *)this << " " << __FUNCTION__ << " jump to state " << s;\
       next_handshake_state_ = s;\
     } while (0)
-#define LogData(s, len)\
-    VLOG(1) << (void *)this << " " << __FUNCTION__\
-            << " data [" << std::string(s, len) << "]"
 #endif
 
 namespace {
@@ -1521,6 +1517,19 @@ int SSLClientSocketNSS::DoVerifyCert(int result) {
   DCHECK(server_cert_);
 
   GotoState(STATE_VERIFY_CERT_COMPLETE);
+
+  // If the certificate is expected to be bad we can use the expectation as the
+  // cert status.
+  int cert_status;
+  if (ssl_config_.IsAllowedBadCert(server_cert_, &cert_status)) {
+    DCHECK(start_cert_verification_time_.is_null());
+    VLOG(1) << "Received an expected bad cert with status: " << cert_status;
+    server_cert_verify_result_ = &local_server_cert_verify_result_;
+    local_server_cert_verify_result_.Reset();
+    local_server_cert_verify_result_.cert_status = cert_status;
+    return OK;
+  }
+
   start_cert_verification_time_ = base::TimeTicks::Now();
 
   if (ssl_host_info_.get() && !ssl_host_info_->state().certs.empty() &&
@@ -1578,18 +1587,9 @@ int SSLClientSocketNSS::DoVerifyCertComplete(int result) {
   // purposes.  See https://bugzilla.mozilla.org/show_bug.cgi?id=508081 and
   // http://crbug.com/15630 for more info.
 
-  // If we have been explicitly told to accept this certificate, override the
-  // result of verifier_.Verify.
-  // Eventually, we should cache the cert verification results so that we don't
-  // need to call verifier_.Verify repeatedly.  But for now we need to do this.
-  // Alternatively, we could use the cert's status that we stored along with
-  // the cert in the allowed_bad_certs vector.
-  if (IsCertificateError(result) &&
-      ssl_config_.IsAllowedBadCert(server_cert_)) {
-    VLOG(1) << "accepting bad SSL certificate, as user told us to";
-    result = OK;
-  }
-
+  // TODO(hclam): Skip logging if server cert was expected to be bad because
+  // |server_cert_verify_results_| doesn't contain all the information about
+  // the cert.
   if (result == OK)
     LogConnectionTypeMetrics();
 
@@ -1621,7 +1621,8 @@ int SSLClientSocketNSS::DoPayloadRead() {
     return rv;
   }
   if (rv >= 0) {
-    LogData(user_read_buf_->data(), rv);
+    LogByteTransfer(net_log_, NetLog::TYPE_SSL_SOCKET_BYTES_RECEIVED, rv,
+                    user_read_buf_->data());
     LeaveFunction("");
     return rv;
   }
@@ -1642,7 +1643,8 @@ int SSLClientSocketNSS::DoPayloadWrite() {
   DCHECK(user_write_buf_);
   int rv = PR_Write(nss_fd_, user_write_buf_->data(), user_write_buf_len_);
   if (rv >= 0) {
-    LogData(user_write_buf_->data(), rv);
+    LogByteTransfer(net_log_, NetLog::TYPE_SSL_SOCKET_BYTES_SENT, rv,
+                    user_write_buf_->data());
     LeaveFunction("");
     return rv;
   }

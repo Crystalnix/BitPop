@@ -18,14 +18,15 @@
 #include "chrome/browser/download/download_history.h"
 #include "chrome/browser/download/download_item.h"
 #include "chrome/browser/download/download_util.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/browser/ui/webui/fileicon_source.h"
+#include "chrome/browser/ui/webui/fileicon_source_cros.h"
 #include "chrome/common/jstemplate_builder.h"
 #include "chrome/common/url_constants.h"
 #include "content/browser/browser_thread.h"
 #include "content/browser/tab_contents/tab_contents.h"
+#include "content/browser/user_metrics.h"
 #include "grit/generated_resources.h"
 #include "ui/gfx/image.h"
 
@@ -53,7 +54,11 @@ DownloadsDOMHandler::DownloadsDOMHandler(DownloadManager* dlm)
       callback_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
   // Create our fileicon data source.
   dlm->profile()->GetChromeURLDataManager()->AddDataSource(
+#if defined(OS_CHROMEOS)
+      new FileIconSourceCros());
+#else
       new FileIconSource());
+#endif  // OS_CHROMEOS
 }
 
 DownloadsDOMHandler::~DownloadsDOMHandler() {

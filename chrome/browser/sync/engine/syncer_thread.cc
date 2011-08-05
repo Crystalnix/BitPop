@@ -62,6 +62,20 @@ GetUpdatesCallerInfo::GetUpdatesSource GetUpdatesFromNudgeSource(
   }
 }
 
+GetUpdatesCallerInfo::GetUpdatesSource GetSourceFromReason(
+    sync_api::ConfigureReason reason) {
+  switch (reason) {
+    case sync_api::CONFIGURE_REASON_RECONFIGURATION:
+      return GetUpdatesCallerInfo::RECONFIGURATION;
+    case sync_api::CONFIGURE_REASON_MIGRATION:
+      return GetUpdatesCallerInfo::MIGRATION;
+    default:
+      NOTREACHED();
+  }
+
+  return GetUpdatesCallerInfo::UNKNOWN;
+}
+
 SyncerThread::WaitInterval::WaitInterval(Mode mode, TimeDelta length)
     : mode(mode), had_nudge(false), length(length) { }
 
@@ -313,6 +327,7 @@ void SyncerThread::ScheduleNudge(const TimeDelta& delay,
     NudgeSource source, const ModelTypeBitSet& types,
     const tracked_objects::Location& nudge_location) {
   if (!thread_.IsRunning()) {
+    VLOG(0) << "Dropping nudge because thread is not running.";
     NOTREACHED();
     return;
   }
@@ -447,8 +462,10 @@ void GetModelSafeParamsForTypes(const ModelTypeBitSet& types,
   }
 }
 
-void SyncerThread::ScheduleConfig(const ModelTypeBitSet& types) {
+void SyncerThread::ScheduleConfig(const ModelTypeBitSet& types,
+                                  sync_api::ConfigureReason reason) {
   if (!thread_.IsRunning()) {
+    VLOG(0) << "ScheduleConfig failed because thread is not running.";
     NOTREACHED();
     return;
   }
@@ -461,7 +478,7 @@ void SyncerThread::ScheduleConfig(const ModelTypeBitSet& types) {
 
   thread_.message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
       this, &SyncerThread::ScheduleConfigImpl, routes, workers,
-      GetUpdatesCallerInfo::FIRST_UPDATE));
+      GetSourceFromReason(reason)));
 }
 
 void SyncerThread::ScheduleConfigImpl(const ModelSafeRoutingInfo& routing_info,
@@ -526,15 +543,26 @@ void SyncerThread::SetSyncerStepsForPurpose(
 void SyncerThread::DoSyncSessionJob(const SyncSessionJob& job) {
   DCHECK_EQ(MessageLoop::current(), thread_.message_loop());
   if (!ShouldRunJob(job)) {
-    LOG(WARNING) << "Dropping nudge at DoSyncSessionJob, source = "
+    LOG(WARNING) << "Not executing job at DoSyncSessionJob, purpose = "
+        << job.purpose << " source = "
         << job.session->source().updates_source;
     return;
   }
 
   if (job.purpose == SyncSessionJob::NUDGE) {
-    if (pending_nudge_.get() == NULL || pending_nudge_->session != job.session)
+    if (pending_nudge_.get() == NULL ||
+        pending_nudge_->session != job.session) {
+      VLOG(1) << "SyncerThread(" << this << ")" << "Dropping a nudge in "
+              << "DoSyncSessionJob because another nudge was scheduled";
       return;  // Another nudge must have been scheduled in in the meantime.
+    }
     pending_nudge_.reset();
+
+    // Create the session with the latest model safe table and use it to purge
+    // and update any disabled or modified entries in the job.
+    scoped_ptr<SyncSession> session(CreateSyncSession(job.session->source()));
+
+    job.session->RebaseRoutingInfoWithLatest(session.get());
   }
   VLOG(1) << "SyncerThread(" << this << ")" << " DoSyncSessionJob. job purpose "
           << job.purpose;
@@ -693,23 +721,22 @@ void SyncerThread::HandleConsecutiveContinuationError(
   if (IsBackingOff()) {
     DCHECK(wait_interval_->timer.IsRunning() || old_job.is_canary_job);
   }
-  SyncSession* old = old_job.session.get();
-  SyncSession* s(new SyncSession(session_context_.get(), this,
-      old->source(), old->routing_info(), old->workers()));
+
   TimeDelta length = delay_provider_->GetDelay(
       IsBackingOff() ? wait_interval_->length : TimeDelta::FromSeconds(1));
 
   VLOG(1) << "SyncerThread(" << this << ")"
           << " In handle continuation error. Old job purpose is "
-          << old_job.purpose;
-  VLOG(1) << "SyncerThread(" << this << ")"
-    << " In Handle continuation error. The time delta(ms) is: "
+          << old_job.purpose << " . The time delta(ms) is "
           << length.InMilliseconds();
 
   // This will reset the had_nudge variable as well.
   wait_interval_.reset(new WaitInterval(WaitInterval::EXPONENTIAL_BACKOFF,
                                         length));
   if (old_job.purpose == SyncSessionJob::CONFIGURATION) {
+    SyncSession* old = old_job.session.get();
+    SyncSession* s(new SyncSession(session_context_.get(), this,
+        old->source(), old->routing_info(), old->workers()));
     SyncSessionJob job(old_job.purpose, TimeTicks::Now() + length,
                         make_linked_ptr(s), false, FROM_HERE);
     wait_interval_->pending_configure_job.reset(new SyncSessionJob(job));
@@ -864,7 +891,7 @@ void SyncerThread::OnShouldStopSyncingPermanently() {
 }
 
 void SyncerThread::OnServerConnectionEvent(
-    const ServerConnectionEvent2& event) {
+    const ServerConnectionEvent& event) {
   thread_.message_loop()->PostTask(FROM_HERE, NewRunnableMethod(this,
       &SyncerThread::CheckServerConnectionManagerStatus,
       event.connection_code));

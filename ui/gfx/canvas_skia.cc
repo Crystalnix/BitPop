@@ -12,7 +12,7 @@
 #include "ui/gfx/brush.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/rect.h"
-#include "ui/gfx/transform_skia.h"
+#include "ui/gfx/transform.h"
 
 #if defined(OS_WIN)
 #include "ui/gfx/canvas_skia_paint.h"
@@ -232,8 +232,8 @@ void CanvasSkia::DrawBitmapInt(const SkBitmap& bitmap,
                                const SkPaint& paint) {
   DLOG_ASSERT(src_x + src_w < std::numeric_limits<int16_t>::max() &&
               src_y + src_h < std::numeric_limits<int16_t>::max());
-  if (src_w <= 0 || src_h <= 0 || dest_w <= 0 || dest_h <= 0) {
-    NOTREACHED() << "Attempting to draw bitmap to/from an empty rect!";
+  if (src_w <= 0 || src_h <= 0) {
+    NOTREACHED() << "Attempting to draw bitmap from an empty rect!";
     return;
   }
 
@@ -324,15 +324,15 @@ void CanvasSkia::TileImageInt(const SkBitmap& bitmap,
 }
 
 gfx::NativeDrawingContext CanvasSkia::BeginPlatformPaint() {
-  return beginPlatformPaint();
+  return skia::BeginPlatformPaint(this);
 }
 
 void CanvasSkia::EndPlatformPaint() {
-  endPlatformPaint();
+  skia::EndPlatformPaint(this);
 }
 
 void CanvasSkia::Transform(const ui::Transform& transform) {
-  concat(*reinterpret_cast<const ui::TransformSkia&>(transform).matrix_.get());
+  concat(transform.matrix());
 }
 
 CanvasSkia* CanvasSkia::AsCanvasSkia() {

@@ -8,7 +8,6 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/animation/slide_animation.h"
 #include "views/background.h"
-#include "views/widget/root_view.h"
 #include "views/widget/widget.h"
 
 // Min/max opacity of the overlay.
@@ -61,6 +60,7 @@ void ContentsContainer::MakePreviewContentsActiveContents() {
 
   active_ = preview_;
   preview_ = NULL;
+  preview_tab_contents_ = NULL;
   Layout();
 }
 
@@ -152,19 +152,21 @@ void ContentsContainer::Layout() {
 
 void ContentsContainer::CreateOverlay(int initial_opacity) {
   DCHECK(!active_overlay_);
-  views::Widget::CreateParams params(views::Widget::CreateParams::TYPE_POPUP);
-  params.transparent = true;
-  params.accept_events = false;
-  active_overlay_ = views::Widget::CreateWidget(params);
-  active_overlay_->SetOpacity(initial_opacity);
   gfx::Point screen_origin;
   views::View::ConvertPointToScreen(active_, &screen_origin);
   gfx::Rect overlay_bounds(screen_origin, active_->size());
-  active_overlay_->Init(active_->GetWidget()->GetNativeView(), overlay_bounds);
+  views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
+  params.transparent = true;
+  params.accept_events = false;
+  params.parent = active_->GetWidget()->GetNativeView();
+  params.bounds = overlay_bounds;
+  active_overlay_ = new views::Widget;
+  active_overlay_->Init(params);
   overlay_view_ = new OverlayContentView(this);
   overlay_view_->set_background(
       views::Background::CreateSolidBackground(SK_ColorWHITE));
   active_overlay_->SetContentsView(overlay_view_);
+  active_overlay_->SetOpacity(initial_opacity);
   active_overlay_->Show();
   active_overlay_->MoveAboveWidget(active_->GetWidget());
 }

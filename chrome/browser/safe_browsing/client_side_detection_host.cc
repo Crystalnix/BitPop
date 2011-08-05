@@ -23,7 +23,7 @@
 #include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
-#include "content/browser/tab_contents/navigation_controller.h"
+#include "content/browser/tab_contents/navigation_details.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/common/notification_service.h"
 #include "content/common/notification_type.h"
@@ -252,6 +252,12 @@ class CsdClient : public SafeBrowsingService::Client {
   DISALLOW_COPY_AND_ASSIGN(CsdClient);
 };
 
+// static
+ClientSideDetectionHost* ClientSideDetectionHost::Create(
+    TabContents* tab) {
+  return new ClientSideDetectionHost(tab);
+}
+
 ClientSideDetectionHost::ClientSideDetectionHost(TabContents* tab)
     : TabContentsObserver(tab),
       csd_service_(g_browser_process->safe_browsing_detection_service()),
@@ -283,7 +289,7 @@ bool ClientSideDetectionHost::OnMessageReceived(const IPC::Message& message) {
 }
 
 void ClientSideDetectionHost::DidNavigateMainFramePostCommit(
-    const NavigationController::LoadCommittedDetails& details,
+    const content::LoadCommittedDetails& details,
     const ViewHostMsg_FrameNavigate_Params& params) {
   // TODO(noelutz): move this DCHECK to TabContents and fix all the unit tests
   // that don't call this method on the UI thread.
@@ -367,9 +373,7 @@ void ClientSideDetectionHost::MaybeShowPhishingWarning(GURL phishing_url,
                             redirect_urls,
                             // We only classify the main frame URL.
                             ResourceType::MAIN_FRAME,
-                            // TODO(noelutz): create a separate threat type
-                            // for client-side phishing detection.
-                            SafeBrowsingService::URL_PHISHING,
+                            SafeBrowsingService::CLIENT_SIDE_PHISHING_URL,
                             new CsdClient() /* will delete itself */,
                             tab_contents()->GetRenderProcessHost()->id(),
                             tab_contents()->render_view_host()->routing_id()));

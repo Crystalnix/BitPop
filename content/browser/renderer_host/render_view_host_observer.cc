@@ -17,8 +17,14 @@ RenderViewHostObserver::~RenderViewHostObserver() {
     render_view_host_->RemoveObserver(this);
 }
 
+void RenderViewHostObserver::RenderViewHostInitialized() {
+}
+
 void RenderViewHostObserver::RenderViewHostDestroyed() {
   delete this;
+}
+
+void RenderViewHostObserver::Navigate(const ViewMsg_Navigate_Params& params) {
 }
 
 bool RenderViewHostObserver::OnMessageReceived(const IPC::Message& message) {

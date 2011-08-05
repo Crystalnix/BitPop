@@ -23,7 +23,7 @@
   'targets': [
     {
       'target_name': 'test_shell_common',
-      'type': '<(library)',
+      'type': 'static_library',
       'variables': {
         'chromium_code': 1,
       },
@@ -120,7 +120,7 @@
             'copy_npapi_test_plugin',
           ],
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             'test_shell_resources',
             '<(DEPTH)/build/linux/system.gyp:gtk',
@@ -161,7 +161,7 @@
         'pak_path': '<(INTERMEDIATE_DIR)/repack/test_shell.pak',
       },
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['os_posix == 1 and OS != "mac"', {
           'actions': [
             {
               'action_name': 'test_shell_repack',
@@ -265,7 +265,7 @@
             },
           },
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+        ['toolkit_uses_gtk == 1', {
           'conditions': [
             ['linux_use_tcmalloc==1', {
               'dependencies': [
@@ -282,7 +282,8 @@
         ['OS=="mac"', {
           'product_name': 'TestShell',
           'dependencies': [
-            'layout_test_helper', 'copy_mesa',
+            'layout_test_helper',
+            '<(DEPTH)/third_party/mesa/mesa.gyp:osmesa',
           ],
           'variables': {
             'repack_path': '../../../tools/data_pack/repack.py',
@@ -338,6 +339,11 @@
         'chromium_code': 1,
       },
       'msvs_guid': 'E6766F81-1FCD-4CD7-BC16-E36964A14867',
+      #TODO(dmichael): Remove this #define once all plugins are ported from
+      #                PPP_Instance and PPB_Instance scripting functions.
+      'defines': [
+        'PPAPI_INSTANCE_REMOVE_SCRIPTING',
+      ],
       'dependencies': [
         'test_shell_common',
         '<(DEPTH)/base/base.gyp:test_support_base',
@@ -346,6 +352,7 @@
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/testing/gmock.gyp:gmock',
         '<(DEPTH)/testing/gtest.gyp:gtest',
+        '<(DEPTH)/third_party/leveldb/leveldb.gyp:leveldb',
       ],
       'sources': [
         '../../../skia/ext/convolver_unittest.cc',
@@ -371,17 +378,26 @@
         '../../blob/blob_url_request_job_unittest.cc',
         '../../blob/deletable_file_reference_unittest.cc',
         '../../database/database_connections_unittest.cc',
+        '../../database/database_quota_client_unittest.cc',
         '../../database/databases_table_unittest.cc',
         '../../database/database_tracker_unittest.cc',
         '../../database/database_util_unittest.cc',
         '../../database/quota_table_unittest.cc',
         '../../fileapi/file_system_context_unittest.cc',
+        '../../fileapi/file_system_directory_database_unittest.cc',
+        '../../fileapi/file_system_file_util_unittest.cc',
         '../../fileapi/file_system_operation_unittest.cc',
+        '../../fileapi/file_system_origin_database_unittest.cc',
         '../../fileapi/file_system_path_manager_unittest.cc',
+        '../../fileapi/file_system_quota_client_unittest.cc',
         '../../fileapi/file_system_usage_cache_unittest.cc',
-        '../../fileapi/file_system_usage_tracker_unittest.cc',
         '../../fileapi/file_system_util_unittest.cc',
+        '../../fileapi/local_file_system_file_util_unittest.cc',
+        '../../fileapi/obfuscated_file_system_file_util_unittest.cc',
+        '../../fileapi/quota_file_util_unittest.cc',
         '../../fileapi/sandbox_mount_point_provider_unittest.cc',
+        '../../fileapi/file_system_test_helper.cc',
+        '../../fileapi/file_system_test_helper.h',
         '../../fileapi/webfilewriter_base_unittest.cc',
         '../../glue/bookmarklet_unittest.cc',
         '../../glue/context_menu_unittest.cc',
@@ -404,8 +420,7 @@
         '../../glue/webkit_glue_unittest.cc',
         '../../glue/webview_unittest.cc',
         '../../mocks/mock_resource_loader_bridge.h',
-        '../../mocks/mock_webframe.cc',
-        '../../mocks/mock_webframe.h',
+        '../../mocks/mock_webframeclient.h',
         '../../mocks/mock_weburlloader.cc',
         '../../mocks/mock_weburlloader.h',
         '../../plugins/npapi/plugin_group_unittest.cc',
@@ -421,7 +436,13 @@
         '../../plugins/ppapi/ppapi_unittest.h',
         '../../plugins/ppapi/resource_tracker_unittest.cc',
         '../../plugins/ppapi/url_request_info_unittest.cc',
+        '../../quota/mock_special_storage_policy.cc',
+        '../../quota/mock_special_storage_policy.h',
+        '../../quota/mock_storage_client.cc',
+        '../../quota/mock_storage_client.h',
         '../../quota/quota_database_unittest.cc',
+        '../../quota/quota_manager_unittest.cc',
+        '../../quota/quota_temporary_storage_evictor_unittest.cc',
         '../webcore_unit_tests/BMPImageDecoder_unittest.cpp',
         '../webcore_unit_tests/ICOImageDecoder_unittest.cpp',
         'event_listener_unittest.cc',
@@ -452,7 +473,7 @@
             },
           },
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             'test_shell_pak',
             '<(DEPTH)/build/linux/system.gyp:gtk',
@@ -494,7 +515,7 @@
             '../../../skia/ext/vector_canvas_unittest.cc',
           ],
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="solaris"', {
+        ['os_posix == 1 and OS != "mac"', {
           'conditions': [
             ['linux_use_tcmalloc==1', {
               'dependencies': [
@@ -524,6 +545,9 @@
             '../../plugins/npapi/test/plugin_test.cc',
             '../../plugins/npapi/test/plugin_test.h',
             '../../plugins/npapi/test/plugin_test_factory.h',
+          ],
+          'export_dependent_settings': [
+            '<(DEPTH)/base/base.gyp:base',
           ],
         },
         {
@@ -558,6 +582,8 @@
             '../../plugins/npapi/test/plugin_javascript_open_popup.h',
             '../../plugins/npapi/test/plugin_new_fails_test.cc',
             '../../plugins/npapi/test/plugin_new_fails_test.h',
+            '../../plugins/npapi/test/plugin_npobject_identity_test.cc',
+            '../../plugins/npapi/test/plugin_npobject_identity_test.h',
             '../../plugins/npapi/test/plugin_npobject_lifetime_test.cc',
             '../../plugins/npapi/test/plugin_npobject_lifetime_test.h',
             '../../plugins/npapi/test/plugin_npobject_proxy_test.cc',
@@ -611,13 +637,13 @@
                 ],
               },
             }],
-            ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+            ['os_posix == 1 and OS != "mac"', {
               'sources!': [
                 # Needs simple event record type porting
                 '../../plugins/npapi/test/plugin_windowless_test.cc',
               ],
             }],
-            ['(OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris") and (target_arch=="x64" or target_arch=="arm")', {
+            ['os_posix == 1 and OS != "mac" and (target_arch == "x64" or target_arch == "arm")', {
               # Shared libraries need -fPIC on x86-64
               'cflags': ['-fPIC']
             }],
@@ -646,7 +672,7 @@
                 },
               ]
             }],
-            ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+            ['os_posix == 1 and OS != "mac"', {
               'copies': [
                 {
                   'destination': '<(PRODUCT_DIR)/plugins',
@@ -658,7 +684,7 @@
         },
       ],
     }],
-    ['OS=="linux"  or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+    ['os_posix == 1 and OS != "mac"', {
       'targets': [
         {
           'target_name': 'test_shell_resources',
@@ -727,15 +753,6 @@
               '$(SDKROOT)/System/Library/Frameworks/AppKit.framework',
             ],
           },
-        },
-        {
-          'target_name': 'copy_mesa',
-          'type': 'none',
-          'dependencies': ['<(DEPTH)/third_party/mesa/mesa.gyp:osmesa'],
-          'copies': [{
-            'destination': '<(PRODUCT_DIR)/TestShell.app/Contents/MacOS/',
-            'files': ['<(PRODUCT_DIR)/osmesa.so'],
-          }],
         },
       ],
     }],

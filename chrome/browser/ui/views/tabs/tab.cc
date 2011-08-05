@@ -12,6 +12,7 @@
 #include "grit/app_resources.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/base/animation/multi_animation.h"
 #include "ui/base/animation/slide_animation.h"
@@ -35,7 +36,7 @@ static const int kBottomPadding = 5;
 static const int kDropShadowHeight = 2;
 static const int kToolbarOverlap = 1;
 static const int kFaviconTitleSpacing = 4;
-static const int kTitleCloseButtonSpacing = 5;
+static const int kTitleCloseButtonSpacing = 3;
 static const int kStandardTitleWidth = 175;
 static const int kCloseButtonVertFuzz = 0;
 static const int kCloseButtonHorzFuzz = 5;
@@ -449,7 +450,7 @@ void Tab::PaintInactiveTabBackground(gfx::Canvas* canvas) {
 
   int tab_id;
   if (GetWidget() &&
-      GetWidget()->GetWindow()->non_client_view()->UseNativeFrame()) {
+      GetWidget()->GetContainingWindow()->ShouldUseNativeFrame()) {
     tab_id = IDR_THEME_TAB_BACKGROUND_V;
   } else {
     tab_id = data().incognito ? IDR_THEME_TAB_BACKGROUND_INCOGNITO :

@@ -29,12 +29,13 @@ class PdfMetafileSkia : public Metafile {
   virtual bool Init();
   virtual bool InitFromData(const void* src_buffer, uint32 src_buffer_size);
 
-  virtual skia::PlatformDevice* StartPageForVectorCanvas(
+  virtual SkDevice* StartPageForVectorCanvas(
       const gfx::Size& page_size,
-      const gfx::Point& content_origin,
+      const gfx::Rect& content_area,
       const float& scale_factor);
+
   virtual bool StartPage(const gfx::Size& page_size,
-                         const gfx::Point& content_origin,
+                         const gfx::Rect& content_area,
                          const float& scale_factor);
   virtual bool FinishPage();
   virtual bool FinishDocument();
@@ -66,4 +67,4 @@ class PdfMetafileSkia : public Metafile {
 
 }  // namespace printing
 
-#endif  // PRINTING_PDF_METAFILE_MAC_H_
+#endif  // PRINTING_PDF_METAFILE_SKIA_H_

@@ -117,6 +117,18 @@ void StatusAreaButton::OnThemeChanged() {
   UpdateTextStyle();
 }
 
+int StatusAreaButton::icon_height() {
+  return 24;
+}
+
+int StatusAreaButton::icon_width() {
+  return 23;
+}
+
+int StatusAreaButton::horizontal_padding() {
+  return 1;
+}
+
 void StatusAreaButton::UpdateTextStyle() {
   ClearEmbellishing();
   switch (host_->GetTextStyle()) {
@@ -133,6 +145,15 @@ void StatusAreaButton::UpdateTextStyle() {
       SetTextShadowOffset(0, 1);
       break;
   }
+}
+
+bool StatusAreaButton::HitTest(const gfx::Point& l) const {
+  // BrowserFrameViewChromeos adds a few pixels of pad to the top of the
+  // status area. For mouse events in this area to activate the button,
+  // hit testing need to be successful. We do this by clamping y to the
+  // position of the menu button view.
+  gfx::Point point(l.x(), std::max(y(), l.y()));
+  return MenuButton::HitTest(point);
 }
 
 }  // namespace chromeos

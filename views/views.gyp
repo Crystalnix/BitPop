@@ -8,7 +8,7 @@
   },
 
   'conditions': [
-    [ 'OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+    ['os_posix == 1 and OS != "mac"', {
       'conditions': [
         ['sysroot!=""', {
           'variables': {
@@ -29,7 +29,7 @@
       ['exclude', '/(gtk|win|x11)_[^/]*\\.cc$'],
     ],
     'conditions': [
-      ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {'sources/': [
+      ['toolkit_uses_gtk == 1', {'sources/': [
         ['include', '/gtk/'],
         ['include', '_(gtk|linux|posix|skia|x)\\.cc$'],
         ['include', '/(gtk|x11)_[^/]*\\.cc$'],
@@ -59,11 +59,12 @@
   'targets': [
     {
       'target_name': 'views',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '6F9258E5-294F-47B2-919D-17FFE7A8B751',
       'dependencies': [
         '../app/app.gyp:app_base',
         '../app/app.gyp:app_resources',
+        '../base/base.gyp:base',
         '../skia/skia.gyp:skia',
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
@@ -110,20 +111,20 @@
         'controls/combobox/combobox.h',
         'controls/combobox/native_combobox_gtk.cc',
         'controls/combobox/native_combobox_gtk.h',
+        'controls/combobox/native_combobox_views.cc',
+        'controls/combobox/native_combobox_views.h',
         'controls/combobox/native_combobox_win.cc',
         'controls/combobox/native_combobox_win.h',
         'controls/combobox/native_combobox_wrapper.h',
+        'controls/focusable_border.cc',
+        'controls/focusable_border.h',
         'controls/image_view.cc',
         'controls/image_view.h',
         'controls/label.cc',
         'controls/label.h',
         'controls/link.cc',
         'controls/link.h',
-        'controls/listbox/native_listbox_wrapper.h',
-        'controls/listbox/native_listbox_win.cc',
-        'controls/listbox/native_listbox_win.h',
-        'controls/listbox/listbox.cc',
-        'controls/listbox/listbox.h',
+        'controls/link_listener.h',
         'controls/menu/menu.cc',
         'controls/menu/menu.h',
         'controls/menu/menu_2.cc',
@@ -150,6 +151,8 @@
         'controls/menu/menu_item_view.h',
         'controls/menu/menu_item_view_gtk.cc',
         'controls/menu/menu_item_view_win.cc',
+        'controls/menu/menu_model_adapter.cc',
+        'controls/menu/menu_model_adapter.h',
         'controls/menu/menu_scroll_view_container.cc',
         'controls/menu/menu_scroll_view_container.h',
         'controls/menu/menu_separator.h',
@@ -211,11 +214,6 @@
         'controls/separator.h',
         'controls/single_split_view.cc',
         'controls/single_split_view.h',
-        'controls/slider/native_slider_gtk.cc',
-        'controls/slider/native_slider_gtk.h',
-        'controls/slider/native_slider_wrapper.h',
-        'controls/slider/slider.cc',
-        'controls/slider/slider.h',
         'controls/tabbed_pane/native_tabbed_pane_gtk.cc',
         'controls/tabbed_pane/native_tabbed_pane_gtk.h',
         'controls/tabbed_pane/native_tabbed_pane_win.cc',
@@ -311,6 +309,7 @@
         'metrics_win.cc',
         'mouse_watcher.cc',
         'mouse_watcher.h',
+        'native_theme_delegate.h',
         'native_theme_painter.cc',
         'native_theme_painter.h',
         'painter.cc',
@@ -363,12 +362,18 @@
         'widget/monitor_win.h',
         'widget/native_widget.h',
         'widget/native_widget_delegate.h',
+        'widget/native_widget_gtk.cc',
+        'widget/native_widget_gtk.h',
+        'widget/native_widget_view.cc',
+        'widget/native_widget_view.h',
+        'widget/native_widget_views.cc',
+        'widget/native_widget_views.h',
+        'widget/native_widget_win.cc',
+        'widget/native_widget_win.h',
         'widget/widget.cc',
         'widget/widget.h',
-        'widget/widget_gtk.cc',
-        'widget/widget_gtk.h',
-        'widget/widget_win.cc',
-        'widget/widget_win.h',
+        'widget/widget_delegate.cc',
+        'widget/widget_delegate.h',
         'window/client_view.cc',
         'window/client_view.h',
         'window/custom_frame_view.cc',
@@ -381,6 +386,12 @@
         'window/native_frame_view.h',
         'window/native_window.h',
         'window/native_window_delegate.h',
+        'window/native_window_gtk.cc',
+        'window/native_window_gtk.h',
+        'window/native_window_views.cc',
+        'window/native_window_views.h',
+        'window/native_window_win.cc',
+        'window/native_window_win.h',
         'window/non_client_view.cc',
         'window/non_client_view.h',
         'window/window.cc',
@@ -388,18 +399,14 @@
         'window/window_delegate.h',
         'window/window_delegate.cc',
         'window/window_resources.h',
-        'window/window_gtk.cc',
-        'window/window_gtk.h',
         'window/window_shape.cc',
         'window/window_shape.h',
-        'window/window_win.cc',
-        'window/window_win.h',
       ],
       'include_dirs': [
         '<(DEPTH)/third_party/wtl/include',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
             '../build/linux/system.gyp:x11',
@@ -408,32 +415,20 @@
           'sources!': [
             'accessibility/native_view_accessibility_win.cc',
             'controls/scrollbar/bitmap_scroll_bar.cc',
-            'controls/combo_box.cc',
-            'controls/hwnd_view.cc',
-            'controls/listbox/native_listbox_wrapper.h',
-            'controls/listbox/listbox.cc',
-            'controls/listbox/listbox.h',
             'controls/native_control.cc',
             'controls/table/group_table_view.cc',
-            'controls/table/table_model.cc',
             'controls/table/table_view.cc',
             'controls/table/group_table_view.cc',
             'controls/tree/tree_view.cc',
             'events/event_win.cc',
-            'resize_corner.cc',
+            'widget/aero_tooltip_manager.cc',
             'widget/child_window_message_processor.cc',
             'widget/child_window_message_processor.h',
-            'widget/aero_tooltip_manager.cc',
-            'widget/root_view_drop_target.cc',
-            'widget/widget_win.cc',
-            'window/hit_test.cc',
+            'widget/native_widget_win.cc',
             'window/native_frame_view.cc',
           ],
         }],
         ['touchui==1', {
-          'dependencies': [
-            '../build/linux/system.gyp:ibus',
-          ],
           'defines': ['TOUCH_UI=1'],
           'sources/': [
             ['exclude', 'focus/accelerator_handler_gtk.cc'],
@@ -447,33 +442,19 @@
                 ['exclude', 'touchui/touch_factory.h'],
               ],
             }],
-            # TODO(suzhe): We should not check ibus version here. Instead, we
-            # should use a variable to control whether or not to use ibus.
-            ['"<!@(<(pkg-config) --atleast-version=1.3.99 ibus-1.0 || echo $?)"==""', {
-              'defines': ['HAVE_IBUS=1'],
-              'sources/': [
-                ['exclude', 'ime/input_method_gtk.cc'],
-                ['exclude', 'ime/input_method_gtk.h'],
-              ],
-            }, { # else: no ibus
-              'sources/': [
-                ['exclude', 'ime/input_method_ibus.cc'],
-                ['exclude', 'ime/input_method_ibus.h'],
-              ],
-            }],
           ],
-        }, { # else: touchui != 1
-          'sources!': [
-            'ime/input_method_ibus.cc',
-            'ime/input_method_ibus.h',
+        }],
+        ['use_ibus==1', {
+          'dependencies': [
+            '../build/linux/system.gyp:ibus',
+          ],
+        }, { # else: use_ibus != 1
+          'sources/': [
+            ['exclude', 'ime/input_method_ibus.cc'],
+            ['exclude', 'ime/input_method_ibus.h'],
           ],
         }],
         ['OS=="win"', {
-          'sources!': [
-            'controls/slider/slider.cc',
-            'controls/slider/slider.h',
-            'controls/slider/native_slider_wrapper.h',
-          ],
           'include_dirs': [
             '<(DEPTH)/third_party/wtl/include',
           ],
@@ -505,6 +486,8 @@
         'controls/single_split_view_unittest.cc',
         'controls/tabbed_pane/tabbed_pane_unittest.cc',
         'controls/table/table_view_unittest.cc',
+        'controls/combobox/native_combobox_views_unittest.cc',
+        'controls/menu/menu_model_adapter_unittest.cc',
         'controls/textfield/native_textfield_views_unittest.cc',
         'controls/textfield/textfield_views_model_unittest.cc',
         'events/event_unittest.cc',
@@ -524,13 +507,13 @@
         'widget/native_widget_test_utils_gtk.cc',
         'widget/native_widget_test_utils_win.cc',
         'widget/native_widget_unittest.cc',
-        'widget/widget_win_unittest.cc',
-        'window/window_win_unittest.cc',
+        'widget/native_widget_win_unittest.cc',
+        'window/native_window_win_unittest.cc',
 
         '<(SHARED_INTERMEDIATE_DIR)/app/app_resources/app_resources.rc',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
             '../chrome/chrome.gyp:packed_resources',
@@ -567,6 +550,7 @@
       'target_name': 'views_examples',
       'type': 'executable',
       'dependencies': [
+        '../app/app.gyp:app_resources',
         '../base/base.gyp:base',
         '../skia/skia.gyp:skia',
         '../third_party/icu/icu.gyp:icui18n',
@@ -585,20 +569,26 @@
         'examples/example_base.h',
         'examples/examples_main.cc',
         'examples/examples_main.h',
+        'examples/link_example.cc',
+        'examples/link_example.h',
         'examples/message_box_example.cc',
         'examples/message_box_example.h',
         'examples/menu_example.cc',
         'examples/menu_example.h',
         'examples/native_theme_button_example.cc',
         'examples/native_theme_button_example.h',
+        'examples/native_theme_checkbox_example.cc',
+        'examples/native_theme_checkbox_example.h',
+        'examples/native_widget_views_example.cc',
+        'examples/native_widget_views_example.h',
+        'examples/native_window_views_example.cc',
+        'examples/native_window_views_example.h',
         'examples/radio_button_example.cc',
         'examples/radio_button_example.h',
         'examples/scroll_view_example.cc',
         'examples/scroll_view_example.h',
         'examples/single_split_view_example.cc',
         'examples/single_split_view_example.h',
-        'examples/slider_example.cc',
-        'examples/slider_example.h',
         'examples/tabbed_pane_example.cc',
         'examples/tabbed_pane_example.h',
         'examples/table2_example.cc',
@@ -609,11 +599,13 @@
         'examples/throbber_example.h',
         'examples/widget_example.cc',
         'examples/widget_example.h',
-
+        'test/test_views_delegate.cc',
+        'test/test_views_delegate.h',
         '<(SHARED_INTERMEDIATE_DIR)/app/app_resources/app_resources.rc',
+        '<(SHARED_INTERMEDIATE_DIR)/ui/gfx/gfx_resources.rc',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
             '../chrome/chrome.gyp:packed_resources',
@@ -640,6 +632,63 @@
         }],
       ],
     },
+    {
+      'target_name': 'views_desktop',
+      'type': 'executable',
+      'dependencies': [
+        '../app/app.gyp:app_resources',
+        '../base/base.gyp:base',
+        '../skia/skia.gyp:skia',
+        '../third_party/icu/icu.gyp:icui18n',
+        '../third_party/icu/icu.gyp:icuuc',
+        'views',
+      ],
+      'include_dirs': [
+        '..',
+      ],
+      'sources': [
+        'desktop/desktop_background.cc',
+        'desktop/desktop_background.h',
+        'desktop/desktop_main.cc',
+        'desktop/desktop_views_delegate.cc',
+        'desktop/desktop_views_delegate.h',
+        'desktop/desktop_window.cc',
+        'desktop/desktop_window.h',
+        'desktop/desktop_window_root_view.cc',
+        'desktop/desktop_window_root_view.h',
+        '<(SHARED_INTERMEDIATE_DIR)/app/app_resources/app_resources.rc',
+        '<(SHARED_INTERMEDIATE_DIR)/ui/gfx/gfx_resources.rc',
+      ],
+      'conditions': [
+        ['toolkit_uses_gtk == 1', {
+          'dependencies': [
+            '../build/linux/system.gyp:gtk',
+            '../chrome/chrome.gyp:packed_resources',
+          ],
+          'conditions': [
+            ['linux_use_tcmalloc==1', {
+               'dependencies': [
+                 '../base/allocator/allocator.gyp:allocator',
+               ],
+            }],
+          ],
+        },
+        ],
+        ['OS=="win"', {
+          'link_settings': {
+            'libraries': [
+              '-limm32.lib',
+              '-loleacc.lib',
+            ]
+          },
+          'include_dirs': [
+            '<(DEPTH)/third_party/wtl/include',
+          ],
+        }],
+      ],
+    },
+
+
   ],
 }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,7 +25,7 @@ class MenuScrollViewContainer;
 // . Forwards the appropriate events to the MenuController. This allows the
 //   MenuController to update the selection as the user moves the mouse around.
 // . Renders the drop indicator during a drop operation.
-// . Shows and hides the window (a WidgetWin) when the menu is shown on
+// . Shows and hides the window (a NativeWidgetWin) when the menu is shown on
 //   screen.
 //
 // SubmenuView is itself contained in a MenuScrollViewContainer.
@@ -39,7 +39,7 @@ class SubmenuView : public View {
 
   // Creates a SubmenuView for the specified menu item.
   explicit SubmenuView(MenuItemView* parent);
-  ~SubmenuView();
+  virtual ~SubmenuView();
 
   // Returns the number of child views that are MenuItemViews.
   // MenuItemViews are identified by ID.
@@ -107,7 +107,7 @@ class SubmenuView : public View {
   virtual bool SkipDefaultKeyEventProcessing(const KeyEvent& e);
 
   // Returns the parent menu item we're showing children for.
-  MenuItemView* GetMenuItem() const { return parent_menu_item_; }
+  MenuItemView* GetMenuItem() const;
 
   // Set the drop item and position.
   void SetDropMenuItem(MenuItemView* item,
@@ -129,6 +129,12 @@ class SubmenuView : public View {
   // Max width of accelerators in child menu items. This doesn't include
   // children's children, only direct children.
   int max_accelerator_width() const { return max_accelerator_width_; }
+
+  // Minimum width of menu in pixels (default 0).  This becomes the smallest
+  // width returned by GetPreferredSize().
+  void set_minimum_preferred_width(int minimum_preferred_width) {
+    minimum_preferred_width_ = minimum_preferred_width;
+  }
 
   // Padding around the edges of the submenu.
   static const int kSubmenuBorderSize;
@@ -175,6 +181,9 @@ class SubmenuView : public View {
 
   // See description above getter.
   int max_accelerator_width_;
+
+  // Minimum width returned in GetPreferredSize().
+  int minimum_preferred_width_;
 
   DISALLOW_COPY_AND_ASSIGN(SubmenuView);
 };

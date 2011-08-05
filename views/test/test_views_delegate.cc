@@ -4,8 +4,15 @@
 
 #include "views/test/test_views_delegate.h"
 
-TestViewsDelegate::TestViewsDelegate() {}
-TestViewsDelegate::~TestViewsDelegate() {}
+#include "base/logging.h"
+
+TestViewsDelegate::TestViewsDelegate() {
+  DCHECK(!views::ViewsDelegate::views_delegate);
+  views::ViewsDelegate::views_delegate = this;
+}
+TestViewsDelegate::~TestViewsDelegate() {
+  views::ViewsDelegate::views_delegate = NULL;
+}
 
 ui::Clipboard* TestViewsDelegate::GetClipboard() const {
   if (!clipboard_.get()) {
@@ -26,4 +33,8 @@ bool TestViewsDelegate::GetSavedMaximizedState(views::Window* window,
                                                const std::wstring& window_name,
                                                bool* maximized) const {
   return false;
+}
+
+int TestViewsDelegate::GetDispositionForEvent(int event_flags) {
+  return 0;
 }

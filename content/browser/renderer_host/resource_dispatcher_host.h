@@ -20,7 +20,6 @@
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/observer_list.h"
 #include "base/timer.h"
 #include "content/browser/renderer_host/resource_queue.h"
 #include "content/common/child_process_info.h"
@@ -45,10 +44,13 @@ class WebKitThread;
 struct DownloadSaveInfo;
 struct GlobalRequestID;
 struct ResourceHostMsg_Request;
-struct ViewMsg_ClosePage_Params;
+struct ViewMsg_SwapOut_Params;
 
+namespace content {
+class ResourceContext;
+}
 namespace net {
-class URLRequestContext;
+class URLRequestJobFactory;
 }  // namespace net
 
 namespace webkit_blob {
@@ -59,20 +61,47 @@ class ResourceDispatcherHost : public net::URLRequest::Delegate {
  public:
   class Observer {
    public:
+    // Called when a request begins. Return false to abort the request.
+    virtual bool ShouldBeginRequest(
+        int child_id, int route_id,
+        const ResourceHostMsg_Request& request_data,
+        const content::ResourceContext& resource_context,
+        const GURL& referrer) = 0;
+
+    // Called after the load flags have been set when a request begins. Use it
+    // to add or remove load flags.
+    virtual void MutateLoadFlags(int child_id, int route_id,
+                                 int* load_flags) = 0;
+
+    // Called to determine whether a request's start should be deferred. This
+    // is only called if the ResourceHandler associated with the request does
+    // not ask for a deferral. A return value of true will defer the start of
+    // the request, false will continue the request.
+    virtual bool ShouldDeferStart(
+        net::URLRequest* request,
+        const content::ResourceContext& resource_context) = 0;
+
+    // Called when an SSL Client Certificate is requested. If false is returned,
+    // the request is canceled. Otherwise, the certificate is chosen.
+    virtual bool AcceptSSLClientCertificateRequest(
+        net::URLRequest* request,
+        net::SSLCertRequestInfo* cert_request_info) = 0;
+
+    // Called when authentication is required and credentials are needed. If
+    // false is returned, CancelAuth() is called on the URLRequest and the error
+    // page is shown. If true is returned, the user will be prompted for
+    // authentication credentials.
+    virtual bool AcceptAuthRequest(net::URLRequest* request,
+                                   net::AuthChallengeInfo* auth_info) = 0;
+
+   protected:
+    Observer() {}
     virtual ~Observer() {}
-    virtual void OnRequestStarted(ResourceDispatcherHost* resource_dispatcher,
-                                  net::URLRequest* request) = 0;
-    virtual void OnResponseCompleted(
-        ResourceDispatcherHost* resource_dispatcher,
-        net::URLRequest* request) = 0;
-    virtual void OnReceivedRedirect(ResourceDispatcherHost* resource_dispatcher,
-                                    net::URLRequest* request,
-                                    const GURL& new_url) = 0;
   };
 
   explicit ResourceDispatcherHost(
       const ResourceQueue::DelegateSet& resource_queue_delegates);
-  ~ResourceDispatcherHost();
+  virtual ~ResourceDispatcherHost();
 
   void Initialize();
 
@@ -94,7 +123,7 @@ class ResourceDispatcherHost : public net::URLRequest::Delegate {
                      bool prompt_for_save_location,
                      int process_unique_id,
                      int route_id,
-                     net::URLRequestContext* request_context);
+                     const content::ResourceContext& context);
 
   // Initiates a save file from the browser process (as opposed to a resource
   // request from the renderer or another child process).
@@ -102,7 +131,7 @@ class ResourceDispatcherHost : public net::URLRequest::Delegate {
                      const GURL& referrer,
                      int process_unique_id,
                      int route_id,
-                     net::URLRequestContext* request_context);
+                     const content::ResourceContext& context);
 
   // Cancels the given request if it still exists. We ignore cancels from the
   // renderer in the event of a download.
@@ -171,8 +200,8 @@ class ResourceDispatcherHost : public net::URLRequest::Delegate {
     return webkit_thread_.get();
   }
 
-  // Called when the onunload handler for a cross-site request has finished.
-  void OnClosePageACK(const ViewMsg_ClosePage_Params& params);
+  // Called when the unload handler for a cross-site request has finished.
+  void OnSwapOutACK(const ViewMsg_SwapOut_Params& params);
 
   // Force cancels any pending requests for the given process.
   void CancelRequestsForProcess(int process_unique_id);
@@ -193,12 +222,10 @@ class ResourceDispatcherHost : public net::URLRequest::Delegate {
   virtual void OnSSLCertificateError(net::URLRequest* request,
                                      int cert_error,
                                      net::X509Certificate* cert);
-  virtual void OnGetCookies(net::URLRequest* request,
-                            bool blocked_by_policy);
-  virtual void OnSetCookie(net::URLRequest* request,
-                           const std::string& cookie_line,
-                           const net::CookieOptions& options,
-                           bool blocked_by_policy);
+  virtual bool CanGetCookies(net::URLRequest* request);
+  virtual bool CanSetCookie(net::URLRequest* request,
+                            const std::string& cookie_line,
+                            net::CookieOptions* options);
   virtual void OnResponseStarted(net::URLRequest* request);
   virtual void OnReadCompleted(net::URLRequest* request, int bytes_read);
   void OnResponseCompleted(net::URLRequest* request);
@@ -218,19 +245,8 @@ class ResourceDispatcherHost : public net::URLRequest::Delegate {
                                    int* render_process_host_id,
                                    int* render_view_host_id);
 
-  // Adds an observer.  The observer will be called on the IO thread.  To
-  // observe resource events on the UI thread, subscribe to the
-  // NOTIFY_RESOURCE_* notifications of the notification service.
-  void AddObserver(Observer* obs);
-
-  // Removes an observer.
-  void RemoveObserver(Observer* obs);
-
   // Retrieves a net::URLRequest.  Must be called from the IO thread.
   net::URLRequest* GetURLRequest(const GlobalRequestID& request_id) const;
-
-  // Notifies our observers that a request has been cancelled.
-  void NotifyResponseCompleted(net::URLRequest* request, int process_unique_id);
 
   void RemovePendingRequest(int process_unique_id, int request_id);
 
@@ -268,13 +284,14 @@ class ResourceDispatcherHost : public net::URLRequest::Delegate {
   static bool is_prefetch_enabled();
   static void set_is_prefetch_enabled(bool value);
 
-  void AddPrerenderChildRoutePair(int child_id, int route_id);
-  void RemovePrerenderChildRoutePair(int child_id, int route_id);
+  // Controls whether third-party sub-content can pop-up HTTP basic auth
+  // dialog boxes.
+  bool allow_cross_origin_auth_prompt();
+  void set_allow_cross_origin_auth_prompt(bool value);
 
-  typedef std::set<std::pair<int, int> > PrerenderChildRouteIdPairs;
-  const PrerenderChildRouteIdPairs& prerender_child_route_id_pairs() const {
-    return prerender_child_route_pairs_;
-  }
+  // This does not take ownership of the observer. It is expected that the
+  // observer have a longer lifetime than the ResourceDispatcherHost.
+  void set_observer(Observer* observer) { observer_ = observer; }
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ResourceDispatcherHostTest,
@@ -373,6 +390,7 @@ class ResourceDispatcherHost : public net::URLRequest::Delegate {
                               int route_id,
                               const GURL& url,
                               ResourceType::Type resource_type,
+                              const net::URLRequestJobFactory& job_factory,
                               ResourceHandler* handler);
 
   // Checks all pending requests and updates the load states and upload
@@ -407,8 +425,6 @@ class ResourceDispatcherHost : public net::URLRequest::Delegate {
                         const GURL& new_first_party_for_cookies);
   void OnReleaseDownloadedFile(int request_id);
 
-  bool IsPrerenderingChildRoutePair(int child_id, int route_id) const;
-
   ResourceHandler* CreateSafeBrowsingResourceHandler(
       ResourceHandler* handler, int child_id, int route_id,
       ResourceType::Type resource_type);
@@ -417,14 +433,19 @@ class ResourceDispatcherHost : public net::URLRequest::Delegate {
   // (a download or a page save). |download| should be true if the request
   // is a file download.
   ResourceDispatcherHostRequestInfo* CreateRequestInfoForBrowserRequest(
-      ResourceHandler* handler, int child_id, int route_id, bool download);
+      ResourceHandler* handler,
+      int child_id,
+      int route_id,
+      bool download,
+      const content::ResourceContext& context);
 
   // Returns true if |request| is in |pending_requests_|.
   bool IsValidRequest(net::URLRequest* request);
 
   // Determine request priority based on how critical this resource typically
   // is to user-perceived page load performance.
-  static net::RequestPriority DetermineRequestPriority(ResourceType::Type type);
+  static net::RequestPriority DetermineRequestPriority(ResourceType::Type type,
+                                                       int load_flags);
 
   // Sends the given notification on the UI thread.  The RenderViewHost's
   // controller is used as the source.
@@ -433,6 +454,17 @@ class ResourceDispatcherHost : public net::URLRequest::Delegate {
                          int render_process_id,
                          int render_view_id,
                          T* detail);
+
+  // Relationship of resource being authenticated with the top level page.
+  enum HttpAuthResourceType {
+    HTTP_AUTH_RESOURCE_TOP,            // Top-level page itself
+    HTTP_AUTH_RESOURCE_SAME_DOMAIN,    // Sub-content from same domain
+    HTTP_AUTH_RESOURCE_BLOCKED_CROSS,  // Blocked Sub-content from cross domain
+    HTTP_AUTH_RESOURCE_ALLOWED_CROSS,  // Allowed Sub-content per command line
+    HTTP_AUTH_RESOURCE_LAST
+  };
+
+  HttpAuthResourceType HttpAuthResourceTypeOf(net::URLRequest* request);
 
   PendingRequestList pending_requests_;
 
@@ -475,9 +507,6 @@ class ResourceDispatcherHost : public net::URLRequest::Delegate {
   // request_id_.
   int request_id_;
 
-  // List of objects observing resource dispatching.
-  ObserverList<Observer> observer_list_;
-
   // For running tasks.
   ScopedRunnableMethodFactory<ResourceDispatcherHost> method_runner_;
 
@@ -507,9 +536,10 @@ class ResourceDispatcherHost : public net::URLRequest::Delegate {
   // to the source of the message.
   ResourceMessageFilter* filter_;
 
-  static bool is_prefetch_enabled_;
-  PrerenderChildRouteIdPairs prerender_child_route_pairs_;
+  Observer* observer_;
 
+  static bool is_prefetch_enabled_;
+  bool allow_cross_origin_auth_prompt_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceDispatcherHost);
 };

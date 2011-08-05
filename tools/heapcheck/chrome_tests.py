@@ -81,6 +81,7 @@ class ChromeTests(object):
     self._test_list = {
       "base": self.TestBase,            "base_unittests": self.TestBase,
       "browser": self.TestBrowser,      "browser_tests": self.TestBrowser,
+      "crypto": self.TestCrypto,        "crypto_unittests": self.TestCrypto,
       "googleurl": self.TestGURL,       "googleurl_unittests": self.TestGURL,
       "courgette": self.TestCourgette,
       "courgette_unittests": self.TestCourgette,
@@ -254,6 +255,9 @@ class ChromeTests(object):
   def TestBrowser(self):
     return self.SimpleTest("chrome", "browser_tests")
 
+  def TestCrypto(self):
+    return self.SimpleTest("crypto", "crypto_unittests")
+
   def TestGURL(self):
     return self.SimpleTest("chrome", "googleurl_unittests")
 
@@ -303,10 +307,8 @@ class ChromeTests(object):
   def TestUI(self):
     return self.SimpleTest("chrome", "ui_tests",
                            cmd_args=[
-                            "--ui-test-timeout=120000",
                             "--ui-test-action-timeout=80000",
-                            "--ui-test-action-max-timeout=180000",
-                            "--ui-test-terminate-timeout=60000"])
+                            "--ui-test-action-max-timeout=180000"])
 
   def TestLayoutChunk(self, chunk_num, chunk_size):
     '''Runs tests [chunk_num*chunk_size .. (chunk_num+1)*chunk_size).

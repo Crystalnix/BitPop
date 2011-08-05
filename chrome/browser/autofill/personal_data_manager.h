@@ -9,6 +9,7 @@
 #include <set>
 #include <vector>
 
+#include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
@@ -38,13 +39,8 @@ class PersonalDataManager
   // the observer via PersonalDataManager::SetObserver.
   class Observer {
    public:
-    // Notifies the observer that the PersonalDataManager has finished loading.
-    // TODO: OnPersonalDataLoaded should be nuked in favor of only
-    // OnPersonalDataChanged.
-    virtual void OnPersonalDataLoaded() = 0;
-
     // Notifies the observer that the PersonalDataManager changed in some way.
-    virtual void OnPersonalDataChanged() {}
+    virtual void OnPersonalDataChanged() = 0;
 
    protected:
     virtual ~Observer() {}
@@ -63,33 +59,16 @@ class PersonalDataManager
   // ProfileSyncServiceObserver:
   virtual void OnStateChanged();
 
-        // TODO(isherman): Update this comment
-  // If Autofill is able to determine the field types of a significant number of
-  // field types that contain information in the FormStructures a profile will
-  // be created with all of the information from recognized fields. Returns
-  // whether a profile was created.
-  bool ImportFormData(const std::vector<const FormStructure*>& form_structures,
+  // Scans the given |form| for importable Autofill data. If the form includes
+  // sufficient address data, it is immediately imported. If the form includes
+  // sufficient credit card data, it is stored into |credit_card|, so that we
+  // can prompt the user whether to save this data.
+  // Returns |true| if sufficient address or credit card data was found.
+  bool ImportFormData(const FormStructure& form,
                       const CreditCard** credit_card);
 
   // Saves a credit card value detected in |ImportedFormData|.
   virtual void SaveImportedCreditCard(const CreditCard& imported_credit_card);
-
-  // Sets |web_profiles_| to the contents of |profiles| and updates the web
-  // database by adding, updating and removing profiles.
-  //
-  // The relationship between this and Refresh is subtle.
-  // A call to |SetProfiles| could include out-of-date data that may conflict
-  // if we didn't refresh-to-latest before an Autofill window was opened for
-  // editing. |SetProfiles| is implemented to make a "best effort" to apply the
-  // changes, but in extremely rare edge cases it is possible not all of the
-  // updates in |profiles| make it to the DB.  This is why SetProfiles will
-  // invoke Refresh after finishing, to ensure we get into a
-  // consistent state.  See Refresh for details.
-  void SetProfiles(std::vector<AutofillProfile>* profiles);
-
-  // Sets |credit_cards_| to the contents of |credit_cards| and updates the web
-  // database by adding, updating and removing credit cards.
-  void SetCreditCards(std::vector<CreditCard>* credit_cards);
 
   // Adds |profile| to the web database.
   void AddProfile(const AutofillProfile& profile);
@@ -119,8 +98,11 @@ class PersonalDataManager
 
   // Gets the possible field types for the given text, determined by matching
   // the text with all known personal information and returning matching types.
-  void GetPossibleFieldTypes(const string16& text,
-                             FieldTypeSet* possible_types);
+  void GetMatchingTypes(const string16& text,
+                        FieldTypeSet* matching_types) const;
+
+  // Gets the field types availabe in the stored address and credit card data.
+  void GetNonEmptyTypes(FieldTypeSet* non_empty_types) const;
 
   // Returns true if the credit card information is stored with a password.
   bool HasPassword();
@@ -132,9 +114,9 @@ class PersonalDataManager
   // lifetime is until the web database is updated with new profile and credit
   // card information, respectively.  |profiles()| returns both web and
   // auxiliary profiles.  |web_profiles()| returns only web profiles.
-  const std::vector<AutofillProfile*>& profiles();
-  virtual const std::vector<AutofillProfile*>& web_profiles();
-  virtual const std::vector<CreditCard*>& credit_cards();
+  const std::vector<AutofillProfile*>& profiles() const;
+  virtual const std::vector<AutofillProfile*>& web_profiles() const;
+  virtual const std::vector<CreditCard*>& credit_cards() const;
 
   // Re-loads profiles and credit cards from the WebDatabase asynchronously.
   // In the general case, this is a no-op and will re-create the same
@@ -165,18 +147,36 @@ class PersonalDataManager
   // PersonalDataManager.
   friend class base::RefCountedThreadSafe<PersonalDataManager>;
   friend class AutofillMergeTest;
+  friend class LiveAutofillSyncTest;
   friend class PersonalDataManagerTest;
   friend class ProfileImpl;
   friend class ProfileSyncServiceAutofillTest;
+  friend class TestingAutomationProvider;
 
   PersonalDataManager();
   virtual ~PersonalDataManager();
+
+  // Sets |web_profiles_| to the contents of |profiles| and updates the web
+  // database by adding, updating and removing profiles.
+  // The relationship between this and Refresh is subtle.
+  // A call to |SetProfiles| could include out-of-date data that may conflict
+  // if we didn't refresh-to-latest before an Autofill window was opened for
+  // editing. |SetProfiles| is implemented to make a "best effort" to apply the
+  // changes, but in extremely rare edge cases it is possible not all of the
+  // updates in |profiles| make it to the DB.  This is why SetProfiles will
+  // invoke Refresh after finishing, to ensure we get into a
+  // consistent state.  See Refresh for details.
+  void SetProfiles(std::vector<AutofillProfile>* profiles);
+
+  // Sets |credit_cards_| to the contents of |credit_cards| and updates the web
+  // database by adding, updating and removing credit cards.
+  void SetCreditCards(std::vector<CreditCard>* credit_cards);
 
   // Loads the saved profiles from the web database.
   virtual void LoadProfiles();
 
   // Loads the auxiliary profiles.  Currently Mac only.
-  void LoadAuxiliaryProfiles();
+  void LoadAuxiliaryProfiles() const;
 
   // Loads the saved credit cards from the web database.
   virtual void LoadCreditCards();
@@ -222,18 +222,14 @@ class PersonalDataManager
   ScopedVector<AutofillProfile> web_profiles_;
 
   // Auxiliary profiles.
-  ScopedVector<AutofillProfile> auxiliary_profiles_;
+  mutable ScopedVector<AutofillProfile> auxiliary_profiles_;
 
   // Storage for combined web and auxiliary profiles.  Contents are weak
   // references.  Lifetime managed by |web_profiles_| and |auxiliary_profiles_|.
-  std::vector<AutofillProfile*> profiles_;
+  mutable std::vector<AutofillProfile*> profiles_;
 
   // The loaded credit cards.
   ScopedVector<CreditCard> credit_cards_;
-
-  // The hash of the password used to store the credit card.  This is empty if
-  // no password exists.
-  string16 password_hash_;
 
   // When the manager makes a request from WebDataService, the database
   // is queried on another thread, we record the query handle until we

@@ -12,7 +12,6 @@
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #import "chrome/browser/themes/theme_service.h"
@@ -44,6 +43,7 @@
 #include "chrome/common/pref_names.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/browser/tab_contents/tab_contents_view.h"
+#include "content/browser/user_metrics.h"
 #include "grit/app_resources.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -539,6 +539,7 @@ void RecordAppLaunch(Profile* profile, GURL url) {
   // Don't allow edit/delete of the bar node, or of "Other Bookmarks"
   if ((node == nil) ||
       (node == bookmarkModel_->other_node()) ||
+      (node == bookmarkModel_->synced_node()) ||
       (node == bookmarkModel_->GetBookmarkBarNode()))
     return NO;
   return YES;
@@ -676,6 +677,7 @@ void RecordAppLaunch(Profile* profile, GURL url) {
 }
 
 - (IBAction)editBookmark:(id)sender {
+  [self closeFolderAndStopTrackingMenus];
   const BookmarkNode* node = [self nodeFromMenuItem:sender];
   if (!node)
     return;
@@ -752,8 +754,7 @@ void RecordAppLaunch(Profile* profile, GURL url) {
   const BookmarkNode* node = [self nodeFromMenuItem:sender];
   if (node) {
     [self openAll:node disposition:NEW_FOREGROUND_TAB];
-    UserMetrics::RecordAction(UserMetricsAction("OpenAllBookmarks"),
-                              browser_->profile());
+    UserMetrics::RecordAction(UserMetricsAction("OpenAllBookmarks"));
   }
 }
 
@@ -761,8 +762,7 @@ void RecordAppLaunch(Profile* profile, GURL url) {
   const BookmarkNode* node = [self nodeFromMenuItem:sender];
   if (node) {
     [self openAll:node disposition:NEW_WINDOW];
-    UserMetrics::RecordAction(UserMetricsAction("OpenAllBookmarksNewWindow"),
-                              browser_->profile());
+    UserMetrics::RecordAction(UserMetricsAction("OpenAllBookmarksNewWindow"));
   }
 }
 
@@ -771,8 +771,7 @@ void RecordAppLaunch(Profile* profile, GURL url) {
   if (node) {
     [self openAll:node disposition:OFF_THE_RECORD];
     UserMetrics::RecordAction(
-        UserMetricsAction("OpenAllBookmarksIncognitoWindow"),
-        browser_->profile());
+        UserMetricsAction("OpenAllBookmarksIncognitoWindow"));
   }
 }
 
@@ -802,6 +801,7 @@ void RecordAppLaunch(Profile* profile, GURL url) {
   BookmarkNode::Type type = senderNode->type();
   if (type == BookmarkNode::BOOKMARK_BAR ||
       type == BookmarkNode::OTHER_NODE ||
+      type == BookmarkNode::SYNCED ||
       type == BookmarkNode::FOLDER) {
     parent = senderNode;
     newIndex = parent->child_count();
@@ -846,12 +846,13 @@ void RecordAppLaunch(Profile* profile, GURL url) {
 // Position the off-the-side chevron to the left of the otherBookmarks button.
 - (void)positionOffTheSideButton {
   NSRect frame = [offTheSideButton_ frame];
+  frame.size.height = bookmarks::kBookmarkFolderButtonHeight;
   if (otherBookmarksButton_.get()) {
     frame.origin.x = ([otherBookmarksButton_ frame].origin.x -
                       (frame.size.width +
                        bookmarks::kBookmarkHorizontalPadding));
-    [offTheSideButton_ setFrame:frame];
   }
+  [offTheSideButton_ setFrame:frame];
 }
 
 // Configure the off-the-side button (e.g. specify the node range,
@@ -1147,14 +1148,8 @@ void RecordAppLaunch(Profile* profile, GURL url) {
     [item setTarget:self];
     [item setAction:@selector(openBookmarkMenuItem:)];
     [item setTag:[self menuTagFromNodeId:child->id()]];
-    if (child->is_url()) {
-      // Add a tooltip
-      std::string url_string = child->GetURL().possibly_invalid_spec();
-      NSString* tooltip = [NSString stringWithFormat:@"%@\n%s",
-                           base::SysUTF16ToNSString(child->GetTitle()),
-                           url_string.c_str()];
-      [item setToolTip:tooltip];
-    }
+    if (child->is_url())
+      [item setToolTip:[BookmarkMenuCocoaController tooltipForNode:child]];
   }
 }
 
@@ -1234,6 +1229,7 @@ void RecordAppLaunch(Profile* profile, GURL url) {
   }
 }
 
+
 - (BookmarkButton*)buttonForNode:(const BookmarkNode*)node
                          xOffset:(int*)xOffset {
   BookmarkButtonCell* cell = [self cellForBookmarkNode:node];
@@ -1273,14 +1269,8 @@ void RecordAppLaunch(Profile* profile, GURL url) {
     // Make the button do something
     [button setTarget:self];
     [button setAction:@selector(openBookmark:)];
-    if (node->is_url()) {
-      // Add a tooltip.
-      NSString* title = base::SysUTF16ToNSString(node->GetTitle());
-      std::string url_string = node->GetURL().possibly_invalid_spec();
-      NSString* tooltip = [NSString stringWithFormat:@"%@\n%s", title,
-                           url_string.c_str()];
-      [button setToolTip:tooltip];
-    }
+    if (node->is_url())
+      [button setToolTip:[BookmarkMenuCocoaController tooltipForNode:node]];
   }
   return [[button.get() retain] autorelease];
 }
@@ -1521,6 +1511,35 @@ void RecordAppLaunch(Profile* profile, GURL url) {
   }
 }
 
+// Scans through all buttons from left to right, calculating from scratch where
+// they should be based on the preceding widths, until it finds the one
+// requested.
+// Returns NSZeroRect if there is no such button in the bookmark bar.
+// Enables you to work out where a button will end up when it is done animating.
+- (NSRect)finalRectOfButton:(BookmarkButton*)wantedButton {
+  CGFloat left = bookmarks::kBookmarkHorizontalPadding;
+  NSRect buttonFrame = NSZeroRect;
+
+  for (NSButton* button in buttons_.get()) {
+    // Hidden buttons get no space.
+    if ([button isHidden])
+      continue;
+    buttonFrame = [button frame];
+    buttonFrame.origin.x = left;
+    left += buttonFrame.size.width + bookmarks::kBookmarkHorizontalPadding;
+    if (button == wantedButton)
+      return buttonFrame;
+  }
+  return NSZeroRect;
+}
+
+// Calculates the final position of the last button in the bar.
+// We can't just use [[self buttons] lastObject] frame] because the button
+// may be animating currently.
+- (NSRect)finalRectOfLastButton {
+  return [self finalRectOfButton:[[self buttons] lastObject]];
+}
+
 - (void)redistributeButtonsOnBarAsNeeded {
   const BookmarkNode* node = bookmarkModel_->GetBookmarkBarNode();
   NSInteger barCount = node->child_count();
@@ -1542,7 +1561,7 @@ void RecordAppLaunch(Profile* profile, GURL url) {
   // the off-the-side folder.
   while (displayedButtonCount_ > 0) {
     BookmarkButton* button = [buttons_ lastObject];
-    if (NSMaxX([button frame]) < maxViewX)
+    if (NSMaxX([self finalRectOfLastButton]) < maxViewX)
       break;
     [buttons_ removeLastObject];
     [button setDelegate:nil];
@@ -1553,7 +1572,7 @@ void RecordAppLaunch(Profile* profile, GURL url) {
   // As a result of cutting, deleting and dragging, the bar may now have room
   // for more buttons.
   int xOffset = displayedButtonCount_ > 0 ?
-      NSMaxX([[buttons_ lastObject] frame]) +
+      NSMaxX([self finalRectOfLastButton]) +
           bookmarks::kBookmarkHorizontalPadding : 0;
   for (int i = displayedButtonCount_; i < barCount; ++i) {
     const BookmarkNode* child = node->GetChild(i);
@@ -1680,13 +1699,13 @@ void RecordAppLaunch(Profile* profile, GURL url) {
 // A bookmark button's contents changed.  Check for growth
 // (e.g. increase the width up to the maximum).  If we grew, move
 // other bookmark buttons over.
-- (void)checkForBookmarkButtonGrowth:(NSButton*)button {
-  NSRect frame = [button frame];
-  CGFloat desiredSize = [self widthForBookmarkButtonCell:[button cell]];
+- (void)checkForBookmarkButtonGrowth:(NSButton*)changedButton {
+  NSRect frame = [changedButton frame];
+  CGFloat desiredSize = [self widthForBookmarkButtonCell:[changedButton cell]];
   CGFloat delta = desiredSize - frame.size.width;
   if (delta) {
     frame.size.width = desiredSize;
-    [button setFrame:frame];
+    [changedButton setFrame:frame];
     for (NSButton* button in buttons_.get()) {
       NSRect buttonFrame = [button frame];
       if (buttonFrame.origin.x > frame.origin.x) {
@@ -1829,6 +1848,9 @@ static BOOL ValueInRangeInclusive(CGFloat low, CGFloat value, CGFloat high) {
 - (BookmarkButton*)buttonForDroppingOnAtPoint:(NSPoint)point
                                     fromArray:(NSArray*)array {
   for (BookmarkButton* button in array) {
+    // Hidden buttons can overlap valid visible buttons, just ignore.
+    if ([button isHidden])
+      continue;
     // Break early if we've gone too far.
     if ((NSMinX([button frame]) > point.x) || (![button superview]))
       return nil;
@@ -2113,7 +2135,7 @@ static BOOL ValueInRangeInclusive(CGFloat low, CGFloat value, CGFloat high) {
   [self showOrHideNoItemContainerForNode:model->GetBookmarkBarNode()];
   // If we deleted the only item on the "off the side" menu we no
   // longer need to show it.
-  [self configureOffTheSideButtonContentsAndVisibility];
+  [self reconfigureBookmarkBar];
 }
 
 // TODO(jrg): linear searching is bad.
@@ -2135,6 +2157,7 @@ static BOOL ValueInRangeInclusive(CGFloat low, CGFloat value, CGFloat high) {
       // bookmark.  Test for it by growing the button (if needed)
       // and shifting everything else over.
       [self checkForBookmarkButtonGrowth:button];
+      return;
     }
   }
 
@@ -2286,7 +2309,6 @@ static BOOL ValueInRangeInclusive(CGFloat low, CGFloat value, CGFloat high) {
 
 - (void)bookmarkDragDidEnd:(BookmarkButton*)button
                  operation:(NSDragOperation)operation {
-  [self closeFolderAndStopTrackingMenus];
   [button setHidden:NO];
   [self resetAllButtonPositionsWithAnimation:YES];
 }
@@ -2652,12 +2674,14 @@ static BOOL ValueInRangeInclusive(CGFloat low, CGFloat value, CGFloat high) {
       // If we are deleting a button whose folder is currently open, close it!
       [self closeAllBookmarkFolders];
     }
-    NSPoint poofPoint = [oldButton screenLocationForRemoveAnimation];
-    [oldButton setDelegate:nil];
-    [oldButton removeFromSuperview];
-    if (animate && !ignoreAnimations_ && [self isVisible])
+    if (animate && !ignoreAnimations_ && [self isVisible] &&
+        [[self browserWindow] isMainWindow]) {
+      NSPoint poofPoint = [oldButton screenLocationForRemoveAnimation];
       NSShowAnimationEffect(NSAnimationEffectDisappearingItemDefault, poofPoint,
                             NSZeroSize, nil, nil, nil);
+    }
+    [oldButton setDelegate:nil];
+    [oldButton removeFromSuperview];
     [buttons_ removeObjectAtIndex:buttonIndex];
     --displayedButtonCount_;
     [self resetAllButtonPositionsWithAnimation:YES];

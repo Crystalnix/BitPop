@@ -23,7 +23,8 @@ namespace net {
 
 class ClientSocketFactory;
 
-class TransportSocketParams : public base::RefCounted<TransportSocketParams> {
+class NET_TEST TransportSocketParams
+    : public base::RefCounted<TransportSocketParams> {
  public:
   TransportSocketParams(const HostPortPair& host_port_pair,
                         RequestPriority priority,
@@ -55,7 +56,7 @@ class TransportSocketParams : public base::RefCounted<TransportSocketParams> {
 // (kIPv6FallbackTimerInMs) and start a connect() to a IPv4 address if the timer
 // fires. Then we race the IPv4 connect() against the IPv6 connect() (which has
 // a headstart) and return the one that completes first to the socket pool.
-class TransportConnectJob : public ConnectJob {
+class NET_TEST TransportConnectJob : public ConnectJob {
  public:
   TransportConnectJob(const std::string& group_name,
                       const scoped_refptr<TransportSocketParams>& params,
@@ -119,9 +120,9 @@ class TransportConnectJob : public ConnectJob {
   // The time the connect was started (after DNS finished).
   base::TimeTicks connect_start_time_;
 
-  scoped_ptr<ClientSocket> transport_socket_;
+  scoped_ptr<StreamSocket> transport_socket_;
 
-  scoped_ptr<ClientSocket> fallback_transport_socket_;
+  scoped_ptr<StreamSocket> fallback_transport_socket_;
   scoped_ptr<AddressList> fallback_addresses_;
   CompletionCallbackImpl<TransportConnectJob> fallback_callback_;
   base::TimeTicks fallback_connect_start_time_;
@@ -130,7 +131,7 @@ class TransportConnectJob : public ConnectJob {
   DISALLOW_COPY_AND_ASSIGN(TransportConnectJob);
 };
 
-class TransportClientSocketPool : public ClientSocketPool {
+class NET_TEST TransportClientSocketPool : public ClientSocketPool {
  public:
   TransportClientSocketPool(
       int max_sockets,
@@ -160,7 +161,7 @@ class TransportClientSocketPool : public ClientSocketPool {
                              ClientSocketHandle* handle);
 
   virtual void ReleaseSocket(const std::string& group_name,
-                             ClientSocket* socket,
+                             StreamSocket* socket,
                              int id);
 
   virtual void Flush();

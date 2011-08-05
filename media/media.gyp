@@ -10,10 +10,11 @@
   'targets': [
     {
       'target_name': 'media',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         'yuv_convert',
         '../base/base.gyp:base',
+        '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../third_party/ffmpeg/ffmpeg.gyp:ffmpeg',
         '../build/temp_gyp/googleurl.gyp:googleurl',
       ],
@@ -75,11 +76,14 @@
         'audio/win/waveout_output_win.h',
         'base/async_filter_factory_base.cc',
         'base/async_filter_factory_base.h',
+        'base/audio_decoder_config.h',
         'base/bitstream_buffer.h',
         'base/buffers.cc',
         'base/buffers.h',
         'base/callback.cc',
         'base/callback.h',
+        'base/channel_layout.cc',
+        'base/channel_layout.h',
         'base/clock.cc',
         'base/clock.h',
         'base/composite_data_source_factory.cc',
@@ -116,10 +120,14 @@
         'base/pipeline_status.h',
         'base/pts_heap.cc',
         'base/pts_heap.h',
+        'base/pts_stream.cc',
+        'base/pts_stream.h',
         'base/seekable_buffer.cc',
         'base/seekable_buffer.h',
         'base/state_matrix.cc',
         'base/state_matrix.h',
+        'base/video_decoder_config.cc',
+        'base/video_decoder_config.h',
         'base/video_frame.cc',
         'base/video_frame.h',
         'ffmpeg/ffmpeg_common.cc',
@@ -167,14 +175,23 @@
         'filters/rtc_video_decoder.h',
         'filters/video_renderer_base.cc',
         'filters/video_renderer_base.h',
+        'video/capture/fake_video_capture_device.cc',
+        'video/capture/fake_video_capture_device.h',
+        'video/capture/linux/video_capture_device_linux.cc',
+        'video/capture/linux/video_capture_device_linux.h',
         'video/capture/video_capture.h',
+        'video/capture/video_capture_device.h',
+        'video/capture/video_capture_device_dummy.cc',
+        'video/capture/video_capture_device_dummy.h',
+        'video/capture/video_capture_types.h',
         'video/ffmpeg_video_allocator.cc',
         'video/ffmpeg_video_allocator.h',
         'video/ffmpeg_video_decode_engine.cc',
         'video/ffmpeg_video_decode_engine.h',
+        'video/picture.cc',
+        'video/picture.h',
         'video/video_decode_accelerator.cc',
         'video/video_decode_accelerator.h',
-        'video/video_decode_engine.cc',
         'video/video_decode_engine.h',
       ],
       'direct_dependent_settings': {
@@ -189,7 +206,7 @@
             'video/mft_h264_decode_engine.h',
           ],
         }],
-        ['OS=="linux" or OS=="freebsd"', {
+        ['OS == "linux" or OS == "freebsd" or OS == "solaris"', {
           'link_settings': {
             'libraries': [
               '-lasound',
@@ -211,7 +228,7 @@
             'audio/openbsd/audio_manager_openbsd.h',
           ],
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['os_posix == 1 and OS != "mac"', {
           'sources': [
             'filters/omx_video_decoder.cc',
             'filters/omx_video_decoder.h',
@@ -219,6 +236,12 @@
           'dependencies': [
             'omx_wrapper',
           ]
+        }],
+        ['os_posix == 1 and OS != "mac"', {
+          'sources!': [
+            'video/capture/video_capture_device_dummy.cc',
+            'video/capture/video_capture_device_dummy.h',
+          ],
         }],
         ['OS=="mac"', {
           'link_settings': {
@@ -233,7 +256,7 @@
     },
     {
       'target_name': 'cpu_features',
-      'type': '<(library)',
+      'type': 'static_library',
       'include_dirs': [
         '..',
       ],
@@ -255,7 +278,7 @@
     },
     {
       'target_name': 'yuv_convert',
-      'type': '<(library)',
+      'type': 'static_library',
       'include_dirs': [
         '..',
       ],
@@ -282,15 +305,27 @@
     },
     {
       'target_name': 'yuv_convert_sse2',
-      'type': '<(library)',
+      'type': 'static_library',
       'include_dirs': [
         '..',
       ],
       'conditions': [
-        [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd"', {
+        [ 'os_posix == 1 and OS != "mac"', {
           'cflags': [
             '-msse2',
           ],
+        }],
+        [ 'OS == "mac"', {
+          'configurations': {
+            'Debug': {
+              'xcode_settings': {
+                # gcc on the mac builds horribly unoptimized sse code in debug
+                # mode. Since this is rarely going to be debugged, run with full
+                # optimizations in Debug as well as Release.
+                'GCC_OPTIMIZATION_LEVEL': '3',  # -O3
+               },
+             },
+          },
         }],
       ],
       'sources': [
@@ -314,7 +349,7 @@
         'ffmpeg/ffmpeg_unittest.cc',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             # Needed for the following #include chain:
             #   base/run_all_unittests.cc
@@ -375,6 +410,7 @@
         'base/mock_task.h',
         'base/pipeline_impl_unittest.cc',
         'base/pts_heap_unittest.cc',
+        'base/pts_stream_unittest.cc',
         'base/run_all_unittests.cc',
         'base/seekable_buffer_unittest.cc',
         'base/state_matrix_unittest.cc',
@@ -398,7 +434,7 @@
         'video/ffmpeg_video_decode_engine_unittest.cc',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             # Needed for the following #include chain:
             #   base/run_all_unittests.cc
@@ -421,7 +457,7 @@
     },
     {
       'target_name': 'media_test_support',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         'media',
         '../base/base.gyp:base',
@@ -483,6 +519,7 @@
       'type': 'executable',
       'dependencies': [
         'media',
+        '../base/base.gyp:base',
       ],
       'sources': [
         'tools/wav_ola_test/wav_ola_test.cc'
@@ -581,6 +618,7 @@
           'type': 'executable',
           'dependencies': [
             'media',
+            '../base/base.gyp:base',
             '../ui/gfx/gl/gl.gyp:gl',
           ],
           'sources': [
@@ -599,7 +637,7 @@
             'tools/shader_bench/window.h',
           ],
           'conditions': [
-            ['OS=="linux"', {
+            ['toolkit_uses_gtk == 1', {
               'dependencies': [
                 '../build/linux/system.gyp:gtk',
               ],
@@ -639,7 +677,7 @@
         },
       ],
     }],
-    ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+    ['os_posix == 1 and OS != "mac"', {
       'targets': [
         {
           'target_name': 'omx_test',
@@ -671,7 +709,7 @@
             '../testing/gtest.gyp:gtest',
           ],
           'conditions': [
-            ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+            ['toolkit_uses_gtk == 1', {
               'dependencies': [
                 '../build/linux/system.gyp:gtk',
               ],
@@ -684,7 +722,7 @@
         },
         {
           'target_name': 'omx_wrapper',
-          'type': '<(library)',
+          'type': 'static_library',
           'dependencies': [
             '../base/base.gyp:base',
             '../third_party/openmax/openmax.gyp:il',

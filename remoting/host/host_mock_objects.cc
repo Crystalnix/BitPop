@@ -22,8 +22,7 @@ Curtain* Curtain::Create() {
   return new MockCurtain();
 }
 
-MockChromotingHostContext::MockChromotingHostContext()
-    : ChromotingHostContext(NULL) {}
+MockChromotingHostContext::MockChromotingHostContext() {}
 
 MockChromotingHostContext::~MockChromotingHostContext() {}
 
@@ -34,5 +33,9 @@ MockClientSessionEventHandler::~MockClientSessionEventHandler() {}
 MockUserAuthenticator::MockUserAuthenticator() {}
 
 MockUserAuthenticator::~MockUserAuthenticator() {}
+
+MockAccessVerifier::MockAccessVerifier() {}
+
+MockAccessVerifier::~MockAccessVerifier() {}
 
 }  // namespace remoting

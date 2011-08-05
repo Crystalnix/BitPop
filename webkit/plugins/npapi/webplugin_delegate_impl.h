@@ -77,6 +77,7 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
     PLUGIN_QUIRK_HANDLE_MOUSE_CAPTURE = 16384,  // Windows
     PLUGIN_QUIRK_WINDOWLESS_NO_RIGHT_CLICK = 32768,  // Linux
     PLUGIN_QUIRK_IGNORE_FIRST_SETWINDOW_CALL = 65536,  // Windows.
+    PLUGIN_QUIRK_REPARENT_IN_BROWSER = 131072,  // Windows
   };
 
   static WebPluginDelegateImpl* Create(const FilePath& filename,
@@ -177,6 +178,12 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
   // Indicates that it's time to send the plugin a null event.
   void FireIdleEvent();
 #endif
+
+  // TODO(caryclark): This is a temporary workaround to allow the Darwin / Skia
+  // port to share code with the Darwin / CG port. Later, this will be removed
+  // and all callers will use the Paint defined above.
+  void CGPaint(CGContextRef context, const gfx::Rect& rect);
+
 #endif  // OS_MACOSX
 
   gfx::PluginWindowHandle windowed_handle() const {
@@ -201,7 +208,7 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
 
   WebPluginDelegateImpl(gfx::PluginWindowHandle containing_view,
                         PluginInstance *instance);
-  ~WebPluginDelegateImpl();
+  virtual ~WebPluginDelegateImpl();
 
   // Called by Initialize() for platform-specific initialization.
   // If this returns false, the plugin shouldn't be started--see Initialize().
@@ -305,12 +312,6 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
   // Used to throttle WM_USER+1 messages in Flash.
   uint32 last_message_;
   bool is_calling_wndproc;
-
-  // The current keyboard layout of this process and the main thread ID of the
-  // browser process. These variables are used for synchronizing the keyboard
-  // layout of this process with the one of the browser process.
-  HKL keyboard_layout_;
-  int parent_thread_id_;
 #endif  // defined(OS_WIN)
 
 #if defined(USE_X11)
@@ -351,6 +352,7 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
   // receives a WM_LBUTTONDOWN/WM_RBUTTONDOWN message via NPP_HandleEvent.
 
   HWND dummy_window_for_activation_;
+  HWND parent_proxy_window_;
   bool CreateDummyWindowForActivation();
 
   // Returns true if the event passed in needs to be tracked for a potential

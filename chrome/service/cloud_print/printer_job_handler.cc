@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 #include "base/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/md5.h"
-#include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/net/http_return.h"
@@ -33,14 +33,12 @@ void PrinterJobHandler::JobDetails::Clear() {
 PrinterJobHandler::PrinterJobHandler(
     const printing::PrinterBasicInfo& printer_info,
     const PrinterInfoFromCloud& printer_info_cloud,
-    const std::string& auth_token,
     const GURL& cloud_print_server_url,
     cloud_print::PrintSystem* print_system,
     Delegate* delegate)
     : print_system_(print_system),
       printer_info_(printer_info),
       printer_info_cloud_(printer_info_cloud),
-      auth_token_(auth_token),
       cloud_print_server_url_(cloud_print_server_url),
       delegate_(delegate),
       local_job_id_(-1),
@@ -110,7 +108,6 @@ void PrinterJobHandler::Start() {
             CloudPrintHelpers::GetUrlForPrinterDelete(
                 cloud_print_server_url_, printer_info_cloud_.printer_id),
             this,
-            auth_token_,
             kCloudPrintAPIMaxRetryCount,
             std::string());
       }
@@ -129,7 +126,6 @@ void PrinterJobHandler::Start() {
                 cloud_print_server_url_, printer_info_cloud_.printer_id,
                 job_fetch_reason_),
             this,
-            auth_token_,
             kCloudPrintAPIMaxRetryCount,
             std::string());
         last_job_fetch_time_ = base::TimeTicks::Now();
@@ -246,8 +242,11 @@ void PrinterJobHandler::OnReceivePrinterCaps(
   }
   if (printer_info.printer_status != printer_info_.printer_status) {
     CloudPrintHelpers::AddMultipartValueForUpload(
-        kPrinterStatusValue, StringPrintf("%d", printer_info.printer_status),
-        mime_boundary, std::string(), &post_data);
+        kPrinterStatusValue,
+        base::StringPrintf("%d", printer_info.printer_status),
+        mime_boundary,
+        std::string(),
+        &post_data);
   }
   printer_info_ = printer_info;
   if (!post_data.empty()) {
@@ -261,7 +260,6 @@ void PrinterJobHandler::OnReceivePrinterCaps(
         CloudPrintHelpers::GetUrlForPrinterUpdate(
             cloud_print_server_url_, printer_info_cloud_.printer_id),
         this,
-        auth_token_,
         kCloudPrintAPIMaxRetryCount,
         mime_type,
         post_data,
@@ -274,6 +272,26 @@ void PrinterJobHandler::OnReceivePrinterCaps(
 }
 
 // CloudPrintURLFetcher::Delegate implementation.
+CloudPrintURLFetcher::ResponseAction PrinterJobHandler::HandleRawResponse(
+    const URLFetcher* source,
+    const GURL& url,
+    const net::URLRequestStatus& status,
+    int response_code,
+    const net::ResponseCookies& cookies,
+    const std::string& data) {
+  // 415 (Unsupported media type) error while fetching data from the server
+  // means data conversion error. Stop fetching process and mark job as error.
+  if (next_data_handler_ == (&PrinterJobHandler::HandlePrintDataResponse) &&
+      response_code == RC_UNSUPPORTED_MEDIA_TYPE) {
+    MessageLoop::current()->PostTask(
+        FROM_HERE,
+        NewRunnableMethod(this, &PrinterJobHandler::JobFailed,
+                          JOB_DOWNLOAD_FAILED));
+    return CloudPrintURLFetcher::STOP_PROCESSING;
+  }
+  return CloudPrintURLFetcher::CONTINUE_PROCESSING;
+}
+
 CloudPrintURLFetcher::ResponseAction PrinterJobHandler::HandleRawData(
     const URLFetcher* source,
     const GURL& url,
@@ -296,9 +314,14 @@ CloudPrintURLFetcher::ResponseAction PrinterJobHandler::HandleJSONData(
 }
 
 void PrinterJobHandler::OnRequestGiveUp() {
+  // The only time we call CloudPrintURLFetcher::StartGetRequest() with a
+  // specified number of retries, is when we are trying to fetch print job
+  // data. So, this function will be reached only if we failed to get job data.
+  // In that case, we should make job as error and should not try it later.
   MessageLoop::current()->PostTask(
       FROM_HERE,
-      NewRunnableMethod(this, &PrinterJobHandler::Stop));
+      NewRunnableMethod(this, &PrinterJobHandler::JobFailed,
+                        JOB_DOWNLOAD_FAILED));
 }
 
 void PrinterJobHandler::OnRequestAuthError() {
@@ -418,7 +441,6 @@ PrinterJobHandler::HandleJobMetadataResponse(
         request_ = new CloudPrintURLFetcher;
         request_->StartGetRequest(GURL(print_ticket_url.c_str()),
                                   this,
-                                  auth_token_,
                                   kCloudPrintAPIMaxRetryCount,
                                   std::string());
       }
@@ -445,7 +467,6 @@ PrinterJobHandler::HandlePrintTicketResponse(const URLFetcher* source,
     accept_headers += print_system_->GetSupportedMimeTypes();
     request_->StartGetRequest(GURL(print_data_url_.c_str()),
                               this,
-                              auth_token_,
                               kJobDataMaxRetryCount,
                               accept_headers);
   } else {
@@ -495,7 +516,7 @@ PrinterJobHandler::HandleSuccessStatusUpdateResponse(
   // that monitors the status of the job and updates the server.
   scoped_refptr<JobStatusUpdater> job_status_updater(
       new JobStatusUpdater(printer_info_.printer_name, job_details_.job_id_,
-                           local_job_id_, auth_token_, cloud_print_server_url_,
+                           local_job_id_, cloud_print_server_url_,
                            print_system_.get(), this));
   job_status_updater_list_.push_back(job_status_updater);
   MessageLoop::current()->PostTask(
@@ -594,7 +615,6 @@ void PrinterJobHandler::UpdateJobStatus(cloud_print::PrintJobStatus status,
                                                       job_details_.job_id_,
                                                       status),
           this,
-          auth_token_,
           kCloudPrintAPIMaxRetryCount,
           std::string());
     }

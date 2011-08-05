@@ -8,7 +8,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
 #include "chrome/common/net/http_return.h"
-#include "chrome/common/net/url_fetcher.h"
+#include "content/common/url_fetcher.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/escape.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -49,7 +49,7 @@ class GaiaOAuthClient::Core
     const GURL& url,
     const net::URLRequestStatus& status,
     int response_code,
-    const ResponseCookies& cookies,
+    const net::ResponseCookies& cookies,
     const std::string& data);
 
  private:
@@ -118,17 +118,16 @@ void GaiaOAuthClient::Core::OnURLFetchComplete(
     const GURL& url,
     const net::URLRequestStatus& status,
     int response_code,
-    const ResponseCookies& cookies,
+    const net::ResponseCookies& cookies,
     const std::string& data) {
   bool should_retry = false;
   HandleResponse(source, url, status, response_code, data, &should_retry);
   if (should_retry) {
-    // If the response code is greater than or equal to 500, then the back-off
-    // period has been increased at the network level; otherwise, explicitly
-    // call ReceivedContentWasMalformed() to count the current request as a
-    // failure and increase the back-off period.
-    if (response_code < 500)
-      request_->ReceivedContentWasMalformed();
+    // Explicitly call ReceivedContentWasMalformed() to ensure the current
+    // request gets counted as a failure for calculation of the back-off
+    // period.  If it was already a failure by status code, this call will
+    // be ignored.
+    request_->ReceivedContentWasMalformed();
     num_retries_++;
     request_->Start();
   } else {

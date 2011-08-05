@@ -18,13 +18,14 @@
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
 #include "chrome/common/automation_messages.h"
+#include "chrome/common/render_messages.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/common/page_zoom.h"
+#include "content/common/view_messages.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "views/focus/accelerator_handler.h"
 #include "views/widget/root_view.h"
-#include "views/widget/widget_win.h"
 #include "views/window/window.h"
 
 // This task just adds another task to the event queue.  This is useful if
@@ -232,7 +233,7 @@ void AutomationProvider::CreateExternalTab(
     const ExternalTabSettings& settings,
     gfx::NativeWindow* tab_container_window, gfx::NativeWindow* tab_window,
     int* tab_handle, int* session_id) {
-  TRACE_EVENT_BEGIN("AutomationProvider::CreateExternalTab", 0, "");
+  TRACE_EVENT_BEGIN_ETW("AutomationProvider::CreateExternalTab", 0, "");
 
   *tab_handle = 0;
   *tab_container_window = NULL;
@@ -262,7 +263,7 @@ void AutomationProvider::CreateExternalTab(
     external_tab_container->Uninitialize();
   }
 
-  TRACE_EVENT_END("AutomationProvider::CreateExternalTab", 0, "");
+  TRACE_EVENT_END_ETW("AutomationProvider::CreateExternalTab", 0, "");
 }
 
 bool AutomationProvider::AddExternalTab(ExternalTabContainer* external_tab) {
@@ -373,7 +374,7 @@ void AutomationProvider::ConnectExternalTab(
     gfx::NativeWindow* tab_window,
     int* tab_handle,
     int* session_id) {
-  TRACE_EVENT_BEGIN("AutomationProvider::ConnectExternalTab", 0, "");
+  TRACE_EVENT_BEGIN_ETW("AutomationProvider::ConnectExternalTab", 0, "");
 
   *tab_handle = 0;
   *tab_container_window = NULL;
@@ -400,7 +401,7 @@ void AutomationProvider::ConnectExternalTab(
     external_tab_container->Uninitialize();
   }
 
-  TRACE_EVENT_END("AutomationProvider::ConnectExternalTab", 0, "");
+  TRACE_EVENT_END_ETW("AutomationProvider::ConnectExternalTab", 0, "");
 }
 
 void AutomationProvider::OnBrowserMoved(int tab_handle) {
@@ -421,7 +422,8 @@ void AutomationProvider::OnMessageFromExternalHost(int handle,
   if (!view_host)
     return;
 
-  view_host->ForwardMessageFromExternalHost(message, origin, target);
+  view_host->Send(new ViewMsg_HandleMessageFromExternalHost(
+      view_host->routing_id(), message, origin, target));
 }
 
 void AutomationProvider::NavigateInExternalTab(
@@ -460,8 +462,9 @@ void AutomationProvider::OnSetZoomLevel(int handle, int zoom_level) {
   if (tab_tracker_->ContainsHandle(handle)) {
     NavigationController* tab = tab_tracker_->GetResource(handle);
     if (tab->tab_contents() && tab->tab_contents()->render_view_host()) {
-      tab->tab_contents()->render_view_host()->Zoom(
-          static_cast<PageZoom::Function>(zoom_level));
+      RenderViewHost* host = tab->tab_contents()->render_view_host();
+      PageZoom::Function zoom = static_cast<PageZoom::Function>(zoom_level);
+      host->Send(new ViewMsg_Zoom(host->routing_id(), zoom));
     }
   }
 }

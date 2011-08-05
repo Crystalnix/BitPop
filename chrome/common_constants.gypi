@@ -55,7 +55,7 @@
   'targets': [
     {
       'target_name': 'common_constants',
-      'type': '<(library)',
+      'type': 'static_library',
       'variables': {
         'common_constants_target': 1,
       },
@@ -63,7 +63,7 @@
         '../base/base.gyp:base',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': ['../build/linux/system.gyp:gtk'],
         }],
       ],
@@ -74,7 +74,7 @@
       'targets': [
         {
           'target_name': 'common_constants_win64',
-          'type': '<(library)',
+          'type': 'static_library',
           'variables': {
             'common_constants_target': 1,
           },

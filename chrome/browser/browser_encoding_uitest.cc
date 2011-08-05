@@ -4,9 +4,9 @@
 #include <string>
 
 #include "base/file_util.h"
-#include "base/memory/scoped_temp_dir.h"
-#include "chrome/browser/net/url_request_mock_http_job.h"
+#include "base/scoped_temp_dir.h"
 #include "chrome/browser/download/save_package.h"
+#include "chrome/browser/net/url_request_mock_http_job.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/automation/browser_proxy.h"
 #include "chrome/test/automation/tab_proxy.h"
@@ -52,6 +52,10 @@ class BrowserEncodingTest : public UITest {
 // 2. Add more files with multiple encoding name variants for each canonical
 // encoding name). Webkit layout tests cover some, but testing in the UI test is
 // also necessary.
+
+#if defined(OS_MACOSX)
+#define TestEncodingAliasMapping FLAKY_TestEncodingAliasMapping
+#endif
 TEST_F(BrowserEncodingTest, TestEncodingAliasMapping) {
   struct EncodingTestData {
     const char* file_name;

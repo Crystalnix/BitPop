@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_UI_VIEWS_TOOLBAR_VIEW_H_
 #pragma once
 
+#include <set>
 #include <vector>
 
 #include "base/memory/ref_counted.h"
@@ -27,11 +28,6 @@
 class BrowserActionsContainer;
 class Browser;
 class Profile;
-#if defined(OS_CHROMEOS)
-namespace views {
-class Menu2;
-}  // namespace views
-#endif
 class WrenchMenu;
 
 // The Browser Window's toolbar.
@@ -77,6 +73,10 @@ class ToolbarView : public AccessiblePaneView,
 
   // Remove a menu listener.
   void RemoveMenuListener(views::MenuListener* listener);
+
+  // Gets a bitmap with the icon for the app menu and any overlaid notification
+  // badge.
+  SkBitmap GetAppMenuIcon(views::CustomButton::ButtonState state);
 
   virtual bool GetAcceleratorInfo(int id, ui::Accelerator* accel);
 
@@ -144,9 +144,6 @@ class ToolbarView : public AccessiblePaneView,
   // Returns true if we should show the upgrade recommended dot.
   bool IsUpgradeRecommended();
 
-  // Retrieve which badge we should show when recommending an upgrade.
-  int GetUpgradeRecommendedBadge() const;
-
   // Returns true if we should show the background page badge.
   bool ShouldShowBackgroundPageBadge();
 
@@ -171,10 +168,6 @@ class ToolbarView : public AccessiblePaneView,
 
   // Updates the badge on the app menu (Wrench).
   void UpdateAppMenuBadge();
-
-  // Gets a bitmap with the icon for the app menu and any overlaid notification
-  // badge.
-  SkBitmap GetAppMenuIcon(views::CustomButton::ButtonState state);
 
   // Gets a badge for the wrench icon corresponding to the number of
   // unacknowledged background pages in the system.
@@ -209,12 +202,6 @@ class ToolbarView : public AccessiblePaneView,
   // The contents of the wrench menu.
   scoped_ptr<ui::SimpleMenuModel> wrench_menu_model_;
 
-#if defined(OS_CHROMEOS)
-  // Wrench menu using WebUI menu.
-  // MenuLister is managed by Menu2.
-  scoped_ptr<views::Menu2> wrench_menu_2_;
-#endif
-
   // Wrench menu.
   scoped_refptr<WrenchMenu> wrench_menu_;
 
@@ -222,11 +209,6 @@ class ToolbarView : public AccessiblePaneView,
   std::vector<views::MenuListener*> menu_listeners_;
 
   NotificationRegistrar registrar_;
-
-  // If non-null the destructor sets this to true. This is set to a non-null
-  // while the menu is showing and used to detect if the menu was deleted while
-  // running.
-  bool* destroyed_flag_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(ToolbarView);
 };

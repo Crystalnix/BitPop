@@ -29,7 +29,7 @@ class WebWorkerProxy : public WebKit::WebWorker, private WebWorkerBase {
                  ChildThread* child_thread,
                  int render_view_route_id,
                  int parent_appcache_host_id);
-  ~WebWorkerProxy();
+  virtual ~WebWorkerProxy();
 
   // WebWorker implementation.
   virtual void startWorkerContext(const WebKit::WebURL& script_url,
@@ -41,6 +41,10 @@ class WebWorkerProxy : public WebKit::WebWorker, private WebWorkerBase {
       const WebKit::WebMessagePortChannelArray& channel_array);
   virtual void workerObjectDestroyed();
   virtual void clientDestroyed();
+
+  virtual void attachDevTools();
+  virtual void detachDevTools();
+  virtual void dispatchDevToolsMessage(const WebKit::WebString&);
 
   // IPC::Channel::Listener implementation.
   virtual bool OnMessageReceived(const IPC::Message& message);

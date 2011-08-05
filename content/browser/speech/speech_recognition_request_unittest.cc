@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 #include "base/utf_string_conversions.h"
-#include "chrome/common/net/test_url_fetcher_factory.h"
 #include "content/browser/speech/speech_recognition_request.h"
+#include "content/common/test_url_fetcher_factory.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_status.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -54,10 +54,9 @@ void SpeechRecognitionRequestTest::CreateAndTestRequest(
   net::URLRequestStatus status;
   status.set_status(success ? net::URLRequestStatus::SUCCESS :
                               net::URLRequestStatus::FAILED);
-  fetcher->delegate()->OnURLFetchComplete(fetcher, fetcher->original_url(),
-                                          status, success ? 200 : 500,
-                                          ResponseCookies(),
-                                          http_response);
+  fetcher->delegate()->OnURLFetchComplete(
+      fetcher, fetcher->original_url(), status, success ? 200 : 500,
+      net::ResponseCookies(), http_response);
   // Parsed response will be available in result_.
 }
 

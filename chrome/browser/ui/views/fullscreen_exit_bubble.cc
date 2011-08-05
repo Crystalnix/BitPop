@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/views/fullscreen_exit_bubble.h"
 
+#include "base/message_loop.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "grit/generated_resources.h"
@@ -12,15 +13,12 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas_skia.h"
+#include "views/controls/link.h"
 #include "views/screen.h"
-#include "views/widget/root_view.h"
 #include "views/window/window.h"
 
 #if defined(OS_WIN)
 #include "ui/base/l10n/l10n_util_win.h"
-#include "views/widget/widget_win.h"
-#elif defined(OS_LINUX)
-#include "views/widget/widget_gtk.h"
 #endif
 
 // FullscreenExitView ----------------------------------------------------------
@@ -59,7 +57,7 @@ FullscreenExitBubble::FullscreenExitView::FullscreenExitView(
   link_.SetText(
       UTF16ToWide(l10n_util::GetStringUTF16(IDS_EXIT_FULLSCREEN_MODE)));
 #endif
-  link_.SetController(bubble);
+  link_.set_listener(bubble);
   link_.SetFont(ResourceBundle::GetSharedInstance().GetFont(
       ResourceBundle::LargeFont));
   link_.SetNormalColor(SK_ColorWHITE);
@@ -131,14 +129,16 @@ FullscreenExitBubble::FullscreenExitBubble(
       this, UTF16ToWideHack(accelerator.GetShortcutText()));
 
   // Initialize the popup.
-  views::Widget::CreateParams params(views::Widget::CreateParams::TYPE_POPUP);
+  popup_ = new views::Widget;
+  views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
   params.transparent = true;
   params.can_activate = false;
-  params.delete_on_destroy = false;
-  popup_ = views::Widget::CreateWidget(params);
-  popup_->SetOpacity(static_cast<unsigned char>(0xff * kOpacity));
-  popup_->Init(frame->GetNativeView(), GetPopupRect(false));
+  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.parent = frame->GetNativeView();
+  params.bounds = GetPopupRect(false);
+  popup_->Init(params);
   popup_->SetContentsView(view_);
+  popup_->SetOpacity(static_cast<unsigned char>(0xff * kOpacity));
   popup_->Show();  // This does not activate the popup.
 
   // Start the initial delay timer and begin watching the mouse.
@@ -154,19 +154,19 @@ FullscreenExitBubble::FullscreenExitBubble(
 
 FullscreenExitBubble::~FullscreenExitBubble() {
   // This is tricky.  We may be in an ATL message handler stack, in which case
-  // the popup cannot be deleted yet.  We also can't blindly use
-  // set_delete_on_destroy(true) on the popup to delete it when it closes,
-  // because if the user closed the last tab while in fullscreen mode, Windows
-  // has already destroyed the popup HWND by the time we get here, and thus
-  // either the popup will already have been deleted (if we set this in our
-  // constructor) or the popup will never get another OnFinalMessage() call (if
-  // not, as currently).  So instead, we tell the popup to synchronously hide,
-  // and then asynchronously close and delete itself.
+  // the popup cannot be deleted yet.  We also can't set the popup's ownership
+  // model to NATIVE_WIDGET_OWNS_WIDGET because if the user closed the last tab
+  // while in fullscreen mode, Windows has already destroyed the popup HWND by
+  // the time we get here, and thus either the popup will already have been
+  // deleted (if we set this in our constructor) or the popup will never get
+  // another OnFinalMessage() call (if not, as currently).  So instead, we tell
+  // the popup to synchronously hide, and then asynchronously close and delete
+  // itself.
   popup_->Close();
   MessageLoop::current()->DeleteSoon(FROM_HERE, popup_);
 }
 
-void FullscreenExitBubble::LinkActivated(views::Link* source, int event_flags) {
+void FullscreenExitBubble::LinkClicked(views::Link* source, int event_flags) {
   delegate_->ExecuteCommand(IDC_FULLSCREEN);
 }
 

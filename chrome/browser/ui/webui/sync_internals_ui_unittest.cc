@@ -10,9 +10,9 @@
 #include "base/message_loop.h"
 #include "base/values.h"
 #include "chrome/browser/sync/js_arg_list.h"
+#include "chrome/browser/sync/js_event_details.h"
 #include "chrome/browser/sync/js_test_util.h"
 #include "chrome/browser/sync/profile_sync_service_mock.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "chrome/test/profile_mock.h"
 #include "content/browser/browser_thread.h"
 #include "content/browser/renderer_host/test_render_view_host.h"
@@ -24,6 +24,7 @@ namespace {
 
 using browser_sync::HasArgsAsList;
 using browser_sync::JsArgList;
+using browser_sync::JsEventDetails;
 using testing::NiceMock;
 using testing::Return;
 using testing::StrictMock;
@@ -139,12 +140,10 @@ TEST_F(SyncInternalsUITest, HandleJsEvent) {
   ConstructTestSyncInternalsUI();
 
   EXPECT_CALL(*GetTestSyncInternalsUI(),
-              ExecuteJavascript(ASCIIToUTF16("testMessage(5,true);")));
+              ExecuteJavascript(
+                  ASCIIToUTF16("chrome.sync.testMessage.fire({});")));
 
-  ListValue args;
-  args.Append(Value::CreateIntegerValue(5));
-  args.Append(Value::CreateBooleanValue(true));
-  GetTestSyncInternalsUI()->HandleJsEvent("testMessage", JsArgList(args));
+  GetTestSyncInternalsUI()->HandleJsEvent("testMessage", JsEventDetails());
 }
 
 TEST_F(SyncInternalsUITest, HandleJsEventNullService) {
@@ -153,74 +152,91 @@ TEST_F(SyncInternalsUITest, HandleJsEventNullService) {
   ConstructTestSyncInternalsUI();
 
   EXPECT_CALL(*GetTestSyncInternalsUI(),
-              ExecuteJavascript(ASCIIToUTF16("testMessage(5,true);")));
+              ExecuteJavascript(
+                  ASCIIToUTF16("chrome.sync.testMessage.fire({});")));
+
+  GetTestSyncInternalsUI()->HandleJsEvent("testMessage", JsEventDetails());
+}
+
+TEST_F(SyncInternalsUITest, HandleJsMessageReply) {
+  ExpectSetupTeardownCalls();
+
+  ConstructTestSyncInternalsUI();
+
+  EXPECT_CALL(
+      *GetTestSyncInternalsUI(),
+      ExecuteJavascript(
+          ASCIIToUTF16("chrome.sync.testMessage.handleReply(5,true);")));
 
   ListValue args;
   args.Append(Value::CreateIntegerValue(5));
   args.Append(Value::CreateBooleanValue(true));
-  GetTestSyncInternalsUI()->HandleJsEvent("testMessage", JsArgList(args));
+  GetTestSyncInternalsUI()->HandleJsMessageReply(
+      "testMessage", JsArgList(&args));
 }
 
-TEST_F(SyncInternalsUITest, ProcessWebUIMessageBasic) {
+TEST_F(SyncInternalsUITest, HandleJsMessageReplyNullService) {
+  ExpectSetupTeardownCallsNullService();
+
+  ConstructTestSyncInternalsUI();
+
+  EXPECT_CALL(
+      *GetTestSyncInternalsUI(),
+      ExecuteJavascript(
+          ASCIIToUTF16("chrome.sync.testMessage.handleReply(5,true);")));
+
+  ListValue args;
+  args.Append(Value::CreateIntegerValue(5));
+  args.Append(Value::CreateBooleanValue(true));
+  GetTestSyncInternalsUI()->HandleJsMessageReply(
+      "testMessage", JsArgList(&args));
+}
+
+TEST_F(SyncInternalsUITest, OnWebUISendBasic) {
   ExpectSetupTeardownCalls();
 
-  ExtensionHostMsg_DomMessage_Params params;
-  params.name = "testName";
-  params.arguments.Append(Value::CreateIntegerValue(10));
+  std::string name = "testName";
+  ListValue args;
+  args.Append(Value::CreateIntegerValue(10));
 
   EXPECT_CALL(mock_js_backend_,
-              ProcessMessage(params.name, HasArgsAsList(params.arguments),
+              ProcessMessage(name, HasArgsAsList(args),
                              GetTestSyncInternalsUIAddress()));
 
   ConstructTestSyncInternalsUI();
 
-  GetTestSyncInternalsUI()->ProcessWebUIMessage(params);
+  GetTestSyncInternalsUI()->OnWebUISend(GURL(), name, args);
 }
 
-TEST_F(SyncInternalsUITest, ProcessWebUIMessageBasicNullService) {
+TEST_F(SyncInternalsUITest, OnWebUISendBasicNullService) {
   ExpectSetupTeardownCallsNullService();
 
   ConstructTestSyncInternalsUI();
 
-  ExtensionHostMsg_DomMessage_Params params;
-  params.name = "testName";
-  params.arguments.Append(Value::CreateIntegerValue(5));
+  std::string name = "testName";
+  ListValue args;
+  args.Append(Value::CreateIntegerValue(5));
 
   // Should drop the message.
-  GetTestSyncInternalsUI()->ProcessWebUIMessage(params);
+  GetTestSyncInternalsUI()->OnWebUISend(GURL(), name, args);
 }
 
 namespace {
 const char kAboutInfoCall[] =
-    "onGetAboutInfoFinished({\"summary\":\"SYNC DISABLED\"});";
+    "chrome.sync.getAboutInfo.handleReply({\"summary\":\"SYNC DISABLED\"});";
 }  // namespace
 
-TEST_F(SyncInternalsUITest, ProcessWebUIMessageGetAboutInfo) {
-  ExpectSetupTeardownCalls();
-
-  ExtensionHostMsg_DomMessage_Params params;
-  params.name = "getAboutInfo";
-
-  ConstructTestSyncInternalsUI();
-
-  EXPECT_CALL(*GetTestSyncInternalsUI(),
-              ExecuteJavascript(ASCIIToUTF16(kAboutInfoCall)));
-
-  GetTestSyncInternalsUI()->ProcessWebUIMessage(params);
-}
-
-TEST_F(SyncInternalsUITest, ProcessWebUIMessageGetAboutInfoNullService) {
+// TODO(lipalani) - add a test case to test about:sync with a non null service.
+TEST_F(SyncInternalsUITest, OnWebUISendGetAboutInfoNullService) {
   ExpectSetupTeardownCallsNullService();
 
-  ExtensionHostMsg_DomMessage_Params params;
-  params.name = "getAboutInfo";
-
   ConstructTestSyncInternalsUI();
 
   EXPECT_CALL(*GetTestSyncInternalsUI(),
               ExecuteJavascript(ASCIIToUTF16(kAboutInfoCall)));
 
-  GetTestSyncInternalsUI()->ProcessWebUIMessage(params);
+  ListValue args;
+  GetTestSyncInternalsUI()->OnWebUISend(GURL(), "getAboutInfo", args);
 }
 
 }  // namespace

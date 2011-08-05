@@ -32,7 +32,7 @@
 class TestShellWebKitInit : public webkit_glue::WebKitClientImpl {
  public:
   explicit TestShellWebKitInit(bool layout_test_mode);
-  ~TestShellWebKitInit();
+  virtual ~TestShellWebKitInit();
 
   virtual WebKit::WebMimeRegistry* mimeRegistry();
   virtual WebKit::WebClipboard* clipboard();
@@ -50,6 +50,8 @@ class TestShellWebKitInit : public webkit_glue::WebKitClientImpl {
       const WebKit::WebString& vfs_file_name);
   virtual long long databaseGetFileSize(
       const WebKit::WebString& vfs_file_name);
+  virtual long long databaseGetSpaceAvailableForOrigin(
+      const WebKit::WebString& origin_identifier);
   virtual unsigned long long visitedLinkHash(const char* canonicalURL,
                                              size_t length);
   virtual bool isLinkVisited(unsigned long long linkHash);

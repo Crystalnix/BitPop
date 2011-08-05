@@ -7,9 +7,9 @@
 #include "base/command_line.h"
 #include "content/common/child_thread.h"
 #include "content/common/gpu/gpu_channel.h"
+#include "content/common/gpu/gpu_messages.h"
 #include "content/common/gpu/media/fake_gl_video_device.h"
 #include "content/common/gpu/media/fake_gl_video_decode_engine.h"
-#include "content/common/gpu_messages.h"
 #include "media/base/data_buffer.h"
 #include "media/base/media_switches.h"
 #include "media/base/video_frame.h"
@@ -272,13 +272,13 @@ GpuVideoDecoder::~GpuVideoDecoder() {}
 
 void GpuVideoDecoder::OnInitialize(const GpuVideoDecoderInitParam& param) {
   // TODO(jiesun): codec id should come from |param|.
-  media::VideoCodecConfig config(media::kCodecH264,
-                                 param.width,
-                                 param.height,
-                                 param.frame_rate_num,
-                                 param.frame_rate_den,
-                                 NULL,
-                                 0);
+  media::VideoDecoderConfig config(media::kCodecH264,
+                                   param.width,
+                                   param.height,
+                                   param.frame_rate_num,
+                                   param.frame_rate_den,
+                                   NULL,
+                                   0);
   decode_engine_->Initialize(message_loop_, this, this, config);
 }
 

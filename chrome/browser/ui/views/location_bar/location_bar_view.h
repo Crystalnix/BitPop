@@ -18,18 +18,20 @@
 #include "chrome/browser/search_engines/template_url_model_observer.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
+#include "chrome/browser/ui/views/dropdown_bar_host.h"
+#include "chrome/browser/ui/views/dropdown_bar_host_delegate.h"
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/rect.h"
 #include "views/controls/native/native_view_host.h"
 
 #if defined(OS_WIN)
-#include "chrome/browser/autocomplete/autocomplete_edit_view_win.h"
-#elif defined(OS_LINUX)
-#include "chrome/browser/autocomplete/autocomplete_edit_view_gtk.h"
+#include "chrome/browser/ui/views/omnibox/omnibox_view_win.h"
+#elif defined(TOOLKIT_USES_GTK)
+#include "chrome/browser/ui/gtk/omnibox/omnibox_view_gtk.h"
 #endif
 
-class CommandUpdater;
+class Browser;
 class ContentSettingImageView;
 class EVBubbleView;
 class ExtensionAction;
@@ -48,7 +50,7 @@ class TemplateURLModel;
 namespace views {
 class HorizontalPainter;
 class Label;
-};
+}  // namespace views
 
 #if defined(OS_WIN)
 class SuggestedTextView;
@@ -67,11 +69,19 @@ class LocationBarView : public LocationBar,
                         public views::View,
                         public views::DragController,
                         public AutocompleteEditController,
+                        public DropdownBarHostDelegate,
                         public TemplateURLModelObserver,
                         public NotificationObserver {
  public:
   // The location bar view's class name.
   static const char kViewClassName[];
+
+  // DropdownBarHostDelegate
+  virtual void SetFocusAndSelection(bool select_all) OVERRIDE;
+  virtual void SetAnimationOffset(int offset) OVERRIDE;
+
+  // Returns the offset used while animating.
+  int animation_offset() const { return animation_offset_; }
 
   class Delegate {
    public:
@@ -108,7 +118,7 @@ class LocationBarView : public LocationBar,
   };
 
   LocationBarView(Profile* profile,
-                  CommandUpdater* command_updater,
+                  Browser* browser,
                   ToolbarModel* model,
                   Delegate* delegate,
                   Mode mode);
@@ -132,6 +142,7 @@ class LocationBarView : public LocationBar,
 
   void SetProfile(Profile* profile);
   Profile* profile() const { return profile_; }
+  Browser* browser() const { return browser_; }
 
   // Sets |preview_enabled| for the PageAction View associated with this
   // |page_action|. If |preview_enabled| is true, the view will display the
@@ -155,7 +166,7 @@ class LocationBarView : public LocationBar,
   gfx::Point GetLocationEntryOrigin() const;
 
 #if defined(OS_WIN)
-  // Invoked from AutocompleteEditViewWin to show the instant suggestion.
+  // Invoked from OmniboxViewWin to show the instant suggestion.
   void SetInstantSuggestion(const string16& text,
                             bool animate_to_complete);
 
@@ -240,8 +251,8 @@ class LocationBarView : public LocationBar,
   virtual void InvalidatePageActions() OVERRIDE;
   virtual void SaveStateToContents(TabContents* contents) OVERRIDE;
   virtual void Revert() OVERRIDE;
-  virtual const AutocompleteEditView* location_entry() const OVERRIDE;
-  virtual AutocompleteEditView* location_entry() OVERRIDE;
+  virtual const OmniboxView* location_entry() const OVERRIDE;
+  virtual OmniboxView* location_entry() OVERRIDE;
   virtual LocationBarTesting* GetLocationBarForTesting() OVERRIDE;
 
   // Overridden from LocationBarTesting:
@@ -328,13 +339,13 @@ class LocationBarView : public LocationBar,
 
   // The Autocomplete Edit field.
 #if defined(OS_WIN)
-  scoped_ptr<AutocompleteEditViewWin> location_entry_;
+  scoped_ptr<OmniboxViewWin> location_entry_;
 #else
-  scoped_ptr<AutocompleteEditView> location_entry_;
+  scoped_ptr<OmniboxView> location_entry_;
 #endif
 
-  // The CommandUpdater for the Browser object that corresponds to this View.
-  CommandUpdater* command_updater_;
+  // The Browser object that corresponds to this View.
+  Browser* browser_;
 
   // The model.
   ToolbarModel* model_;
@@ -411,6 +422,12 @@ class LocationBarView : public LocationBar,
 
   // Tracks this preference to determine whether bookmark editing is allowed.
   BooleanPrefMember edit_bookmarks_enabled_;
+
+  // While animating, the host clips the widget and draws only the bottom
+  // part of it. The view needs to know the pixel offset at which we are drawing
+  // the widget so that we can draw the curved edges that attach to the toolbar
+  // in the right location.
+  int animation_offset_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(LocationBarView);
 };

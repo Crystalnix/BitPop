@@ -16,8 +16,8 @@
 #include "views/widget/widget.h"
 #include "views/window/window.h"
 
-#if defined(OS_LINUX)
-#include "views/window/window_gtk.h"
+#if defined(TOOLKIT_USES_GTK)
+#include "views/window/native_window_gtk.h"
 #endif
 
 namespace browser {
@@ -60,7 +60,7 @@ gfx::Size HtmlDialogView::GetPreferredSize() {
 
 bool HtmlDialogView::AcceleratorPressed(const views::Accelerator& accelerator) {
   // Pressing ESC closes the dialog.
-  DCHECK_EQ(ui::VKEY_ESCAPE, accelerator.GetKeyCode());
+  DCHECK_EQ(ui::VKEY_ESCAPE, accelerator.key_code());
   OnWindowClosed();
   OnDialogClosed(std::string());
   return true;
@@ -148,7 +148,7 @@ void HtmlDialogView::OnDialogClosed(const std::string& json_retval) {
     delegate_ = NULL;  // We will not communicate further with the delegate.
     dialog_delegate->OnDialogClosed(json_retval);
   }
-  window()->CloseWindow();
+  window()->Close();
 }
 
 void HtmlDialogView::OnWindowClosed() {
@@ -192,8 +192,9 @@ void HtmlDialogView::HandleKeyboardEvent(const NativeWebKeyboardEvent& event) {
   // This allows stuff like F10, etc to work correctly.
   DefWindowProc(event.os_event.hwnd, event.os_event.message,
                   event.os_event.wParam, event.os_event.lParam);
-#elif defined(OS_LINUX)
-  views::WindowGtk* window_gtk = static_cast<views::WindowGtk*>(window());
+#elif defined(TOOLKIT_USES_GTK)
+  views::NativeWindowGtk* window_gtk =
+      static_cast<views::NativeWindowGtk*>(window()->native_window());
   if (event.os_event && !event.skip_in_browser) {
     views::KeyEvent views_event(reinterpret_cast<GdkEvent*>(event.os_event));
     window_gtk->HandleKeyboardEvent(views_event);

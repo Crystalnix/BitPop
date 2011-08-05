@@ -17,14 +17,15 @@
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/format_macros.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
 #include "base/platform_file.h"
+#include "base/scoped_temp_dir.h"
 #include "base/string_piece.h"
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "net/base/load_flags.h"
+#include "net/base/mime_util.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/http/http_request_headers.h"
@@ -32,7 +33,10 @@
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/fileapi/file_system_context.h"
+#include "webkit/fileapi/file_system_file_util.h"
+#include "webkit/fileapi/file_system_operation_context.h"
 #include "webkit/fileapi/file_system_path_manager.h"
+#include "webkit/fileapi/sandbox_mount_point_provider.h"
 
 namespace fileapi {
 namespace {
@@ -88,7 +92,7 @@ class FileSystemURLRequestJobTest : public testing::Test {
         new FileSystemContext(
             base::MessageLoopProxy::CreateForCurrentThread(),
             base::MessageLoopProxy::CreateForCurrentThread(),
-            special_storage_policy_,
+            special_storage_policy_, NULL,
             FilePath(), false /* is_incognito */,
             false, true,
             new FileSystemPathManager(
@@ -109,6 +113,10 @@ class FileSystemURLRequestJobTest : public testing::Test {
     // NOTE: order matters, request must die before delegate
     request_.reset(NULL);
     delegate_.reset(NULL);
+
+    // This shouldn't be necessary, but it shuts HeapChecker up.
+    file_system_context_ = NULL;
+
     net::URLRequest::RegisterProtocolFactory("filesystem", NULL);
   }
 
@@ -118,12 +126,9 @@ class FileSystemURLRequestJobTest : public testing::Test {
     origin_root_path_ = root_path;
   }
 
-  void TestRequest(const GURL& url) {
-    TestRequestWithHeaders(url, NULL);
-  }
-
-  void TestRequestWithHeaders(const GURL& url,
-                              const net::HttpRequestHeaders* headers) {
+  void TestRequestHelper(const GURL& url,
+                         const net::HttpRequestHeaders* headers,
+                         bool run_to_completion) {
     delegate_.reset(new TestDelegate());
     // Make delegate_ exit the MessageLoop when the request is done.
     delegate_->set_quit_on_complete(true);
@@ -138,13 +143,64 @@ class FileSystemURLRequestJobTest : public testing::Test {
 
     request_->Start();
     ASSERT_TRUE(request_->is_pending());  // verify that we're starting async
-    MessageLoop::current()->Run();
+    if (run_to_completion)
+      MessageLoop::current()->Run();
   }
 
-  void WriteFile(const base::StringPiece file_name,
+  void TestRequest(const GURL& url) {
+    TestRequestHelper(url, NULL, true);
+  }
+
+  void TestRequestWithHeaders(const GURL& url,
+                              const net::HttpRequestHeaders* headers) {
+    TestRequestHelper(url, headers, true);
+  }
+
+  void TestRequestNoRun(const GURL& url) {
+    TestRequestHelper(url, NULL, false);
+  }
+
+  void CreateDirectory(const base::StringPiece& dir_name) {
+    FilePath path = FilePath().AppendASCII(dir_name);
+    FileSystemFileUtil* file_util = file_system_context_->path_manager()->
+        sandbox_provider()->GetFileSystemFileUtil();
+    FileSystemOperationContext context(file_system_context_, file_util);
+    context.set_src_origin_url(GURL("http://remote"));
+    context.set_src_virtual_path(path);
+    context.set_src_type(fileapi::kFileSystemTypeTemporary);
+    context.set_allowed_bytes_growth(1024);
+
+    ASSERT_EQ(base::PLATFORM_FILE_OK, file_util->CreateDirectory(
+        &context,
+        path,
+        false /* exclusive */,
+        false /* recursive */));
+  }
+
+  void WriteFile(const base::StringPiece& file_name,
                  const char* buf, int buf_size) {
-    FilePath path = origin_root_path_.AppendASCII(file_name);
-    ASSERT_EQ(buf_size, file_util::WriteFile(path, buf, buf_size));
+    FilePath path = FilePath().AppendASCII(file_name);
+    FileSystemFileUtil* file_util = file_system_context_->path_manager()->
+        sandbox_provider()->GetFileSystemFileUtil();
+    FileSystemOperationContext context(file_system_context_, file_util);
+    context.set_src_origin_url(GURL("http://remote"));
+    context.set_src_virtual_path(path);
+    context.set_src_type(fileapi::kFileSystemTypeTemporary);
+    context.set_allowed_bytes_growth(1024);
+
+    base::PlatformFile handle = base::kInvalidPlatformFileValue;
+    bool created = false;
+    ASSERT_EQ(base::PLATFORM_FILE_OK, file_util->CreateOrOpen(
+        &context,
+        path,
+        base::PLATFORM_FILE_CREATE | base::PLATFORM_FILE_WRITE,
+        &handle,
+        &created));
+    EXPECT_TRUE(created);
+    ASSERT_NE(base::kInvalidPlatformFileValue, handle);
+    ASSERT_EQ(buf_size,
+        base::WritePlatformFile(handle, 0 /* offset */, buf, buf_size));
+    base::ClosePlatformFile(handle);
   }
 
   GURL CreateFileSystemURL(const std::string& path) {
@@ -260,7 +316,7 @@ TEST_F(FileSystemURLRequestJobTest, RangeOutOfBounds) {
 }
 
 TEST_F(FileSystemURLRequestJobTest, FileDirRedirect) {
-  ASSERT_TRUE(file_util::CreateDirectory(origin_root_path_.AppendASCII("dir")));
+  CreateDirectory("dir");
   TestRequest(CreateFileSystemURL("dir"));
 
   EXPECT_EQ(1, delegate_->received_redirect_count());
@@ -290,7 +346,45 @@ TEST_F(FileSystemURLRequestJobTest, NoSuchFile) {
   TestRequest(CreateFileSystemURL("somefile"));
   ASSERT_FALSE(request_->is_pending());
   EXPECT_TRUE(delegate_->request_failed());
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_FOUND, request_->status().os_error());
+  EXPECT_EQ(net::ERR_FILE_NOT_FOUND, request_->status().os_error());
+}
+
+class QuitNowTask : public Task {
+ public:
+  virtual void Run() {
+    MessageLoop::current()->QuitNow();
+  }
+};
+
+TEST_F(FileSystemURLRequestJobTest, Cancel) {
+  WriteFile("file1.dat", kTestFileData, arraysize(kTestFileData) - 1);
+  TestRequestNoRun(CreateFileSystemURL("file1.dat"));
+
+  // Run StartAsync() and only StartAsync().
+  MessageLoop::current()->PostTask(FROM_HERE, new QuitNowTask);
+  MessageLoop::current()->Run();
+
+  request_.reset();
+  MessageLoop::current()->RunAllPending();
+  // If we get here, success! we didn't crash!
+}
+
+TEST_F(FileSystemURLRequestJobTest, GetMimeType) {
+  const char kFilename[] = "hoge.html";
+
+  std::string mime_type_direct;
+  FilePath::StringType extension =
+      FilePath().AppendASCII(kFilename).Extension();
+  if (!extension.empty())
+    extension = extension.substr(1);
+  EXPECT_TRUE(net::GetWellKnownMimeTypeFromExtension(
+      extension, &mime_type_direct));
+
+  TestRequest(CreateFileSystemURL(kFilename));
+
+  std::string mime_type_from_job;
+  request_->GetMimeType(&mime_type_from_job);
+  EXPECT_EQ(mime_type_direct, mime_type_from_job);
 }
 
 }  // namespace (anonymous)

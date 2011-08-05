@@ -7,11 +7,11 @@
 #include "base/logging.h"
 #import "base/memory/scoped_nsobject.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_button_cell.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_folder_window.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
+#include "content/browser/user_metrics.h"
 
 // The opacity of the bookmark button drag image.
 static const CGFloat kDragImageOpacity = 0.7;
@@ -350,6 +350,11 @@ BookmarkButton* gDraggedButton = nil; // Weak
 
 + (BookmarkButton*)draggedButton {
   return gDraggedButton;
+}
+
+- (BOOL)canBecomeKeyView {
+  // If button is an item in a folder menu, don't become key.
+  return ![[self cell] isFolderButtonCell];
 }
 
 // This only gets called after a click that wasn't a drag, and only on folders.

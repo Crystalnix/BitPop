@@ -8,6 +8,7 @@
 
 #include "base/process_util.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
@@ -23,6 +24,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/gtk_util.h"
+#include "ui/gfx/image.h"
 
 namespace {
 
@@ -76,6 +78,8 @@ void HungRendererDialogGtk::Init() {
       GTK_RESPONSE_OK,
       NULL));
   gtk_dialog_set_default_response(dialog_, GTK_RESPONSE_OK);
+  g_signal_connect(dialog_, "delete-event",
+                   G_CALLBACK(gtk_widget_hide_on_delete), NULL);
   g_signal_connect(dialog_, "response", G_CALLBACK(OnResponseThunk), this);
 
   // We have an hbox with the frozen icon on the left.  On the right,
@@ -104,7 +108,7 @@ void HungRendererDialogGtk::Init() {
   GtkWidget* icon_vbox = gtk_vbox_new(FALSE, 0);
   gtk_box_pack_start(GTK_BOX(hbox), icon_vbox, FALSE, FALSE, 0);
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  GdkPixbuf* icon_pixbuf = rb.GetPixbufNamed(IDR_FROZEN_TAB_ICON);
+  GdkPixbuf* icon_pixbuf = rb.GetNativeImageNamed(IDR_FROZEN_TAB_ICON);
   GtkWidget* icon = gtk_image_new_from_pixbuf(icon_pixbuf);
   gtk_box_pack_start(GTK_BOX(icon_vbox), icon, FALSE, FALSE, 0);
 
@@ -154,7 +158,7 @@ void HungRendererDialogGtk::ShowForTabContents(TabContents* hung_contents) {
       std::string title = UTF16ToUTF8(it->tab_contents()->GetTitle());
       if (title.empty())
         title = UTF16ToUTF8(TabContentsWrapper::GetDefaultTitle());
-      SkBitmap favicon = it->tab_contents()->GetFavicon();
+      SkBitmap favicon = it->favicon_tab_helper()->GetFavicon();
 
       GdkPixbuf* pixbuf = NULL;
       if (favicon.width() > 0)

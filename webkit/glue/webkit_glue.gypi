@@ -58,7 +58,7 @@
     },
     {
       'target_name': 'webkit_user_agent',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': 'DB162DE1-7D56-4C4A-8A9F-80D396CD7AA8',
       'dependencies': [
         '<(DEPTH)/app/app.gyp:app_base',
@@ -102,21 +102,25 @@
     },
     {
       'target_name': 'glue',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': 'C66B126D-0ECE-4CA2-B6DC-FA780AFBBF09',
+      #TODO(dmichael): Remove this #define once all plugins are ported from
+      #                PPP_Instance and PPB_Instance scripting functions.
+      'defines': [
+        'PPAPI_INSTANCE_REMOVE_SCRIPTING',
+      ],
       'dependencies': [
         '<(DEPTH)/app/app.gyp:app_base',
         '<(DEPTH)/base/base.gyp:base_i18n',
-        '<(DEPTH)/gpu/gpu.gyp:gpu_common',
         '<(DEPTH)/gpu/gpu.gyp:gles2_implementation',
         '<(DEPTH)/net/net.gyp:net',
-        '<(DEPTH)/ppapi/ppapi.gyp:ppapi_shared_impl',
+        '<(DEPTH)/ppapi/ppapi.gyp:ppapi_c',
+        '<(DEPTH)/ppapi/ppapi_internal.gyp:ppapi_shared',
         '<(DEPTH)/printing/printing.gyp:printing',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
         '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
         '<(DEPTH)/third_party/npapi/npapi.gyp:npapi',
-        '<(DEPTH)/ppapi/ppapi.gyp:ppapi_c',
         'webkit_resources',
         'webkit_strings',
         'webkit_user_agent',
@@ -204,14 +208,14 @@
         '../plugins/ppapi/callbacks.h',
         '../plugins/ppapi/common.h',
         '../plugins/ppapi/dir_contents.h',
-        '../plugins/ppapi/error_util.cc',
-        '../plugins/ppapi/error_util.h',
         '../plugins/ppapi/event_conversion.cc',
         '../plugins/ppapi/event_conversion.h',
         '../plugins/ppapi/file_callbacks.cc',
         '../plugins/ppapi/file_callbacks.h',
         '../plugins/ppapi/file_path.cc',
         '../plugins/ppapi/file_path.h',
+        '../plugins/ppapi/file_type_conversions.cc',
+        '../plugins/ppapi/file_type_conversions.h',
         '../plugins/ppapi/fullscreen_container.h',
         '../plugins/ppapi/message_channel.cc',
         '../plugins/ppapi/message_channel.h',
@@ -222,6 +226,8 @@
         '../plugins/ppapi/plugin_module.h',
         '../plugins/ppapi/plugin_object.cc',
         '../plugins/ppapi/plugin_object.h',
+        '../plugins/ppapi/ppapi_interface_factory.cc',
+        '../plugins/ppapi/ppapi_interface_factory.h',
         '../plugins/ppapi/ppapi_plugin_instance.cc',
         '../plugins/ppapi/ppapi_plugin_instance.h',
         '../plugins/ppapi/ppapi_webplugin_impl.cc',
@@ -252,6 +258,8 @@
         '../plugins/ppapi/ppb_file_ref_impl.h',
         '../plugins/ppapi/ppb_file_system_impl.cc',
         '../plugins/ppapi/ppb_file_system_impl.h',
+        '../plugins/ppapi/ppb_find_impl.cc',
+        '../plugins/ppapi/ppb_find_impl.h',
         '../plugins/ppapi/ppb_flash_clipboard_impl.cc',
         '../plugins/ppapi/ppb_flash_clipboard_impl.h',
         '../plugins/ppapi/ppb_flash_file_impl.cc',
@@ -273,6 +281,8 @@
         '../plugins/ppapi/ppb_graphics_3d_impl.h',
         '../plugins/ppapi/ppb_image_data_impl.cc',
         '../plugins/ppapi/ppb_image_data_impl.h',
+        '../plugins/ppapi/ppb_layer_compositor_impl.cc',
+        '../plugins/ppapi/ppb_layer_compositor_impl.h',
         '../plugins/ppapi/ppb_nacl_private_impl.cc',
         '../plugins/ppapi/ppb_nacl_private_impl.h',
         '../plugins/ppapi/ppb_opengles_impl.cc',
@@ -285,8 +295,8 @@
         '../plugins/ppapi/ppb_scrollbar_impl.h',
         '../plugins/ppapi/ppb_surface_3d_impl.cc',
         '../plugins/ppapi/ppb_surface_3d_impl.h',
-        '../plugins/ppapi/ppb_transport_impl.cc',
-        '../plugins/ppapi/ppb_transport_impl.h',
+        '../plugins/ppapi/ppb_uma_private_impl.cc',
+        '../plugins/ppapi/ppb_uma_private_impl.h',
         '../plugins/ppapi/ppb_url_loader_impl.cc',
         '../plugins/ppapi/ppb_url_loader_impl.h',
         '../plugins/ppapi/ppb_url_request_info_impl.cc',
@@ -297,18 +307,24 @@
         '../plugins/ppapi/ppb_url_util_impl.h',
         '../plugins/ppapi/ppb_video_decoder_impl.cc',
         '../plugins/ppapi/ppb_video_decoder_impl.h',
+        '../plugins/ppapi/ppb_video_layer_impl.cc',
+        '../plugins/ppapi/ppb_video_layer_impl.h',
+        '../plugins/ppapi/ppb_video_layer_software.cc',
+        '../plugins/ppapi/ppb_video_layer_software.h',
         '../plugins/ppapi/ppb_widget_impl.cc',
         '../plugins/ppapi/ppb_widget_impl.h',
         '../plugins/ppapi/resource.cc',
         '../plugins/ppapi/resource.h',
+        '../plugins/ppapi/resource_creation_impl.cc',
+        '../plugins/ppapi/resource_creation_impl.h',
         '../plugins/ppapi/resource_tracker.cc',
         '../plugins/ppapi/resource_tracker.h',
         '../plugins/ppapi/string.cc',
         '../plugins/ppapi/string.h',
-        '../plugins/ppapi/usb_code_for_event.cc',
-        '../plugins/ppapi/usb_code_for_event.h',
         '../plugins/ppapi/var.cc',
         '../plugins/ppapi/var.h',
+        '../plugins/ppapi/webkit_forwarding_impl.cc',
+        '../plugins/ppapi/webkit_forwarding_impl.h',
         '../plugins/sad_plugin.cc',
         '../plugins/sad_plugin.h',
         'media/audio_decoder.cc',
@@ -438,15 +454,14 @@
       # own hard dependencies.
       'hard_dependency': 1,
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '<(DEPTH)/build/linux/system.gyp:gtk',
           ],
           'sources!': [
             'plugins/plugin_stubs.cc',
           ],
-        }, { # else: OS!="linux" and OS!="freebsd" and OS!="openbsd" \
-             # and OS!="solaris"'
+        }, { # else: toolkit_uses_gtk != 1
           'sources/': [['exclude', '_(linux|gtk)(_data)?\\.cc$'],
                        ['exclude', r'/gtk_']],
         }],
@@ -502,6 +517,12 @@
         ['inside_chromium_build==0', {
           'dependencies': [
             '<(DEPTH)/webkit/support/setup_third_party.gyp:third_party_headers',
+          ],
+        }],
+        ['p2p_apis==1', {
+          'sources': [
+            '../plugins/ppapi/ppb_transport_impl.cc',
+            '../plugins/ppapi/ppb_transport_impl.h',
           ],
         }],
       ],

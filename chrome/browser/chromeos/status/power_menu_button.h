@@ -8,8 +8,7 @@
 
 #include "chrome/browser/chromeos/cros/power_library.h"
 #include "chrome/browser/chromeos/status/status_area_button.h"
-#include "ui/base/models/menu_model.h"
-#include "views/controls/menu/menu_2.h"
+#include "views/controls/menu/menu_delegate.h"
 #include "views/controls/menu/view_menu_delegate.h"
 
 namespace base {
@@ -23,34 +22,16 @@ namespace chromeos {
 // The power menu button in the status area.
 // This class will handle getting the power status and populating the menu.
 class PowerMenuButton : public StatusAreaButton,
+                        public views::MenuDelegate,
                         public views::ViewMenuDelegate,
-                        public ui::MenuModel,
                         public PowerLibrary::Observer {
  public:
-  PowerMenuButton(StatusAreaHost* host);
+  explicit PowerMenuButton(StatusAreaHost* host);
   virtual ~PowerMenuButton();
 
-  // ui::MenuModel implementation.
-  virtual bool HasIcons() const  { return false; }
-  virtual int GetItemCount() const;
-  virtual ui::MenuModel::ItemType GetTypeAt(int index) const;
-  virtual int GetCommandIdAt(int index) const { return index; }
-  virtual string16 GetLabelAt(int index) const;
-  virtual bool IsItemDynamicAt(int index) const { return true; }
-  virtual bool GetAcceleratorAt(int index,
-      ui::Accelerator* accelerator) const { return false; }
-  virtual bool IsItemCheckedAt(int index) const { return false; }
-  virtual int GetGroupIdAt(int index) const { return 0; }
-  virtual bool GetIconAt(int index, SkBitmap* icon) { return false; }
-  virtual ui::ButtonMenuItemModel* GetButtonMenuItemAt(int index) const {
-    return NULL;
-  }
-  virtual bool IsEnabledAt(int index) const { return false; }
-  virtual ui::MenuModel* GetSubmenuModelAt(int index) const { return NULL; }
-  virtual void HighlightChangedTo(int index) {}
-  virtual void ActivatedAt(int index) {}
-  virtual void MenuWillShow() {}
-  virtual void SetMenuModelDelegate(ui::MenuModelDelegate* delegate) {}
+  // views::MenuDelegate implementation.
+  virtual std::wstring GetLabel(int id) const;
+  virtual bool IsCommandEnabled(int id) const;
 
   // PowerLibrary::Observer implementation.
   virtual void PowerChanged(PowerLibrary* obj);
@@ -59,7 +40,7 @@ class PowerMenuButton : public StatusAreaButton,
   int icon_id() const { return icon_id_; }
 
  protected:
-  virtual int icon_width() { return 26; }
+  virtual int icon_width();
 
  private:
   // views::View
@@ -68,8 +49,15 @@ class PowerMenuButton : public StatusAreaButton,
   // views::ViewMenuDelegate implementation.
   virtual void RunMenu(views::View* source, const gfx::Point& pt);
 
+  // Format strings with power status
+  string16 GetBatteryPercentageText() const;
+  string16 GetBatteryIsChargedText() const;
+
   // Update the power icon and menu label info depending on the power status.
   void UpdateIconAndLabelInfo();
+
+  // Update the menu entries.
+  void UpdateMenu();
 
   // The number of power images.
   static const int kNumPowerImages;
@@ -87,7 +75,7 @@ class PowerMenuButton : public StatusAreaButton,
 
   // The power menu. This needs to be initialized last since it calls into
   // GetLabelAt() during construction.
-  views::Menu2 power_menu_;
+  scoped_ptr<views::MenuItemView> menu_;
 
   DISALLOW_COPY_AND_ASSIGN(PowerMenuButton);
 };

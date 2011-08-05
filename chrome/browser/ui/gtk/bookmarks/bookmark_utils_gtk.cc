@@ -34,9 +34,8 @@ const int kBitsInAByte = 8;
 // Maximum number of characters on a bookmark button.
 const size_t kMaxCharsOnAButton = 15;
 
-// Max size of each component of the button tooltips.
-const size_t kMaxTooltipTitleLength = 100;
-const size_t kMaxTooltipURLLength = 400;
+// Maximum number of characters on a menu label.
+const int kMaxCharsOnAMenuLabel = 50;
 
 // Padding between the chrome button highlight border and the contents (favicon,
 // text).
@@ -196,7 +195,7 @@ GtkWidget* GetDragRepresentation(GdkPixbuf* pixbuf,
     gtk_widget_set_size_request(window, kDragRepresentationWidth,
                                 base_font.GetHeight());
   } else {
-    if (!provider->UseGtkTheme()) {
+    if (!provider->UsingNativeTheme()) {
       GdkColor color = provider->GetGdkColor(
           ThemeService::COLOR_TOOLBAR);
       gtk_widget_modify_bg(window, GTK_STATE_NORMAL, &color);
@@ -219,7 +218,8 @@ GtkWidget* GetDragRepresentation(GdkPixbuf* pixbuf,
 GtkWidget* GetDragRepresentationForNode(const BookmarkNode* node,
                                         BookmarkModel* model,
                                         GtkThemeService* provider) {
-  GdkPixbuf* pixbuf = GetPixbufForNode(node, model, provider->UseGtkTheme());
+  GdkPixbuf* pixbuf = GetPixbufForNode(
+      node, model, provider->UsingNativeTheme());
   GtkWidget* widget = GetDragRepresentation(pixbuf, node->GetTitle(), provider);
   g_object_unref(pixbuf);
   return widget;
@@ -227,8 +227,8 @@ GtkWidget* GetDragRepresentationForNode(const BookmarkNode* node,
 
 void ConfigureButtonForNode(const BookmarkNode* node, BookmarkModel* model,
                             GtkWidget* button, GtkThemeService* provider) {
-  GdkPixbuf* pixbuf = bookmark_utils::GetPixbufForNode(node, model,
-                                                       provider->UseGtkTheme());
+  GdkPixbuf* pixbuf = bookmark_utils::GetPixbufForNode(
+      node, model, provider->UsingNativeTheme());
   PackButton(pixbuf, node->GetTitle(), node != model->other_node(), provider,
              button);
   g_object_unref(pixbuf);
@@ -245,32 +245,22 @@ std::string BuildTooltipFor(const BookmarkNode* node) {
   if (node->is_folder())
     return std::string();
 
-  const std::string& url = node->GetURL().possibly_invalid_spec();
-  const std::string& title = UTF16ToUTF8(node->GetTitle());
+  return gtk_util::BuildTooltipTitleFor(node->GetTitle(), node->GetURL());
+}
 
-  std::string truncated_url = UTF16ToUTF8(l10n_util::TruncateString(
-      UTF8ToUTF16(url), kMaxTooltipURLLength));
-  gchar* escaped_url_cstr = g_markup_escape_text(truncated_url.c_str(),
-                                                 truncated_url.size());
-  std::string escaped_url(escaped_url_cstr);
-  g_free(escaped_url_cstr);
+std::string BuildMenuLabelFor(const BookmarkNode* node) {
+  // This breaks on word boundaries. Ideally we would break on character
+  // boundaries.
+  std::string elided_name = UTF16ToUTF8(
+      l10n_util::TruncateString(node->GetTitle(), kMaxCharsOnAMenuLabel));
 
-  std::string tooltip;
-  if (url == title || title.empty()) {
-    return escaped_url;
-  } else {
-    std::string truncated_title = UTF16ToUTF8(l10n_util::TruncateString(
-        node->GetTitle(), kMaxTooltipTitleLength));
-    gchar* escaped_title_cstr = g_markup_escape_text(truncated_title.c_str(),
-                                                     truncated_title.size());
-    std::string escaped_title(escaped_title_cstr);
-    g_free(escaped_title_cstr);
-
-    if (!escaped_url.empty())
-      return std::string("<b>") + escaped_title + "</b>\n" + escaped_url;
-    else
-      return std::string("<b>") + escaped_title + "</b>";
+  if (elided_name.empty()) {
+    elided_name = UTF16ToUTF8(l10n_util::TruncateString(
+        UTF8ToUTF16(node->GetURL().possibly_invalid_spec()),
+        kMaxCharsOnAMenuLabel));
   }
+
+  return elided_name;
 }
 
 const BookmarkNode* BookmarkNodeForWidget(GtkWidget* widget) {
@@ -279,7 +269,7 @@ const BookmarkNode* BookmarkNodeForWidget(GtkWidget* widget) {
 }
 
 void SetButtonTextColors(GtkWidget* label, GtkThemeService* provider) {
-  if (provider->UseGtkTheme()) {
+  if (provider->UsingNativeTheme()) {
     gtk_util::SetLabelColor(label, NULL);
   } else {
     GdkColor color = provider->GetGdkColor(

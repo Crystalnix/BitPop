@@ -44,6 +44,10 @@ class NativeButtonGtk : public NativeControlGtk, public NativeButtonWrapper {
   // The NativeButton we are bound to.
   NativeButtonBase* native_button_;
 
+  // A flag to prevent OnClicked event when updating
+  // gtk control via API gtk_toggle_button_set_active.
+  bool deliver_click_event_;
+
  private:
   // The preferred size from the last size_request. We save this until we are
   // notified that data may have caused the preferred size to change because
@@ -76,17 +80,13 @@ class NativeCheckboxGtk : public NativeButtonGtk {
   virtual void UpdateChecked();
   virtual void UpdateDefault();
 
-  // A flag to prevent OnClicked event when updating
-  // gtk control via API gtk_toggle_button_set_active.
-  bool deliver_click_event_;
-
   DISALLOW_COPY_AND_ASSIGN(NativeCheckboxGtk);
 };
 
 // A View that hosts a native Gtk radio button.
 class NativeRadioButtonGtk : public NativeCheckboxGtk {
  public:
-  explicit NativeRadioButtonGtk(RadioButton* radio_button);
+  explicit NativeRadioButtonGtk(NativeRadioButton* radio_button);
   virtual ~NativeRadioButtonGtk();
 
  protected:
@@ -100,7 +100,7 @@ class NativeRadioButtonGtk : public NativeCheckboxGtk {
   static void CallToggled(GtkButton* widget, NativeRadioButtonGtk* button);
 
   // Return RadioButton we are bound to.
-  RadioButton* radio_button();
+  NativeRadioButton* radio_button();
   // Set the gtk radio button's group to that of given wrapper's gruop.
   void SetGroupFrom(NativeButtonWrapper* wrapper);
   // Invoked when the radio button's state is changed.

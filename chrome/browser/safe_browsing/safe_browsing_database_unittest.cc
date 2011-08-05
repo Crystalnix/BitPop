@@ -8,14 +8,14 @@
 #include "app/sql/statement.h"
 #include "base/file_util.h"
 #include "base/logging.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/message_loop.h"
+#include "base/scoped_temp_dir.h"
 #include "base/time.h"
-#include "crypto/sha2.h"
 #include "chrome/browser/safe_browsing/safe_browsing_database.h"
 #include "chrome/browser/safe_browsing/safe_browsing_store_file.h"
 #include "chrome/browser/safe_browsing/safe_browsing_store_unittest_helper.h"
 #include "content/browser/browser_thread.h"
+#include "crypto/sha2.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
@@ -159,26 +159,6 @@ void InsertSubChunkHost2PrefixUrls(SBChunk* chunk,
   host.entry->SetPrefixAt(0, Sha256Prefix(url1));
   host.entry->SetChunkIdAtPrefix(0, chunk_id_to_sub);
   host.entry->SetPrefixAt(1, Sha256Prefix(url2));
-  host.entry->SetChunkIdAtPrefix(1, chunk_id_to_sub);
-  chunk->hosts.push_back(host);
-}
-
-// Same as InsertSubChunkHost2PrefixUrls, but with full hashes.
-void InsertSubChunkHost2FullHashes(SBChunk* chunk,
-                                   int chunk_number,
-                                   int chunk_id_to_sub,
-                                   const std::string& host_name,
-                                   const std::string& url1,
-                                   const std::string& url2) {
-  chunk->chunk_number = chunk_number;
-  chunk->is_add = false;
-  SBChunkHost host;
-  host.host = Sha256Prefix(host_name);
-  host.entry = SBEntry::Create(SBEntry::SUB_FULL_HASH, 2);
-  host.entry->set_chunk_id(chunk->chunk_number);
-  host.entry->SetFullHashAt(0, Sha256Hash(url1));
-  host.entry->SetChunkIdAtPrefix(0, chunk_id_to_sub);
-  host.entry->SetFullHashAt(1, Sha256Hash(url2));
   host.entry->SetChunkIdAtPrefix(1, chunk_id_to_sub);
   chunk->hosts.push_back(host);
 }

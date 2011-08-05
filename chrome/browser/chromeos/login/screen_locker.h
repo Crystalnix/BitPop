@@ -23,7 +23,6 @@ class Rect;
 
 namespace views {
 class View;
-class WidgetGtk;
 }  // namespace views
 
 namespace chromeos {
@@ -77,9 +76,9 @@ class ScreenLocker : public LoginStatusConsumer,
 
   // Overridden from views::BubbleDelegate.
   virtual void BubbleClosing(Bubble* bubble, bool closed_by_escape);
-  virtual bool CloseOnEscape() { return true; }
-  virtual bool FadeInOnShow() { return false; }
-  virtual void OnHelpLinkActivated() {}
+  virtual bool CloseOnEscape();
+  virtual bool FadeInOnShow();
+  virtual void OnLinkActivated(size_t index);
 
   // CaptchaView::Delegate implementation:
   virtual void OnCaptchaEntered(const std::string& captcha);
@@ -116,6 +115,10 @@ class ScreenLocker : public LoginStatusConsumer,
 
   // Returns a view that has given view |id|, or null if it doesn't exist.
   views::View* GetViewByID(int id);
+
+  // Allow a LoginStatusConsumer to listen for
+  // the same login events that ScreenLocker does.
+  void SetLoginStatusConsumer(chromeos::LoginStatusConsumer* consumer);
 
   // Initialize ScreenLocker class. It will listen to
   // LOGIN_USER_CHANGED notification so that the screen locker accepts
@@ -168,10 +171,10 @@ class ScreenLocker : public LoginStatusConsumer,
   CHROMEGTK_CALLBACK_1(ScreenLocker, void, OnClientEvent, GdkEventClient*);
 
   // The screen locker window.
-  views::WidgetGtk* lock_window_;
+  views::Widget* lock_window_;
 
-  // TYPE_CHILD widget to grab the keyboard/mouse input.
-  views::WidgetGtk* lock_widget_;
+  // Child widget to grab the keyboard/mouse input.
+  views::Widget* lock_widget_;
 
   // A view that accepts password.
   ScreenLockView* screen_lock_view_;
@@ -242,6 +245,10 @@ class ScreenLocker : public LoginStatusConsumer,
   base::Time start_time_;
   // The time when the authentication is started.
   base::Time authentication_start_time_;
+
+  // Delegate to forward all login status events to.
+  // Tests can use this to receive login status events.
+  LoginStatusConsumer* login_status_consumer_;
 
   DISALLOW_COPY_AND_ASSIGN(ScreenLocker);
 };

@@ -81,10 +81,7 @@ class ImporterHost : public base::RefCountedThreadSafe<ImporterHost>,
   virtual void Cancel();
 
  protected:
-  ~ImporterHost();
-
-  // Returns true if importer should import to bookmark bar.
-  bool ShouldImportToBookmarkBar(bool first_run);
+  virtual ~ImporterHost();
 
   // Make sure that Firefox isn't running, if import browser is Firefox. Show
   // to the user a dialog that notifies that is necessary to close Firefox

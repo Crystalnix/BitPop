@@ -10,6 +10,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/task.h"
+#include "chrome/browser/sync/engine/configure_reason.h"
 #include "chrome/browser/sync/glue/data_type_controller.h"
 #include "chrome/browser/sync/syncable/model_type.h"
 
@@ -33,6 +34,8 @@ class DataTypeManager {
     STOPPING           // Data types are being stopped.
   };
 
+  // Update NotifyDone() in data_type_manager_impl.cc if you update
+  // this.
   enum ConfigureResult {
     OK,                  // Configuration finished without error.
     ASSOCIATION_FAILED,  // An error occurred during model association.
@@ -63,7 +66,8 @@ class DataTypeManager {
       this->location.reset(new tracked_objects::Location(
           location.function_name(),
           location.file_name(),
-          location.line_number()));
+          location.line_number(),
+          location.program_counter()));
     }
 
       ~ConfigureResultWithErrorLocation();
@@ -84,7 +88,11 @@ class DataTypeManager {
   // Note that you may call Configure() while configuration is in
   // progress.  Configuration will be complete only when the
   // desired_types supplied in the last call to Configure is achieved.
-  virtual void Configure(const TypeSet& desired_types) = 0;
+  virtual void Configure(const TypeSet& desired_types,
+                         sync_api::ConfigureReason reason) = 0;
+
+  virtual void ConfigureWithoutNigori(const TypeSet& desired_types,
+      sync_api::ConfigureReason reason) = 0;
 
   // Synchronously stops all registered data types.  If called after
   // Configure() is called but before it finishes, it will abort the

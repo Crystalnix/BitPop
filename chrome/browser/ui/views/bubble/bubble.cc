@@ -12,7 +12,6 @@
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/gfx/color_utils.h"
 #include "views/layout/fill_layout.h"
-#include "views/widget/root_view.h"
 #include "views/widget/widget.h"
 #include "views/window/client_view.h"
 #include "views/window/window.h"
@@ -69,7 +68,7 @@ Bubble* Bubble::ShowFocusless(
     views::View* contents,
     BubbleDelegate* delegate,
     bool show_while_screen_is_locked) {
-  Bubble* bubble = new Bubble(views::WidgetGtk::TYPE_POPUP,
+  Bubble* bubble = new Bubble(views::Widget::InitParams::TYPE_POPUP,
                               show_while_screen_is_locked);
   bubble->InitBubble(parent, position_relative_to, arrow_location,
                      contents, delegate);
@@ -121,8 +120,12 @@ void Bubble::AnimationProgressed(const ui::Animation* animation) {
 
 Bubble::Bubble()
     :
-#if defined(OS_LINUX)
-      WidgetGtk(TYPE_WINDOW),
+#if defined(OS_WIN)
+      views::NativeWidgetWin(new views::Widget),
+#elif defined(TOOLKIT_USES_GTK)
+      views::NativeWidgetGtk(new views::Widget),
+#endif
+#if defined(TOOLKIT_USES_GTK)
       border_contents_(NULL),
 #elif defined(OS_WIN)
       border_(NULL),
@@ -130,6 +133,9 @@ Bubble::Bubble()
       delegate_(NULL),
       show_status_(kOpen),
       fade_away_on_close_(false),
+#if defined(TOOLKIT_USES_GTK)
+      type_(views::Widget::InitParams::TYPE_WINDOW),
+#endif
 #if defined(OS_CHROMEOS)
       show_while_screen_is_locked_(false),
 #endif
@@ -138,12 +144,14 @@ Bubble::Bubble()
 }
 
 #if defined(OS_CHROMEOS)
-Bubble::Bubble(views::WidgetGtk::Type type, bool show_while_screen_is_locked)
-    : WidgetGtk(type),
+Bubble::Bubble(views::Widget::InitParams::Type type,
+               bool show_while_screen_is_locked)
+    : views::NativeWidgetGtk(new views::Widget),
       border_contents_(NULL),
       delegate_(NULL),
       show_status_(kOpen),
       fade_away_on_close_(false),
+      type_(type),
       show_while_screen_is_locked_(show_while_screen_is_locked),
       arrow_location_(BubbleBorder::NONE),
       contents_(NULL) {
@@ -165,7 +173,7 @@ void Bubble::InitBubble(views::Widget* parent,
 
   // Create the main window.
 #if defined(OS_WIN)
-  views::Window* parent_window = parent->GetWindow();
+  views::Window* parent_window = parent->GetContainingWindow();
   if (parent_window)
     parent_window->DisableInactiveRendering();
   set_window_style(WS_POPUP | WS_CLIPCHILDREN);
@@ -180,23 +188,27 @@ void Bubble::InitBubble(views::Widget* parent,
   DCHECK(!border_);
   border_ = new BorderWidgetWin();
 
-  if (fade_in) {
-    border_->SetOpacity(0);
-    SetOpacity(0);
-  }
-
-  border_->Init(CreateBorderContents(), parent->GetNativeView());
+  border_->InitBorderWidgetWin(CreateBorderContents(), parent->GetNativeView());
   border_->border_contents()->SetBackgroundColor(kBackgroundColor);
 
   // We make the BorderWidgetWin the owner of the Bubble HWND, so that the
   // latter is displayed on top of the former.
-  WidgetWin::Init(border_->GetNativeView(), gfx::Rect());
+  views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
+  params.parent = border_->GetNativeView();
+  params.native_widget = this;
+  GetWidget()->Init(params);
 
+  if (fade_in) {
+    border_->SetOpacity(0);
+    GetWidget()->SetOpacity(0);
+  }
   SetWindowText(GetNativeView(), delegate_->accessible_name().c_str());
-#elif defined(OS_LINUX)
-  MakeTransparent();
-  make_transient_to_parent();
-  WidgetGtk::InitWithWidget(parent, gfx::Rect());
+#elif defined(TOOLKIT_USES_GTK)
+  views::Widget::InitParams params(type_);
+  params.transparent = true;
+  params.parent_widget = parent;
+  params.native_widget = this;
+  GetWidget()->Init(params);
 #if defined(OS_CHROMEOS)
   {
     vector<int> params;
@@ -215,7 +227,7 @@ void Bubble::InitBubble(views::Widget* parent,
   // that when |contents| gets added, it will already have a widget, and thus
   // any NativeButtons it creates in ViewHierarchyChanged() will be functional
   // (e.g. calling SetChecked() on checkboxes is safe).
-  SetContentsView(contents_view);
+  GetWidget()->SetContentsView(contents_view);
   // Adding |contents| as a child has to be done before we call
   // contents->GetPreferredSize() below, since some supplied views don't
   // actually initialize themselves until they're added to a hierarchy.
@@ -254,10 +266,10 @@ void Bubble::InitBubble(views::Widget* parent,
       gfx::Rect(gfx::Point(), window_bounds.size()));
   contents->SetBoundsRect(contents_bounds);
 #endif
-  SetBounds(window_bounds);
+  GetWidget()->SetBounds(window_bounds);
 
   // Register the Escape accelerator for closing.
-  GetFocusManager()->RegisterAccelerator(
+  GetWidget()->GetFocusManager()->RegisterAccelerator(
       views::Accelerator(ui::VKEY_ESCAPE, false, false, false), this);
 
   // Done creating the bubble.
@@ -271,8 +283,8 @@ void Bubble::InitBubble(views::Widget* parent,
   ShowWindow(SW_SHOW);
   if (fade_in)
     FadeIn();
-#elif defined(OS_LINUX)
-  views::WidgetGtk::Show();
+#elif defined(TOOLKIT_USES_GTK)
+  GetWidget()->Show();
 #endif
 }
 
@@ -299,23 +311,23 @@ void Bubble::SizeToContents() {
       gfx::Rect(gfx::Point(), window_bounds.size()));
   contents_->SetBoundsRect(contents_bounds);
 #endif
-  SetBounds(window_bounds);
+  GetWidget()->SetBounds(window_bounds);
 }
 
 #if defined(OS_WIN)
 void Bubble::OnActivate(UINT action, BOOL minimized, HWND window) {
   // The popup should close when it is deactivated.
   if (action == WA_INACTIVE) {
-    Close();
+    GetWidget()->Close();
   } else if (action == WA_ACTIVE) {
-    DCHECK(GetRootView()->has_children());
-    GetRootView()->GetChildViewAt(0)->RequestFocus();
+    DCHECK(GetWidget()->GetRootView()->has_children());
+    GetWidget()->GetRootView()->GetChildViewAt(0)->RequestFocus();
   }
 }
-#elif defined(OS_LINUX)
+#elif defined(TOOLKIT_USES_GTK)
 void Bubble::IsActiveChanged() {
-  if (!IsActive())
-    Close();
+  if (!GetWidget()->IsActive())
+    GetWidget()->Close();
 }
 #endif
 
@@ -323,16 +335,18 @@ void Bubble::DoClose(bool closed_by_escape) {
   if (show_status_ == kClosed)
     return;
 
-  GetFocusManager()->UnregisterAccelerator(
+  GetWidget()->GetFocusManager()->UnregisterAccelerator(
       views::Accelerator(ui::VKEY_ESCAPE, false, false, false), this);
   if (delegate_)
     delegate_->BubbleClosing(this, closed_by_escape);
   show_status_ = kClosed;
 #if defined(OS_WIN)
   border_->Close();
-  WidgetWin::Close();
-#elif defined(OS_LINUX)
-  WidgetGtk::Close();
+#endif
+#if defined(OS_WIN)
+  NativeWidgetWin::Close();
+#elif defined(TOOLKIT_USES_GTK)
+  NativeWidgetGtk::Close();
 #endif
 }
 

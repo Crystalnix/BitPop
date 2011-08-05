@@ -7,7 +7,6 @@
 #include "chrome/browser/background_mode_manager.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/prefs/pref_service.h"
-#include "chrome/common/app_mode_common_mac.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/browser/browser_thread.h"
@@ -87,7 +86,8 @@ void BackgroundModeManager::EnableLaunchOnStartup(bool should_launch) {
 }
 
 void BackgroundModeManager::DisplayAppInstalledNotification(
-    const Extension* extension) {
+    const Extension* extension,
+    Profile* profile) {
   // TODO(atwilson): Display a platform-appropriate notification here.
   // http://crbug.com/74970
 }

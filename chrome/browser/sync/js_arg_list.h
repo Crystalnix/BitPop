@@ -9,45 +9,33 @@
 // See README.js for design comments.
 
 #include <string>
-#include <vector>
 
 #include "base/memory/ref_counted.h"
 #include "base/values.h"
+#include "chrome/browser/sync/shared_value.h"
 
 namespace browser_sync {
 
-// A thread-safe ref-counted wrapper around an immutable ListValue.
-// Used for passing around argument lists to different threads.
+// A thread-safe wrapper around an immutable ListValue.  Used for
+// passing around argument lists to different threads.
 class JsArgList {
  public:
+  // Uses an empty argument list.
   JsArgList();
-  explicit JsArgList(const ListValue& args);
-  explicit JsArgList(const std::vector<const Value*>& args);
+
+  // Takes over the data in |args|, leaving |args| empty.
+  explicit JsArgList(ListValue* args);
+
   ~JsArgList();
 
   const ListValue& Get() const;
 
   std::string ToString() const;
 
- private:
-  class SharedListValue : public base::RefCountedThreadSafe<SharedListValue> {
-   public:
-    SharedListValue();
-    explicit SharedListValue(const ListValue& list_value);
-    explicit SharedListValue(const std::vector<const Value*>& value_list);
-
-    const ListValue& Get() const;
-
-   private:
-    virtual ~SharedListValue();
-    friend class base::RefCountedThreadSafe<SharedListValue>;
-
-    ListValue list_value_;
-  };
-
-  scoped_refptr<const SharedListValue> args_;
-
   // Copy constructor and assignment operator welcome.
+
+ private:
+  scoped_refptr<const SharedValue<ListValue> > args_;
 };
 
 }  // namespace browser_sync

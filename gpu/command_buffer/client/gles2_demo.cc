@@ -25,7 +25,7 @@
 #include "gpu/command_buffer/client/gles2_lib.h"
 #include "gpu/command_buffer/client/gles2_demo_c.h"
 #include "gpu/command_buffer/client/gles2_demo_cc.h"
-#include "ui/gfx/gl/gl_context.h"
+#include "ui/gfx/gl/gl_surface.h"
 
 using base::SharedMemory;
 using gpu::Buffer;
@@ -56,7 +56,9 @@ bool GLES2Demo::Setup(void* hwnd, int32 size) {
   if (!command_buffer->Initialize(size))
     return NULL;
 
-  GpuScheduler* gpu_scheduler = new GpuScheduler(command_buffer.get(), NULL);
+  GpuScheduler* gpu_scheduler = new GpuScheduler(command_buffer.get(),
+                                                 NULL,
+                                                 NULL);
   if (!gpu_scheduler->Initialize(reinterpret_cast<HWND>(hwnd),
                                  gfx::Size(),
                                  gpu::gles2::DisallowedExtensions(),
@@ -68,7 +70,7 @@ bool GLES2Demo::Setup(void* hwnd, int32 size) {
   }
 
   command_buffer->SetPutOffsetChangeCallback(
-      NewCallback(gpu_scheduler, &GpuScheduler::ProcessCommands));
+      NewCallback(gpu_scheduler, &GpuScheduler::PutChanged));
 
   GLES2CmdHelper* helper = new GLES2CmdHelper(command_buffer.get());
   if (!helper->Initialize(size)) {
@@ -212,7 +214,7 @@ int main(int argc, char** argv) {
   base::AtExitManager at_exit_manager;
   MessageLoopForUI message_loop;
 
-  gfx::GLContext::InitializeOneOff();
+  gfx::GLSurface::InitializeOneOff();
 
   GLES2Demo* demo = new GLES2Demo();
 

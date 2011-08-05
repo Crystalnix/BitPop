@@ -4,16 +4,20 @@ vars = {
   "googlecode_url": "http://%s.googlecode.com/svn",
   "webkit_trunk": "http://svn.webkit.org/repository/webkit/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "84325",
+  "webkit_revision": "87771",
   "chromium_git": "http://git.chromium.org/git",
   "swig_revision": "69281",
-  "nacl_revision": "4920",
-  "nacl_tools_revision": "4802",
-  "libjingle_revision": "55",
+  # These hashes need to be updated when nacl_revision is changed.
+  # After changing nacl_revision, run gclient sync to get the new values.
+  "nacl_irt_hash_x86_32": "6aff4ea5ebdf9d57bd2e01caa662efd58d6bae18",
+  "nacl_irt_hash_x86_64": "88deae19ead39075214964fc1511ce0e1f3a0fe9",
+  "nacl_revision": "5493",
+  "nacl_tools_revision": "5308",
+  "libjingle_revision": "63",
   "libvpx_revision": "81610",
-  "ffmpeg_revision": "82126",
-  "skia_revision": "1144",
-  "v8_revision": "7668",
+  "ffmpeg_revision": "83815",
+  "skia_revision": "1445",
+  "v8_revision": "8107",
 }
 
 deps = {
@@ -24,7 +28,7 @@ deps = {
     "/trunk/deps/support@20411",
 
   "src/googleurl":
-    (Var("googlecode_url") % "google-url") + "/trunk@153",
+    (Var("googlecode_url") % "google-url") + "/trunk@155",
 
   "src/seccompsandbox":
     (Var("googlecode_url") % "seccompsandbox") + "/trunk@153",
@@ -39,7 +43,7 @@ deps = {
     (Var("googlecode_url") % "googlemock") + "/trunk@374",
 
   "src/third_party/angle":
-    (Var("googlecode_url") % "angleproject") + "/trunk@609",
+    (Var("googlecode_url") % "angleproject") + "/trunk@660",
 
   # Note that this is *not* where we check out WebKit -- this just
   # puts some extra files into place for the real WebKit checkout to
@@ -49,7 +53,7 @@ deps = {
     "/trunk/deps/third_party/WebKit@76115",
 
   "src/third_party/icu":
-    "/trunk/deps/third_party/icu46@80478",
+    "/trunk/deps/third_party/icu46@85319",
 
   "src/third_party/hunspell":
    "/trunk/deps/third_party/hunspell@65351",
@@ -65,13 +69,13 @@ deps = {
     "/trunk/src/google@80",
 
   "src/third_party/leveldb":
-    (Var("googlecode_url") % "leveldb") + "/trunk@21",
+    (Var("googlecode_url") % "leveldb") + "/trunk@29",
 
   "src/third_party/snappy/src":
-    (Var("googlecode_url") % "snappy") + "/trunk@29",
+    (Var("googlecode_url") % "snappy") + "/trunk@37",
 
   "src/tools/gyp":
-    (Var("googlecode_url") % "gyp") + "/trunk@912",
+    (Var("googlecode_url") % "gyp") + "/trunk@930",
 
   "src/v8":
     (Var("googlecode_url") % "v8") + "/trunk@" + Var("v8_revision"),
@@ -105,13 +109,13 @@ deps = {
     Var("webkit_trunk") + "/Tools/Scripts@" + Var("webkit_revision"),
 
   "src/third_party/ots":
-    (Var("googlecode_url") % "ots") + "/trunk@62",
+    (Var("googlecode_url") % "ots") + "/trunk@66",
 
   "src/tools/page_cycler/acid3":
     "/trunk/deps/page_cycler/acid3@19546",
 
   "src/third_party/bidichecker":
-    "http://bidichecker.googlecode.com/svn/trunk/lib@4",
+    (Var("googlecode_url") % "bidichecker") + "/trunk/lib@4",
 
   # We run these layout tests as UI tests. Since many of the buildbots that
   # run layout tests do NOT have access to the LayoutTest directory, we need
@@ -187,9 +191,9 @@ deps = {
   # python egg is installed. We run tests directly from src, so import
   # the code into the structure expected by the tests.
   "src/third_party/webdriver/python/selenium":
-    "http://selenium.googlecode.com/svn/trunk/py/selenium@11696",
+    "http://selenium.googlecode.com/svn/trunk/py/selenium@12107",
   "src/third_party/webdriver/python/selenium/test":
-    "http://selenium.googlecode.com/svn/trunk/py/test@11696",
+    "http://selenium.googlecode.com/svn/trunk/py/test@12107",
 
   "src/third_party/libvpx":
     "/trunk/deps/third_party/libvpx@" +
@@ -200,20 +204,17 @@ deps = {
     Var("ffmpeg_revision"),
 
   "src/third_party/libjingle/source":
-    (Var("googlecode_url") % "libjingle") + "/branches/chrome-sandbox@" +
+    (Var("googlecode_url") % "libjingle") + "/trunk@" +
     Var("libjingle_revision"),
 
   "src/third_party/speex":
-    "/trunk/deps/third_party/speex@70427",
-
-  "src/third_party/libsrtp/src":
-    "/trunk/deps/third_party/libsrtp@60080",
+    "/trunk/deps/third_party/speex@83190",
 
   "src/third_party/yasm/source/patched-yasm":
     "/trunk/deps/third_party/yasm/patched-yasm@73761",
 
   "src/third_party/libjpeg_turbo":
-    "/trunk/deps/third_party/libjpeg_turbo@78340",
+    "/trunk/deps/third_party/libjpeg_turbo@83675",
 
   "src/third_party/flac":
     "/trunk/deps/third_party/flac@75901",
@@ -259,7 +260,7 @@ deps_os = {
 
     # NSS, for SSLClientSocketNSS.
     "src/third_party/nss":
-      "/trunk/deps/third_party/nss@81009",
+      "/trunk/deps/third_party/nss@83672",
 
     "src/third_party/swig/win":
       "/trunk/deps/third_party/swig/win@" + Var("swig_revision"),
@@ -269,7 +270,7 @@ deps_os = {
        Var("nacl_tools_revision")),
 
     "src/rlz":
-      (Var("googlecode_url") % "rlz") + "/trunk@33",
+      (Var("googlecode_url") % "rlz") + "/trunk@35",
 
     # Dependencies used by libjpeg-turbo
     "src/third_party/yasm/binaries":
@@ -294,7 +295,7 @@ deps_os = {
 
     # NSS, for SSLClientSocketNSS.
     "src/third_party/nss":
-      "/trunk/deps/third_party/nss@81009",
+      "/trunk/deps/third_party/nss@83672",
 
     "src/chrome/installer/mac/third_party/xz/xz":
       "/trunk/deps/third_party/xz@50504",
@@ -305,7 +306,7 @@ deps_os = {
       "/trunk/deps/reference_builds/chrome_linux@70120",
 
     "src/third_party/xdg-utils":
-      "/trunk/deps/third_party/xdg-utils@84156",
+      "/trunk/deps/third_party/xdg-utils@84895",
 
     "src/third_party/swig/linux":
       "/trunk/deps/third_party/swig/linux@" + Var("swig_revision"),
@@ -355,5 +356,14 @@ hooks = [
     # A change to a .gyp, .gypi, or to GYP itself should run the generator.
     "pattern": ".",
     "action": ["python", "src/build/gyp_chromium"],
+  },
+  {
+    # This downloads binaries for Native Client's integrated runtime (IRT)
+    # library, which is built as NaCl untrusted code.
+    "pattern": ".",
+    "action": ["python", "src/build/download_nacl_irt.py",
+               "--nacl_revision", Var("nacl_revision"),
+               "--file_hash", "x86_32", Var("nacl_irt_hash_x86_32"),
+               "--file_hash", "x86_64", Var("nacl_irt_hash_x86_64")],
   },
 ]

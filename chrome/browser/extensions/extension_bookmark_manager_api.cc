@@ -15,6 +15,7 @@
 #include "chrome/browser/extensions/extension_bookmark_helpers.h"
 #include "chrome/browser/extensions/extension_bookmarks_module_constants.h"
 #include "chrome/browser/extensions/extension_event_router.h"
+#include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
@@ -365,12 +366,13 @@ bool StartDragBookmarkManagerFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(
       GetNodesFromArguments(model, args_.get(), 0, &nodes));
 
-  if (dispatcher()->render_view_host()->delegate()->GetRenderViewType() ==
+  if (render_view_host_->delegate()->GetRenderViewType() ==
       ViewType::TAB_CONTENTS) {
-    ExtensionWebUI* web_ui =
-        static_cast<ExtensionWebUI*>(dispatcher()->delegate());
-    bookmark_utils::DragBookmarks(
-        profile(), nodes, web_ui->tab_contents()->GetNativeView());
+    TabContents* tab_contents =
+        dispatcher()->delegate()->GetAssociatedTabContents();
+    CHECK(tab_contents);
+    bookmark_utils::DragBookmarks(profile(), nodes,
+                                  tab_contents->GetNativeView());
 
     return true;
   } else {
@@ -406,10 +408,14 @@ bool DropBookmarkManagerFunction::RunImpl() {
   else
     drop_index = drop_parent->child_count();
 
-  if (dispatcher()->render_view_host()->delegate()->GetRenderViewType() ==
+  if (render_view_host_->delegate()->GetRenderViewType() ==
       ViewType::TAB_CONTENTS) {
+    TabContents* tab_contents =
+        dispatcher()->delegate()->GetAssociatedTabContents();
+    CHECK(tab_contents);
     ExtensionWebUI* web_ui =
-        static_cast<ExtensionWebUI*>(dispatcher()->delegate());
+        static_cast<ExtensionWebUI*>(tab_contents->web_ui());
+    CHECK(web_ui);
     ExtensionBookmarkManagerEventRouter* router =
         web_ui->extension_bookmark_manager_event_router();
 

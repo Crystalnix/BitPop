@@ -5,13 +5,18 @@
 #import "chrome/browser/chrome_browser_application_mac.h"
 
 #import "base/logging.h"
+#import "base/mac/scoped_nsexception_enabler.h"
 #import "base/metrics/histogram.h"
 #import "base/memory/scoped_nsobject.h"
 #import "base/sys_string_conversions.h"
 #import "chrome/app/breakpad_mac.h"
+#include "chrome/browser/accessibility/browser_accessibility_state.h"
 #import "chrome/browser/app_controller_mac.h"
+#include "chrome/browser/ui/browser_list.h"
 #import "chrome/browser/ui/cocoa/objc_method_swizzle.h"
 #import "chrome/browser/ui/cocoa/objc_zombie.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "content/browser/renderer_host/render_view_host.h"
 
 // The implementation of NSExceptions break various assumptions in the
 // Chrome code.  This category defines a replacement for
@@ -89,7 +94,8 @@ static IMP gOriginalInitIMP = NULL;
     // (destructors are skipped).  Chrome should be NSException-free,
     // please check your backtrace and see if you can't file a bug
     // with a repro case.
-    if (fatal) {
+    const bool allow = base::mac::GetNSExceptionsAllowed();
+    if (fatal && !allow) {
       LOG(FATAL) << "Someone is trying to raise an exception!  "
                  << base::SysNSStringToUTF8(value);
     } else {
@@ -97,7 +103,7 @@ static IMP gOriginalInitIMP = NULL;
       // exceptions.
       DLOG(ERROR) << "Someone is trying to raise an exception!  "
                   << base::SysNSStringToUTF8(value);
-      NOTREACHED();
+      DCHECK(allow);
     }
   }
 
@@ -325,6 +331,21 @@ BOOL SwizzleNSExceptionInit() {
                   [sender className], tag, actionString, aTarget];
 
   ScopedCrashKey key(kActionKey, value);
+
+  // Certain third-party code, such as print drivers, can still throw
+  // exceptions and Chromium cannot fix them.  This provides a way to
+  // work around those on a spot basis.
+  bool enableNSExceptions = false;
+
+  // http://crbug.com/80686 , an Epson printer driver.
+  if (anAction == @selector(selectPDE:)) {
+    enableNSExceptions = true;
+  }
+
+  // Minimize the window by keeping this close to the super call.
+  scoped_ptr<base::mac::ScopedNSExceptionEnabler> enabler(NULL);
+  if (enableNSExceptions)
+    enabler.reset(new base::mac::ScopedNSExceptionEnabler());
   return [super sendAction:anAction to:aTarget from:sender];
 }
 
@@ -349,6 +370,11 @@ BOOL SwizzleNSExceptionInit() {
     // is to "fix" this while the more fundamental concern is
     // addressed elsewhere.
     [self clearIsHandlingSendEvent];
+
+    // If |ScopedNSExceptionEnabler| is used to allow exceptions, and an
+    // uncaught exception is thrown, it will throw past all of the scopers.
+    // Reset the flag so that future exceptions are not masked.
+    base::mac::SetNSExceptionsAllowed(false);
 
     // Store some human-readable information in breakpad keys in case
     // there is a crash.  Since breakpad does not provide infinite
@@ -382,6 +408,23 @@ BOOL SwizzleNSExceptionInit() {
   }
 
   [super reportException:anException];
+}
+
+- (void)accessibilitySetValue:(id)value forAttribute:(NSString*)attribute {
+  if ([attribute isEqualToString:@"AXEnhancedUserInterface"] &&
+      [value intValue] == 1) {
+    BrowserAccessibilityState::GetInstance()->OnScreenReaderDetected();
+    for (TabContentsIterator it;
+         !it.done();
+         ++it) {
+      if (TabContentsWrapper* contents = *it) {
+        if (RenderViewHost* rvh = contents->render_view_host()) {
+          rvh->EnableRendererAccessibility();
+        }
+      }
+    }
+  }
+  return [super accessibilitySetValue:value forAttribute:attribute];
 }
 
 @end

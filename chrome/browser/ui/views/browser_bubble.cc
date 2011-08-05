@@ -8,7 +8,6 @@
 #if defined(OS_WIN)
 #include "chrome/browser/external_tab_container_win.h"
 #endif
-#include "views/widget/root_view.h"
 #include "views/window/window.h"
 
 namespace {
@@ -18,7 +17,7 @@ BrowserBubbleHost* GetBubbleHostFromFrame(views::Widget* frame) {
     return NULL;
 
   BrowserBubbleHost* bubble_host = NULL;
-  views::Window* window = frame->GetWindow();
+  views::Window* window = frame->GetContainingWindow();
   if (window) {
     bubble_host = BrowserView::GetBrowserViewForNativeWindow(
         window->GetNativeWindow());
@@ -38,7 +37,6 @@ BrowserBubble::BrowserBubble(views::View* view,
       view_(view),
       relative_to_(relative_to),
       arrow_location_(arrow_location),
-      visible_(false),
       delegate_(NULL),
       attached_(false),
       bubble_host_(GetBubbleHostFromFrame(frame)) {
@@ -48,7 +46,12 @@ BrowserBubble::BrowserBubble(views::View* view,
   views::View::ConvertPointToView(NULL, frame_->GetRootView(), &origin);
   relative_to_.set_origin(origin);
 
-  InitPopup();
+  // Use half the corner radius as contents margins so that contents fit better
+  // in the bubble. See http://crbug.com/80416.
+  int corner_inset = BubbleBorder::GetCornerRadius() / 2;
+  gfx::Insets content_margins(corner_inset, corner_inset,
+                              corner_inset, corner_inset);
+  InitPopup(content_margins);
 }
 
 BrowserBubble::~BrowserBubble() {
@@ -89,7 +92,7 @@ void BrowserBubble::BrowserWindowMoved() {
     delegate_->BubbleBrowserWindowMoved(this);
   else
     Hide();
-  if (visible_)
+  if (popup_->IsVisible())
     Reposition();
 }
 
@@ -139,3 +142,9 @@ void BrowserBubble::SetAbsoluteBounds(const gfx::Rect& window_bounds) {
   SetBounds(relative_origin.x(), relative_origin.y(),
             window_bounds.width(), window_bounds.height());
 }
+
+void BrowserBubble::MovePopup(int x, int y, int w, int h) {
+  popup_->SetBounds(gfx::Rect(x, y, w, h));
+}
+
+

@@ -5,8 +5,8 @@
 #include "chrome/browser/sync/glue/extension_model_associator.h"
 
 #include "base/logging.h"
+#include "chrome/browser/extensions/extension_sync_data.h"
 #include "chrome/browser/sync/engine/syncapi.h"
-#include "chrome/browser/sync/glue/extension_data.h"
 #include "chrome/browser/sync/glue/extension_sync_traits.h"
 #include "chrome/browser/sync/glue/extension_sync.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -17,10 +17,10 @@
 namespace browser_sync {
 
 ExtensionModelAssociator::ExtensionModelAssociator(
-    const ExtensionSyncTraits& traits,
     ExtensionServiceInterface* extension_service,
     sync_api::UserShare* user_share)
-    : traits_(traits), extension_service_(extension_service),
+    : traits_(GetExtensionSyncTraits()),
+      extension_service_(extension_service),
       user_share_(user_share) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(extension_service_);
@@ -57,11 +57,16 @@ bool ExtensionModelAssociator::SyncModelHasUserCreatedNodes(bool* has_nodes) {
   return RootNodeHasChildren(traits_.root_node_tag, user_share_, has_nodes);
 }
 
+void ExtensionModelAssociator::AbortAssociation() {
+  // No implementation needed, this associator runs on the main
+  // thread.
+}
+
 bool ExtensionModelAssociator::CryptoReadyIfNecessary() {
   // We only access the cryptographer while holding a transaction.
   sync_api::ReadTransaction trans(user_share_);
   const syncable::ModelTypeSet& encrypted_types =
-      GetEncryptedDataTypes(trans.GetWrappedTrans());
+      sync_api::GetEncryptedTypes(&trans);
   return encrypted_types.count(traits_.model_type) == 0 ||
       trans.GetCryptographer()->is_ready();
 }

@@ -61,9 +61,10 @@ TEST_P(ConfigurationPolicyPrefStoreListTest, SetValue) {
   in_value->Append(Value::CreateStringValue("test2,"));
   provider_.AddPolicy(GetParam().type(), in_value);
   store_->OnUpdatePolicy();
-  const Value* value;
+  const Value* value = NULL;
   EXPECT_EQ(PrefStore::READ_OK,
             store_->GetValue(GetParam().pref_name(), &value));
+  ASSERT_TRUE(value);
   EXPECT_TRUE(in_value->Equals(value));
 }
 
@@ -101,9 +102,10 @@ TEST_P(ConfigurationPolicyPrefStoreStringTest, SetValue) {
   provider_.AddPolicy(GetParam().type(),
                       Value::CreateStringValue("http://chromium.org"));
   store_->OnUpdatePolicy();
-  const Value* value;
+  const Value* value = NULL;
   EXPECT_EQ(PrefStore::READ_OK,
             store_->GetValue(GetParam().pref_name(), &value));
+  ASSERT_TRUE(value);
   EXPECT_TRUE(StringValue("http://chromium.org").Equals(value));
 }
 
@@ -123,10 +125,18 @@ INSTANTIATE_TEST_CASE_P(
                     prefs::kAuthServerWhitelist),
         TypeAndName(kPolicyAuthNegotiateDelegateWhitelist,
                     prefs::kAuthNegotiateDelegateWhitelist),
-        TypeAndName(kPolicyDownloadDirectory,
-                    prefs::kDownloadDefaultDirectory),
         TypeAndName(kPolicyGSSAPILibraryName,
-                    prefs::kGSSAPILibraryName)));
+                    prefs::kGSSAPILibraryName),
+        TypeAndName(kPolicyDiskCacheDir,
+                    prefs::kDiskCacheDir)));
+
+#if !defined(OS_CHROMEOS)
+INSTANTIATE_TEST_CASE_P(
+    ConfigurationPolicyPrefStoreDownloadDirectoryInstance,
+    ConfigurationPolicyPrefStoreStringTest,
+    testing::Values(TypeAndName(kPolicyDownloadDirectory,
+                                prefs::kDownloadDefaultDirectory)));
+#endif  // !defined(OS_CHROMEOS)
 
 // Test cases for boolean-valued policy settings.
 class ConfigurationPolicyPrefStoreBooleanTest
@@ -142,18 +152,24 @@ TEST_P(ConfigurationPolicyPrefStoreBooleanTest, GetDefault) {
 TEST_P(ConfigurationPolicyPrefStoreBooleanTest, SetValue) {
   provider_.AddPolicy(GetParam().type(), Value::CreateBooleanValue(false));
   store_->OnUpdatePolicy();
-  const Value* value;
-  bool result = true;
+  const Value* value = NULL;
   EXPECT_EQ(PrefStore::READ_OK,
             store_->GetValue(GetParam().pref_name(), &value));
-  EXPECT_TRUE(FundamentalValue(false).Equals(value));
+  ASSERT_TRUE(value);
+  bool boolean_value = true;
+  bool result = value->GetAsBoolean(&boolean_value);
+  ASSERT_TRUE(result);
+  EXPECT_FALSE(boolean_value);
 
   provider_.AddPolicy(GetParam().type(), Value::CreateBooleanValue(true));
   store_->OnUpdatePolicy();
-  result = false;
+  value = NULL;
   EXPECT_EQ(PrefStore::READ_OK,
             store_->GetValue(GetParam().pref_name(), &value));
-  EXPECT_TRUE(FundamentalValue(true).Equals(value));
+  boolean_value = false;
+  result = value->GetAsBoolean(&boolean_value);
+  ASSERT_TRUE(result);
+  EXPECT_TRUE(boolean_value);
 }
 
 INSTANTIATE_TEST_CASE_P(
@@ -210,12 +226,16 @@ INSTANTIATE_TEST_CASE_P(
                     prefs::kEnableTranslate),
         TypeAndName(kPolicyAllowOutdatedPlugins,
                     prefs::kPluginsAllowOutdated),
+        TypeAndName(kPolicyAlwaysAuthorizePlugins,
+                    prefs::kPluginsAlwaysAuthorize),
         TypeAndName(kPolicyBookmarkBarEnabled,
                     prefs::kEnableBookmarkBar),
         TypeAndName(kPolicyEditBookmarksEnabled,
                     prefs::kEditBookmarksEnabled),
         TypeAndName(kPolicyAllowFileSelectionDialogs,
-                    prefs::kAllowFileSelectionDialogs)));
+                    prefs::kAllowFileSelectionDialogs),
+        TypeAndName(kPolicyAllowCrossOriginAuthPrompt,
+                    prefs::kAllowCrossOriginAuthPrompt)));
 
 #if defined(OS_CHROMEOS)
 INSTANTIATE_TEST_CASE_P(
@@ -539,7 +559,9 @@ TEST_F(ConfigurationPolicyPrefStoreDefaultSearchTest, FullyDefined) {
   const char* const icon_url = "http://test.com/icon.jpg";
   const char* const name = "MyName";
   const char* const keyword = "MyKeyword";
-  const char* const encodings = "UTF-16;UTF-8";
+  ListValue* encodings = new ListValue();
+  encodings->Append(Value::CreateStringValue("UTF-16"));
+  encodings->Append(Value::CreateStringValue("UTF-8"));
   MockConfigurationPolicyProvider provider;
   provider.AddPolicy(kPolicyDefaultSearchProviderEnabled,
                      Value::CreateBooleanValue(true));
@@ -553,8 +575,7 @@ TEST_F(ConfigurationPolicyPrefStoreDefaultSearchTest, FullyDefined) {
                      Value::CreateStringValue(suggest_url));
   provider.AddPolicy(kPolicyDefaultSearchProviderIconURL,
                      Value::CreateStringValue(icon_url));
-  provider.AddPolicy(kPolicyDefaultSearchProviderEncodings,
-                     Value::CreateStringValue(encodings));
+  provider.AddPolicy(kPolicyDefaultSearchProviderEncodings, encodings);
 
   scoped_refptr<ConfigurationPolicyPrefStore> store(
       new ConfigurationPolicyPrefStore(&provider));
@@ -582,7 +603,7 @@ TEST_F(ConfigurationPolicyPrefStoreDefaultSearchTest, FullyDefined) {
 
   EXPECT_EQ(PrefStore::READ_OK,
             store->GetValue(prefs::kDefaultSearchProviderEncodings, &value));
-  EXPECT_TRUE(StringValue(encodings).Equals(value));
+  EXPECT_TRUE(StringValue("UTF-16;UTF-8").Equals(value));
 }
 
 // Checks that if the default search policy is missing, that no elements of the
@@ -592,7 +613,9 @@ TEST_F(ConfigurationPolicyPrefStoreDefaultSearchTest, MissingUrl) {
   const char* const icon_url = "http://test.com/icon.jpg";
   const char* const name = "MyName";
   const char* const keyword = "MyKeyword";
-  const char* const encodings = "UTF-16;UTF-8";
+  ListValue* encodings = new ListValue();
+  encodings->Append(Value::CreateStringValue("UTF-16"));
+  encodings->Append(Value::CreateStringValue("UTF-8"));
   MockConfigurationPolicyProvider provider;
   provider.AddPolicy(kPolicyDefaultSearchProviderEnabled,
                      Value::CreateBooleanValue(true));
@@ -604,8 +627,7 @@ TEST_F(ConfigurationPolicyPrefStoreDefaultSearchTest, MissingUrl) {
                      Value::CreateStringValue(suggest_url));
   provider.AddPolicy(kPolicyDefaultSearchProviderIconURL,
                      Value::CreateStringValue(icon_url));
-  provider.AddPolicy(kPolicyDefaultSearchProviderEncodings,
-                     Value::CreateStringValue(encodings));
+  provider.AddPolicy(kPolicyDefaultSearchProviderEncodings, encodings);
 
   scoped_refptr<ConfigurationPolicyPrefStore> store(
       new ConfigurationPolicyPrefStore(&provider));
@@ -632,7 +654,9 @@ TEST_F(ConfigurationPolicyPrefStoreDefaultSearchTest, Invalid) {
   const char* const icon_url = "http://test.com/icon.jpg";
   const char* const name = "MyName";
   const char* const keyword = "MyKeyword";
-  const char* const encodings = "UTF-16;UTF-8";
+  ListValue* encodings = new ListValue();
+  encodings->Append(Value::CreateStringValue("UTF-16"));
+  encodings->Append(Value::CreateStringValue("UTF-8"));
   MockConfigurationPolicyProvider provider;
   provider.AddPolicy(kPolicyDefaultSearchProviderEnabled,
                      Value::CreateBooleanValue(true));
@@ -646,8 +670,7 @@ TEST_F(ConfigurationPolicyPrefStoreDefaultSearchTest, Invalid) {
                      Value::CreateStringValue(suggest_url));
   provider.AddPolicy(kPolicyDefaultSearchProviderIconURL,
                      Value::CreateStringValue(icon_url));
-  provider.AddPolicy(kPolicyDefaultSearchProviderEncodings,
-                     Value::CreateStringValue(encodings));
+  provider.AddPolicy(kPolicyDefaultSearchProviderEncodings, encodings);
 
   scoped_refptr<ConfigurationPolicyPrefStore> store(
       new ConfigurationPolicyPrefStore(&provider));
@@ -690,8 +713,74 @@ TEST_F(ConfigurationPolicyPrefStoreSyncTest, Disabled) {
   // Sync should be flagged as managed.
   const Value* value = NULL;
   EXPECT_EQ(PrefStore::READ_OK, store_->GetValue(prefs::kSyncManaged, &value));
-  ASSERT_TRUE(value != NULL);
-  EXPECT_TRUE(FundamentalValue(true).Equals(value));
+  ASSERT_TRUE(value);
+  bool sync_managed = false;
+  bool result = value->GetAsBoolean(&sync_managed);
+  ASSERT_TRUE(result);
+  EXPECT_TRUE(sync_managed);
+}
+
+// Test cases for how the DownloadDirectory and AllowFileSelectionDialogs policy
+// influence the PromptForDownload preference.
+class ConfigurationPolicyPrefStorePromptDownloadTest
+    : public ConfigurationPolicyPrefStoreTestBase<testing::Test> {
+};
+
+TEST_F(ConfigurationPolicyPrefStorePromptDownloadTest, Default) {
+  EXPECT_EQ(PrefStore::READ_NO_VALUE,
+            store_->GetValue(prefs::kPromptForDownload, NULL));
+}
+
+#if !defined(OS_CHROMEOS)
+TEST_F(ConfigurationPolicyPrefStorePromptDownloadTest, SetDownloadDirectory) {
+  EXPECT_EQ(PrefStore::READ_NO_VALUE,
+            store_->GetValue(prefs::kPromptForDownload, NULL));
+  provider_.AddPolicy(kPolicyDownloadDirectory, Value::CreateStringValue(""));
+  store_->OnUpdatePolicy();
+
+  // Setting a DownloadDirectory should disable the PromptForDownload pref.
+  const Value* value = NULL;
+  EXPECT_EQ(PrefStore::READ_OK, store_->GetValue(prefs::kPromptForDownload,
+                                                 &value));
+  ASSERT_TRUE(value);
+  bool prompt_for_download = true;
+  bool result = value->GetAsBoolean(&prompt_for_download);
+  ASSERT_TRUE(result);
+  EXPECT_FALSE(prompt_for_download);
+}
+#endif  // !defined(OS_CHROMEOS)
+
+TEST_F(ConfigurationPolicyPrefStorePromptDownloadTest,
+       EnableFileSelectionDialogs) {
+  EXPECT_EQ(PrefStore::READ_NO_VALUE,
+            store_->GetValue(prefs::kPromptForDownload, NULL));
+  provider_.AddPolicy(kPolicyAllowFileSelectionDialogs,
+                      Value::CreateBooleanValue(true));
+  store_->OnUpdatePolicy();
+
+  // Allowing file-selection dialogs should not influence the PromptForDownload
+  // pref.
+  EXPECT_EQ(PrefStore::READ_NO_VALUE,
+            store_->GetValue(prefs::kPromptForDownload, NULL));
+}
+
+TEST_F(ConfigurationPolicyPrefStorePromptDownloadTest,
+       DisableFileSelectionDialogs) {
+  EXPECT_EQ(PrefStore::READ_NO_VALUE,
+            store_->GetValue(prefs::kPromptForDownload, NULL));
+  provider_.AddPolicy(kPolicyAllowFileSelectionDialogs,
+                      Value::CreateBooleanValue(false));
+  store_->OnUpdatePolicy();
+
+  // Disabling file-selection dialogs should disable the PromptForDownload pref.
+  const Value* value = NULL;
+  EXPECT_EQ(PrefStore::READ_OK, store_->GetValue(prefs::kPromptForDownload,
+                                                 &value));
+  ASSERT_TRUE(value);
+  bool prompt_for_download = true;
+  bool result = value->GetAsBoolean(&prompt_for_download);
+  ASSERT_TRUE(result);
+  EXPECT_FALSE(prompt_for_download);
 }
 
 // Test cases for the Autofill policy setting.
@@ -719,7 +808,11 @@ TEST_F(ConfigurationPolicyPrefStoreAutofillTest, Disabled) {
   const Value* value = NULL;
   EXPECT_EQ(PrefStore::READ_OK,
             store_->GetValue(prefs::kAutofillEnabled, &value));
-  EXPECT_TRUE(FundamentalValue(false).Equals(value));
+  ASSERT_TRUE(value);
+  bool autofill_enabled = true;
+  bool result = value->GetAsBoolean(&autofill_enabled);
+  ASSERT_TRUE(result);
+  EXPECT_FALSE(autofill_enabled);
 }
 
 // Exercises the policy refresh mechanism.
@@ -766,7 +859,7 @@ TEST_F(ConfigurationPolicyPrefStoreRefreshTest, Refresh) {
 TEST_F(ConfigurationPolicyPrefStoreRefreshTest, Initialization) {
   EXPECT_FALSE(store_->IsInitializationComplete());
 
-  EXPECT_CALL(observer_, OnInitializationCompleted()).Times(1);
+  EXPECT_CALL(observer_, OnInitializationCompleted(true)).Times(1);
 
   provider_.SetInitializationComplete(true);
   EXPECT_FALSE(store_->IsInitializationComplete());

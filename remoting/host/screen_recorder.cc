@@ -49,7 +49,8 @@ ScreenRecorder::ScreenRecorder(
       network_stopped_(false),
       recordings_(0),
       frame_skipped_(false),
-      max_rate_(kDefaultCaptureRate) {
+      max_rate_(kDefaultCaptureRate),
+      sequence_number_(0) {
   DCHECK(capture_loop_);
   DCHECK(encode_loop_);
   DCHECK(network_loop_);
@@ -102,6 +103,19 @@ void ScreenRecorder::RemoveAllConnections() {
       NewTracedMethod(this, &ScreenRecorder::DoRemoveAllClients));
 }
 
+void ScreenRecorder::UpdateSequenceNumber(int64 sequence_number) {
+  // Sequence number is used and written only on the capture thread.
+  if (MessageLoop::current() != capture_loop_) {
+    capture_loop_->PostTask(
+        FROM_HERE,
+        NewRunnableMethod(this, &ScreenRecorder::UpdateSequenceNumber,
+                          sequence_number));
+    return;
+  }
+
+  sequence_number_ = sequence_number;
+}
+
 // Private accessors -----------------------------------------------------------
 
 Capturer* ScreenRecorder::capturer() {
@@ -136,34 +150,24 @@ void ScreenRecorder::DoStart() {
 void ScreenRecorder::DoStop(Task* done_task) {
   DCHECK_EQ(capture_loop_, MessageLoop::current());
 
+  base::ScopedTaskRunner done_runner(done_task);
+
   // We might have not started when we receive a stop command, simply run the
   // task and then return.
-  if (!is_recording_) {
-    DoCompleteStop(done_task);
+  if (!is_recording_)
     return;
-  }
 
   capture_timer_.Stop();
   is_recording_ = false;
 
   DCHECK_GE(recordings_, 0);
   if (recordings_) {
-     network_loop_->PostTask(
+    network_loop_->PostTask(
         FROM_HERE,
         NewTracedMethod(this,
-                        &ScreenRecorder::DoStopOnNetworkThread, done_task));
+                        &ScreenRecorder::DoStopOnNetworkThread,
+                        done_runner.Release()));
     return;
-  }
-
-  DoCompleteStop(done_task);
-}
-
-void ScreenRecorder::DoCompleteStop(Task* done_task) {
-  DCHECK_EQ(capture_loop_, MessageLoop::current());
-
-  if (done_task) {
-    done_task->Run();
-    delete done_task;
   }
 }
 
@@ -225,9 +229,19 @@ void ScreenRecorder::CaptureDoneCallback(
     return;
 
   TraceContext::tracer()->PrintString("Capture Done");
-  int capture_time = static_cast<int>(
-      (base::Time::Now() - capture_start_time_).InMilliseconds());
-  capture_data->set_capture_time_ms(capture_time);
+  if (capture_data) {
+    int capture_time = static_cast<int>(
+        (base::Time::Now() - capture_start_time_).InMilliseconds());
+    capture_data->set_capture_time_ms(capture_time);
+
+    // The best way to get this value is by binding the sequence number to
+    // the callback when calling CaptureInvalidRects(). However the callback
+    // system doesn't allow this. Reading from the member variable is
+    // accurate as long as capture is synchronous as the following statement
+    // will obtain the most recent sequence number received.
+    capture_data->set_client_sequence_number(sequence_number_);
+  }
+
   encode_loop_->PostTask(
       FROM_HERE,
       NewTracedMethod(this, &ScreenRecorder::DoEncode, capture_data));
@@ -350,7 +364,7 @@ void ScreenRecorder::DoEncode(
   TraceContext::tracer()->PrintString("DoEncode called");
 
   // Early out if there's nothing to encode.
-  if (!capture_data->dirty_rects().size()) {
+  if (!capture_data || !capture_data->dirty_rects().size()) {
     capture_loop_->PostTask(
         FROM_HERE,
         NewTracedMethod(this, &ScreenRecorder::DoFinishOneRecording));
@@ -371,9 +385,8 @@ void ScreenRecorder::DoStopOnEncodeThread(Task* done_task) {
   // When this method is being executed there are no more tasks on encode thread
   // for this object. We can then post a task to capture thread to finish the
   // stop sequence.
-  capture_loop_->PostTask(
-      FROM_HERE,
-      NewTracedMethod(this, &ScreenRecorder::DoCompleteStop, done_task));
+  if (done_task)
+    capture_loop_->PostTask(FROM_HERE, done_task);
 }
 
 void ScreenRecorder::EncodedDataAvailableCallback(VideoPacket* packet) {

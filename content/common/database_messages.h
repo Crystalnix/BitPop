@@ -13,11 +13,19 @@
 // Database messages sent from the browser to the renderer.
 
 // Notifies the child process of the new database size
-IPC_MESSAGE_CONTROL4(DatabaseMsg_UpdateSize,
+IPC_MESSAGE_CONTROL3(DatabaseMsg_UpdateSize,
                      string16 /* the origin */,
                      string16 /* the database name */,
-                     int64 /* the new database size */,
+                     int64 /* the new database size */)
+
+// Notifies the child process of the new space available
+IPC_MESSAGE_CONTROL2(DatabaseMsg_UpdateSpaceAvailable,
+                     string16 /* the origin */,
                      int64 /* space available to origin */)
+
+// Notifies the child process to reset it's cached value for the origin.
+IPC_MESSAGE_CONTROL1(DatabaseMsg_ResetSpaceAvailable,
+                     string16 /* the origin */)
 
 // Asks the child process to close a database immediately
 IPC_MESSAGE_CONTROL2(DatabaseMsg_CloseImmediately,
@@ -25,15 +33,6 @@ IPC_MESSAGE_CONTROL2(DatabaseMsg_CloseImmediately,
                      string16 /* the database name */)
 
 // Database messages sent from the renderer to the browser.
-
-// Sent by the renderer process to check whether access to web databases is
-// granted by content settings. This may block and trigger a cookie prompt.
-IPC_SYNC_MESSAGE_ROUTED4_1(DatabaseHostMsg_Allow,
-                           std::string /* origin_url */,
-                           string16 /* database name */,
-                           string16 /* database display name */,
-                           unsigned long /* estimated size */,
-                           bool /* result */)
 
 // Asks the browser process to open a DB file with the given name.
 IPC_SYNC_MESSAGE_CONTROL2_1(DatabaseHostMsg_OpenFile,
@@ -56,6 +55,11 @@ IPC_SYNC_MESSAGE_CONTROL1_1(DatabaseHostMsg_GetFileAttributes,
 IPC_SYNC_MESSAGE_CONTROL1_1(DatabaseHostMsg_GetFileSize,
                             string16 /* vfs file name */,
                             int64 /* the size of the given DB file */)
+
+// Asks the browser process for the amount of space available to an origin
+IPC_SYNC_MESSAGE_CONTROL1_1(DatabaseHostMsg_GetSpaceAvailable,
+                            string16 /* origin identifier */,
+                            int64 /* remaining space available */)
 
 // Notifies the browser process that a new database has been opened
 IPC_MESSAGE_CONTROL4(DatabaseHostMsg_Opened,

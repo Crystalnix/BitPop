@@ -41,6 +41,14 @@ class InputMethodIBus : public InputMethodBase {
   virtual base::i18n::TextDirection GetInputTextDirection() OVERRIDE;
   virtual bool IsActive() OVERRIDE;
 
+  // Returns true when
+  // 1) built with GYP_DEFINES="touchui=1" or,
+  // 2) enabled by SetEnabledInputMethodIBus or,
+  // 3) enabled by command line flag "--enable-inputmethod-ibus"
+  static bool IsInputMethodIBusEnabled();
+  // Enable/Disable InputMethodIBus
+  static void SetEnableInputMethodIBus(bool enabled);
+
  private:
   // A class to hold all data related to a key event being processed by the
   // input method but still has no result back yet.
@@ -128,8 +136,6 @@ class InputMethodIBus : public InputMethodBase {
                      IBusInputContext*, IBusText*, guint, gboolean);
   CHROMEG_CALLBACK_0(InputMethodIBus, void, OnHidePreeditText,
                      IBusInputContext*);
-  CHROMEG_CALLBACK_0(InputMethodIBus, void, OnEnable, IBusInputContext*);
-  CHROMEG_CALLBACK_0(InputMethodIBus, void, OnDisable, IBusInputContext*);
   CHROMEG_CALLBACK_0(InputMethodIBus, void, OnDestroy, IBusInputContext*);
   CHROMEG_CALLBACK_0(InputMethodIBus, void, OnFakeDestroy, IBusInputContext*);
 
@@ -192,9 +198,6 @@ class InputMethodIBus : public InputMethodBase {
   // If it's true then all input method result received before the next key
   // event will be discarded.
   bool suppress_next_result_;
-
-  // Indicates if |context_| is enabled.
-  bool enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(InputMethodIBus);
 };

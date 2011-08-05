@@ -5,8 +5,8 @@
 #include <algorithm>
 
 #include "base/file_util.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/path_service.h"
+#include "base/scoped_temp_dir.h"
 #include "base/string_number_conversions.h"
 #include "chrome/browser/policy/config_dir_policy_provider.h"
 #include "chrome/browser/policy/configuration_policy_pref_store.h"
@@ -258,7 +258,7 @@ INSTANTIATE_TEST_CASE_P(
         ValueTestParams::ForStringPolicy(
             kPolicyDefaultSearchProviderIconURL,
             key::kDefaultSearchProviderIconURL),
-        ValueTestParams::ForStringPolicy(
+        ValueTestParams::ForListPolicy(
             kPolicyDefaultSearchProviderEncodings,
             key::kDefaultSearchProviderEncodings),
         ValueTestParams::ForStringPolicy(
@@ -358,6 +358,9 @@ INSTANTIATE_TEST_CASE_P(
             kPolicyAllowOutdatedPlugins,
             key::kAllowOutdatedPlugins),
         ValueTestParams::ForBooleanPolicy(
+            kPolicyAlwaysAuthorizePlugins,
+            key::kAlwaysAuthorizePlugins),
+        ValueTestParams::ForBooleanPolicy(
             kPolicyBookmarkBarEnabled,
             key::kBookmarkBarEnabled),
         ValueTestParams::ForBooleanPolicy(
@@ -365,6 +368,9 @@ INSTANTIATE_TEST_CASE_P(
             key::kEditBookmarksEnabled),
         ValueTestParams::ForListPolicy(
             kPolicyDisabledSchemes,
-            key::kDisabledSchemes)));
+            key::kDisabledSchemes),
+        ValueTestParams::ForStringPolicy(
+            kPolicyDiskCacheDir,
+            key::kDiskCacheDir)));
 
 }  // namespace policy

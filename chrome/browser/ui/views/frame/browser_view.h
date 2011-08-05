@@ -13,12 +13,13 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/timer.h"
 #include "build/build_config.h"
+#include "chrome/browser/tab_contents/infobar_container.h"
 #include "chrome/browser/tabs/tab_strip_model_observer.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/views/compact_nav/compact_location_bar_view_host.h"
 #include "chrome/browser/ui/views/frame/browser_bubble_host.h"
 #include "chrome/browser/ui/views/frame/browser_frame.h"
-#include "chrome/browser/ui/views/infobars/infobar_container.h"
 #include "chrome/browser/ui/views/tab_contents/tab_contents_container.h"
 #include "chrome/browser/ui/views/tabs/abstract_tab_strip_view.h"
 #include "chrome/browser/ui/views/unhandled_keyboard_event_handler.h"
@@ -44,6 +45,9 @@ class Browser;
 class BrowserBubble;
 class BrowserViewLayout;
 class ContentsContainer;
+class CompactLocationBar;
+class CompactNavigationBar;
+class CompactOptionsBar;
 class DownloadShelfView;
 class EncodingMenuModel;
 class FullscreenExitBubble;
@@ -105,7 +109,9 @@ class BrowserView : public BrowserBubbleHost,
   // Returns the apparent bounds of the toolbar, in BrowserView coordinates.
   // These differ from |toolbar_.bounds()| in that they match where the toolbar
   // background image is drawn -- slightly outside the "true" bounds
-  // horizontally, and, when using vertical tabs, behind the tab column.
+  // horizontally, and, when using vertical tabs, behind the tab column. Note
+  // that this returns the bounds for the toolbar area, which could just be the
+  // spacer bounds if in compact navigation mode.
   virtual gfx::Rect GetToolbarBounds() const;
 
   // Returns the bounds of the content area, in the coordinates of the
@@ -118,6 +124,14 @@ class BrowserView : public BrowserBubbleHost,
   // rect is in the coordinate system of the frame, since the FindBar is a child
   // window.
   gfx::Rect GetFindBarBoundingBox() const;
+
+  // Returns the bounds of the compact navigation bar (back and forward
+  // buttons).
+  gfx::Rect GetCompactNavigationBarBounds() const;
+
+  // Returns the bounds of the compact options bar (browser actions and app
+  // menu).
+  gfx::Rect GetCompactOptionsBarBounds() const;
 
   // Returns the preferred height of the TabStrip. Used to position the OTR
   // avatar icon.
@@ -143,6 +157,9 @@ class BrowserView : public BrowserBubbleHost,
 
   // Returns true if the vertical tabstrip is in use.
   bool UseVerticalTabs() const;
+
+  // Returns true if the compact navigation bar is in use.
+  bool UseCompactNavigationBar() const;
 
   // Returns true if the profile associated with this Browser window is
   // incognito.
@@ -185,21 +202,27 @@ class BrowserView : public BrowserBubbleHost,
 #endif
 
   // Returns true if the Browser object associated with this BrowserView is a
-  // normal-type window (i.e. a browser window, not an app or popup).
+  // tabbed-type window (i.e. a browser window, not an app or popup).
   bool IsBrowserTypeNormal() const {
-    return browser_->type() == Browser::TYPE_NORMAL;
+    return browser_->is_type_tabbed();
   }
 
   // Returns true if the Browser object associated with this BrowserView is a
-  // app panel window.
+  // panel window.
   bool IsBrowserTypePanel() const {
-    return browser_->type() == Browser::TYPE_APP_PANEL;
+    return browser_->is_type_panel();
   }
 
   // Returns true if the Browser object associated with this BrowserView is a
   // popup window.
   bool IsBrowserTypePopup() const {
-    return (browser_->type() & Browser::TYPE_POPUP) != 0;
+    return browser_->is_type_popup();
+  }
+
+  // Returns true if the Browser object associated with this BrowserView
+  // represents an app.
+  bool IsBrowserTypeApp() const {
+    return browser_->is_app();
   }
 
   // Register preferences specific to this view.
@@ -219,6 +242,11 @@ class BrowserView : public BrowserBubbleHost,
   // Restores the focused view. This is also used to set the initial focus
   // when a new browser window is created.
   void RestoreFocus();
+
+  // Access the CompactLocationBarHost.
+  CompactLocationBarViewHost* compact_location_bar_view_host() {
+    return compact_location_bar_view_host_.get();
+  }
 
   // Overridden from BrowserWindow:
   virtual void Show() OVERRIDE;
@@ -298,6 +326,7 @@ class BrowserView : public BrowserBubbleHost,
       OVERRIDE;
   virtual void ShowCreateChromeAppShortcutsDialog(
       Profile*, const Extension* app) OVERRIDE;
+  virtual void ToggleUseCompactNavigationBar() OVERRIDE;
   virtual void Cut() OVERRIDE;
   virtual void Copy() OVERRIDE;
   virtual void Paste() OVERRIDE;
@@ -306,6 +335,8 @@ class BrowserView : public BrowserBubbleHost,
   virtual void ShowInstant(TabContentsWrapper* preview) OVERRIDE;
   virtual void HideInstant(bool instant_is_active) OVERRIDE;
   virtual gfx::Rect GetInstantBounds() OVERRIDE;
+  virtual WindowOpenDisposition GetDispositionForPopupBounds(
+      const gfx::Rect& bounds) OVERRIDE;
 #if defined(OS_CHROMEOS)
   virtual void ShowKeyboardOverlay(gfx::NativeWindow owning_window) OVERRIDE;
 #endif
@@ -325,10 +356,10 @@ class BrowserView : public BrowserBubbleHost,
   // Overridden from TabStripModelObserver:
   virtual void TabDetachedAt(TabContentsWrapper* contents, int index) OVERRIDE;
   virtual void TabDeselected(TabContentsWrapper* contents) OVERRIDE;
-  virtual void TabSelectedAt(TabContentsWrapper* old_contents,
-                             TabContentsWrapper* new_contents,
-                             int index,
-                             bool user_gesture) OVERRIDE;
+  virtual void ActiveTabChanged(TabContentsWrapper* old_contents,
+                                TabContentsWrapper* new_contents,
+                                int index,
+                                bool user_gesture) OVERRIDE;
   virtual void TabReplacedAt(TabStripModel* tab_strip_model,
                              TabContentsWrapper* old_contents,
                              TabContentsWrapper* new_contents,
@@ -428,6 +459,7 @@ class BrowserView : public BrowserBubbleHost,
 
  private:
   friend class BrowserViewLayout;
+  friend class CompactLocationBarHostTest;
   FRIEND_TEST_ALL_PREFIXES(BrowserViewsAccessibilityTest,
                            TestAboutChromeViewAccObj);
 
@@ -490,7 +522,10 @@ class BrowserView : public BrowserBubbleHost,
 #if defined(OS_WIN)
   // Builds the correct menu for when we have minimal chrome.
   void BuildSystemMenuForBrowserWindow();
-  void BuildSystemMenuForAppOrPopupWindow(bool is_app);
+  void BuildSystemMenuForAppOrPopupWindow();
+
+  // Adds optional debug items for frame type toggling.
+  void AddFrameToggleItems();
 #endif
 
   // Retrieves the command id for the specified Windows app command.
@@ -505,7 +540,7 @@ class BrowserView : public BrowserBubbleHost,
   void UpdateAcceleratorMetrics(const views::Accelerator& accelerator,
                                 int command_id);
 
-  // Invoked from TabSelectedAt or when instant is made active.  Is
+  // Invoked from ActiveTabChanged or when instant is made active.  If
   // |change_tab_contents| is true, |new_contents| is added to the view
   // hierarchy, if |change_tab_contents| is false, it's assumed |new_contents|
   // has already been added to the view hierarchy.
@@ -518,7 +553,10 @@ class BrowserView : public BrowserBubbleHost,
   // Shows the about chrome modal dialog and returns the Window object.
   views::Window* DoShowAboutChromeDialog();
 
-  // Set the value of |toolbar_| and hook it into the views hiearchy
+  // Shows the Compact Location Bar under the selected tab.
+  void ShowCompactLocationBarUnderSelectedTab();
+
+  // Set the value of |toolbar_| and hook it into the views hierarchy
   void SetToolbar(ToolbarView* toolbar);
 
   // Last focused view that issued a tab traversal.
@@ -581,6 +619,19 @@ class BrowserView : public BrowserBubbleHost,
 
   // The Toolbar containing the navigation buttons, menus and the address bar.
   ToolbarView* toolbar_;
+
+  // CompactNavigationBar view.
+  CompactNavigationBar* compact_navigation_bar_;
+
+  // CompactOptionsBar view.
+  CompactOptionsBar* compact_options_bar_;
+
+  // CompactLocationBarHost.
+  scoped_ptr<CompactLocationBarViewHost> compact_location_bar_view_host_;
+
+  // A spacer under the tap strip used when the compact navigation bar
+  // is active.
+  views::View* compact_spacer_;
 
   // The Bookmark Bar View for this window. Lazily created.
   scoped_ptr<BookmarkBarView> bookmark_bar_view_;

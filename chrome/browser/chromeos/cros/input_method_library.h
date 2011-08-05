@@ -121,6 +121,13 @@ class InputMethodLibrary {
   // engines are removed.
   virtual void SetEnableAutoImeShutdown(bool enable) = 0;
 
+  // Sends a handwriting stroke to libcros. See chromeos::SendHandwritingStroke
+  // for details.
+  virtual void SendHandwritingStroke(const HandwritingStroke& stroke) = 0;
+
+  // Clears last N handwriting strokes in libcros. See
+  // chromeos::CancelHandwriting for details.
+  virtual void CancelHandwritingStrokes(int stroke_count) = 0;
 
   virtual InputMethodDescriptor previous_input_method() const = 0;
   virtual InputMethodDescriptor current_input_method() const = 0;

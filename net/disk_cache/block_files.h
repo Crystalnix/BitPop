@@ -13,6 +13,7 @@
 #include "base/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "net/base/net_api.h"
 #include "net/disk_cache/addr.h"
 #include "net/disk_cache/mapped_file.h"
 
@@ -23,7 +24,7 @@ class ThreadChecker;
 namespace disk_cache {
 
 // This class handles the set of block-files open by the disk cache.
-class BlockFiles {
+class NET_TEST BlockFiles {
  public:
   explicit BlockFiles(const FilePath& path);
   ~BlockFiles();
@@ -92,6 +93,7 @@ class BlockFiles {
   scoped_ptr<base::ThreadChecker> thread_checker_;
 
   FRIEND_TEST_ALL_PREFIXES(DiskCacheTest, BlockFiles_ZeroSizeFile);
+  FRIEND_TEST_ALL_PREFIXES(DiskCacheTest, BlockFiles_TruncatedFile);
   FRIEND_TEST_ALL_PREFIXES(DiskCacheTest, BlockFiles_InvalidFile);
   FRIEND_TEST_ALL_PREFIXES(DiskCacheTest, BlockFiles_Stats);
 

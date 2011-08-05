@@ -36,8 +36,10 @@
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/common/native_web_keyboard_event.h"
 #include "content/common/notification_service.h"
+#include "content/common/view_messages.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -63,8 +65,9 @@ const int kBarPaddingRight = 4;
 // images.
 const int kFindBarHeight = 32;
 
-// The width of the text entry field.
-const int kTextEntryWidth = 220;
+// The default width of the findbar dialog. It may get smaller if the window
+// is narrow.
+const int kFindBarWidth = 303;
 
 // The size of the "rounded" corners.
 const int kCornerSize = 3;
@@ -155,15 +158,11 @@ const NineBox* GetDialogBorder() {
 // returns both the event box and the alignment so we can modify it during its
 // lifetime (i.e. during a theme change).
 void BuildBorder(GtkWidget* child,
-                 bool center,
                  int padding_top, int padding_bottom, int padding_left,
                  int padding_right,
                  GtkWidget** ebox, GtkWidget** alignment) {
   *ebox = gtk_event_box_new();
-  if (center)
-    *alignment = gtk_alignment_new(0.5, 0.5, 0.0, 0.0);
-  else
-    *alignment = gtk_alignment_new(0.0, 0.0, 1.0, 1.0);
+  *alignment = gtk_alignment_new(0.0, 0.0, 1.0, 1.0);
   gtk_alignment_set_padding(GTK_ALIGNMENT(*alignment),
                             padding_top, padding_bottom, padding_left,
                             padding_right);
@@ -228,18 +227,19 @@ void FindBarGtk::InitWidgets() {
   container_ = gtk_util::CreateGtkBorderBin(hbox, NULL,
       kBarPaddingTopBottom, kBarPaddingTopBottom,
       kEntryPaddingLeft, kBarPaddingRight);
+  gtk_widget_set_size_request(container_, kFindBarWidth, -1);
   ViewIDUtil::SetID(container_, VIEW_ID_FIND_IN_PAGE);
   gtk_widget_set_app_paintable(container_, TRUE);
 
   slide_widget_.reset(new SlideAnimatorGtk(container_,
                                            SlideAnimatorGtk::DOWN,
-                                           0, false, false, NULL));
+                                           0, false, true, NULL));
 
   close_button_.reset(CustomDrawButton::CloseButton(theme_service_));
   gtk_util::CenterWidgetInHBox(hbox, close_button_->widget(), true,
                                kCloseButtonPaddingLeft);
   g_signal_connect(close_button_->widget(), "clicked",
-                   G_CALLBACK(OnClicked), this);
+                   G_CALLBACK(OnClickedThunk), this);
   gtk_widget_set_tooltip_text(close_button_->widget(),
       l10n_util::GetStringUTF8(IDS_FIND_IN_PAGE_CLOSE_TOOLTIP).c_str());
 
@@ -247,7 +247,7 @@ void FindBarGtk::InitWidgets() {
       IDR_FINDINPAGE_NEXT, IDR_FINDINPAGE_NEXT_H, IDR_FINDINPAGE_NEXT_H,
       IDR_FINDINPAGE_NEXT_P, GTK_STOCK_GO_DOWN, GTK_ICON_SIZE_MENU));
   g_signal_connect(find_next_button_->widget(), "clicked",
-                   G_CALLBACK(OnClicked), this);
+                   G_CALLBACK(OnClickedThunk), this);
   gtk_widget_set_tooltip_text(find_next_button_->widget(),
       l10n_util::GetStringUTF8(IDS_FIND_IN_PAGE_NEXT_TOOLTIP).c_str());
   gtk_box_pack_end(GTK_BOX(hbox), find_next_button_->widget(),
@@ -257,17 +257,14 @@ void FindBarGtk::InitWidgets() {
       IDR_FINDINPAGE_PREV, IDR_FINDINPAGE_PREV_H, IDR_FINDINPAGE_PREV_H,
       IDR_FINDINPAGE_PREV_P, GTK_STOCK_GO_UP, GTK_ICON_SIZE_MENU));
   g_signal_connect(find_previous_button_->widget(), "clicked",
-                   G_CALLBACK(OnClicked), this);
+                   G_CALLBACK(OnClickedThunk), this);
   gtk_widget_set_tooltip_text(find_previous_button_->widget(),
       l10n_util::GetStringUTF8(IDS_FIND_IN_PAGE_PREVIOUS_TOOLTIP).c_str());
   gtk_box_pack_end(GTK_BOX(hbox), find_previous_button_->widget(),
                    FALSE, FALSE, 0);
 
-  // Make a box for the edit and match count widgets. This is fixed size since
-  // we want the widgets inside to resize themselves rather than making the
-  // dialog bigger.
+  // Make a box for the edit and match count widgets.
   GtkWidget* content_hbox = gtk_hbox_new(FALSE, 0);
-  gtk_widget_set_size_request(content_hbox, kTextEntryWidth, -1);
 
   text_entry_ = gtk_entry_new();
   gtk_entry_set_has_frame(GTK_ENTRY(text_entry_), FALSE);
@@ -289,7 +286,7 @@ void FindBarGtk::InitWidgets() {
 
   // This event box is necessary to color in the area above and below the match
   // count label, and is where we draw the entry background onto in GTK mode.
-  BuildBorder(content_hbox, true, 0, 0, 0, 0,
+  BuildBorder(content_hbox, 0, 0, 0, 0,
               &content_event_box_, &content_alignment_);
   gtk_widget_set_app_paintable(content_event_box_, TRUE);
   g_signal_connect(content_event_box_, "expose-event",
@@ -298,9 +295,9 @@ void FindBarGtk::InitWidgets() {
   // This alignment isn't centered and is used for spacing in chrome theme
   // mode. (It's also used in GTK mode for padding because left padding doesn't
   // equal bottom padding naturally.)
-  BuildBorder(content_event_box_, false, 2, 2, 2, 0,
+  BuildBorder(content_event_box_, 2, 2, 2, 0,
               &border_bin_, &border_bin_alignment_);
-  gtk_util::CenterWidgetInHBox(hbox, border_bin_, true, 0);
+  gtk_box_pack_end(GTK_BOX(hbox), border_bin_, TRUE, TRUE, 0);
 
   theme_service_->InitThemesFor(this);
   registrar_.Add(this, NotificationType::BROWSER_THEME_CHANGED,
@@ -468,7 +465,7 @@ void FindBarGtk::Observe(NotificationType type,
   container_width_ = -1;
   container_height_ = -1;
 
-  if (theme_service_->UseGtkTheme()) {
+  if (theme_service_->UsingNativeTheme()) {
     gtk_widget_modify_cursor(text_entry_, NULL, NULL);
     gtk_widget_modify_base(text_entry_, GTK_STATE_NORMAL, NULL);
     gtk_widget_modify_text(text_entry_, GTK_STATE_NORMAL, NULL);
@@ -576,6 +573,10 @@ string16 FindBarGtk::GetMatchCountText() {
   return UTF8ToUTF16(contents);
 }
 
+int FindBarGtk::GetWidth() {
+  return container_->allocation.width;
+}
+
 void FindBarGtk::FindEntryTextInContents(bool forward_search) {
   TabContentsWrapper* tab_contents = find_bar_controller_->tab_contents();
   if (!tab_contents)
@@ -602,7 +603,7 @@ void FindBarGtk::FindEntryTextInContents(bool forward_search) {
 
 void FindBarGtk::UpdateMatchLabelAppearance(bool failure) {
   match_label_failure_ = failure;
-  bool use_gtk = theme_service_->UseGtkTheme();
+  bool use_gtk = theme_service_->UsingNativeTheme();
 
   if (use_gtk) {
     GtkStyle* style = gtk_rc_get_style(text_entry_);
@@ -668,7 +669,8 @@ bool FindBarGtk::MaybeForwardKeyEventToRenderer(GdkEventKey* event) {
 
   // Make sure we don't have a text field element interfering with keyboard
   // input. Otherwise Up and Down arrow key strokes get eaten. "Nom Nom Nom".
-  render_view_host->ClearFocusedNode();
+  render_view_host->Send(
+      new ViewMsg_ClearFocusedNode(render_view_host->routing_id()));
 
   NativeWebKeyboardEvent wke(event);
   render_view_host->ForwardKeyboardEvent(wke);
@@ -794,15 +796,12 @@ gboolean FindBarGtk::OnKeyReleaseEvent(GtkWidget* widget, GdkEventKey* event,
   return find_bar->MaybeForwardKeyEventToRenderer(event);
 }
 
-// static
-void FindBarGtk::OnClicked(GtkWidget* button, FindBarGtk* find_bar) {
-  if (button == find_bar->close_button_->widget()) {
-    find_bar->find_bar_controller_->EndFindSession(
-        FindBarController::kKeepSelection);
-  } else if (button == find_bar->find_previous_button_->widget() ||
-             button == find_bar->find_next_button_->widget()) {
-    find_bar->FindEntryTextInContents(
-        button == find_bar->find_next_button_->widget());
+void FindBarGtk::OnClicked(GtkWidget* button) {
+  if (button == close_button_->widget()) {
+    find_bar_controller_->EndFindSession(FindBarController::kKeepSelection);
+  } else if (button == find_previous_button_->widget() ||
+             button == find_next_button_->widget()) {
+    FindEntryTextInContents(button == find_next_button_->widget());
   } else {
     NOTREACHED();
   }
@@ -812,7 +811,7 @@ void FindBarGtk::OnClicked(GtkWidget* button, FindBarGtk* find_bar) {
 gboolean FindBarGtk::OnContentEventBoxExpose(GtkWidget* widget,
                                              GdkEventExpose* event,
                                              FindBarGtk* bar) {
-  if (bar->theme_service_->UseGtkTheme()) {
+  if (bar->theme_service_->UsingNativeTheme()) {
     // Draw the text entry background around where we input stuff. Note the
     // decrement to |width|. We do this because some theme engines
     // (*cough*Clearlooks*cough*) don't do any blending and use thickness to
@@ -835,11 +834,7 @@ gboolean FindBarGtk::OnContentEventBoxExpose(GtkWidget* widget,
 // Used to handle custom painting of |container_|.
 gboolean FindBarGtk::OnExpose(GtkWidget* widget, GdkEventExpose* e,
                               FindBarGtk* bar) {
-  GtkRequisition req;
-  gtk_widget_size_request(widget, &req);
-  gtk_widget_set_size_request(bar->widget(), req.width, -1);
-
-  if (bar->theme_service_->UseGtkTheme()) {
+  if (bar->theme_service_->UsingNativeTheme()) {
     if (bar->container_width_ != widget->allocation.width ||
         bar->container_height_ != widget->allocation.height) {
       std::vector<GdkPoint> mask_points = MakeFramePolygonPoints(

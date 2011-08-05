@@ -48,10 +48,12 @@ class PrefTransformerInterface {
   // Converts the representation of a preference as seen by the extension
   // into a representation that is used in the pref stores of the browser.
   // Returns the pref store representation in case of success or sets
-  // |error| and returns NULL otherwise.
+  // |error| and returns NULL otherwise. |bad_message| is passed to simulate
+  // the behavior of EXTENSION_FUNCTION_VALIDATE. It is never NULL.
   // The ownership of the returned value is passed to the caller.
   virtual Value* ExtensionToBrowserPref(const Value* extension_pref,
-                                        std::string* error) = 0;
+                                        std::string* error,
+                                        bool* bad_message) = 0;
 
   // Converts the representation of the preference as stored in the browser
   // into a representation that is used by the extension.
@@ -64,21 +66,21 @@ class GetPreferenceFunction : public SyncExtensionFunction {
  public:
   virtual ~GetPreferenceFunction();
   virtual bool RunImpl();
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.preferences.get")
+  DECLARE_EXTENSION_FUNCTION_NAME("types.ChromeSetting.get")
 };
 
 class SetPreferenceFunction : public SyncExtensionFunction {
  public:
   virtual ~SetPreferenceFunction();
   virtual bool RunImpl();
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.preferences.set")
+  DECLARE_EXTENSION_FUNCTION_NAME("types.ChromeSetting.set")
 };
 
 class ClearPreferenceFunction : public SyncExtensionFunction {
  public:
   virtual ~ClearPreferenceFunction();
   virtual bool RunImpl();
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.preferences.clear")
+  DECLARE_EXTENSION_FUNCTION_NAME("types.ChromeSetting.clear")
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_EXTENSION_PREFERENCE_API_H__

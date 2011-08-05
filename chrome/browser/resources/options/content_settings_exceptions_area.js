@@ -345,19 +345,6 @@ cr.define('options.contentSettings', function() {
       this.mode = this.getAttribute('mode');
 
       var exceptionList = this;
-      function handleBlur(e) {
-        // When the blur event happens we do not know who is getting focus so we
-        // delay this a bit until we know if the new focus node is outside the
-        // list.
-        var doc = e.target.ownerDocument;
-        window.setTimeout(function() {
-          var activeElement = doc.activeElement;
-          if (!exceptionList.contains(activeElement))
-            exceptionList.selectionModel.unselectAll();
-        }, 50);
-      }
-
-      this.addEventListener('blur', handleBlur, true);
 
       // Whether the exceptions in this list allow an 'Ask every time' option.
       this.enableAskOption = (this.contentType == 'plugins' &&
@@ -505,9 +492,9 @@ cr.define('options.contentSettings', function() {
       var divs = this.pageDiv.querySelectorAll('div[contentType]');
       for (var i = 0; i < divs.length; i++) {
         if (divs[i].getAttribute('contentType') == type)
-          divs[i].classList.remove('hidden');
+          divs[i].hidden = false;
         else
-          divs[i].classList.add('hidden');
+          divs[i].hidden = true;
       }
     },
 
@@ -537,7 +524,7 @@ cr.define('options.contentSettings', function() {
 
     for (var i = 0; i < otrLists.length; i++) {
       otrLists[i].reset();
-      otrLists[i].parentNode.classList.add('hidden');
+      otrLists[i].parentNode.hidden = true;
     }
   };
 

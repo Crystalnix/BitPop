@@ -67,6 +67,8 @@ function getAppsCallback(data) {
     appsPromoLink.href = data.promoLink;
     appsPromoLink.textContent = data.promoButton;
     appsPromoLink.ping = appsPromoPing;
+    $('apps-promo').style.background =
+          "url('" + data.promoLogo + "') no-repeat";
     $('apps-promo-hide').textContent = data.promoExpire;
 
     // ... then display the promo.
@@ -75,9 +77,9 @@ function getAppsCallback(data) {
     document.documentElement.classList.remove('apps-promo-visible');
   }
 
-  // Only show the web store entry if there are apps installed, since the promo
-  // is sufficient otherwise.
-  if (data.apps.length > 0) {
+  // Only show the web store entry if there are apps installed or the promo
+  // is not available.
+  if (data.apps.length > 0 || !data.showPromo) {
     webStoreEntry = apps.createWebStoreElement();
     webStoreEntry.querySelector('a').ping = appsPromoPing;
     appsSectionContent.appendChild(webStoreEntry);
@@ -705,11 +707,13 @@ var apps = (function() {
       img.onload = function() { this.loadedImages++; }.bind(this);
       img.src = app['icon_big'];
 
-      var settingsButton = div.appendChild(new cr.ui.ContextMenuButton);
-      settingsButton.className = 'app-settings';
-      settingsButton.title = localStrings.getString('appsettings');
-
-      addContextMenu(div, app);
+      // User cannot change launch options or uninstall component extension.
+      if (!app['is_component']) {
+        var settingsButton = div.appendChild(new cr.ui.ContextMenuButton);
+        settingsButton.className = 'app-settings';
+        settingsButton.title = localStrings.getString('appsettings');
+        addContextMenu(div, app);
+      }
 
       return div;
     },
@@ -728,7 +732,10 @@ var apps = (function() {
       a.className = 'item';
       span.appendChild(a);
 
-      addContextMenu(span, app);
+      // User cannot change launch options or uninstall component extension.
+      if (!app['is_component']) {
+        addContextMenu(span, app);
+      }
 
       return span;
     },
@@ -744,7 +751,10 @@ var apps = (function() {
       a.style.backgroundImage = url(app['icon_small']);
       a.className = 'item';
 
-      addContextMenu(a, app);
+      // User cannot change launch options or uninstall component extension.
+      if (!app['is_component']) {
+        addContextMenu(a, app);
+      }
 
       return a;
     },

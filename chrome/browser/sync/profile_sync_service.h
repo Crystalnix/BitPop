@@ -32,13 +32,13 @@
 #include "content/common/notification_registrar.h"
 #include "content/common/notification_type.h"
 #include "googleurl/src/gurl.h"
-#include "ui/gfx/native_widget_types.h"
 
 class NotificationDetails;
 class NotificationSource;
 class Profile;
 class ProfileSyncFactory;
 class SigninManager;
+class WebUI;
 
 namespace browser_sync {
 class BackendMigrator;
@@ -112,6 +112,8 @@ class ProfileSyncService : public browser_sync::SyncFrontend,
     START_FROM_WRENCH = 2,   // Sync was started from the Wrench menu.
     START_FROM_OPTIONS = 3,  // Sync was started from Wrench->Options.
     START_FROM_BOOKMARK_MANAGER = 4,  // Sync was started from Bookmark manager.
+    START_FROM_PROFILE_MENU = 5,  // Sync was started from multiprofile menu.
+    START_FROM_URL = 6,  // Sync was started from a typed URL.
 
     // Events regarding cancellation of the signon process of sync.
     CANCEL_FROM_SIGNON_WITHOUT_AUTH = 10,   // Cancelled before submitting
@@ -194,7 +196,7 @@ class ProfileSyncService : public browser_sync::SyncFrontend,
   virtual void OnClearServerDataFailed();
   virtual void OnClearServerDataTimeout();
   virtual void OnClearServerDataSucceeded();
-  virtual void OnPassphraseRequired(bool for_decryption);
+  virtual void OnPassphraseRequired(sync_api::PassphraseRequiredReason reason);
   virtual void OnPassphraseAccepted();
   virtual void OnEncryptionComplete(
       const syncable::ModelTypeSet& encrypted_types);
@@ -239,21 +241,30 @@ class ProfileSyncService : public browser_sync::SyncFrontend,
   bool WizardIsVisible() const {
     return wizard_.IsVisible();
   }
-  virtual void ShowLoginDialog(gfx::NativeWindow parent_window);
+
   SyncSetupWizard& get_wizard() { return wizard_; }
 
+  // Shows the login screen of the Sync setup wizard.  |web_ui| is the WebUI
+  // object for a current settings tab, NULL if one doesn't exist or the calling
+  // code doesn't know.
+  virtual void ShowLoginDialog(WebUI* web_ui);
+
   // This method handles clicks on "sync error" UI, showing the appropriate
-  // dialog for the error condition (relogin / enter passphrase).
-  virtual void ShowErrorUI(gfx::NativeWindow parent_window);
+  // dialog for the error condition (relogin / enter passphrase).  |web_ui| is
+  // the WebUI object for a current settings tab, NULL if one doesn't exist or
+  // the calling code doesn't know.
+  virtual void ShowErrorUI(WebUI* web_ui);
 
   // Shows the configure screen of the Sync setup wizard. If |sync_everything|
   // is true, shows the corresponding page in the customize screen; otherwise,
   // displays the page that gives the user the ability to select which data
-  // types to sync.
-  void ShowConfigure(gfx::NativeWindow parent_window, bool sync_everything);
+  // types to sync.  |web_ui| is the WebUI object for a current settings tab,
+  // NULL if one doesn't exist or the calling code doesn't know.
+  void ShowConfigure(WebUI* web_ui, bool sync_everything);
 
-  void PromptForExistingPassphrase(gfx::NativeWindow parent_window);
-  void SigninForPassphraseMigration(gfx::NativeWindow parent_window);
+  void PromptForExistingPassphrase(WebUI* web_ui);
+
+  void ShowSyncSetup(WebUI* web_ui, SyncSetupWizard::State state);
 
   // Pretty-printed strings for a given StatusSummary.
   static std::string BuildSyncStatusSummaryText(
@@ -281,12 +292,20 @@ class ProfileSyncService : public browser_sync::SyncFrontend,
     return is_auth_in_progress_;
   }
 
-  bool observed_passphrase_required() const {
-    return observed_passphrase_required_;
+  // Returns true if OnPassphraseRequired has been called for any reason.
+  bool IsPassphraseRequired() const {
+    return passphrase_required_reason_ !=
+        sync_api::REASON_PASSPHRASE_NOT_REQUIRED;
   }
 
-  bool passphrase_required_for_decryption() const {
-    return passphrase_required_for_decryption_;
+  // Returns true if OnPassphraseRequired has been called for decryption.
+  bool IsPassphraseRequiredForDecryption() const {
+    return (passphrase_required_reason_ == sync_api::REASON_DECRYPTION ||
+        passphrase_required_reason_ == sync_api::REASON_SET_PASSPHRASE_FAILED);
+  }
+
+  sync_api::PassphraseRequiredReason passphrase_required_reason() const {
+    return passphrase_required_reason_;
   }
 
   // Returns a user-friendly string form of last synced time (in minutes).
@@ -355,6 +374,13 @@ class ProfileSyncService : public browser_sync::SyncFrontend,
   // server.
   bool HasUnsyncedItems() const;
 
+  // Logs the current unsynced items in the sync database. Useful for debugging.
+  void LogUnsyncedItems(int level) const;
+
+  // Returns whether or not the sync service is reconfiguring due
+  // to server-initiated resynchronization.
+  bool HasPendingBackendMigration() const;
+
   // Get the current routing information for all enabled model types.
   // If a model type is not enabled (that is, if the syncer should not
   // be trying to sync it), it is not in this map.
@@ -381,6 +407,7 @@ class ProfileSyncService : public browser_sync::SyncFrontend,
       syncable::AutofillMigrationDebugInfo::PropertyToSet property_to_set,
       const syncable::AutofillMigrationDebugInfo& info);
 
+  // TODO(zea): Remove these and have the dtc's call directly into the SBH.
   virtual void ActivateDataType(
       browser_sync::DataTypeController* data_type_controller,
       browser_sync::ChangeProcessor* change_processor);
@@ -447,6 +474,8 @@ class ProfileSyncService : public browser_sync::SyncFrontend,
       const syncable::ModelTypeSet& encrypted_types);
 
   // Get the currently encrypted data types.
+  // Note: this can include types that this client is not syncing. Passwords
+  // will always be in this list.
   virtual void GetEncryptedDataTypes(
       syncable::ModelTypeSet* encrypted_types) const;
 
@@ -504,16 +533,10 @@ class ProfileSyncService : public browser_sync::SyncFrontend,
   // Cache of the last name the client attempted to authenticate.
   std::string last_attempted_user_email_;
 
-  // Whether we have seen a SYNC_PASSPHRASE_REQUIRED since initializing the
-  // backend, telling us that it is safe to send a passphrase down ASAP.
-  bool observed_passphrase_required_;
-
   // Was the last SYNC_PASSPHRASE_REQUIRED notification sent because it
-  // was required for decryption?
-  bool passphrase_required_for_decryption_;
-
-  // Is the user in a passphrase migration?
-  bool passphrase_migration_in_progress_;
+  // was required for encryption, decryption with a cached passphrase, or
+  // because a new passphrase is required?
+  sync_api::PassphraseRequiredReason passphrase_required_reason_;
 
  private:
   friend class ProfileSyncServicePasswordTest;
@@ -638,9 +661,25 @@ class ProfileSyncService : public browser_sync::SyncFrontend,
   // is reworked to allow one-shot commands like clearing server data.
   base::OneShotTimer<ProfileSyncService> clear_server_data_timer_;
 
-  // The set of encrypted types. This is updated whenever datatypes are
-  // encrypted through the OnEncryptionComplete callback of SyncFrontend.
-  syncable::ModelTypeSet encrypted_types_;
+  // We keep track of both the currently encrypted types and the types
+  // we will soon be attempting to encrypt.
+  struct EncryptedTypes {
+    // Always initialize current with syncable::PASSWORDS.
+    EncryptedTypes();
+    ~EncryptedTypes();
+
+    // The currently encrypted types. Updated by OnEncryptionComplete whenever
+    // datatypes finish encryption.
+    syncable::ModelTypeSet current;
+
+    // The most recently requested set of types to encrypt. Set by the user,
+    // and cached if the syncer was unable to encrypt new types (for example
+    // because we haven't finished initializing). Cleared when we successfully
+    // post a new encrypt task to the sync backend.
+    syncable::ModelTypeSet pending;
+  };
+
+  EncryptedTypes encrypted_types_;
 
   scoped_ptr<browser_sync::BackendMigrator> migrator_;
 

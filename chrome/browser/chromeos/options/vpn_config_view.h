@@ -12,9 +12,7 @@
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/options/network_config_view.h"
 #include "chrome/browser/ui/shell_dialogs.h"
-#include "ui/base/models/combobox_model.h"
 #include "views/controls/button/button.h"
-#include "views/controls/button/native_button.h"
 #include "views/controls/combobox/combobox.h"
 #include "views/controls/textfield/textfield_controller.h"
 #include "views/view.h"
@@ -56,27 +54,6 @@ class VPNConfigView : public ChildNetworkConfigView,
   virtual void InitFocus() OVERRIDE;
 
  private:
-  class ProviderTypeComboboxModel : public ui::ComboboxModel {
-   public:
-    ProviderTypeComboboxModel() {}
-    virtual ~ProviderTypeComboboxModel() {}
-    virtual int GetItemCount();
-    virtual string16 GetItemAt(int index);
-   private:
-    DISALLOW_COPY_AND_ASSIGN(ProviderTypeComboboxModel);
-  };
-
-  class UserCertComboboxModel : public ui::ComboboxModel {
-   public:
-    UserCertComboboxModel();
-    virtual ~UserCertComboboxModel() {}
-    virtual int GetItemCount();
-    virtual string16 GetItemAt(int index);
-   private:
-    std::vector<std::string> user_certs_;
-    DISALLOW_COPY_AND_ASSIGN(UserCertComboboxModel);
-  };
-
   // Initializes data members and create UI controls.
   void Init(VirtualNetwork* vpn);
 
@@ -104,16 +81,14 @@ class VPNConfigView : public ChildNetworkConfigView,
   bool service_text_modified_;
   VirtualNetwork::ProviderType provider_type_;
 
-  views::Label* service_text_;
-  views::Textfield* service_textfield_;
   views::Label* server_text_;
   views::Textfield* server_textfield_;
+  views::Label* service_text_;
+  views::Textfield* service_textfield_;
   views::Combobox* provider_type_combobox_;
   views::Label* provider_type_text_label_;
   views::Label* psk_passphrase_label_;
   views::Textfield* psk_passphrase_textfield_;
-  views::Label* user_cert_label_;
-  views::Combobox* user_cert_combobox_;
   views::Textfield* username_textfield_;
   views::Textfield* user_passphrase_textfield_;
   views::Label* error_label_;

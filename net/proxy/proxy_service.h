@@ -14,6 +14,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/non_thread_safe.h"
 #include "net/base/completion_callback.h"
+#include "net/base/net_api.h"
 #include "net/base/net_log.h"
 #include "net/base/network_change_notifier.h"
 #include "net/proxy/proxy_config_service.h"
@@ -25,8 +26,10 @@ class MessageLoop;
 
 namespace net {
 
+class DhcpProxyScriptFetcher;
 class HostResolver;
 class InitProxyResolver;
+class NetworkDelegate;
 class ProxyResolver;
 class ProxyScriptFetcher;
 class URLRequestContext;
@@ -34,10 +37,9 @@ class URLRequestContext;
 // This class can be used to resolve the proxy server to use when loading a
 // HTTP(S) URL.  It uses the given ProxyResolver to handle the actual proxy
 // resolution.  See ProxyResolverV8 for example.
-class ProxyService : public base::RefCounted<ProxyService>,
-                     public NetworkChangeNotifier::IPAddressObserver,
-                     public ProxyConfigService::Observer,
-                     public base::NonThreadSafe {
+class NET_API ProxyService : public NetworkChangeNotifier::IPAddressObserver,
+                             public ProxyConfigService::Observer,
+                             NON_EXPORTED_BASE(public base::NonThreadSafe) {
  public:
   // The instance takes ownership of |config_service| and |resolver|.
   // |net_log| is a possibly NULL destination to send log events to. It must
@@ -45,6 +47,8 @@ class ProxyService : public base::RefCounted<ProxyService>,
   ProxyService(ProxyConfigService* config_service,
                ProxyResolver* resolver,
                NetLog* net_log);
+
+  virtual ~ProxyService();
 
   // Used internally to handle PAC queries.
   // TODO(eroman): consider naming this simply "Request".
@@ -96,10 +100,12 @@ class ProxyService : public base::RefCounted<ProxyService>,
   // Call this method with a non-null |pac_request| to cancel the PAC request.
   void CancelPacRequest(PacRequest* pac_request);
 
-  // Sets the ProxyScriptFetcher dependency. This is needed if the ProxyResolver
-  // is of type ProxyResolverWithoutFetch. ProxyService takes ownership of
-  // |proxy_script_fetcher|.
-  void SetProxyScriptFetcher(ProxyScriptFetcher* proxy_script_fetcher);
+  // Sets the ProxyScriptFetcher and DhcpProxyScriptFetcher dependencies. This
+  // is needed if the ProxyResolver is of type ProxyResolverWithoutFetch.
+  // ProxyService takes ownership of both objects.
+  void SetProxyScriptFetchers(
+      ProxyScriptFetcher* proxy_script_fetcher,
+      DhcpProxyScriptFetcher* dhcp_proxy_script_fetcher);
   ProxyScriptFetcher* GetProxyScriptFetcher() const;
 
   // Tells this ProxyService to start using a new ProxyConfigService to
@@ -159,6 +165,10 @@ class ProxyService : public base::RefCounted<ProxyService>,
   // |proxy_script_fetcher| specifies the dependency to use for downloading
   // any PAC scripts. The resulting ProxyService will take ownership of it.
   //
+  // |dhcp_proxy_script_fetcher| specifies the dependency to use for attempting
+  // to retrieve the most appropriate PAC script configured in DHCP. The
+  // resulting ProxyService will take ownership of it.
+  //
   // |host_resolver| points to the host resolving dependency the PAC script
   // should use for any DNS queries. It must remain valid throughout the
   // lifetime of the ProxyService.
@@ -172,8 +182,10 @@ class ProxyService : public base::RefCounted<ProxyService>,
       ProxyConfigService* proxy_config_service,
       size_t num_pac_threads,
       ProxyScriptFetcher* proxy_script_fetcher,
+      DhcpProxyScriptFetcher* dhcp_proxy_script_fetcher,
       HostResolver* host_resolver,
-      NetLog* net_log);
+      NetLog* net_log,
+      NetworkDelegate* network_delegate);
 
   // Same as CreateUsingV8ProxyResolver, except it uses system libraries
   // for evaluating the PAC script if available, otherwise skips
@@ -210,14 +222,12 @@ class ProxyService : public base::RefCounted<ProxyService>,
   static ProxyConfigService* CreateSystemProxyConfigService(
       MessageLoop* io_loop, MessageLoop* file_loop);
 
-#if UNIT_TEST
+  // This method should only be used by unit tests.
   void set_stall_proxy_auto_config_delay(base::TimeDelta delay) {
     stall_proxy_auto_config_delay_ = delay;
   }
-#endif
 
  private:
-  friend class base::RefCounted<ProxyService>;
   FRIEND_TEST_ALL_PREFIXES(ProxyServiceTest, UpdateConfigAfterFailedAutodetect);
   FRIEND_TEST_ALL_PREFIXES(ProxyServiceTest, UpdateConfigFromPACToDirect);
   friend class PacRequest;
@@ -234,8 +244,6 @@ class ProxyService : public base::RefCounted<ProxyService>,
     STATE_WAITING_FOR_INIT_PROXY_RESOLVER,
     STATE_READY,
   };
-
-  virtual ~ProxyService();
 
   // Resets all the variables associated with the current proxy configuration,
   // and rewinds the current state to |STATE_NONE|. Returns the previous value
@@ -319,6 +327,11 @@ class ProxyService : public base::RefCounted<ProxyService>,
   // external PAC script fetching.
   scoped_ptr<ProxyScriptFetcher> proxy_script_fetcher_;
 
+  // The fetcher to use when attempting to download the most appropriate PAC
+  // script configured in DHCP, if any. Can be NULL if the ProxyResolver has
+  // no need for DHCP PAC script fetching.
+  scoped_ptr<DhcpProxyScriptFetcher> dhcp_proxy_script_fetcher_;
+
   // Callback for when |init_proxy_resolver_| is done.
   CompletionCallbackImpl<ProxyService> init_proxy_resolver_callback_;
 
@@ -329,6 +342,10 @@ class ProxyService : public base::RefCounted<ProxyService>,
   scoped_ptr<InitProxyResolver> init_proxy_resolver_;
 
   State current_state_;
+
+  // Either OK or an ERR_* value indicating that a permanent error (e.g.
+  // failed to fetch the PAC script) prevents proxy resolution.
+  int permanent_error_;
 
   // This is the log where any events generated by |init_proxy_resolver_| are
   // sent to.

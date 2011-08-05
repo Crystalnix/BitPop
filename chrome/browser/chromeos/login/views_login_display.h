@@ -59,12 +59,10 @@ class ViewsLoginDisplay : public LoginDisplay,
   virtual void StartEnterpriseEnrollment() OVERRIDE;
 
   // Overridden from views::MessageBubbleDelegate:
-  virtual void BubbleClosing(Bubble* bubble, bool closed_by_escape) {
-    bubble_ = NULL;
-  }
-  virtual bool CloseOnEscape() { return true; }
-  virtual bool FadeInOnShow() { return false; }
-  virtual void OnHelpLinkActivated();
+  virtual void BubbleClosing(Bubble* bubble, bool closed_by_escape);
+  virtual bool CloseOnEscape();
+  virtual bool FadeInOnShow();
+  virtual void OnLinkActivated(size_t index);
 
  private:
   // Returns existing UserController instance by |email|.

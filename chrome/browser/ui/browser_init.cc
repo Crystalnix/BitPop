@@ -23,6 +23,7 @@
 #include "chrome/browser/automation/testing_automation_provider.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/defaults.h"
+#include "chrome/browser/custom_handlers/protocol_handler_registry.h"
 #include "chrome/browser/extensions/extension_creator.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/pack_extension_job.h"
@@ -36,10 +37,12 @@
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service.h"
 #include "chrome/browser/printing/print_dialog_cloud.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_io_data.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_model.h"
 #include "chrome/browser/sessions/session_restore.h"
 #include "chrome/browser/sessions/session_service.h"
+#include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/tab_contents/link_infobar_delegate.h"
 #include "chrome/browser/tab_contents/simple_alert_infobar_delegate.h"
@@ -59,16 +62,15 @@
 #include "content/browser/browser_thread.h"
 #include "content/browser/child_process_security_policy.h"
 #include "content/browser/renderer_host/render_process_host.h"
-#include "content/browser/tab_contents/navigation_controller.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/browser/tab_contents/navigation_details.h"
 #include "content/browser/tab_contents/tab_contents_view.h"
 #include "content/common/result_codes.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "net/base/net_util.h"
-#include "net/url_request/url_request.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "webkit/glue/webkit_glue.h"
@@ -94,8 +96,6 @@
 #include "chrome/browser/chromeos/sms_observer.h"
 #include "chrome/browser/chromeos/update_observer.h"
 #include "chrome/browser/chromeos/wm_message_listener.h"
-#include "chrome/browser/chromeos/wm_overview_controller.h"
-#include "chrome/browser/ui/webui/mediaplayer_ui.h"
 #endif
 
 #if defined(HAVE_XINPUT2)
@@ -142,9 +142,8 @@ class DefaultBrowserInfoBarDelegate : public ConfirmInfoBarDelegate {
 
   // ConfirmInfoBarDelegate:
   virtual bool ShouldExpire(
-      const NavigationController::LoadCommittedDetails& details) const OVERRIDE;
-  virtual void InfoBarClosed() OVERRIDE;
-  virtual SkBitmap* GetIcon() const OVERRIDE;
+      const content::LoadCommittedDetails& details) const OVERRIDE;
+  virtual gfx::Image* GetIcon() const OVERRIDE;
   virtual string16 GetMessageText() const OVERRIDE;
   virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool NeedElevation(InfoBarButton button) const OVERRIDE;
@@ -181,21 +180,17 @@ DefaultBrowserInfoBarDelegate::DefaultBrowserInfoBarDelegate(
 }
 
 DefaultBrowserInfoBarDelegate::~DefaultBrowserInfoBarDelegate() {
+  if (!action_taken_)
+    UMA_HISTOGRAM_COUNTS("DefaultBrowserWarning.Ignored", 1);
 }
 
 bool DefaultBrowserInfoBarDelegate::ShouldExpire(
-    const NavigationController::LoadCommittedDetails& details) const {
-  return should_expire_;
+    const content::LoadCommittedDetails& details) const {
+  return details.is_user_initiated_main_frame_load() && should_expire_;
 }
 
-void DefaultBrowserInfoBarDelegate::InfoBarClosed() {
-  if (!action_taken_)
-    UMA_HISTOGRAM_COUNTS("DefaultBrowserWarning.Ignored", 1);
-  delete this;
-}
-
-SkBitmap* DefaultBrowserInfoBarDelegate::GetIcon() const {
-  return ResourceBundle::GetSharedInstance().GetBitmapNamed(
+gfx::Image* DefaultBrowserInfoBarDelegate::GetIcon() const {
+  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
      IDR_PRODUCT_ICON_32);
 }
 
@@ -257,10 +252,10 @@ void NotifyNotDefaultBrowserTask::Run() {
   // Don't show the info-bar if there are already info-bars showing.
   // In ChromeBot tests, there might be a race. This line appears to get
   // called during shutdown and |tab| can be NULL.
-  TabContents* tab = browser->GetSelectedTabContents();
+  TabContentsWrapper* tab = browser->GetSelectedTabContentsWrapper();
   if (!tab || tab->infobar_count() > 0)
     return;
-  tab->AddInfoBar(new DefaultBrowserInfoBarDelegate(tab));
+  tab->AddInfoBar(new DefaultBrowserInfoBarDelegate(tab->tab_contents()));
 }
 
 
@@ -304,8 +299,7 @@ class SessionCrashedInfoBarDelegate : public ConfirmInfoBarDelegate {
   virtual ~SessionCrashedInfoBarDelegate();
 
   // ConfirmInfoBarDelegate:
-  virtual void InfoBarClosed() OVERRIDE;
-  virtual SkBitmap* GetIcon() const OVERRIDE;
+  virtual gfx::Image* GetIcon() const OVERRIDE;
   virtual string16 GetMessageText() const OVERRIDE;
   virtual int GetButtons() const OVERRIDE;
   virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
@@ -326,12 +320,8 @@ SessionCrashedInfoBarDelegate::SessionCrashedInfoBarDelegate(
 SessionCrashedInfoBarDelegate::~SessionCrashedInfoBarDelegate() {
 }
 
-void SessionCrashedInfoBarDelegate::InfoBarClosed() {
-  delete this;
-}
-
-SkBitmap* SessionCrashedInfoBarDelegate::GetIcon() const {
-  return ResourceBundle::GetSharedInstance().GetBitmapNamed(
+gfx::Image* SessionCrashedInfoBarDelegate::GetIcon() const {
+  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
       IDR_INFOBAR_RESTORE_SESSION);
 }
 
@@ -565,15 +555,6 @@ bool BrowserInit::LaunchBrowser(const CommandLine& command_line,
   // of what window has focus.
   chromeos::WmMessageListener::GetInstance();
 
-  // Create the WmOverviewController so it can register with the listener.
-  chromeos::WmOverviewController::GetInstance();
-
-  // Install the GView request interceptor that will redirect requests
-  // of compatible documents (PDF, etc) to the GView document viewer.
-  const CommandLine& parsed_command_line = *CommandLine::ForCurrentProcess();
-  if (parsed_command_line.HasSwitch(switches::kEnableGView)) {
-    chromeos::GViewRequestInterceptor::GetInstance();
-  }
   if (process_startup) {
     // This observer is a singleton. It is never deleted but the pointer is kept
     // in a static so that it isn't reported as a leak.
@@ -780,7 +761,8 @@ bool BrowserInit::LaunchWithProfile::OpenApplicationTab(Profile* profile) {
 
   RecordCmdLineAppHistogram();
 
-  TabContents* app_tab = Browser::OpenApplicationTab(profile, extension, NULL);
+  TabContents* app_tab = Browser::OpenApplicationTab(profile, extension,
+                                                     NEW_FOREGROUND_TAB);
   return (app_tab != NULL);
 }
 
@@ -808,7 +790,7 @@ bool BrowserInit::LaunchWithProfile::OpenApplicationWindow(Profile* profile) {
 
     RecordCmdLineAppHistogram();
     TabContents* tab_in_app_window = Browser::OpenApplication(
-        profile, extension, launch_container, NULL);
+        profile, extension, launch_container, NEW_WINDOW);
     return (tab_in_app_window != NULL);
   }
 
@@ -858,13 +840,15 @@ void BrowserInit::LaunchWithProfile::ProcessLaunchURLs(
     return;
   }
 
-  if (!process_startup &&
-      (profile_->GetSessionService() &&
-       profile_->GetSessionService()->RestoreIfNecessary(urls_to_open))) {
-    // We're already running and session restore wanted to run. This can happen
-    // at various points, such as if there is only an app window running and the
-    // user double clicked the chrome icon. Return so we don't open the urls.
-    return;
+  if (!process_startup) {
+    SessionService* service = SessionServiceFactory::GetForProfile(profile_);
+    if (service && service->RestoreIfNecessary(urls_to_open)) {
+      // We're already running and session restore wanted to run. This can
+      // happen at various points, such as if there is only an app window
+      // running and the user double clicked the chrome icon. Return so we don't
+      // open the urls.
+      return;
+    }
   }
 
   // Session restore didn't occur, open the urls.
@@ -977,7 +961,7 @@ Browser* BrowserInit::LaunchWithProfile::OpenTabsInBrowser(
   if (!profile_ && browser)
     profile_ = browser->profile();
 
-  if (!browser || browser->type() != Browser::TYPE_NORMAL) {
+  if (!browser || !browser->is_type_tabbed()) {
     browser = Browser::Create(profile_);
   } else {
 #if defined(TOOLKIT_GTK)
@@ -1000,7 +984,10 @@ Browser* BrowserInit::LaunchWithProfile::OpenTabsInBrowser(
     // This avoids us getting into an infinite loop asking ourselves to open
     // a URL, should the handler be (incorrectly) configured to be us. Anyone
     // asking us to open such a URL should really ask the handler directly.
-    if (!process_startup && !net::URLRequest::IsHandledURL(tabs[i].url))
+    bool handled_by_chrome = ProfileIOData::IsHandledURL(tabs[i].url) ||
+        (profile_ && profile_->GetProtocolHandlerRegistry()->IsHandledProtocol(
+            tabs[i].url.scheme()));
+    if (!process_startup && !handled_by_chrome)
       continue;
 
     int add_types = first_tab ? TabStripModel::ADD_ACTIVE :
@@ -1032,7 +1019,7 @@ void BrowserInit::LaunchWithProfile::AddInfoBarsIfNecessary(Browser* browser) {
   if (!browser || !profile_ || browser->tab_count() == 0)
     return;
 
-  TabContents* tab_contents = browser->GetSelectedTabContents();
+  TabContentsWrapper* tab_contents = browser->GetSelectedTabContentsWrapper();
   AddCrashedInfoBarIfNecessary(tab_contents);
   AddBadFlagsInfoBarIfNecessary(tab_contents);
   AddDNSCertProvenanceCheckingWarningInfoBarIfNecessary(tab_contents);
@@ -1040,7 +1027,7 @@ void BrowserInit::LaunchWithProfile::AddInfoBarsIfNecessary(Browser* browser) {
 }
 
 void BrowserInit::LaunchWithProfile::AddCrashedInfoBarIfNecessary(
-    TabContents* tab) {
+    TabContentsWrapper* tab) {
   // Assume that if the user is launching incognito they were previously
   // running incognito so that we have nothing to restore from.
   if (!profile_->DidLastSessionExitCleanly() &&
@@ -1048,12 +1035,12 @@ void BrowserInit::LaunchWithProfile::AddCrashedInfoBarIfNecessary(
     // The last session didn't exit cleanly. Show an infobar to the user
     // so that they can restore if they want. The delegate deletes itself when
     // it is closed.
-    tab->AddInfoBar(new SessionCrashedInfoBarDelegate(tab));
+    tab->AddInfoBar(new SessionCrashedInfoBarDelegate(tab->tab_contents()));
   }
 }
 
 void BrowserInit::LaunchWithProfile::AddBadFlagsInfoBarIfNecessary(
-    TabContents* tab) {
+    TabContentsWrapper* tab) {
   // Unsupported flags for which to display a warning that "stability and
   // security will suffer".
   static const char* kBadFlags[] = {
@@ -1061,9 +1048,6 @@ void BrowserInit::LaunchWithProfile::AddBadFlagsInfoBarIfNecessary(
     switches::kSingleProcess,
     switches::kNoSandbox,
     switches::kInProcessWebGL,
-    // These are scary features for developers that shouldn't be turned on
-    // persistently.
-    switches::kEnableNaCl,
     NULL
   };
 
@@ -1076,7 +1060,7 @@ void BrowserInit::LaunchWithProfile::AddBadFlagsInfoBarIfNecessary(
   }
 
   if (bad_flag) {
-    tab->AddInfoBar(new SimpleAlertInfoBarDelegate(tab, NULL,
+    tab->AddInfoBar(new SimpleAlertInfoBarDelegate(tab->tab_contents(), NULL,
         l10n_util::GetStringFUTF16(IDS_BAD_FLAGS_WARNING_MESSAGE,
                                    UTF8ToUTF16(std::string("--") + bad_flag)),
         false));
@@ -1134,7 +1118,8 @@ bool LearnMoreInfoBar::LinkClicked(WindowOpenDisposition disposition) {
 // This is the page which provides information on DNS certificate provenance
 // checking.
 void BrowserInit::LaunchWithProfile::
-    AddDNSCertProvenanceCheckingWarningInfoBarIfNecessary(TabContents* tab) {
+    AddDNSCertProvenanceCheckingWarningInfoBarIfNecessary(
+        TabContentsWrapper* tab) {
   if (!command_line_.HasSwitch(switches::kEnableDNSCertProvenanceChecking))
     return;
 
@@ -1142,13 +1127,13 @@ void BrowserInit::LaunchWithProfile::
       "http://dev.chromium.org/dnscertprovenancechecking";
   string16 message = l10n_util::GetStringUTF16(
       IDS_DNS_CERT_PROVENANCE_CHECKING_WARNING_MESSAGE);
-  tab->AddInfoBar(new LearnMoreInfoBar(tab,
+  tab->AddInfoBar(new LearnMoreInfoBar(tab->tab_contents(),
                                        message,
                                        GURL(kLearnMoreURL)));
 }
 
 void BrowserInit::LaunchWithProfile::AddObsoleteSystemInfoBarIfNecessary(
-    TabContents* tab) {
+    TabContentsWrapper* tab) {
 #if defined(TOOLKIT_USES_GTK)
   // We've deprecated support for Ubuntu Hardy.  Rather than attempting to
   // determine whether you're using that, we instead key off the GTK version;
@@ -1165,7 +1150,7 @@ void BrowserInit::LaunchWithProfile::AddObsoleteSystemInfoBarIfNecessary(
     // Link to an article in the help center on minimum system requirements.
     const char* kLearnMoreURL =
         "http://www.google.com/support/chrome/bin/answer.py?answer=95411";
-    tab->AddInfoBar(new LearnMoreInfoBar(tab,
+    tab->AddInfoBar(new LearnMoreInfoBar(tab->tab_contents(),
                                          message,
                                          GURL(kLearnMoreURL)));
   }
@@ -1186,7 +1171,7 @@ void BrowserInit::LaunchWithProfile::AddStartupURLs(
       while (it != browser_init_->first_run_tabs_.end()) {
         // Replace magic names for the actual urls.
         if (it->host() == "new_tab_page") {
-          startup_urls->push_back(GURL());
+          startup_urls->push_back(GURL(chrome::kChromeUINewTabURL));
         } else if (it->host() == "welcome_page") {
           startup_urls->push_back(GetWelcomePageURL());
         } else {
@@ -1243,7 +1228,7 @@ std::vector<GURL> BrowserInit::GetURLsFromCommandLine(
     const FilePath& cur_dir,
     Profile* profile) {
   std::vector<GURL> urls;
-  const std::vector<CommandLine::StringType>& params = command_line.args();
+  CommandLine::StringVector params = command_line.args();
 
   for (size_t i = 0; i < params.size(); ++i) {
     FilePath param = FilePath(params[i]);

@@ -7,7 +7,7 @@
 #include <string>
 
 #include "base/message_loop.h"
-#include "chrome/common/net/url_fetcher.h"
+#include "content/common/url_fetcher.h"
 #include "googleurl/src/gurl.h"
 #include "net/url_request/url_request_status.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -33,6 +33,8 @@ MockAuthResponseHandler::MockAuthResponseHandler(
       .WillByDefault(Invoke(this, &MockAuthResponseHandler::MockNetwork));
 }
 
+MockAuthResponseHandler::~MockAuthResponseHandler() {}
+
 void MockAuthResponseHandler::CompleteFetch(URLFetcher::Delegate* delegate,
                                             const GURL remote,
                                             const net::URLRequestStatus status,
@@ -42,7 +44,7 @@ void MockAuthResponseHandler::CompleteFetch(URLFetcher::Delegate* delegate,
                                remote,
                                status,
                                http_response_code,
-                               ResponseCookies(),
+                               net::ResponseCookies(),
                                data);
 }
 

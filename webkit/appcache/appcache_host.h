@@ -48,7 +48,7 @@ class AppCacheHost : public AppCacheStorage::Delegate,
 
   AppCacheHost(int host_id, AppCacheFrontend* frontend,
                AppCacheService* service);
-  ~AppCacheHost();
+  virtual ~AppCacheHost();
 
   // Adds/removes an observer, the AppCacheHost does not take
   // ownership of the observer.
@@ -241,6 +241,9 @@ class AppCacheHost : public AppCacheStorage::Delegate,
 
   // List of objects observing us.
   ObserverList<Observer> observers_;
+
+  // Used to inform the QuotaManager of what origins are currently in use.
+  GURL origin_in_use_;
 
   friend class AppCacheRequestHandlerTest;
   friend class AppCacheUpdateJobTest;

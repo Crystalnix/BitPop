@@ -104,7 +104,8 @@ class FindBadConstructsConsumer : public ChromeClassTester {
     if (ctor_score >= 10) {
       if (!record->hasUserDeclaredConstructor()) {
         emitWarning(record_location,
-                    "Complex class/struct needs a declared constructor.");
+                    "Complex class/struct needs an explicit out-of-line "
+                    "constructor.");
       } else {
         // Iterate across all the constructors in this file and yell if we
         // find one that tries to be inline.
@@ -122,12 +123,35 @@ class FindBadConstructsConsumer : public ChromeClassTester {
     // trivial members; 20 ints don't need a destructor.
     if (dtor_score >= 10 && !record->hasTrivialDestructor()) {
       if (!record->hasUserDeclaredDestructor()) {
-        emitWarning(record_location,
-                    "Complex class/struct needs a declared destructor.");
+        emitWarning(
+            record_location,
+            "Complex class/struct needs an explicit out-of-line "
+            "destructor.");
       } else if (CXXDestructorDecl* dtor = record->getDestructor()) {
         if (dtor->hasInlineBody()) {
           emitWarning(dtor->getInnerLocStart(),
                       "Complex destructor has an inline body.");
+        }
+      }
+    }
+  }
+
+  void CheckVirtualMethod(const CXXMethodDecl *method) {
+    SourceLocation loc = method->getTypeSpecStartLoc();
+    if (isa<CXXDestructorDecl>(method))
+      loc = method->getInnerLocStart();
+
+    if (method->isVirtual() && !method->isVirtualAsWritten())
+      emitWarning(loc, "Overridden method must have \"virtual\" keyword.");
+
+    // Virtual methods should not have inline definitions beyond "{}".
+    if (method->isVirtual() && method->hasBody() && method->hasInlineBody()) {
+      if (CompoundStmt* cs = dyn_cast<CompoundStmt>(method->getBody())) {
+        if (cs->size()) {
+          emitWarning(
+              cs->getLBracLoc(),
+              "virtual methods with non-empty bodies shouldn't be "
+              "declared inline.");
         }
       }
     }
@@ -159,28 +183,11 @@ class FindBadConstructsConsumer : public ChromeClassTester {
       if (it->isCopyAssignmentOperator() ||
           dyn_cast<CXXConstructorDecl>(*it)) {
         // Ignore constructors and assignment operators.
-      } else if (dyn_cast<CXXDestructorDecl>(*it)) {
-        // TODO: I'd love to handle this case, but
-        // CXXDestructorDecl::isImplicitlyDefined() asserts if I call it
-        // here, and against my better judgment, I don't want to *always*
-        // disallow implicit destructors.
+      } else if (dyn_cast<CXXDestructorDecl>(*it) &&
+          !record->hasUserDeclaredDestructor()) {
+        // Ignore non-userdeclared destructors.
       } else {
-        if (it->isVirtual() && !it->isVirtualAsWritten()) {
-          emitWarning(it->getTypeSpecStartLoc(),
-                      "Overridden method must have \"virtual\" keyword.");
-        }
-
-        // Virtual methods should not have inline definitions beyond "{}".
-        if (it->isVirtual() && it->hasBody() && it->hasInlineBody()) {
-          if (CompoundStmt* cs = dyn_cast<CompoundStmt>(it->getBody())) {
-            if (cs->size()) {
-              emitWarning(
-                  cs->getLBracLoc(),
-                  "virtual methods with non-empty bodies shouldn't be "
-                  "declared inline.");
-            }
-          }
-        }
+        CheckVirtualMethod(*it);
       }
     }
   }

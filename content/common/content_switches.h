@@ -13,8 +13,11 @@ namespace switches {
 extern const char kAllowFileAccessFromFiles[];
 extern const char kAllowSandboxDebugging[];
 extern const char kBrowserSubprocessPath[];
+// TODO(jam): this doesn't belong in content.
+extern const char kChromeFrame[];
 extern const char kDisable3DAPIs[];
 extern const char kDisableAcceleratedCompositing[];
+extern const char kDisableAltWinstation[];
 extern const char kDisableApplicationCache[];
 extern const char kDisableAudio[];
 extern const char kDisableBackingStoreLimit[];
@@ -49,7 +52,6 @@ extern const char kEnableDeviceMotion[];
 extern const char kEnableGPUPlugin[];
 extern const char kEnableLogging[];
 extern const char kEnableMonitorProfile[];
-extern const char kEnableP2PApi[];
 extern const char kEnablePreparsedJsCaching[];
 extern const char kEnableSandboxLogging[];
 extern const char kEnableSeccompSandbox[];
@@ -74,7 +76,10 @@ extern const char kLoadPlugin[];
 extern const char kLoggingLevel[];
 extern const char kLogPluginMessages[];
 // TODO(jam): this doesn't belong in content.
+extern const char kNaClBrokerProcess[];
 extern const char kNaClLoaderProcess[];
+extern const char kNoDisplayingInsecureContent[];
+extern const char kNoRunningInsecureContent[];
 extern const char kNoJsRandomness[];
 extern const char kNoReferrers[];
 extern const char kNoSandbox[];
@@ -84,6 +89,7 @@ extern const char kPluginPath[];
 extern const char kPluginProcess[];
 extern const char kPluginStartupDialog[];
 extern const char kPpapiBrokerProcess[];
+extern const char kPpapiFlashArgs[];
 extern const char kPpapiFlashPath[];
 extern const char kPpapiFlashVersion[];
 extern const char kPpapiOutOfProcess[];
@@ -102,7 +108,6 @@ extern const char kRendererCmdPrefix[];
 extern const char kRendererCrashTest[];
 extern const char kRendererProcess[];
 extern const char kRendererStartupDialog[];
-extern const char kSafePlugins[];
 // TODO(jam): this doesn't belong in content.
 extern const char kServiceProcess[];
 extern const char kShowPaintRects[];
@@ -121,6 +126,10 @@ extern const char kWebWorkerShareProcesses[];
 extern const char kWorkerProcess[];
 extern const char kZygoteCmdPrefix[];
 extern const char kZygoteProcess[];
+
+#if defined(ENABLE_P2P_APIS)
+extern const char kEnableP2PApi[];
+#endif
 
 #if !defined(OFFICIAL_BUILD)
 extern const char kRendererCheckFalseTest[];

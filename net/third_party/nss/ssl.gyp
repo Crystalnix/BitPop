@@ -1,10 +1,10 @@
-# Copyright (c) 2009 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 {
   'conditions': [
-    [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd"', {
+    [ 'os_posix == 1 and OS != "mac"', {
       'conditions': [
         ['sysroot!=""', {
           'variables': {
@@ -23,7 +23,7 @@
     {
       'target_name': 'ssl',
       'product_name': 'ssl',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         'ssl/authcert.c',
         'ssl/cmpcert.c',
@@ -83,6 +83,7 @@
         # Regrettably, NSS can't be compiled with NO_NSPR_10_SUPPORT yet.
         'NO_NSPR_10_SUPPORT',
       ],
+      'msvs_disabled_warnings': [4018, 4244],
       'conditions': [
         [ 'OS=="mac"', {
           'defines': [
@@ -104,7 +105,7 @@
             ],
           },
         ],
-        [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd"', {
+        [ 'os_posix == 1 and OS != "mac"', {
           'defines': [
             # These macros are needed only for compiling the files in
             # ssl/bodge.

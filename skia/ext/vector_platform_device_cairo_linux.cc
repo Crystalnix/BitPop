@@ -129,17 +129,17 @@ VectorPlatformDeviceCairo::~VectorPlatformDeviceCairo() {
   cairo_destroy(context_);
 }
 
-SkDeviceFactory* VectorPlatformDeviceCairo::getDeviceFactory() {
+SkDeviceFactory* VectorPlatformDeviceCairo::onNewDeviceFactory() {
   return SkNEW(VectorPlatformDeviceCairoFactory);
-}
-
-bool VectorPlatformDeviceCairo::IsVectorial() {
-  return true;
 }
 
 PlatformDevice::PlatformSurface
 VectorPlatformDeviceCairo::BeginPlatformPaint() {
   return context_;
+}
+
+uint32_t VectorPlatformDeviceCairo::getDeviceCapabilities() {
+  return SkDevice::getDeviceCapabilities() | kVector_Capability;
 }
 
 void VectorPlatformDeviceCairo::drawBitmap(const SkDraw& draw,

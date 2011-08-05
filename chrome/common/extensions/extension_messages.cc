@@ -35,8 +35,11 @@ ExtensionMsg_Loaded_Params::ExtensionMsg_Loaded_Params(
     extension_manifest_keys::kName,
     extension_manifest_keys::kVersion,
     extension_manifest_keys::kIcons,
+    extension_manifest_keys::kPageAction,
+    extension_manifest_keys::kPageActions,
     extension_manifest_keys::kPermissions,
-    extension_manifest_keys::kApp
+    extension_manifest_keys::kApp,
+    extension_manifest_keys::kContentScripts
   };
 
   // Copy only the data we need.
@@ -104,13 +107,13 @@ void ParamTraits<URLPattern>::Log(const param_type& p, std::string* l) {
   LogParam(p.GetAsString(), l);
 }
 
-void ParamTraits<ExtensionExtent>::Write(Message* m, const param_type& p) {
+void ParamTraits<URLPatternSet>::Write(Message* m, const param_type& p) {
   WriteParam(m, p.patterns());
 }
 
-bool ParamTraits<ExtensionExtent>::Read(const Message* m, void** iter,
+bool ParamTraits<URLPatternSet>::Read(const Message* m, void** iter,
                                         param_type* p) {
-  std::vector<URLPattern> patterns;
+  URLPatternList patterns;
   bool success =
       ReadParam(m, iter, &patterns);
   if (!success)
@@ -121,7 +124,7 @@ bool ParamTraits<ExtensionExtent>::Read(const Message* m, void** iter,
   return true;
 }
 
-void ParamTraits<ExtensionExtent>::Log(const param_type& p, std::string* l) {
+void ParamTraits<URLPatternSet>::Log(const param_type& p, std::string* l) {
   LogParam(p.patterns(), l);
 }
 

@@ -146,7 +146,7 @@ class FFmpegVideoDecodeEngineTest : public testing::Test,
   }
 
  protected:
-  VideoCodecConfig config_;
+  VideoDecoderConfig config_;
   VideoCodecInfo info_;
   scoped_refptr<VideoFrame> video_frame_;
   scoped_ptr<FFmpegVideoDecodeEngine> test_engine_;
@@ -290,11 +290,9 @@ TEST_F(FFmpegVideoDecodeEngineTest, DecodeFrame_DecodeError) {
 
   EXPECT_CALL(*this, ProduceVideoSample(_))
       .WillOnce(DemuxComplete(test_engine_.get(), buffer_));
-  EXPECT_CALL(*this, ConsumeVideoFrame(_, _))
-      .WillOnce(DecodeComplete(this));
-  test_engine_->ProduceVideoFrame(video_frame_);
+  EXPECT_CALL(*this, OnError());
 
-  EXPECT_FALSE(video_frame_.get());
+  test_engine_->ProduceVideoFrame(video_frame_);
 }
 
 TEST_F(FFmpegVideoDecodeEngineTest, DecodeFrame_LargerWidth) {

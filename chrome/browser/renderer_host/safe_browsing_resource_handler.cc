@@ -5,6 +5,9 @@
 #include "chrome/browser/renderer_host/safe_browsing_resource_handler.h"
 
 #include "base/logging.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/prerender/prerender_final_status.h"
+#include "chrome/browser/prerender/prerender_tracker.h"
 #include "content/browser/renderer_host/global_request_id.h"
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
 #include "content/browser/renderer_host/resource_message_filter.h"
@@ -21,6 +24,19 @@ static const int kCheckUrlTimeoutMs = 5000;
 
 // TODO(eroman): Downgrade these CHECK()s to DCHECKs once there is more
 //               unit test coverage.
+
+// static
+SafeBrowsingResourceHandler* SafeBrowsingResourceHandler::Create(
+    ResourceHandler* handler,
+    int render_process_host_id,
+    int render_view_id,
+    ResourceType::Type resource_type,
+    SafeBrowsingService* safe_browsing,
+    ResourceDispatcherHost* resource_dispatcher_host) {
+  return new SafeBrowsingResourceHandler(
+      handler, render_process_host_id, render_view_id,
+      resource_type, safe_browsing, resource_dispatcher_host);
+}
 
 SafeBrowsingResourceHandler::SafeBrowsingResourceHandler(
     ResourceHandler* handler,
@@ -160,13 +176,26 @@ void SafeBrowsingResourceHandler::OnBrowseUrlCheckResult(
     // Continue the request.
     ResumeRequest();
   } else {
+    bool should_show_blocking_page = true;
     const net::URLRequest* request = rdh_->GetURLRequest(
         GlobalRequestID(render_process_host_id_, deferred_request_id_));
     if (request->load_flags() & net::LOAD_PREFETCH) {
       // Don't prefetch resources that fail safe browsing, disallow
       // them.
       rdh_->CancelRequest(render_process_host_id_, deferred_request_id_, false);
-    } else {
+      should_show_blocking_page = false;
+    } else if (request->load_flags() & net::LOAD_PRERENDERING) {
+      prerender::PrerenderTracker* prerender_tracker = g_browser_process->
+          prerender_tracker();
+      if (prerender_tracker->TryCancelOnIOThread(render_process_host_id_,
+                    render_view_id_,
+                    prerender::FINAL_STATUS_SAFE_BROWSING)) {
+        rdh_->CancelRequest(render_process_host_id_, deferred_request_id_,
+                            false);
+        should_show_blocking_page = false;
+      }
+    }
+    if (should_show_blocking_page) {
       StartDisplayingBlockingPage(url, result);
     }
   }

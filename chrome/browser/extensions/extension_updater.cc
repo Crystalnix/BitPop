@@ -10,6 +10,7 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/file_util.h"
+#include "base/memory/scoped_handle.h"
 #include "base/metrics/histogram.h"
 #include "base/rand_util.h"
 #include "base/stl_util-inl.h"
@@ -21,7 +22,9 @@
 #include "base/version.h"
 #include "crypto/sha2.h"
 #include "content/common/notification_service.h"
+#include "content/common/notification_source.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/prefs/pref_service.h"
@@ -55,6 +58,8 @@ using prefs::kNextExtensionsUpdateCheck;
 // Update AppID for extension blacklist.
 const char* ExtensionUpdater::kBlacklistAppID = "com.google.crx.blacklist";
 
+namespace {
+
 // Wait at least 5 minutes after browser startup before we do any checks. If you
 // change this value, make sure to update comments where it is used.
 const int kStartupWaitSeconds = 60 * 5;
@@ -66,6 +71,68 @@ static const int kMaxUpdateFrequencySeconds = 60 * 60 * 24 * 7;  // 7 days
 // Maximum length of an extension manifest update check url, since it is a GET
 // request. We want to stay under 2K because of proxies, etc.
 static const int kExtensionsManifestMaxURLSize = 2000;
+
+// TODO(skerner): It would be nice to know if the file system failure
+// happens when creating a temp file or when writing to it. Knowing this
+// will require changes to URLFetcher.
+enum FileWriteResult {
+  SUCCESS = 0,
+  CANT_CREATE_OR_WRITE_TEMP_CRX,
+  CANT_READ_CRX_FILE,
+  NUM_FILE_WRITE_RESULTS
+};
+
+// Prototypes allow the functions to be defined in the order they run.
+void CheckThatCRXIsReadable(const FilePath& crx_path);
+void RecordFileUpdateHistogram(FileWriteResult file_write_result);
+
+// Record the result of writing a CRX file. Will be used to understand
+// high failure rates of CRX installs in the field.  If |success| is
+// true, |crx_path| should be set to the path to the CRX file.
+void RecordCRXWriteHistogram(bool success, const FilePath& crx_path) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  if (!success) {
+    // We know there was an error writing the file.
+    RecordFileUpdateHistogram(CANT_CREATE_OR_WRITE_TEMP_CRX);
+
+  } else {
+    // Test that the file can be read. Based on histograms in
+    // SandboxExtensionUnpacker, we know that many CRX files
+    // can not be read. Try reading.
+    BrowserThread::PostTask(
+        BrowserThread::FILE, FROM_HERE,
+        NewRunnableFunction(CheckThatCRXIsReadable, crx_path));
+  }
+}
+
+void CheckThatCRXIsReadable(const FilePath& crx_path) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+
+  FileWriteResult file_write_result = SUCCESS;
+
+  // Open the file in the same way
+  // SandboxExtensionUnpacker::ValidateSigniture() will.
+  ScopedStdioHandle file(file_util::OpenFile(crx_path, "rb"));
+  if (!file.get()) {
+    LOG(ERROR) << "Can't read CRX file written for update at path "
+               << crx_path.value().c_str();
+    file_write_result = CANT_READ_CRX_FILE;
+  }
+
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      NewRunnableFunction(RecordFileUpdateHistogram, file_write_result));
+}
+
+void RecordFileUpdateHistogram(FileWriteResult file_write_result) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  UMA_HISTOGRAM_ENUMERATION("Extensions.UpdaterWriteCrxAsFile",
+                            file_write_result,
+                            NUM_FILE_WRITE_RESULTS);
+}
+
+}  // namespace
 
 ManifestFetchData::ManifestFetchData(const GURL& update_url)
     : base_url_(update_url),
@@ -365,95 +432,6 @@ void ManifestFetchesBuilder::AddExtensionData(
   }
 }
 
-// A utility class to do file handling on the file I/O thread.
-class ExtensionUpdaterFileHandler
-    : public base::RefCountedThreadSafe<ExtensionUpdaterFileHandler> {
- public:
-  explicit ExtensionUpdaterFileHandler(
-      base::WeakPtr<ExtensionUpdater> updater)
-      : updater_(updater) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  }
-
-  // Writes crx file data into a tempfile, and calls back the updater.
-  void WriteTempFile(const std::string& extension_id, const std::string& data,
-                     const GURL& download_url) {
-    // Make sure we're running in the right thread.
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-
-    bool failed = false;
-    FilePath path;
-    if (!file_util::CreateTemporaryFile(&path)) {
-      LOG(WARNING) << "Failed to create temporary file path";
-      failed = true;
-    } else if (file_util::WriteFile(path, data.c_str(), data.length()) !=
-        static_cast<int>(data.length())) {
-      // TODO(asargent) - It would be nice to back off updating altogether if
-      // the disk is full. (http://crbug.com/12763).
-      LOG(ERROR) << "Failed to write temporary file";
-      file_util::Delete(path, false);
-      failed = true;
-    }
-
-    if (failed) {
-      if (!BrowserThread::PostTask(
-              BrowserThread::UI, FROM_HERE,
-              NewRunnableMethod(
-                  this, &ExtensionUpdaterFileHandler::OnCRXFileWriteError,
-                  extension_id))) {
-        NOTREACHED();
-      }
-    } else {
-      if (!BrowserThread::PostTask(
-              BrowserThread::UI, FROM_HERE,
-              NewRunnableMethod(
-                  this, &ExtensionUpdaterFileHandler::OnCRXFileWritten,
-                  extension_id, path, download_url))) {
-        NOTREACHED();
-        // Delete |path| since we couldn't post.
-        extension_file_util::DeleteFile(path, false);
-      }
-    }
-  }
-
- private:
-  friend class base::RefCountedThreadSafe<ExtensionUpdaterFileHandler>;
-
-  ~ExtensionUpdaterFileHandler() {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI) ||
-           BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  }
-
-  void OnCRXFileWritten(const std::string& id,
-                        const FilePath& path,
-                        const GURL& download_url) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    if (!updater_) {
-      // Delete |path| since we don't have an updater anymore.
-      if (!BrowserThread::PostTask(
-              BrowserThread::FILE, FROM_HERE,
-              NewRunnableFunction(
-                  extension_file_util::DeleteFile, path, false))) {
-        NOTREACHED();
-      }
-      return;
-    }
-    // The ExtensionUpdater now owns the temp file.
-    updater_->OnCRXFileWritten(id, path, download_url);
-  }
-
-  void OnCRXFileWriteError(const std::string& id) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    if (!updater_) {
-      return;
-    }
-    updater_->OnCRXFileWriteError(id);
-  }
-
-  // Should be accessed only on UI thread.
-  base::WeakPtr<ExtensionUpdater> updater_;
-};
-
 ExtensionUpdater::ExtensionFetch::ExtensionFetch()
     : id(""),
       url(),
@@ -468,6 +446,20 @@ ExtensionUpdater::ExtensionFetch::ExtensionFetch(const std::string& i,
 
 ExtensionUpdater::ExtensionFetch::~ExtensionFetch() {}
 
+ExtensionUpdater::FetchedCRXFile::FetchedCRXFile(const std::string& i,
+                                                 const FilePath& p,
+                                                 const GURL& u)
+    : id(i),
+      path(p),
+      download_url(u) {}
+
+ExtensionUpdater::FetchedCRXFile::FetchedCRXFile()
+    : id(""),
+      path(),
+      download_url() {}
+
+ExtensionUpdater::FetchedCRXFile::~FetchedCRXFile() {}
+
 ExtensionUpdater::ExtensionUpdater(ExtensionServiceInterface* service,
                                    ExtensionPrefs* extension_prefs,
                                    PrefService* prefs,
@@ -478,13 +470,14 @@ ExtensionUpdater::ExtensionUpdater(ExtensionServiceInterface* service,
       service_(service), frequency_seconds_(frequency_seconds),
       method_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
       will_check_soon_(false), extension_prefs_(extension_prefs),
-      prefs_(prefs), profile_(profile), blacklist_checks_enabled_(true) {
+      prefs_(prefs), profile_(profile), blacklist_checks_enabled_(true),
+      crx_install_is_running_(false) {
   Init();
 }
 
 void ExtensionUpdater::Init() {
   DCHECK_GE(frequency_seconds_, 5);
-  DCHECK(frequency_seconds_ <= kMaxUpdateFrequencySeconds);
+  DCHECK_LE(frequency_seconds_, kMaxUpdateFrequencySeconds);
 #ifdef NDEBUG
   // In Release mode we enforce that update checks don't happen too often.
   frequency_seconds_ = std::max(frequency_seconds_, kMinUpdateFrequencySeconds);
@@ -499,12 +492,15 @@ ExtensionUpdater::~ExtensionUpdater() {
 static void EnsureInt64PrefRegistered(PrefService* prefs,
                                       const char name[]) {
   if (!prefs->FindPreference(name))
-    prefs->RegisterInt64Pref(name, 0);
+    prefs->RegisterInt64Pref(name, 0, PrefService::UNSYNCABLE_PREF);
 }
 
 static void EnsureBlacklistVersionPrefRegistered(PrefService* prefs) {
-  if (!prefs->FindPreference(kExtensionBlacklistUpdateVersion))
-    prefs->RegisterStringPref(kExtensionBlacklistUpdateVersion, "0");
+  if (!prefs->FindPreference(kExtensionBlacklistUpdateVersion)) {
+    prefs->RegisterStringPref(kExtensionBlacklistUpdateVersion,
+                              "0",
+                              PrefService::UNSYNCABLE_PREF);
+  }
 }
 
 // The overall goal here is to balance keeping clients up to date while
@@ -561,8 +557,6 @@ void ExtensionUpdater::Start() {
   DCHECK(prefs_);
   DCHECK(profile_);
   DCHECK(!weak_ptr_factory_.HasWeakPtrs());
-  file_handler_ =
-      new ExtensionUpdaterFileHandler(weak_ptr_factory_.GetWeakPtr());
   alive_ = true;
   // Make sure our prefs are registered, then schedule the first check.
   EnsureInt64PrefRegistered(prefs_, kLastExtensionsUpdateCheck);
@@ -574,7 +568,6 @@ void ExtensionUpdater::Start() {
 void ExtensionUpdater::Stop() {
   weak_ptr_factory_.InvalidateWeakPtrs();
   alive_ = false;
-  file_handler_ = NULL;
   service_ = NULL;
   extension_prefs_ = NULL;
   prefs_ = NULL;
@@ -589,21 +582,23 @@ void ExtensionUpdater::Stop() {
   extensions_pending_.clear();
 }
 
-void ExtensionUpdater::OnURLFetchComplete(
-    const URLFetcher* source,
-    const GURL& url,
-    const net::URLRequestStatus& status,
-    int response_code,
-    const ResponseCookies& cookies,
-    const std::string& data) {
+void ExtensionUpdater::OnURLFetchComplete(const URLFetcher* source) {
   // Stop() destroys all our URLFetchers, which means we shouldn't be
   // called after Stop() is called.
   DCHECK(alive_);
 
   if (source == manifest_fetcher_.get()) {
-    OnManifestFetchComplete(url, status, response_code, data);
+    std::string data;
+    CHECK(source->GetResponseAsString(&data));
+    OnManifestFetchComplete(source->url(),
+                            source->status(),
+                            source->response_code(),
+                            data);
   } else if (source == extension_fetcher_.get()) {
-    OnCRXFetchComplete(url, status, response_code, data);
+    OnCRXFetchComplete(source,
+                       source->url(),
+                       source->status(),
+                       source->response_code());
   } else {
     NOTREACHED();
   }
@@ -810,26 +805,34 @@ void ExtensionUpdater::ProcessBlacklist(const std::string& data) {
   prefs_->ScheduleSavePersistentPrefs();
 }
 
-void ExtensionUpdater::OnCRXFetchComplete(const GURL& url,
-                                          const net::URLRequestStatus& status,
-                                          int response_code,
-                                          const std::string& data) {
-  if (status.status() == net::URLRequestStatus::SUCCESS &&
-      (response_code == 200 || (url.SchemeIsFile() && data.length() > 0))) {
+void ExtensionUpdater::OnCRXFetchComplete(
+    const URLFetcher* source,
+    const GURL& url,
+    const net::URLRequestStatus& status,
+    int response_code) {
+
+  base::PlatformFileError error_code = base::PLATFORM_FILE_OK;
+  if (source->FileErrorOccurred(&error_code)) {
+    LOG(ERROR) << "Failed to write update CRX with id "
+               << current_extension_fetch_.id << ". "
+               << "Error code is "<< error_code;
+
+    RecordCRXWriteHistogram(false, FilePath());
+    OnCRXFileWriteError(current_extension_fetch_.id);
+
+  } else if (status.status() == net::URLRequestStatus::SUCCESS &&
+      (response_code == 200 || url.SchemeIsFile())) {
     if (current_extension_fetch_.id == kBlacklistAppID) {
+      std::string data;
+      CHECK(source->GetResponseAsString(&data));
       ProcessBlacklist(data);
       in_progress_ids_.erase(current_extension_fetch_.id);
     } else {
-      // Successfully fetched - now write crx to a file so we can have the
-      // ExtensionService install it.
-      if (!BrowserThread::PostTask(
-              BrowserThread::FILE, FROM_HERE,
-              NewRunnableMethod(
-                  file_handler_.get(),
-                  &ExtensionUpdaterFileHandler::WriteTempFile,
-                  current_extension_fetch_.id, data, url))) {
-        NOTREACHED();
-      }
+      FilePath crx_path;
+      // Take ownership of the file at |crx_path|.
+      CHECK(source->GetResponseAsFilePath(true, &crx_path));
+      RecordCRXWriteHistogram(true, crx_path);
+      OnCRXFileWritten(current_extension_fetch_.id, crx_path, url);
     }
   } else {
     // TODO(asargent) do things like exponential backoff, handling
@@ -841,7 +844,7 @@ void ExtensionUpdater::OnCRXFetchComplete(const GURL& url,
   extension_fetcher_.reset();
   current_extension_fetch_ = ExtensionFetch();
 
-  // If there are any pending downloads left, start one.
+  // If there are any pending downloads left, start the next one.
   if (!extensions_pending_.empty()) {
     ExtensionFetch next = extensions_pending_.front();
     extensions_pending_.pop_front();
@@ -853,17 +856,60 @@ void ExtensionUpdater::OnCRXFileWritten(const std::string& id,
                                         const FilePath& path,
                                         const GURL& download_url) {
   DCHECK(alive_);
-  // The ExtensionService is now responsible for cleaning up the temp file
-  // at |path|.
-  service_->UpdateExtension(id, path, download_url);
-  in_progress_ids_.erase(id);
-  NotifyIfFinished();
+
+  FetchedCRXFile fetched(id, path, download_url);
+  fetched_crx_files_.push(fetched);
+
+  MaybeInstallCRXFile();
+}
+
+bool ExtensionUpdater::MaybeInstallCRXFile() {
+  if (crx_install_is_running_)
+    return false;
+
+  while (!fetched_crx_files_.empty() && !crx_install_is_running_) {
+    const FetchedCRXFile& crx_file = fetched_crx_files_.top();
+
+    // The ExtensionService is now responsible for cleaning up the temp file
+    // at |extension_file.path|.
+    CrxInstaller* installer = NULL;
+    if (service_->UpdateExtension(crx_file.id,
+                                  crx_file.path,
+                                  crx_file.download_url,
+                                  &installer)) {
+      crx_install_is_running_ = true;
+
+      // Source parameter ensures that we only see the completion event for the
+      // the installer we started.
+      registrar_.Add(this,
+                     NotificationType::CRX_INSTALLER_DONE,
+                     Source<CrxInstaller>(installer));
+    }
+    in_progress_ids_.erase(crx_file.id);
+    fetched_crx_files_.pop();
+  }
+
+  // If an updater is running, it was started above.
+  return crx_install_is_running_;
+}
+
+void ExtensionUpdater::Observe(NotificationType type,
+                               const NotificationSource& source,
+                               const NotificationDetails& details) {
+  DCHECK(type == NotificationType::CRX_INSTALLER_DONE);
+
+  // No need to listen for CRX_INSTALLER_DONE anymore.
+  registrar_.Remove(this,
+                    NotificationType::CRX_INSTALLER_DONE,
+                    source);
+  crx_install_is_running_ = false;
+  // If any files are available to update, start one.
+  MaybeInstallCRXFile();
 }
 
 void ExtensionUpdater::OnCRXFileWriteError(const std::string& id) {
   DCHECK(alive_);
   in_progress_ids_.erase(id);
-  NotifyIfFinished();
 }
 
 void ExtensionUpdater::ScheduleNextCheck(const TimeDelta& target_delay) {
@@ -1135,6 +1181,13 @@ void ExtensionUpdater::FetchUpdatedExtension(const std::string& id,
     extension_fetcher_->set_load_flags(net::LOAD_DO_NOT_SEND_COOKIES |
                                        net::LOAD_DO_NOT_SAVE_COOKIES |
                                        net::LOAD_DISABLE_CACHE);
+    // Download CRX files to a temp file. The blacklist is small and will be
+    // processed in memory, so it is fetched into a string.
+    if (id != ExtensionUpdater::kBlacklistAppID) {
+      extension_fetcher_->SaveResponseToTemporaryFile(
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE));
+    }
+
     extension_fetcher_->Start();
     current_extension_fetch_ = ExtensionFetch(id, url, hash, version);
   }

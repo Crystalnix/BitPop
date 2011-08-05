@@ -26,7 +26,7 @@
 #include "content/common/database_messages.h"
 #include "content/common/db_message_filter.h"
 #include "content/common/dom_storage_messages.h"
-#include "content/common/gpu_messages.h"
+#include "content/common/gpu/gpu_messages.h"
 #include "content/common/plugin_messages.h"
 #include "content/common/renderer_preferences.h"
 #include "content/common/resource_messages.h"
@@ -34,8 +34,8 @@
 #include "content/common/web_database_observer_impl.h"
 #include "content/plugin/npobject_util.h"
 #include "content/renderer/content_renderer_client.h"
-#include "content/renderer/gpu_channel_host.h"
-#include "content/renderer/gpu_video_service_host.h"
+#include "content/renderer/gpu/gpu_channel_host.h"
+#include "content/renderer/gpu/gpu_video_service_host.h"
 #include "content/renderer/indexed_db_dispatcher.h"
 #include "content/renderer/plugin_channel_host.h"
 #include "content/renderer/render_process_impl.h"
@@ -137,7 +137,7 @@ RenderThread::RenderThread(const std::string& channel_name)
 }
 
 void RenderThread::Init() {
-  TRACE_EVENT_BEGIN("RenderThread::Init", 0, "");
+  TRACE_EVENT_BEGIN_ETW("RenderThread::Init", 0, "");
 
 #if defined(OS_MACOSX)
   // On Mac, the select popups are rendered by the browser.
@@ -169,7 +169,7 @@ void RenderThread::Init() {
 
   content::GetContentClient()->renderer()->RenderThreadStarted();
 
-  TRACE_EVENT_END("RenderThread::Init", 0, "");
+  TRACE_EVENT_END_ETW("RenderThread::Init", 0, "");
 }
 
 RenderThread::~RenderThread() {
@@ -603,11 +603,13 @@ void RenderThread::EnsureWebKitInitialized() {
   WebRuntimeFeatures::enableJavaScriptI18NAPI(
       !command_line.HasSwitch(switches::kDisableJavaScriptI18NAPI));
 
+  WebRuntimeFeatures::enableQuota(true);
+
   FOR_EACH_OBSERVER(RenderProcessObserver, observers_, WebKitInitialized());
 }
 
 void RenderThread::IdleHandler() {
-#if (defined(OS_WIN) || defined(OS_LINUX)) && defined(USE_TCMALLOC)
+#if !defined(OS_MACOSX) && defined(USE_TCMALLOC)
   MallocExtension::instance()->ReleaseFreeMemory();
 #endif
 
@@ -671,24 +673,12 @@ RenderThread::GetFileThreadMessageLoopProxy() {
   return file_thread_->message_loop_proxy();
 }
 
-bool RenderThread::AllowScriptExtension(const std::string& v8_extension_name,
-                                        const GURL& url,
-                                        int extension_group) {
-  // If we don't know about it, it was added by WebCore, so we should allow it.
-  if (v8_extensions_.find(v8_extension_name) == v8_extensions_.end())
-    return true;
-
-  ObserverListBase<RenderProcessObserver>::Iterator it(observers_);
-  RenderProcessObserver* observer;
-  while ((observer = it.GetNext()) != NULL) {
-    if (observer->AllowScriptExtension(v8_extension_name, url, extension_group))
-      return true;
-  }
-
-  return false;
-}
-
 void RenderThread::RegisterExtension(v8::Extension* extension) {
   WebScriptController::registerExtension(extension);
   v8_extensions_.insert(extension->name());
+}
+
+bool RenderThread::IsRegisteredExtension(
+    const std::string& v8_extension_name) const {
+  return v8_extensions_.find(v8_extension_name) != v8_extensions_.end();
 }

@@ -13,8 +13,6 @@
 
 namespace views {
 
-class WidgetGtk;
-
 class NativeTabbedPaneGtk : public NativeControlGtk,
                             public NativeTabbedPaneWrapper {
  public:
@@ -49,8 +47,8 @@ class NativeTabbedPaneGtk : public NativeControlGtk,
                        View* contents,
                        bool select_if_first_tab);
 
-  // Returns the WidgetGtk containing the tab contents at |index|.
-  WidgetGtk* GetWidgetAt(int index);
+  // Returns the Widget containing the tab contents at |index|.
+  Widget* GetWidgetAt(int index);
 
   View* GetTabViewAt(int index);
   void OnSwitchPage(int selected_tab_index);

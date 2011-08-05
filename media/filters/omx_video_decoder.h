@@ -9,6 +9,7 @@
 
 #include "media/base/filters.h"
 #include "media/base/media_format.h"
+#include "media/base/pts_stream.h"
 #include "media/video/video_decode_context.h"
 #include "media/video/video_decode_engine.h"
 
@@ -33,7 +34,7 @@ class OmxVideoDecoder : public VideoDecoder,
                           StatisticsCallback* stats_callback);
   virtual void Stop(FilterCallback* callback);
   virtual void Flush(FilterCallback* callback);
-  virtual void Seek(base::TimeDelta time, FilterCallback* callback);
+  virtual void Seek(base::TimeDelta time, const FilterStatusCB& cb);
   virtual void ProduceVideoFrame(scoped_refptr<VideoFrame> frame);
   virtual bool ProvidesBuffer();
   virtual const MediaFormat& media_format();
@@ -53,6 +54,7 @@ class OmxVideoDecoder : public VideoDecoder,
   // TODO(hclam): This is very ugly that we keep reference instead of
   // scoped_refptr.
   void DemuxCompleteTask(Buffer* buffer);
+  void ConsumeVideoSample(scoped_refptr<Buffer> buffer);
 
   MessageLoop* message_loop_;
 
@@ -65,10 +67,12 @@ class OmxVideoDecoder : public VideoDecoder,
   scoped_ptr<FilterCallback> initialize_callback_;
   scoped_ptr<FilterCallback> uninitialize_callback_;
   scoped_ptr<FilterCallback> flush_callback_;
-  scoped_ptr<FilterCallback> seek_callback_;
+  FilterStatusCB seek_cb_;
   scoped_ptr<StatisticsCallback> statistics_callback_;
 
   VideoCodecInfo info_;
+
+  PtsStream pts_stream_;  // Stream of presentation timestamps.
 
   DISALLOW_COPY_AND_ASSIGN(OmxVideoDecoder);
 };

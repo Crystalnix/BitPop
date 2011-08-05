@@ -64,11 +64,6 @@ class SimpleFileSystemCallbackDispatcher
     callbacks_->didSucceed();
   }
 
-  // Callback to report information for a file.
-  virtual void DidGetLocalPath(const FilePath& local_path) {
-    NOTREACHED();
-  }
-
   virtual void DidReadMetadata(const base::PlatformFileInfo& info,
       const FilePath& platform_path) {
     DCHECK(file_system_);
@@ -132,6 +127,7 @@ SimpleFileSystem::SimpleFileSystem() {
         base::MessageLoopProxy::CreateForCurrentThread(),
         base::MessageLoopProxy::CreateForCurrentThread(),
         NULL /* special storage policy */,
+        NULL /* quota manager */,
         file_system_dir_.path(),
         false /* incognito */,
         true /* allow_file_access */,

@@ -27,7 +27,9 @@ PasswordManagerHandler::PasswordManagerHandler()
 }
 
 PasswordManagerHandler::~PasswordManagerHandler() {
-  GetPasswordStore()->RemoveObserver(this);
+  PasswordStore* store = GetPasswordStore();
+  if (store)
+    store->RemoveObserver(this);
 }
 
 void PasswordManagerHandler::GetLocalizedValues(
@@ -39,6 +41,8 @@ void PasswordManagerHandler::GetLocalizedValues(
       IDS_PASSWORDS_SHOW_PASSWORDS_TAB_TITLE },
     { "passwordExceptionsTitle",
       IDS_PASSWORDS_EXCEPTIONS_TAB_TITLE },
+    { "passwordSearchPlaceholder",
+      IDS_PASSWORDS_PAGE_SEARCH_PASSWORDS },
     { "passwordShowButton",
       IDS_PASSWORDS_PAGE_VIEW_SHOW_BUTTON },
     { "passwordHideButton",
@@ -74,7 +78,9 @@ void PasswordManagerHandler::Initialize() {
   show_passwords_.Init(prefs::kPasswordManagerAllowShowPasswords,
                        web_ui_->GetProfile()->GetPrefs(), this);
   // We should not cache web_ui_->GetProfile(). See crosbug.com/6304.
-  GetPasswordStore()->AddObserver(this);
+  PasswordStore* store = GetPasswordStore();
+  if (store)
+    store->AddObserver(this);
 }
 
 void PasswordManagerHandler::RegisterMessages() {
@@ -125,19 +131,26 @@ void PasswordManagerHandler::UpdatePasswordLists(const ListValue* args) {
 }
 
 void PasswordManagerHandler::RemoveSavedPassword(const ListValue* args) {
+  PasswordStore* store = GetPasswordStore();
+  if (!store)
+    return;
   std::string string_value = UTF16ToUTF8(ExtractStringValue(args));
   int index;
-  base::StringToInt(string_value, &index);
-  GetPasswordStore()->RemoveLogin(*password_list_[index]);
+  if (base::StringToInt(string_value, &index) && index >= 0 &&
+      static_cast<size_t>(index) < password_list_.size())
+    store->RemoveLogin(*password_list_[index]);
 }
 
 void PasswordManagerHandler::RemovePasswordException(
     const ListValue* args) {
+  PasswordStore* store = GetPasswordStore();
+  if (!store)
+    return;
   std::string string_value = UTF16ToUTF8(ExtractStringValue(args));
   int index;
-  base::StringToInt(string_value, &index);
-
-  GetPasswordStore()->RemoveLogin(*password_exception_list_[index]);
+  if (base::StringToInt(string_value, &index) && index >= 0 &&
+      static_cast<size_t>(index) < password_exception_list_.size())
+    store->RemoveLogin(*password_exception_list_[index]);
 }
 
 void PasswordManagerHandler::RemoveAllSavedPasswords(
@@ -145,6 +158,8 @@ void PasswordManagerHandler::RemoveAllSavedPasswords(
   // TODO(jhawkins): This will cause a list refresh for every password in the
   // list. Add PasswordStore::RemoveAllLogins().
   PasswordStore* store = GetPasswordStore();
+  if (!store)
+    return;
   for (size_t i = 0; i < password_list_.size(); ++i)
     store->RemoveLogin(*password_list_[i]);
 }
@@ -152,6 +167,8 @@ void PasswordManagerHandler::RemoveAllSavedPasswords(
 void PasswordManagerHandler::RemoveAllPasswordExceptions(
     const ListValue* args) {
   PasswordStore* store = GetPasswordStore();
+  if (!store)
+    return;
   for (size_t i = 0; i < password_exception_list_.size(); ++i)
     store->RemoveLogin(*password_exception_list_[i]);
 }

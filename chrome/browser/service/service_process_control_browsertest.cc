@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -52,15 +52,15 @@ class ServiceProcessControlBrowserTest
     ui_test_utils::RunMessageLoop();
   }
 
-  // Send a remoting host status request and wait reply from the service.
+  // Send a Cloud Print status request and wait for a reply from the service.
   void SendRequestAndWait() {
-    process()->GetCloudPrintProxyStatus(NewCallback(
-        this, &ServiceProcessControlBrowserTest::CloudPrintStatusCallback));
+    process()->GetCloudPrintProxyInfo(NewCallback(
+        this, &ServiceProcessControlBrowserTest::CloudPrintInfoCallback));
     ui_test_utils::RunMessageLoop();
   }
 
-  void CloudPrintStatusCallback(
-      bool enabled, std::string email) {
+  void CloudPrintInfoCallback(
+      const cloud_print::CloudPrintProxyInfo& proxy_info) {
     MessageLoop::current()->Quit();
   }
 
@@ -74,7 +74,7 @@ class ServiceProcessControlBrowserTest
   void WaitForShutdown() {
     EXPECT_TRUE(base::WaitForSingleProcess(
         service_process_handle_,
-        TestTimeouts::wait_for_terminate_timeout_ms()));
+        TestTimeouts::action_max_timeout_ms()));
   }
 
   void ProcessControlLaunched() {
@@ -119,8 +119,8 @@ IN_PROC_BROWSER_TEST_F(ServiceProcessControlBrowserTest,
   EXPECT_TRUE(process()->Shutdown());
 }
 
-// This tests the case when a service process is launched when browser
-// starts but we try to launch it again in the remoting setup dialog.
+// This tests the case when a service process is launched when the browser
+// starts but we try to launch it again while setting up Cloud Print.
 // Crashes on mac. http://crbug.com/75518
 #if defined(OS_MACOSX)
 #define MAYBE_LaunchTwice DISABLED_LaunchTwice

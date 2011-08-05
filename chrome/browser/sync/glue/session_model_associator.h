@@ -15,7 +15,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_vector.h"
 #include "base/observer_list.h"
-#include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/sessions/session_id.h"
@@ -301,14 +301,13 @@ class SessionModelAssociator
   void DeleteForeignSessions();
 
   // Determine if a window is of a type we're interested in syncing.
-  static bool ShouldSyncWindowType(const Browser::Type& type);
+  static bool ShouldSyncWindow(const Browser* browser);
 
   // Build a sync tag from tab_node_id.
   static inline std::string TabIdToTag(
       const std::string machine_tag,
       size_t tab_node_id) {
-    return StringPrintf("%s %"PRIuS"",
-        machine_tag.c_str(), tab_node_id);
+    return base::StringPrintf("%s %"PRIuS"", machine_tag.c_str(), tab_node_id);
   }
 
   // Initializes the tag corresponding to this machine.

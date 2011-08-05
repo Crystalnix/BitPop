@@ -5,18 +5,11 @@
 #include "chrome/browser/sync/abstract_profile_sync_service_test.h"
 
 #include "chrome/browser/sync/engine/syncapi.h"
-#include "chrome/browser/sync/glue/autofill_model_associator.h"
-#include "chrome/browser/sync/glue/autofill_profile_model_associator.h"
-#include "chrome/browser/sync/glue/password_model_associator.h"
-#include "chrome/browser/sync/glue/preference_model_associator.h"
-#include "chrome/browser/sync/glue/session_model_associator.h"
-#include "chrome/browser/sync/glue/typed_url_model_associator.h"
 #include "chrome/browser/sync/protocol/sync.pb.h"
 #include "chrome/browser/sync/syncable/directory_manager.h"
 #include "chrome/browser/sync/syncable/syncable.h"
 #include "chrome/browser/sync/test_profile_sync_service.h"
 #include "chrome/browser/sync/util/cryptographer.h"
-#include "chrome/test/profile_mock.h"
 #include "chrome/test/sync/engine/test_id_factory.h"
 
 using browser_sync::TestIdFactory;
@@ -40,27 +33,7 @@ using syncable::WriteTransaction;
 
 const std::string ProfileSyncServiceTestHelper::GetTagForType(
     ModelType model_type) {
-  switch (model_type) {
-    case syncable::AUTOFILL:
-      return browser_sync::kAutofillTag;
-    case syncable::AUTOFILL_PROFILE:
-      return browser_sync::kAutofillProfileTag;
-    case syncable::PREFERENCES:
-      return browser_sync::kPreferencesTag;
-    case syncable::PASSWORDS:
-      return browser_sync::kPasswordTag;
-    case syncable::NIGORI:
-      return browser_sync::kNigoriTag;
-    case syncable::TYPED_URLS:
-      return browser_sync::kTypedUrlTag;
-    case syncable::SESSIONS:
-      return browser_sync::kSessionsTag;
-    case syncable::BOOKMARKS:
-      return "google_chrome_bookmarks";
-    default:
-      NOTREACHED();
-  }
-  return std::string();
+  return syncable::ModelTypeToRootTag(model_type);
 }
 
 bool ProfileSyncServiceTestHelper::CreateRoot(
@@ -96,9 +69,27 @@ bool ProfileSyncServiceTestHelper::CreateRoot(
 }
 
 AbstractProfileSyncServiceTest::AbstractProfileSyncServiceTest()
-    : ui_thread_(BrowserThread::UI, &message_loop_) {}
+    : ui_thread_(BrowserThread::UI, &ui_loop_),
+      db_thread_(BrowserThread::DB),
+      io_thread_(BrowserThread::IO) {}
 
 AbstractProfileSyncServiceTest::~AbstractProfileSyncServiceTest() {}
+
+void AbstractProfileSyncServiceTest::SetUp() {
+  db_thread_.Start();
+  base::Thread::Options options;
+  options.message_loop_type = MessageLoop::TYPE_IO;
+  io_thread_.StartWithOptions(options);
+}
+
+void AbstractProfileSyncServiceTest::TearDown() {
+  // Pump messages posted by the sync core thread (which may end up
+  // posting on the IO thread).
+  ui_loop_.RunAllPending();
+  io_thread_.Stop();
+  db_thread_.Stop();
+  ui_loop_.RunAllPending();
+}
 
 bool AbstractProfileSyncServiceTest::CreateRoot(ModelType model_type) {
   return ProfileSyncServiceTestHelper::CreateRoot(

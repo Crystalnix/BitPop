@@ -20,10 +20,11 @@
 #include "base/environment.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
+#include "base/stringprintf.h"
 #include "base/string_number_conversions.h"
-#include "base/string_util.h"
 #include "base/string_split.h"
 #include "base/synchronization/lock.h"
+#include "base/test/test_timeouts.h"
 #include "base/threading/platform_thread.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
@@ -34,10 +35,9 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/in_process_browser_test.h"
+#include "chrome/test/ui_test_utils.h"
 #include "content/browser/browser_thread.h"
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
-#include "base/test/test_timeouts.h"
-#include "chrome/test/ui_test_utils.h"
 #include "net/base/host_resolver.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_log.h"
@@ -141,8 +141,9 @@ class SafeBrowsingTestServer {
     CommandLine cmd_line(python_runtime);
     FilePath datafile = testserver_path.Append(datafile_);
     cmd_line.AppendArgPath(testserver);
-    cmd_line.AppendSwitchASCII("port", StringPrintf("%d", kPort_));
-    cmd_line.AppendSwitchPath("datafile", datafile);
+    cmd_line.AppendArg(base::StringPrintf("--port=%d", kPort_));
+    cmd_line.AppendArgNative(FILE_PATH_LITERAL("--datafile=") +
+                             datafile.value());
 
     if (!base::LaunchApp(cmd_line, false, true, &server_handle_)) {
       LOG(ERROR) << "Failed to launch server: "
@@ -303,15 +304,15 @@ class SafeBrowsingServiceTest : public InProcessBrowserTest {
     // server. Although in real production, they are served from different
     // servers.
     std::string url_prefix =
-        StringPrintf("http://%s:%d/safebrowsing",
-                     SafeBrowsingTestServer::Host(),
-                     SafeBrowsingTestServer::Port());
+        base::StringPrintf("http://%s:%d/safebrowsing",
+                           SafeBrowsingTestServer::Host(),
+                           SafeBrowsingTestServer::Port());
     command_line->AppendSwitchASCII(switches::kSbInfoURLPrefix, url_prefix);
     command_line->AppendSwitchASCII(switches::kSbMacKeyURLPrefix, url_prefix);
   }
 
   void SetTestStep(int step) {
-    std::string test_step = StringPrintf("test_step=%d", step);
+    std::string test_step = base::StringPrintf("test_step=%d", step);
     safe_browsing_service_->protocol_manager_->set_additional_query(test_step);
   }
 
@@ -448,8 +449,8 @@ class SafeBrowsingServiceTestHelper
 
   void WaitTillServerReady(const char* host, int port) {
     response_status_ = net::URLRequestStatus::FAILED;
-    GURL url(StringPrintf("http://%s:%d%s?test_step=0",
-                          host, port, kDBResetPath));
+    GURL url(base::StringPrintf("http://%s:%d%s?test_step=0",
+                                host, port, kDBResetPath));
     // TODO(lzheng): We should have a way to reliably tell when a server is
     // ready so we could get rid of the Sleep and retry loop.
     while (true) {
@@ -466,19 +467,21 @@ class SafeBrowsingServiceTestHelper
   net::URLRequestStatus::Status FetchDBToVerify(const char* host, int port,
                                                 int test_step) {
     // TODO(lzheng): Remove chunk_type=add once it is not needed by the server.
-    GURL url(StringPrintf("http://%s:%d%s?"
-                          "client=chromium&appver=1.0&pver=2.2&test_step=%d&"
-                          "chunk_type=add",
-                          host, port, kDBVerifyPath, test_step));
+    GURL url(base::StringPrintf(
+        "http://%s:%d%s?"
+        "client=chromium&appver=1.0&pver=2.2&test_step=%d&"
+        "chunk_type=add",
+        host, port, kDBVerifyPath, test_step));
     return FetchUrl(url);
   }
 
   // Calls test server to fetch URLs for verification.
   net::URLRequestStatus::Status FetchUrlsToVerify(const char* host, int port,
                                                   int test_step) {
-    GURL url(StringPrintf("http://%s:%d%s?"
-                          "client=chromium&appver=1.0&pver=2.2&test_step=%d",
-                          host, port, kUrlVerifyPath, test_step));
+    GURL url(base::StringPrintf(
+        "http://%s:%d%s?"
+        "client=chromium&appver=1.0&pver=2.2&test_step=%d",
+        host, port, kUrlVerifyPath, test_step));
     return FetchUrl(url);
   }
 
@@ -497,7 +500,7 @@ class SafeBrowsingServiceTestHelper
                                   const GURL& url,
                                   const net::URLRequestStatus& status,
                                   int response_code,
-                                  const ResponseCookies& cookies,
+                                  const net::ResponseCookies& cookies,
                                   const std::string& data) {
     response_data_ = data;
     response_status_ = status.status();
@@ -565,7 +568,7 @@ IN_PROC_BROWSER_TEST_F(SafeBrowsingServiceTest, SafeBrowsingSystemTest) {
   // This repeats till there is no update data.
   for (int step = 1;; step++) {
     // Every step should be a fresh start.
-    SCOPED_TRACE(StringPrintf("step=%d", step));
+    SCOPED_TRACE(base::StringPrintf("step=%d", step));
     EXPECT_TRUE(is_database_ready());
     EXPECT_FALSE(is_update_scheduled());
 

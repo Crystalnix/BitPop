@@ -10,7 +10,9 @@
 #include "chrome/browser/themes/browser_theme_pack.h"
 #include "skia/ext/skia_utils_mac.h"
 #import "third_party/GTM/AppKit/GTMNSColor+Luminance.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/color_utils.h"
+#include "ui/gfx/image.h"
 
 NSString* const kBrowserThemeDidChangeNotification =
     @"BrowserThemeDidChangeNotification";
@@ -41,11 +43,21 @@ NSImage* ThemeService::GetNSImageNamed(int id, bool allow_default) const {
     return nsimage_iter->second;
 
   // Why don't we load the file directly into the image instead of the whole
-  // SkBitmap > native conversion?
+  // gfx::Image > native conversion?
   // - For consistency with other platforms.
   // - To get the generated tinted images.
-  SkBitmap* bitmap = GetBitmapNamed(id);
-  NSImage* nsimage = gfx::SkBitmapToNSImage(*bitmap);
+  NSImage* nsimage = nil;
+  if (theme_pack_.get()) {
+    const gfx::Image* image = theme_pack_->GetImageNamed(id);
+    if (image)
+      nsimage = *image;
+  }
+
+  // If the theme didn't override this image then load it from the resource
+  // bundle.
+  if (!nsimage) {
+    nsimage = rb_.GetNativeImageNamed(id);
+  }
 
   // We loaded successfully.  Cache the image.
   if (nsimage) {

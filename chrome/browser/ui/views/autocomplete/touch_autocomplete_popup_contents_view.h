@@ -9,8 +9,8 @@
 #include "chrome/browser/ui/views/autocomplete/autocomplete_popup_contents_view.h"
 #include "chrome/browser/ui/views/autocomplete/autocomplete_result_view.h"
 
-class AutocompleteEditView;
 class AutocompleteEditModel;
+class OmniboxView;
 class Profile;
 
 namespace gfx {
@@ -36,7 +36,7 @@ class TouchAutocompleteResultView : public AutocompleteResultView {
   virtual void PaintMatch(gfx::Canvas* canvas,
                           const AutocompleteMatch& match,
                           int x) OVERRIDE;
-  virtual int GetFontHeight() const OVERRIDE;
+  virtual int GetTextHeight() const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(TouchAutocompleteResultView);
 };
@@ -45,7 +45,7 @@ class TouchAutocompletePopupContentsView
     : public AutocompletePopupContentsView {
  public:
   TouchAutocompletePopupContentsView(const gfx::Font& font,
-                                     AutocompleteEditView* edit_view,
+                                     OmniboxView* omnibox_view,
                                      AutocompleteEditModel* edit_model,
                                      Profile* profile,
                                      const views::View* location_bar);

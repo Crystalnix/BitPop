@@ -6,11 +6,13 @@
 
 #include <map>
 
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "ppapi/c/private/ppb_proxy_private.h"
 #include "ppapi/c/dev/ppb_var_deprecated.h"
 #include "ppapi/proxy/host_var_serialization_rules.h"
 #include "ppapi/proxy/ppapi_messages.h"
+#include "ppapi/proxy/resource_creation_proxy.h"
 
 namespace pp {
 namespace proxy {
@@ -88,10 +90,14 @@ HostDispatcher::~HostDispatcher() {
 }
 
 bool HostDispatcher::InitHostWithChannel(
-    ProxyChannel::Delegate* delegate,
+    Delegate* delegate,
     const IPC::ChannelHandle& channel_handle,
-    bool is_client) {
-  return Dispatcher::InitWithChannel(delegate, channel_handle, is_client);
+    bool is_client,
+    const ppapi::Preferences& preferences) {
+  if (!Dispatcher::InitWithChannel(delegate, channel_handle, is_client))
+    return false;
+  Send(new PpapiMsg_SetPreferences(preferences));
+  return true;
 }
 
 // static
@@ -128,6 +134,9 @@ bool HostDispatcher::IsPlugin() const {
 }
 
 bool HostDispatcher::Send(IPC::Message* msg) {
+  TRACE_EVENT2("ppapi proxy", "HostDispatcher::Send",
+               "Class", IPC_MESSAGE_ID_CLASS(msg->type()),
+               "Line", IPC_MESSAGE_ID_LINE(msg->type()));
   // Normal sync messages are set to unblock, which would normally cause the
   // plugin to be reentered to process them. We only want to do this when we
   // know the plugin is in a state to accept reentrancy. Since the plugin side
@@ -139,6 +148,9 @@ bool HostDispatcher::Send(IPC::Message* msg) {
 }
 
 bool HostDispatcher::OnMessageReceived(const IPC::Message& msg) {
+  TRACE_EVENT2("ppapi proxy", "HostDispatcher::OnMessageReceived",
+               "Class", IPC_MESSAGE_ID_CLASS(msg.type()),
+               "Line", IPC_MESSAGE_ID_LINE(msg.type()));
   // We only want to allow reentrancy when the most recent message from the
   // plugin was a scripting message. We save the old state of the flag on the
   // stack in case we're (we are the host) being reentered ourselves. The flag
@@ -156,6 +168,15 @@ bool HostDispatcher::OnMessageReceived(const IPC::Message& msg) {
     NOTREACHED();
     // TODO(brettw): kill the plugin if it starts sending invalid messages?
     return true;
+  }
+
+  // New-style function proxies.
+  // TODO(brettw) this is hacked in for the routing for the types we've
+  // implemented in this style so far. When everything is implemented in this
+  // style, this function should be cleaned up.
+  if (msg.routing_id() == INTERFACE_ID_RESOURCE_CREATION) {
+    ResourceCreationProxy proxy(this);
+    return proxy.OnMessageReceived(msg);
   }
 
   InterfaceProxy* proxy = target_proxies_[msg.routing_id()].get();

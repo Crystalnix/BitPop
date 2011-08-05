@@ -16,8 +16,8 @@
 #include "views/controls/tabbed_pane/tabbed_pane.h"
 #include "views/controls/tabbed_pane/tabbed_pane_listener.h"
 #include "views/layout/fill_layout.h"
-#include "views/widget/root_view.h"
-#include "views/widget/widget_gtk.h"
+#include "views/widget/native_widget.h"
+#include "views/widget/widget.h"
 
 namespace views {
 
@@ -77,8 +77,8 @@ View* NativeTabbedPaneGtk::RemoveTabAtIndex(int index) {
 
   GtkWidget* page =
       gtk_notebook_get_nth_page(GTK_NOTEBOOK(native_view()), index);
-  WidgetGtk* widget =
-      static_cast<WidgetGtk*>(NativeWidget::GetNativeWidgetForNativeView(page));
+  Widget* widget =
+      NativeWidget::GetNativeWidgetForNativeView(page)->GetWidget();
 
   // detach the content view from widget so that we can delete widget
   // without destroying the content view.
@@ -89,9 +89,8 @@ View* NativeTabbedPaneGtk::RemoveTabAtIndex(int index) {
   gtk_notebook_remove_page(GTK_NOTEBOOK(native_view()), index);
 
   // Removing a tab might change the size of the tabbed pane.
-  RootView* root_view = GetRootView();
-  if (root_view)
-    GetRootView()->Layout();
+  if (GetWidget())
+    GetWidget()->GetRootView()->Layout();
 
   return removed_tab;
 }
@@ -154,9 +153,9 @@ void NativeTabbedPaneGtk::DoAddTabAtIndex(int index,
   int tab_count = GetTabCount();
   DCHECK(index <= tab_count);
 
-  Widget* page_container = Widget::CreateWidget(
-      Widget::CreateParams(Widget::CreateParams::TYPE_CONTROL));
-  page_container->Init(NULL, gfx::Rect());
+  Widget* page_container = new Widget;
+  page_container->Init(
+      Widget::InitParams(Widget::InitParams::TYPE_CONTROL));
   page_container->SetContentsView(contents);
   page_container->SetFocusTraversableParent(GetWidget()->GetFocusTraversable());
   page_container->SetFocusTraversableParentView(this);
@@ -190,23 +189,22 @@ void NativeTabbedPaneGtk::DoAddTabAtIndex(int index,
     gtk_notebook_set_current_page(GTK_NOTEBOOK(native_view()), 0);
 
   // Relayout the hierarchy, since the added tab might require more space.
-  RootView* root_view = GetRootView();
-  if (root_view)
-    GetRootView()->Layout();
+  if (GetWidget())
+    GetWidget()->GetRootView()->Layout();
 }
 
-WidgetGtk* NativeTabbedPaneGtk::GetWidgetAt(int index) {
+Widget* NativeTabbedPaneGtk::GetWidgetAt(int index) {
   DCHECK(index <= GetTabCount());
   GtkWidget* page = gtk_notebook_get_nth_page(GTK_NOTEBOOK(native_view()),
                                               index);
-  WidgetGtk* widget =
-      static_cast<WidgetGtk*>(NativeWidget::GetNativeWidgetForNativeView(page));
+  Widget* widget =
+      NativeWidget::GetNativeWidgetForNativeView(page)->GetWidget();
   DCHECK(widget);
   return widget;
 }
 
 View* NativeTabbedPaneGtk::GetTabViewAt(int index) {
-  WidgetGtk* widget = GetWidgetAt(index);
+  Widget* widget = GetWidgetAt(index);
   DCHECK(widget && widget->GetRootView()->child_count() == 1);
   return widget->GetRootView()->GetChildViewAt(0);
 }

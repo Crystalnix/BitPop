@@ -14,16 +14,19 @@
 #include <set>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/task.h"
 #include "base/time.h"
+#include "content/common/notification_observer.h"
+#include "content/common/notification_registrar.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCache.h"
 
 template<typename Type>
 struct DefaultSingletonTraits;
 class PrefService;
 
-class WebCacheManager {
+class WebCacheManager : public NotificationObserver {
   friend class WebCacheManagerTest;
   FRIEND_TEST_ALL_PREFIXES(WebCacheManagerBrowserTest, CrashOnceOnly);
 
@@ -67,6 +70,11 @@ class WebCacheManager {
   // Clears all in-memory caches.
   void ClearCache();
 
+  // NotificationObserver implementation:
+  virtual void Observe(NotificationType type,
+                       const NotificationSource& source,
+                       const NotificationDetails& details) OVERRIDE;
+
   // Gets the default global size limit.  This interrogates system metrics to
   // tune the default size to the current system.
   static size_t GetDefaultGlobalSizeLimit();
@@ -95,7 +103,7 @@ class WebCacheManager {
   WebCacheManager();
   friend struct DefaultSingletonTraits<WebCacheManager>;
 
-  ~WebCacheManager();
+  virtual ~WebCacheManager();
 
   // Recomputes the allocation of cache resources among the renderers.  Also
   // informs the renderers of their new allocation.
@@ -193,6 +201,8 @@ class WebCacheManager {
   std::set<int> inactive_renderers_;
 
   ScopedRunnableMethodFactory<WebCacheManager> revise_allocation_factory_;
+
+  NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(WebCacheManager);
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,6 +17,8 @@ PlatformFile CreatePlatformFile(const FilePath& name,
   base::ThreadRestrictions::AssertIOAllowed();
 
   DWORD disposition = 0;
+  if (created)
+    *created = false;
 
   if (flags & PLATFORM_FILE_OPEN)
     disposition = OPEN_EXISTING;
@@ -36,7 +38,7 @@ PlatformFile CreatePlatformFile(const FilePath& name,
     disposition = CREATE_ALWAYS;
   }
 
-  if (flags & PLATFORM_FILE_TRUNCATE) {
+  if (flags & PLATFORM_FILE_OPEN_TRUNCATED) {
     DCHECK(!disposition);
     DCHECK(flags & PLATFORM_FILE_WRITE);
     disposition = TRUNCATE_EXISTING;

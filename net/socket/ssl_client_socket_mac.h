@@ -38,14 +38,14 @@ class SSLClientSocketMac : public SSLClientSocket {
                      const HostPortPair& host_and_port,
                      const SSLConfig& ssl_config,
                      CertVerifier* cert_verifier);
-  ~SSLClientSocketMac();
+  virtual ~SSLClientSocketMac();
 
   // SSLClientSocket methods:
   virtual void GetSSLInfo(SSLInfo* ssl_info);
   virtual void GetSSLCertRequestInfo(SSLCertRequestInfo* cert_request_info);
   virtual NextProtoStatus GetNextProto(std::string* proto);
 
-  // ClientSocket methods:
+  // StreamSocket methods:
   virtual int Connect(CompletionCallback* callback);
   virtual void Disconnect();
   virtual bool IsConnected() const;

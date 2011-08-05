@@ -27,10 +27,13 @@
 #include <string>
 
 #include "base/callback.h"
+#include "base/callback_old.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time.h"
+#include "media/base/audio_decoder_config.h"
 #include "media/base/media_format.h"
+#include "media/base/pipeline_status.h"
 #include "media/base/video_frame.h"
 
 struct AVStream;
@@ -60,6 +63,12 @@ enum Preload {
 
 // Used for completing asynchronous methods.
 typedef Callback0::Type FilterCallback;
+typedef base::Callback<void(PipelineStatus)> FilterStatusCB;
+
+// This function copies |cb|, calls Reset() on |cb|, and then calls Run()
+// on the copy. This is used in the common case where you need to clear
+// a callback member variable before running the callback.
+void ResetAndRunCB(FilterStatusCB* cb, PipelineStatus status);
 
 // Used for updating pipeline statistics.
 typedef Callback1<const PipelineStatistics&>::Type StatisticsCallback;
@@ -102,7 +111,7 @@ class Filter : public base::RefCountedThreadSafe<Filter> {
 
   // Carry out any actions required to seek to the given time, executing the
   // callback upon completion.
-  virtual void Seek(base::TimeDelta time, FilterCallback* callback);
+  virtual void Seek(base::TimeDelta time, const FilterStatusCB& callback);
 
   // This method is called from the pipeline when the audio renderer
   // is disabled. Filters can ignore the notification if they do not
@@ -149,6 +158,8 @@ class DataSource : public Filter {
 
 class DemuxerStream : public base::RefCountedThreadSafe<DemuxerStream> {
  public:
+  typedef base::Callback<void(Buffer*)> ReadCallback;
+
   enum Type {
     UNKNOWN,
     AUDIO,
@@ -158,9 +169,7 @@ class DemuxerStream : public base::RefCountedThreadSafe<DemuxerStream> {
 
   // Schedules a read.  When the |read_callback| is called, the downstream
   // filter takes ownership of the buffer by AddRef()'ing the buffer.
-  //
-  // TODO(scherkus): switch Read() callback to scoped_refptr<>.
-  virtual void Read(Callback1<Buffer*>::Type* read_callback) = 0;
+  virtual void Read(const ReadCallback& read_callback) = 0;
 
   // Returns an |AVStream*| if supported, or NULL.
   virtual AVStream* GetAVStream();
@@ -196,18 +205,19 @@ class VideoDecoder : public Filter {
   virtual void Initialize(DemuxerStream* stream, FilterCallback* callback,
                           StatisticsCallback* stats_callback) = 0;
 
-  // |set_fill_buffer_done_callback| install permanent callback from downstream
-  // filter (i.e. Renderer). The callback is used to deliver video frames at
-  // runtime to downstream filter
-  typedef Callback1<scoped_refptr<VideoFrame> >::Type ConsumeVideoFrameCallback;
-  void set_consume_video_frame_callback(ConsumeVideoFrameCallback* callback) {
-    consume_video_frame_callback_.reset(callback);
-  }
-
   // Renderer provides an output buffer for Decoder to write to. These buffers
-  // will be recycled to renderer by |fill_buffer_done_callback_|.
+  // will be recycled to renderer via the permanent callback.
+  //
   // We could also pass empty pointer here to let decoder provide buffers pool.
   virtual void ProduceVideoFrame(scoped_refptr<VideoFrame> frame) = 0;
+
+  // Installs a permanent callback for passing decoded video output.
+  //
+  // A NULL frame represents a decoding error.
+  typedef base::Callback<void(scoped_refptr<VideoFrame>)> ConsumeVideoFrameCB;
+  void set_consume_video_frame_callback(const ConsumeVideoFrameCB& callback) {
+    consume_video_frame_callback_ = callback;
+  }
 
   // Indicate whether decoder provides its own output buffers
   virtual bool ProvidesBuffer() = 0;
@@ -216,17 +226,19 @@ class VideoDecoder : public Filter {
   virtual const MediaFormat& media_format() = 0;
 
  protected:
-  // A video frame is ready to be consumed. This method invoke
-  // |consume_video_frame_callback_| internally.
+  // Executes the permanent callback to pass off decoded video.
+  //
+  // TODO(scherkus): name this ConsumeVideoFrame() once we fix the TODO in
+  // VideoDecodeEngine::EventHandler to remove ConsumeVideoFrame() from there.
   void VideoFrameReady(scoped_refptr<VideoFrame> frame) {
-    consume_video_frame_callback_->Run(frame);
+    consume_video_frame_callback_.Run(frame);
   }
 
   VideoDecoder();
   virtual ~VideoDecoder();
 
  private:
-  scoped_ptr<ConsumeVideoFrameCallback> consume_video_frame_callback_;
+  ConsumeVideoFrameCB consume_video_frame_callback_;
 };
 
 
@@ -238,32 +250,30 @@ class AudioDecoder : public Filter {
   virtual void Initialize(DemuxerStream* stream, FilterCallback* callback,
                           StatisticsCallback* stats_callback) = 0;
 
-  // |set_fill_buffer_done_callback| install permanent callback from downstream
-  // filter (i.e. Renderer). The callback is used to deliver buffers at
-  // runtime to downstream filter.
-  typedef Callback1<scoped_refptr<Buffer> >::Type ConsumeAudioSamplesCallback;
-  void set_consume_audio_samples_callback(
-      ConsumeAudioSamplesCallback* callback) {
-    consume_audio_samples_callback_.reset(callback);
-  }
-  ConsumeAudioSamplesCallback* consume_audio_samples_callback() {
-     return consume_audio_samples_callback_.get();
-   }
+  virtual AudioDecoderConfig config() = 0;
 
   // Renderer provides an output buffer for Decoder to write to. These buffers
-  // will be recycled to renderer by fill_buffer_done_callback_;
+  // will be recycled to renderer via the permanent callback.
+  //
   // We could also pass empty pointer here to let decoder provide buffers pool.
   virtual void ProduceAudioSamples(scoped_refptr<Buffer> buffer) = 0;
 
-  // Returns the media format produced by this decoder.
-  virtual const MediaFormat& media_format() = 0;
+  // Installs a permanent callback for passing decoded audio output.
+  typedef base::Callback<void(scoped_refptr<Buffer>)> ConsumeAudioSamplesCB;
+  void set_consume_audio_samples_callback(
+      const ConsumeAudioSamplesCB& callback) {
+    consume_audio_samples_callback_ = callback;
+  }
 
  protected:
   AudioDecoder();
-  ~AudioDecoder();
+  virtual ~AudioDecoder();
+
+  // Executes the permanent callback to pass off decoded audio.
+  void ConsumeAudioSamples(scoped_refptr<Buffer> buffer);
 
  private:
-  scoped_ptr<ConsumeAudioSamplesCallback> consume_audio_samples_callback_;
+  ConsumeAudioSamplesCB consume_audio_samples_callback_;
 };
 
 

@@ -24,9 +24,9 @@
 #include "base/win/win_util.h"
 #endif
 
-#if defined(OS_LINUX)
-#include <glib.h>
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
 #include "chrome/common/auto_start_linux.h"
+#include <glib.h>
 #endif
 
 namespace {
@@ -114,7 +114,7 @@ TEST_F(ServiceProcessStateTest, AutoRun) {
                                                 UTF8ToWide(value_name),
                                                 &value));
   autorun_command_line.reset(new CommandLine(CommandLine::FromString(value)));
-#elif defined(OS_LINUX)
+#elif defined(OS_POSIX) && !defined(OS_MACOSX)
 #if defined(GOOGLE_CHROME_BUILD)
   std::string base_desktop_name = "google-chrome-service.desktop";
 #else  // CHROMIUM_BUILD
@@ -143,7 +143,7 @@ TEST_F(ServiceProcessStateTest, AutoRun) {
   EXPECT_FALSE(base::win::ReadCommandFromAutoRun(HKEY_CURRENT_USER,
                                                  UTF8ToWide(value_name),
                                                  &value));
-#elif defined(OS_LINUX)
+#elif defined(OS_POSIX) && !defined(OS_MACOSX)
   EXPECT_FALSE(AutoStart::GetAutostartFileValue(
       GetServiceProcessScopedName(base_desktop_name), "Exec", &exec_value));
 #endif  // defined(OS_WIN)
@@ -232,8 +232,8 @@ MULTIPROCESS_TEST_MAIN(ServiceProcessStateTestShutdown) {
 #include "base/file_util.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/message_loop.h"
+#include "base/scoped_temp_dir.h"
 #include "base/stringprintf.h"
 #include "base/sys_string_conversions.h"
 #include "base/test/test_timeouts.h"

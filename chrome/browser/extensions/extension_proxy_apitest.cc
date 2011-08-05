@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -70,9 +70,6 @@ class ProxySettingsApiTest : public ExtensionApiTest {
 
 // Tests direct connection settings.
 IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest, ProxyDirectSettings) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableExperimentalExtensionApis);
-
   ASSERT_TRUE(RunExtensionTestIncognito("proxy/direct")) << message_;
   const Extension* extension = GetSingleLoadedExtension();
   ASSERT_TRUE(extension);
@@ -84,9 +81,6 @@ IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest, ProxyDirectSettings) {
 
 // Tests auto-detect settings.
 IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest, ProxyAutoSettings) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableExperimentalExtensionApis);
-
   ASSERT_TRUE(RunExtensionTestIncognito("proxy/auto")) << message_;
   const Extension* extension = GetSingleLoadedExtension();
   ASSERT_TRUE(extension);
@@ -98,9 +92,6 @@ IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest, ProxyAutoSettings) {
 
 // Tests PAC proxy settings.
 IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest, ProxyPacScript) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableExperimentalExtensionApis);
-
   ASSERT_TRUE(RunExtensionTest("proxy/pac")) << message_;
   const Extension* extension = GetSingleLoadedExtension();
   ASSERT_TRUE(extension);
@@ -112,9 +103,6 @@ IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest, ProxyPacScript) {
 
 // Tests PAC proxy settings.
 IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest, ProxyPacData) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableExperimentalExtensionApis);
-
   ASSERT_TRUE(RunExtensionTest("proxy/pacdata")) << message_;
   const Extension* extension = GetSingleLoadedExtension();
   ASSERT_TRUE(extension);
@@ -129,9 +117,6 @@ IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest, ProxyPacData) {
 
 // Tests setting a single proxy to cover all schemes.
 IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest, ProxyFixedSingle) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableExperimentalExtensionApis);
-
   ASSERT_TRUE(RunExtensionTest("proxy/single")) << message_;
   const Extension* extension = GetSingleLoadedExtension();
   ASSERT_TRUE(extension);
@@ -146,9 +131,6 @@ IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest, ProxyFixedSingle) {
 
 // Tests setting to use the system's proxy settings.
 IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest, ProxySystem) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableExperimentalExtensionApis);
-
   ASSERT_TRUE(RunExtensionTest("proxy/system")) << message_;
   const Extension* extension = GetSingleLoadedExtension();
   ASSERT_TRUE(extension);
@@ -160,9 +142,6 @@ IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest, ProxySystem) {
 
 // Tests setting separate proxies for each scheme.
 IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest, ProxyFixedIndividual) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableExperimentalExtensionApis);
-
   ASSERT_TRUE(RunExtensionTestIncognito("proxy/individual")) << message_;
   const Extension* extension = GetSingleLoadedExtension();
   ASSERT_TRUE(extension);
@@ -191,10 +170,7 @@ IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest, ProxyFixedIndividual) {
 
 // Tests setting values only for incognito mode
 IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest,
-    ProxyFixedIndividualIncognitoOnly) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableExperimentalExtensionApis);
-
+                       ProxyFixedIndividualIncognitoOnly) {
   ASSERT_TRUE(RunExtensionTestIncognito("proxy/individual_incognito_only")) <<
       message_;
   const Extension* extension = GetSingleLoadedExtension();
@@ -217,10 +193,7 @@ IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest,
 
 // Tests setting values also for incognito mode
 IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest,
-    ProxyFixedIndividualIncognitoAlso) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableExperimentalExtensionApis);
-
+                       ProxyFixedIndividualIncognitoAlso) {
   ASSERT_TRUE(RunExtensionTestIncognito("proxy/individual_incognito_also")) <<
       message_;
   const Extension* extension = GetSingleLoadedExtension();
@@ -250,9 +223,6 @@ IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest,
 
 // Tests setting and unsetting values
 IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest, ProxyFixedIndividualRemove) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableExperimentalExtensionApis);
-
   ASSERT_TRUE(RunExtensionTest("proxy/individual_remove")) << message_;
   const Extension* extension = GetSingleLoadedExtension();
   ASSERT_TRUE(extension);
@@ -263,9 +233,6 @@ IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest, ProxyFixedIndividualRemove) {
 
 IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest,
     ProxyBypass) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableExperimentalExtensionApis);
-
   ASSERT_TRUE(RunExtensionTestIncognito("proxy/bypass")) << message_;
   const Extension* extension = GetSingleLoadedExtension();
   ASSERT_TRUE(extension);
@@ -288,8 +255,5 @@ IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest,
 
 // Tests error events.
 IN_PROC_BROWSER_TEST_F(ProxySettingsApiTest, ProxyEvents) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableExperimentalExtensionApis);
-
   ASSERT_TRUE(RunExtensionTest("proxy/events")) << message_;
 }

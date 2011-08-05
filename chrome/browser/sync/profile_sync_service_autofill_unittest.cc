@@ -42,7 +42,6 @@
 #include "chrome/browser/webdata/autofill_table.h"
 #include "chrome/browser/webdata/web_database.h"
 #include "chrome/common/net/gaia/gaia_constants.h"
-#include "chrome/test/profile_mock.h"
 #include "chrome/test/sync/engine/test_id_factory.h"
 #include "content/browser/browser_thread.h"
 #include "content/common/notification_source.h"
@@ -206,8 +205,7 @@ class AutofillEntryFactory : public AbstractAutofillFactory {
       ProfileMock* profile,
       ProfileSyncService* service) {
     return new AutofillDataTypeController(factory,
-        profile,
-        service);
+        profile);
   }
 
   void SetExpectation(ProfileSyncFactoryMock* factory,
@@ -227,8 +225,7 @@ class AutofillProfileFactory : public AbstractAutofillFactory {
       ProfileMock* profile,
       ProfileSyncService* service) {
     return new AutofillProfileDataTypeController(factory,
-        profile,
-        service);
+        profile);
   }
 
   void SetExpectation(ProfileSyncFactoryMock* factory,
@@ -252,7 +249,7 @@ template <class T> class AddAutofillTask;
 
 class ProfileSyncServiceAutofillTest : public AbstractProfileSyncServiceTest {
  protected:
-  ProfileSyncServiceAutofillTest() : db_thread_(BrowserThread::DB) {}
+  ProfileSyncServiceAutofillTest() {}
 
   AutofillProfileFactory profile_factory_;
   AutofillEntryFactory entry_factory_;
@@ -268,6 +265,7 @@ class ProfileSyncServiceAutofillTest : public AbstractProfileSyncServiceTest {
     }
   }
   virtual void SetUp() {
+    AbstractProfileSyncServiceTest::SetUp();
     profile_.CreateRequestContext();
     web_database_.reset(new WebDatabaseFake(&autofill_table_));
     web_data_service_ = new WebDataServiceFake(web_database_.get());
@@ -275,7 +273,6 @@ class ProfileSyncServiceAutofillTest : public AbstractProfileSyncServiceTest {
     EXPECT_CALL(*personal_data_manager_, LoadProfiles()).Times(1);
     EXPECT_CALL(*personal_data_manager_, LoadCreditCards()).Times(1);
     personal_data_manager_->Init(&profile_);
-    db_thread_.Start();
 
     notification_service_ = new ThreadNotificationService(&db_thread_);
     notification_service_->Init();
@@ -284,14 +281,8 @@ class ProfileSyncServiceAutofillTest : public AbstractProfileSyncServiceTest {
   virtual void TearDown() {
     service_.reset();
     notification_service_->TearDown();
-    db_thread_.Stop();
-    {
-      // The request context gets deleted on the I/O thread. To prevent a leak
-      // supply one here.
-      BrowserThread io_thread(BrowserThread::IO, MessageLoop::current());
-      profile_.ResetRequestContext();
-    }
-    MessageLoop::current()->RunAllPending();
+    profile_.ResetRequestContext();
+    AbstractProfileSyncServiceTest::TearDown();
   }
 
   void StartSyncService(Task* task,
@@ -301,6 +292,8 @@ class ProfileSyncServiceAutofillTest : public AbstractProfileSyncServiceTest {
     service_.reset(
         new TestProfileSyncService(&factory_, &profile_, "test_user", false,
                                    task));
+    EXPECT_CALL(profile_, GetProfileSyncService()).WillRepeatedly(
+        Return(service_.get()));
     AutofillDataTypeController* data_type_controller =
         factory->CreateDataTypeController(&factory_,
             &profile_,
@@ -459,7 +452,6 @@ class ProfileSyncServiceAutofillTest : public AbstractProfileSyncServiceTest {
   friend class AddAutofillTask<AutofillProfile>;
   friend class FakeServerUpdater;
 
-  BrowserThread db_thread_;
   scoped_refptr<ThreadNotificationService> notification_service_;
 
   ProfileMock profile_;
@@ -669,7 +661,6 @@ TEST_F(ProfileSyncServiceAutofillTest, HasNativeEntriesEmptySync) {
 }
 
 TEST_F(ProfileSyncServiceAutofillTest, HasProfileEmptySync) {
-
   std::vector<AutofillProfile*> profiles;
   std::vector<AutofillProfile> expected_profiles;
   // Owned by GetAutofillProfiles caller.

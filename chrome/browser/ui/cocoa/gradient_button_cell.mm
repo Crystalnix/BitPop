@@ -12,6 +12,7 @@
 #import "chrome/browser/ui/cocoa/themed_window.h"
 #include "grit/theme_resources.h"
 #import "third_party/GTM/AppKit/GTMNSColor+Luminance.h"
+#include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
 @interface GradientButtonCell (Private)
 - (void)sharedInit;
@@ -403,7 +404,7 @@ static const NSTimeInterval kAnimationContinuousCycleDuration = 0.4;
 
   // Visually indicate unclicked, enabled buttons.
   if (!showClickedGradient && [self isEnabled]) {
-    [NSGraphicsContext saveGraphicsState];
+    gfx::ScopedNSGraphicsContextSaveGState scopedGState;
     [innerPath addClip];
 
     // Draw the inner glow.
@@ -423,8 +424,6 @@ static const NSTimeInterval kAnimationContinuousCycleDuration = 0.4;
 
     // Draw the gradient inside.
     [gradient drawInBezierPath:innerPath angle:90.0];
-
-    [NSGraphicsContext restoreGraphicsState];
   }
 
   // Don't draw anything else for disabled flat buttons.
@@ -576,7 +575,7 @@ static const NSTimeInterval kAnimationContinuousCycleDuration = 0.4;
   if (shouldTheme_) {
     BOOL isTemplate = [[self image] isTemplate];
 
-    [NSGraphicsContext saveGraphicsState];
+    gfx::ScopedNSGraphicsContextSaveGState scopedGState;
 
     CGContextRef context =
         (CGContextRef)([[NSGraphicsContext currentContext] graphicsPort]);
@@ -584,8 +583,7 @@ static const NSTimeInterval kAnimationContinuousCycleDuration = 0.4;
     ThemeService* themeProvider = static_cast<ThemeService*>(
         [[controlView window] themeProvider]);
     NSColor* color = themeProvider ?
-        themeProvider->GetNSColorTint(ThemeService::TINT_BUTTONS,
-                                      true) :
+        themeProvider->GetNSColorTint(ThemeService::TINT_BUTTONS, true) :
         [NSColor blackColor];
 
     if (isTemplate && themeProvider && themeProvider->UsingDefaultTheme()) {
@@ -611,8 +609,6 @@ static const NSTimeInterval kAnimationContinuousCycleDuration = 0.4;
       NSRectFillUsingOperation(cellFrame, NSCompositeSourceAtop);
     }
     CGContextEndTransparencyLayer(context);
-
-    [NSGraphicsContext restoreGraphicsState];
   } else {
     // NSCell draws these off-center for some reason, probably because of the
     // positioning of the control in the xib.
@@ -639,9 +635,9 @@ static const NSTimeInterval kAnimationContinuousCycleDuration = 0.4;
 // We can't use GTMFadeTruncatingTextFieldCell because there's no easy way to
 // get it to work with NSButtonCell.
 // TODO(jeremy): Move this to GTM.
-- (NSRect)drawTitle:(NSAttributedString *)title
+- (NSRect)drawTitle:(NSAttributedString*)title
           withFrame:(NSRect)cellFrame
-             inView:(NSView *)controlView {
+             inView:(NSView*)controlView {
   NSSize size = [title size];
 
   // Empirically, Cocoa will draw an extra 2 pixels past NSWidth(cellFrame)
@@ -660,27 +656,29 @@ static const NSTimeInterval kAnimationContinuousCycleDuration = 0.4;
 
   // Draw non-gradient part without transparency layer, as light text on a dark
   // background looks bad with a gradient layer.
-  [[NSGraphicsContext currentContext] saveGraphicsState];
-  [NSBezierPath clipRect:solidPart];
+  NSPoint textOffset = NSZeroPoint;
+  {
+    gfx::ScopedNSGraphicsContextSaveGState scopedGState;
+    [NSBezierPath clipRect:solidPart];
 
-  // 11 is the magic number needed to make this match the native NSButtonCell's
-  // label display.
-  CGFloat textLeft = [[self image] size].width + 11;
+    // 11 is the magic number needed to make this match the native
+    // NSButtonCell's label display.
+    CGFloat textLeft = [[self image] size].width + 11;
 
-  // For some reason, the height of cellFrame as passed in is totally bogus.
-  // For vertical centering purposes, we need the bounds of the containing
-  // view.
-  NSRect buttonFrame = [[self controlView] frame];
+    // For some reason, the height of cellFrame as passed in is totally bogus.
+    // For vertical centering purposes, we need the bounds of the containing
+    // view.
+    NSRect buttonFrame = [[self controlView] frame];
 
-  // Off-by-one to match native NSButtonCell's version.
-  NSPoint textOffset = NSMakePoint(textLeft,
-                        (NSHeight(buttonFrame) - size.height)/2 + 1);
-  [title drawAtPoint:textOffset];
-  [[NSGraphicsContext currentContext] restoreGraphicsState];
+    // Off-by-one to match native NSButtonCell's version.
+    textOffset = NSMakePoint(textLeft,
+                             (NSHeight(buttonFrame) - size.height)/2 + 1);
+    [title drawAtPoint:textOffset];
+  }
 
   // Draw the gradient part with a transparency layer. This makes the text look
   // suboptimal, but since it fades out, that's ok.
-  [[NSGraphicsContext currentContext] saveGraphicsState];
+  gfx::ScopedNSGraphicsContextSaveGState scopedGState;
   [NSBezierPath clipRect:gradientPart];
   CGContextRef context = static_cast<CGContextRef>(
       [[NSGraphicsContext currentContext] graphicsPort]);
@@ -703,7 +701,6 @@ static const NSTimeInterval kAnimationContinuousCycleDuration = 0.4;
               options:NSGradientDrawsBeforeStartingLocation];
   [mask release];
   CGContextEndTransparencyLayer(context);
-  [[NSGraphicsContext currentContext] restoreGraphicsState];
 
   return cellFrame;
 }

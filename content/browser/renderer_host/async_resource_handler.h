@@ -10,6 +10,7 @@
 
 #include "content/browser/renderer_host/resource_handler.h"
 
+class HostZoomMap;
 class ResourceDispatcherHost;
 class ResourceMessageFilter;
 class SharedIOBuffer;
@@ -21,6 +22,7 @@ class AsyncResourceHandler : public ResourceHandler {
   AsyncResourceHandler(ResourceMessageFilter* filter,
                        int routing_id,
                        const GURL& url,
+                       HostZoomMap* host_zoom_map,
                        ResourceDispatcherHost* resource_dispatcher_host);
 
   // ResourceHandler implementation:
@@ -46,6 +48,7 @@ class AsyncResourceHandler : public ResourceHandler {
   scoped_refptr<SharedIOBuffer> read_buffer_;
   ResourceMessageFilter* filter_;
   int routing_id_;
+  HostZoomMap* host_zoom_map_;
   ResourceDispatcherHost* rdh_;
 
   // |next_buffer_size_| is the size of the buffer to be allocated on the next

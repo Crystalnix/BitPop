@@ -74,13 +74,14 @@ enum InstallStatus {
   REQUIRES_MULTI_INSTALL,      // 41. --multi-install was missing from the
                                // command line.
   APPLY_DIFF_PATCH_FAILED,     // 42. Failed to apply a diff patch.
+  INCONSISTENT_UPDATE_POLICY,  // 43. Inconsistent update policy GP settings.
 };
 
 
 // If the following compile assert fires it means that the InstallStatus
 // enumeration changed which will break the contract between the old
 // chrome installed and the new setup.exe that is trying to upgrade.
-COMPILE_ASSERT(installer::CONFLICTING_CHANNEL_EXISTS == 39,
+COMPILE_ASSERT(installer::INCONSISTENT_UPDATE_POLICY == 43,
                dont_change_enum);
 
 // The type of an update archive.
@@ -136,6 +137,7 @@ extern const char kMultiInstall[];
 extern const char kNewSetupExe[];
 extern const char kRegisterChromeBrowser[];
 extern const char kRegisterChromeBrowserSuffix[];
+extern const char kRegisterURLProtocol[];
 extern const char kRenameChromeExe[];
 extern const char kRemoveChromeRegistration[];
 extern const char kRunAsAdmin[];
@@ -151,9 +153,6 @@ extern const char kExperimentGroup[];
 extern const char kToastResultsKey[];
 }  // namespace switches
 
-extern const wchar_t kCeeeBrokerExe[];
-extern const wchar_t kCeeeIeDll[];
-extern const wchar_t kCeeeInstallHelperDll[];
 extern const wchar_t kChromeDll[];
 extern const wchar_t kChromeExe[];
 extern const wchar_t kChromeFrameDll[];

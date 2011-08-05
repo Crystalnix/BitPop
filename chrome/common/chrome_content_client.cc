@@ -7,13 +7,22 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
+#include "base/process_util.h"
+#include "base/string_number_conversions.h"
 #include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/win/windows_version.h"
 #include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/render_messages.h"
 #include "content/common/pepper_plugin_registry.h"
 #include "remoting/client/plugin/pepper_entrypoints.h"
+
+#if defined(OS_WIN)
+#include "content/common/sandbox_policy.h"
+#include "sandbox/src/sandbox.h"
+#endif
 
 namespace {
 
@@ -28,7 +37,15 @@ const char* kNaClPluginExtension = "nexe";
 const char* kNaClPluginDescription = "Native Client Executable";
 
 #if defined(ENABLE_REMOTING)
-const char* kRemotingPluginMimeType = "pepper-application/x-chromoting";
+const char* kRemotingViewerPluginName = "Remoting Viewer";
+const FilePath::CharType kRemotingViewerPluginPath[] =
+    FILE_PATH_LITERAL("internal-remoting-viewer");
+// Use a consistent MIME-type regardless of branding.
+const char* kRemotingViewerPluginMimeType =
+    "application/vnd.chromium.remoting-viewer";
+// TODO(wez): Remove the old MIME-type once client code no longer needs it.
+const char* kRemotingViewerPluginOldMimeType =
+    "pepper-application/x-chromoting";
 #endif
 
 const char* kFlashPluginName = "Shockwave Flash";
@@ -90,17 +107,24 @@ void ComputeBuiltInPlugins(std::vector<PepperPluginInfo>* plugins) {
     }
   }
 
-  // Remoting.
+  // The Remoting Viewer plugin is built-in, but behind a flag for now.
 #if defined(ENABLE_REMOTING)
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableRemoting)) {
     PepperPluginInfo info;
     info.is_internal = true;
-    info.path = FilePath(FILE_PATH_LITERAL("internal-chromoting"));
-    webkit::npapi::WebPluginMimeType remoting_mime_type(kRemotingPluginMimeType,
-                                                        std::string(),
-                                                        std::string());
+    info.name = kRemotingViewerPluginName;
+    info.path = FilePath(kRemotingViewerPluginPath);
+    webkit::npapi::WebPluginMimeType remoting_mime_type(
+        kRemotingViewerPluginMimeType,
+        std::string(),
+        std::string());
     info.mime_types.push_back(remoting_mime_type);
+    webkit::npapi::WebPluginMimeType old_remoting_mime_type(
+        kRemotingViewerPluginOldMimeType,
+        std::string(),
+        std::string());
+    info.mime_types.push_back(old_remoting_mime_type);
     info.internal_entry_points.get_interface = remoting::PPP_GetInterface;
     info.internal_entry_points.initialize_module =
         remoting::PPP_InitializeModule;
@@ -162,11 +186,68 @@ void AddOutOfProcessFlash(std::vector<PepperPluginInfo>* plugins) {
 
 #endif  // !defined(NACL_WIN64)
 
+#if defined(OS_WIN)
+// Launches the privileged flash broker, used when flash is sandboxed.
+// The broker is the same flash dll, except that it uses a different
+// entrypoint (BrokerMain) and it is hosted in windows' generic surrogate
+// process rundll32. After launching the broker we need to pass to
+// the flash plugin the process id of the broker via the command line
+// using --flash-broker=pid.
+// More info about rundll32 at http://support.microsoft.com/kb/164787.
+bool LoadFlashBroker(const FilePath& plugin_path, CommandLine* cmd_line) {
+  FilePath rundll;
+  if (!PathService::Get(base::DIR_SYSTEM, &rundll))
+    return false;
+  rundll = rundll.AppendASCII("rundll32.exe");
+  // Rundll32 cannot handle paths with spaces, so we use the short path.
+  wchar_t short_path[MAX_PATH];
+  if (0 == ::GetShortPathNameW(plugin_path.value().c_str(),
+                               short_path, arraysize(short_path)))
+    return false;
+  // Here is the kicker, if the user has disabled 8.3 (short path) support
+  // on the volume GetShortPathNameW does not fail but simply returns the
+  // input path. In this case if the path had any spaces then rundll32 will
+  // incorrectly interpret its parameters. So we quote the path, even though
+  // the kb/164787 says you should not.
+  std::wstring cmd_final =
+      base::StringPrintf(L"%ls \"%ls\",BrokerMain browser=chrome",
+                         rundll.value().c_str(),
+                         short_path);
+  base::ProcessHandle process;
+  if (!base::LaunchApp(cmd_final, false, true, &process))
+    return false;
+
+  cmd_line->AppendSwitchASCII("flash-broker",
+                              base::Int64ToString(::GetProcessId(process)));
+
+  // The flash broker, unders some circumstances can linger beyond the lifetime
+  // of the flash player, so we put it in a job object, when the browser
+  // terminates the job object is destroyed (by the OS) and the flash broker
+  // is terminated.
+  HANDLE job = ::CreateJobObjectW(NULL, NULL);
+  JOBOBJECT_EXTENDED_LIMIT_INFORMATION job_limits = {0};
+  job_limits.BasicLimitInformation.LimitFlags =
+      JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+  if (::SetInformationJobObject(job, JobObjectExtendedLimitInformation,
+                                &job_limits, sizeof(job_limits))) {
+    ::AssignProcessToJobObject(job, process);
+    // Yes, we are leaking the object here. Read comment above.
+  } else {
+    ::CloseHandle(job);
+    return false;
+  }
+
+  ::CloseHandle(process);
+  return true;
+}
+#endif  // OS_WIN
+
 }  // namespace
 
 namespace chrome {
 
 const char* ChromeContentClient::kPDFPluginName = ::kPDFPluginName;
+const char* ChromeContentClient::kNaClPluginName = ::kNaClPluginName;
 
 void ChromeContentClient::SetActiveURL(const GURL& url) {
   child_process_logging::SetActiveURL(url);
@@ -183,5 +264,79 @@ void ChromeContentClient::AddPepperPlugins(
   AddOutOfProcessFlash(plugins);
 #endif
 }
+
+bool ChromeContentClient::CanSendWhileSwappedOut(const IPC::Message* msg) {
+  // Any Chrome-specific messages that must be allowed to be sent from swapped
+  // out renderers.
+  switch (msg->type()) {
+    case ViewHostMsg_DomOperationResponse::ID:
+      return true;
+    default:
+      break;
+  }
+  return false;
+}
+
+bool ChromeContentClient::CanHandleWhileSwappedOut(
+    const IPC::Message& msg) {
+  // Any Chrome-specific messages (apart from those listed in
+  // CanSendWhileSwappedOut) that must be handled by the browser when sent from
+  // swapped out renderers.
+  switch (msg.type()) {
+    case ViewHostMsg_Snapshot::ID:
+      return true;
+    default:
+      break;
+  }
+  return false;
+}
+
+#if defined(OS_WIN)
+bool ChromeContentClient::SandboxPlugin(CommandLine* command_line,
+                                        sandbox::TargetPolicy* policy) {
+  std::wstring plugin_dll = command_line->
+      GetSwitchValueNative(switches::kPluginPath);
+
+  FilePath builtin_flash;
+  if (!PathService::Get(chrome::FILE_FLASH_PLUGIN, &builtin_flash))
+    return false;
+
+  FilePath plugin_path(plugin_dll);
+  if (plugin_path != builtin_flash)
+    return false;
+
+  if (base::win::GetVersion() <= base::win::VERSION_XP ||
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableFlashSandbox)) {
+    return false;
+  }
+
+  // Add the policy for the pipes.
+  sandbox::ResultCode result = sandbox::SBOX_ALL_OK;
+  result = policy->AddRule(sandbox::TargetPolicy::SUBSYS_NAMED_PIPES,
+                           sandbox::TargetPolicy::NAMEDPIPES_ALLOW_ANY,
+                           L"\\\\.\\pipe\\chrome.*");
+  if (result != sandbox::SBOX_ALL_OK) {
+    NOTREACHED();
+    return false;
+  }
+
+  // Spawn the flash broker and apply sandbox policy.
+  if (LoadFlashBroker(plugin_path, command_line)) {
+    policy->SetJobLevel(sandbox::JOB_UNPROTECTED, 0);
+    policy->SetTokenLevel(sandbox::USER_RESTRICTED_SAME_ACCESS,
+                          sandbox::USER_INTERACTIVE);
+    policy->SetIntegrityLevel(sandbox::INTEGRITY_LEVEL_LOW);
+  } else {
+    // Could not start the broker, use a very weak policy instead.
+    DLOG(WARNING) << "Failed to start flash broker";
+    policy->SetJobLevel(sandbox::JOB_UNPROTECTED, 0);
+    policy->SetTokenLevel(
+        sandbox::USER_UNPROTECTED, sandbox::USER_UNPROTECTED);
+  }
+
+  return true;
+}
+#endif
 
 }  // namespace chrome

@@ -1,9 +1,16 @@
 <!DOCTYPE HTML>
-<html
-    i18n-values="dir:textdirection"
-    id="t">
+<html id="t" i18n-values="dir:textdirection">
 <head>
 <meta charset="utf-8">
+<!-- X-WebKit-CSP is our development name for Content-Security-Policy.
+     TODO(tsepez) rename when Content-security-policy is done.
+     TODO(tsepez) remove unsafe-eval when bidichecker_packaged.js fixed.
+-->
+<meta http-equiv="X-WebKit-CSP"
+      content="object-src 'none';
+               script-src chrome://resources
+                          chrome-extension://mndnfokpggljbaajbnioimlmbfngpief
+                          'self' 'unsafe-eval'">
 <!-- Set the title to that of the default page so that the title doesn't flash
      on load (for the most common case). -->
 <title i18n-content="browserPageTabTitle"></title>
@@ -24,8 +31,12 @@
 <link rel="stylesheet" href="content_settings.css">
 <link rel="stylesheet" href="cookies_view.css">
 <link rel="stylesheet" href="font_settings.css">
+<if expr="pp_ifdef('enable_register_protocol_handler')">
+  <link rel="stylesheet" href="handler_options.css">
+</if>
 <link rel="stylesheet" href="import_data_overlay.css">
 <link rel="stylesheet" href="language_options.css">
+<link rel="stylesheet" href="password_manager.css">
 <link rel="stylesheet" href="password_manager_list.css">
 <link rel="stylesheet" href="personal_options.css">
 <link rel="stylesheet" href="search_engine_manager.css">
@@ -61,76 +72,7 @@
 <script src="chrome://resources/js/cr/ui/tree.js"></script>
 <script src="chrome://resources/js/local_strings.js"></script>
 <script src="chrome://resources/js/util.js"></script>
-<script src="preferences.js"></script>
-<script src="pref_ui.js"></script>
-<script src="deletable_item_list.js"></script>
-<script src="inline_editable_list.js"></script>
-<script src="options_page.js"></script>
-<if expr="pp_ifdef('chromeos')">
-  <script src="about_page.js"></script>
-  <script src="chromeos/cellular_plan_element.js"></script>
-  <script src="chromeos/change_picture_options.js"></script>
-  <script src="chromeos/internet_network_element.js"></script>
-  <script src="chromeos/internet_options.js"></script>
-  <script src="chromeos/system_options.js"></script>
-  <script src="chromeos/accounts_options.js"></script>
-  <script src="chromeos/proxy_options.js"></script>
-  <script src="chromeos/proxy_rules_list.js"></script>
-  <script src="chromeos/accounts_user_list.js"></script>
-  <script src="chromeos/accounts_user_name_edit.js"></script>
-  <script>
-    var AboutPage = options.AboutPage;
-    var AccountsOptions = options.AccountsOptions;
-    var ChangePictureOptions = options.ChangePictureOptions;
-    var InternetOptions = options.InternetOptions;
-    var SystemOptions = options.SystemOptions;
-  </script>
-</if>
-<if expr="not pp_ifdef('win32') and not pp_ifdef('darwin')">
-  <script src="certificate_tree.js"></script>
-  <script src="certificate_manager.js"></script>
-  <script src="certificate_restore_overlay.js"></script>
-  <script src="certificate_backup_overlay.js"></script>
-  <script src="certificate_edit_ca_trust_overlay.js"></script>
-  <script src="certificate_import_error_overlay.js"></script>
-  <script>
-    var CertificateManager = options.CertificateManager;
-    var CertificateRestoreOverlay = options.CertificateRestoreOverlay;
-    var CertificateBackupOverlay = options.CertificateBackupOverlay;
-    var CertificateEditCaTrustOverlay = options.CertificateEditCaTrustOverlay;
-    var CertificateImportErrorOverlay = options.CertificateImportErrorOverlay;
-  </script>
-</if>
-<script src="advanced_options.js"></script>
-<script src="alert_overlay.js"></script>
-<script src="autocomplete_list.js"></script>
-<script src="autofill_edit_address_overlay.js"></script>
-<script src="autofill_edit_creditcard_overlay.js"></script>
-<script src="autofill_options_list.js"></script>
-<script src="autofill_options.js"></script>
-<script src="browser_options.js"></script>
-<script src="browser_options_startup_page_list.js"></script>
-<script src="clear_browser_data_overlay.js"></script>
-<script src="content_settings.js"></script>
-<script src="content_settings_exceptions_area.js"></script>
-<script src="content_settings_ui.js"></script>
-<script src="cookies_list.js"></script>
-<script src="cookies_view.js"></script>
-<script src="font_settings.js"></script>
-<script src="import_data_overlay.js"></script>
-<script src="instant_confirm_overlay.js"></script>
-<script src="language_add_language_overlay.js"></script>
-<script src="language_list.js"></script>
-<script src="language_options.js"></script>
-<script src="password_manager.js"></script>
-<script src="password_manager_list.js"></script>
-<script src="personal_options.js"></script>
-<script src="search_engine_manager.js"></script>
-<script src="search_engine_manager_engine_list.js"></script>
-<script src="search_page.js"></script>
-<script src="sync_setup_overlay.js"></script>
-<script src="options.js"></script>
-
+<script src="chrome://settings/options_bundle.js"></script>
 </head>
 <body i18n-values=".style.fontFamily:fontfamily;">
 <div class="header">
@@ -217,6 +159,9 @@
                <include src="chromeos/language_pinyin_options.html">
              </if>
              <include src="cookies_view.html">
+             <if expr="pp_ifdef('enable_register_protocol_handler')">
+               <include src="handler_options.html">
+             </if>
              <include src="content_settings_exceptions_area.html">
            </div>
          </div>
@@ -224,5 +169,8 @@
      </div>
   </div>
 </div>
+<script src="chrome://settings/strings.js"></script>
+<script src="chrome://resources/js/i18n_template.js"></script>
+<script src="chrome://resources/js/i18n_process.js"></script>
 </body>
 </html>

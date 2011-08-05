@@ -1,8 +1,7 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/metrics/nacl_histogram.h"
 #include "chrome/browser/tabs/default_tab_handler.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/browser.h"
@@ -14,7 +13,6 @@ DefaultTabHandler::DefaultTabHandler(TabHandlerDelegate* delegate)
     : delegate_(delegate),
       ALLOW_THIS_IN_INITIALIZER_LIST(
           model_(new TabStripModel(this, delegate->GetProfile()))) {
-  UmaNaclHistogramEnumeration(FIRST_TAB_NACL_BASELINE);
   model_->AddObserver(this);
 }
 
@@ -35,7 +33,6 @@ TabStripModel* DefaultTabHandler::GetTabStripModel() const {
 // DefaultTabHandler, TabStripModelDelegate implementation:
 
 TabContentsWrapper* DefaultTabHandler::AddBlankTab(bool foreground) {
-  UmaNaclHistogramEnumeration(NEW_TAB_NACL_BASELINE);
   return delegate_->AsBrowser()->AddBlankTab(foreground);
 }
 
@@ -95,8 +92,8 @@ bool DefaultTabHandler::RunUnloadListenerBeforeClosing(
   return delegate_->AsBrowser()->RunUnloadListenerBeforeClosing(contents);
 }
 
-bool DefaultTabHandler::CanCloseContentsAt(int index) {
-  return delegate_->AsBrowser()->CanCloseContentsAt(index);
+bool DefaultTabHandler::CanCloseContents(std::vector<int>* indices) {
+  return delegate_->AsBrowser()->CanCloseContents(indices);
 }
 
 bool DefaultTabHandler::CanBookmarkAllTabs() const {
@@ -115,6 +112,10 @@ void DefaultTabHandler::ToggleUseVerticalTabs() {
   delegate_->AsBrowser()->ToggleUseVerticalTabs();
 }
 
+void DefaultTabHandler::ToggleUseCompactNavigationBar() {
+  delegate_->AsBrowser()->ToggleUseCompactNavigationBar();
+}
+
 bool DefaultTabHandler::CanRestoreTab() {
   return delegate_->AsBrowser()->CanRestoreTab();
 }
@@ -129,6 +130,10 @@ bool DefaultTabHandler::LargeIconsPermitted() const {
 
 bool DefaultTabHandler::UseVerticalTabs() const {
   return delegate_->AsBrowser()->UseVerticalTabs();
+}
+
+bool DefaultTabHandler::UseCompactNavigationBar() const {
+  return delegate_->AsBrowser()->UseCompactNavigationBar();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -154,14 +159,14 @@ void DefaultTabHandler::TabDeselected(TabContentsWrapper* contents) {
   delegate_->AsBrowser()->TabDeselected(contents);
 }
 
-void DefaultTabHandler::TabSelectedAt(TabContentsWrapper* old_contents,
-                                      TabContentsWrapper* new_contents,
-                                      int index,
-                                      bool user_gesture) {
-  delegate_->AsBrowser()->TabSelectedAt(old_contents,
-                                        new_contents,
-                                        index,
-                                        user_gesture);
+void DefaultTabHandler::ActiveTabChanged(TabContentsWrapper* old_contents,
+                                         TabContentsWrapper* new_contents,
+                                         int index,
+                                         bool user_gesture) {
+  delegate_->AsBrowser()->ActiveTabChanged(old_contents,
+                                           new_contents,
+                                           index,
+                                           user_gesture);
 }
 
 void DefaultTabHandler::TabMoved(TabContentsWrapper* contents,
@@ -194,4 +199,3 @@ void DefaultTabHandler::TabStripEmpty() {
 TabHandler* TabHandler::CreateTabHandler(TabHandlerDelegate* delegate) {
   return new DefaultTabHandler(delegate);
 }
-

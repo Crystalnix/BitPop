@@ -199,6 +199,8 @@ class HttpStreamFactoryImpl::Job {
   // Record histograms of latency until Connect() completes.
   static void LogHttpConnectedMetrics(const ClientSocketHandle& handle);
 
+  void HACKCrashHereToDebug80095();
+
   Request* request_;
 
   const HttpRequestInfo request_info_;
@@ -261,6 +263,9 @@ class HttpStreamFactoryImpl::Job {
 
   // Initialized when we create a new SpdySession.
   scoped_refptr<SpdySession> new_spdy_session_;
+
+  // Initialized when we have an existing SpdySession.
+  scoped_refptr<SpdySession> existing_spdy_session_;
 
   // Only used if |new_spdy_session_| is non-NULL.
   bool spdy_session_direct_;

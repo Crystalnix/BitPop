@@ -131,6 +131,12 @@ class NotificationType {
     // ViewHostMsg_CreateWindow_Params object are provided.
     CREATING_NEW_WINDOW,
 
+    // A new window was requested but was not created. The source will be a
+    // Source<TabContents> corresponding to the tab the request originated from.
+    // Details are the ViewHostMsg_CreateWindow_Params object that were used in
+    // the request.
+    CREATING_NEW_WINDOW_CANCELLED,
+
     // SSL ---------------------------------------------------------------------
 
     // Updating the SSL security indicators (the lock icon and such) proceeds
@@ -263,9 +269,9 @@ class NotificationType {
     PAGE_TRANSLATED,
 
     // Sent after the renderer returns a snapshot of tab contents.
-    // The source (Source<RenderViewHost>) is the RenderViewHost for which the
-    // snapshot was generated and the details (Details<const SkBitmap>) is the
-    // actual snapshot.
+    // The source (Source<TabContentsWrapper>) is the RenderViewHost for which
+    // the snapshot was generated and the details (Details<const SkBitmap>) is
+    // the actual snapshot.
     TAB_SNAPSHOT_TAKEN,
 
     // The user has changed the browser theme.  There are no details.
@@ -323,8 +329,8 @@ class NotificationType {
     TAB_CONTENTS_DISCONNECTED,
 
     // This notification is sent after TabContents' title is updated. The source
-    // is a Source<TabContents> with a pointer to the TabContents. No details
-    // are expected.
+    // is a Source<TabContents> with a pointer to the TabContents. The details
+    // is a Details<TitleUpdatedDetails> that contains more information.
     TAB_CONTENTS_TITLE_UPDATED,
 
     // This message is sent when a new InfoBar has been added to a TabContents.
@@ -408,6 +414,11 @@ class NotificationType {
     // RenderProcessHost that corresponds to the process.
     RENDERER_PROCESS_TERMINATED,
 
+    // Indicates that a render process is starting to exit, such that it should
+    // not be used for future navigations.  The source will be the
+    // RenderProcessHost that corresponds to the process.
+    RENDERER_PROCESS_CLOSING,
+
     // Indicates that a render process was closed (meaning it exited, but the
     // RenderProcessHost might be reused).  The source will be the corresponding
     // RenderProcessHost.  The details will be a RendererClosedDetails struct.
@@ -453,6 +464,10 @@ class NotificationType {
     // Note: The RenderWidgetHost may be deallocated at this point.
     // Used only in testing.
     RENDER_WIDGET_HOST_DID_RECEIVE_INPUT_EVENT_ACK,
+
+    // Sent from RenderViewHost constructor. The source is the RenderViewHost,
+    // the details unused.
+    RENDER_VIEW_HOST_CREATED,
 
     // Sent from ~RenderViewHost. The source is the RenderViewHost, the details
     // unused.
@@ -683,6 +698,11 @@ class NotificationType {
     // Used only in testing.
     TOP_SITES_UPDATED,
 
+    // Sent by TopSites when the either one of the most visited urls changed, or
+    // one of the images changes. The source is the TopSites, the details not
+    // used.
+    TOP_SITES_CHANGED,
+
     // Thumbnails---------------------------------------------------------------
 
     // Sent by the ThumbnailGenerator whenever a render widget host
@@ -703,20 +723,6 @@ class NotificationType {
     // Sent when the bookmark bar model finishes loading. This source is the
     // Profile, and the details aren't used.
     BOOKMARK_MODEL_LOADED,
-
-    // Sent when SpellCheckHost has been reloaded. The source is the profile,
-    // the details are NoDetails.
-    SPELLCHECK_HOST_REINITIALIZED,
-
-    // Sent when a new word has been added to the custom dictionary. The source
-    // is the SpellCheckHost, the details are NoDetails.
-    SPELLCHECK_WORD_ADDED,
-
-    // Sent by the profile when the automatic spell correction setting has been
-    // toggled. It exists as a notification rather than just letting interested
-    // parties listen for the pref change because some objects may outlive the
-    // profile. Source is profile, details is NoDetails.
-    SPELLCHECK_AUTOSPELL_TOGGLED,
 
     // Sent when the bookmark bubble is shown for a particular URL. The source
     // is the profile, the details the URL.
@@ -767,11 +773,11 @@ class NotificationType {
     // is the profile.
     OMNIBOX_OPENED_URL,
 
-    // Sent by the autocomplete edit when it is destroyed.
-    AUTOCOMPLETE_EDIT_DESTROYED,
+    // Sent by the omnibox when it is destroyed.
+    OMNIBOX_DESTROYED,
 
-    // Sent by the autocomplete edit when it is focused.
-    AUTOCOMPLETE_EDIT_FOCUSED,
+    // Sent by the omnibox when it is focused.
+    OMNIBOX_FOCUSED,
 
     // Sent when the main Google URL has been updated.  Some services cache
     // this value and need to update themselves when it changes.  See
@@ -782,8 +788,12 @@ class NotificationType {
 
     // Notification from PrintJob that an event occured. It can be that a page
     // finished printing or that the print job failed. Details is
-    // PrintJob::EventDetails.
+    // PrintJob::EventDetails. Source is a PrintJob.
     PRINT_JOB_EVENT,
+
+    // Sent when a PrintJob has been released.
+    // Source is the TabContentsWrapper that holds the print job.
+    PRINT_JOB_RELEASED,
 
     // Shutdown ----------------------------------------------------------------
 
@@ -797,11 +807,6 @@ class NotificationType {
     // are all source and no details.
     SESSION_END,
 
-    // Personalization ---------------------------------------------------------
-
-    PERSONALIZATION,
-    PERSONALIZATION_CREATED,
-
     // User Scripts ------------------------------------------------------------
 
     // Sent when there are new user scripts available.  The details are a
@@ -814,6 +819,10 @@ class NotificationType {
     USER_STYLE_SHEET_UPDATED,
 
     // Extensions --------------------------------------------------------------
+
+    // Sent when a CrxInstaller finishes. Source is the CrxInstaller that
+    // finished.  No details.
+    CRX_INSTALLER_DONE,
 
     // Sent when the known installed extensions have all been loaded.  In
     // testing scenarios this can happen multiple times if extensions are
@@ -869,18 +878,6 @@ class NotificationType {
     // Sent when an extension has updated its user scripts. The details are an
     // Extension, and the source is a Profile.
     EXTENSION_USER_SCRIPTS_UPDATED,
-
-    // Sent after a new ExtensionFunctionDispatcher is created. The details are
-    // an ExtensionFunctionDispatcher* and the source is a Profile*. This is
-    // similar in timing to EXTENSION_HOST_CREATED, but also fires when an
-    // extension view which is hosted in TabContents* is created.
-    EXTENSION_FUNCTION_DISPATCHER_CREATED,
-
-    // Sent before an ExtensionHost is destroyed. The details are
-    // an ExtensionFunctionDispatcher* and the source is a Profile*. This is
-    // similar in timing to EXTENSION_HOST_DESTROYED, but also fires when an
-    // extension view which is hosted in TabContents* is destroyed.
-    EXTENSION_FUNCTION_DISPATCHER_DESTROYED,
 
     // Sent after a new ExtensionHost is created. The details are
     // an ExtensionHost* and the source is an ExtensionProcessManager*.
@@ -1049,12 +1046,6 @@ class NotificationType {
     // acknowledged the module incompatibility. No details are expected.
     MODULE_INCOMPATIBILITY_BADGE_CHANGE,
 
-    // Background App Tracking Notifications -----------------------------------
-    // Sent when the state of the background page tracker has changed (the
-    // number of unacknowledged background pages have changed). Source is the
-    // BackgroundPageTracker and there are no Details.
-    BACKGROUND_PAGE_TRACKER_CHANGED,
-
     // Accessibility Notifications ---------------------------------------------
 
     // Notification that a window in the browser UI (not the web content)
@@ -1113,6 +1104,10 @@ class NotificationType {
     // ContentSettingsNotificationsDetails.
     GEOLOCATION_SETTINGS_CHANGED,
 
+    // Sent when content settings change for a tab. The source is a TabContents
+    // object, the details are None.
+    TAB_CONTENT_SETTINGS_CHANGED,
+
     // Sync --------------------------------------------------------------------
 
     // Sent when the syncer is blocked configuring.
@@ -1137,11 +1132,6 @@ class NotificationType {
     // Foreign sessions has been disabled. New tabs should not display foreign
     // session data.
     FOREIGN_SESSION_DISABLED,
-
-    // Sent when the set of data types that should be synced has been modified
-    // externally (eg. by the WebUI options screen).
-    // The source is the Profile, there are no details.
-    SYNC_DATA_TYPES_UPDATED,
 
     // Cookies -----------------------------------------------------------------
 
@@ -1279,7 +1269,9 @@ class NotificationType {
     BOOKMARK_CONTEXT_MENU_SHOWN,
 #endif
 
-    // Sent when the zoom level changes. The source is the profile.
+    // Sent when the zoom level changes. The source is the HostZoomMap.  The
+    // details is a string of the hostname for which the zoom changed.  In case
+    // of a temporary zoom level change, the details is an empty string.
     ZOOM_LEVEL_CHANGED,
 
     // Sent when the tab's closeable state has changed due to increase/decrease
@@ -1310,21 +1302,22 @@ class NotificationType {
     // Sent when the applications in the NTP app launcher have been reordered.
     EXTENSION_LAUNCHER_REORDERED,
 
-    // Prerender notifications -------------------------------------------------
-    // Sent when a prerender::PrerenderContents starts prerendering. Source is
-    // the process/route id pair for the RenderViewHost. There are no details.
-    PRERENDER_CONTENTS_STARTED,
-
-    // Sent when a prerender::PrerenderContents object is destroyed. Source is
-    // the process/route id pair for the RenderViewHost. There are no details.
-    PRERENDER_CONTENTS_DESTROYED,
-
-    // Sent when a prerender::PrerenderContents is used. Source is the
-    // process/route id pair for the RenderViewHost. There are no details.
-    PRERENDER_CONTENTS_USED,
+#if defined(OS_CHROMEOS)
+    // Sent when WebSocketProxy started accepting connections.
+    WEB_SOCKET_PROXY_STARTED,
+#endif
 
     // Sent when a new web store promo has been loaded.
     WEB_STORE_PROMO_LOADED,
+
+#if defined(TOUCH_UI)
+    // Sent when an API for hiding the keyboard is invoked from JavaScript code.
+    HIDE_KEYBOARD_INVOKED,
+#endif
+
+    // Protocol Handler Registry -----------------------------------------------
+    // Sent when a ProtocolHandlerRegistry is changed.
+    PROTOCOL_HANDLER_REGISTRY_CHANGED,
 
     // Count (must be last) ----------------------------------------------------
     // Used to determine the number of notification types.  Not valid as

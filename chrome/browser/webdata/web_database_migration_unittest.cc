@@ -6,7 +6,7 @@
 
 #include "app/sql/statement.h"
 #include "base/file_util.h"
-#include "base/memory/scoped_temp_dir.h"
+#include "base/scoped_temp_dir.h"
 #include "base/stl_util-inl.h"
 #include "base/string16.h"
 #include "base/string_number_conversions.h"
@@ -55,32 +55,6 @@ void AutofillProfile31FromStatement(const sql::Statement& s,
   *date_modified = s.ColumnInt64(15);
   profile->set_guid(s.ColumnString(16));
   EXPECT_TRUE(guid::IsValidGUID(profile->guid()));
-}
-
-void AutofillProfile32FromStatement(const sql::Statement& s,
-                                    AutofillProfile* profile,
-                                    string16* label,
-                                    int64* date_modified) {
-  DCHECK(profile);
-  DCHECK(label);
-  DCHECK(date_modified);
-  profile->set_guid(s.ColumnString(0));
-  EXPECT_TRUE(guid::IsValidGUID(profile->guid()));
-  *label = s.ColumnString16(1);
-  profile->SetInfo(NAME_FIRST, s.ColumnString16(2));
-  profile->SetInfo(NAME_MIDDLE, s.ColumnString16(3));
-  profile->SetInfo(NAME_LAST,s.ColumnString16(4));
-  profile->SetInfo(EMAIL_ADDRESS, s.ColumnString16(5));
-  profile->SetInfo(COMPANY_NAME, s.ColumnString16(6));
-  profile->SetInfo(ADDRESS_HOME_LINE1, s.ColumnString16(7));
-  profile->SetInfo(ADDRESS_HOME_LINE2, s.ColumnString16(8));
-  profile->SetInfo(ADDRESS_HOME_CITY, s.ColumnString16(9));
-  profile->SetInfo(ADDRESS_HOME_STATE, s.ColumnString16(10));
-  profile->SetInfo(ADDRESS_HOME_ZIP, s.ColumnString16(11));
-  profile->SetInfo(ADDRESS_HOME_COUNTRY, s.ColumnString16(12));
-  profile->SetInfo(PHONE_HOME_WHOLE_NUMBER, s.ColumnString16(13));
-  profile->SetInfo(PHONE_FAX_WHOLE_NUMBER, s.ColumnString16(14));
-  *date_modified = s.ColumnInt64(15);
 }
 
 void AutofillProfile33FromStatement(const sql::Statement& s,

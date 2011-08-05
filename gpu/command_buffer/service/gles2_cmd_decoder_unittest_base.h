@@ -16,10 +16,12 @@
 #include "gpu/command_buffer/service/program_manager.h"
 #include "gpu/command_buffer/service/renderbuffer_manager.h"
 #include "gpu/command_buffer/service/shader_manager.h"
+#include "gpu/command_buffer/service/surface_manager_mock.h"
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "gpu/GLES2/gles2_command_buffer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/gl/gl_context_stub.h"
+#include "ui/gfx/gl/gl_surface_stub.h"
 
 namespace gpu {
 namespace gles2 {
@@ -255,8 +257,10 @@ class GLES2DecoderTestBase : public testing::Test {
 
   // Use StrictMock to make 100% sure we know how GL will be called.
   scoped_ptr< ::testing::StrictMock< ::gfx::MockGLInterface> > gl_;
-  gfx::StubGLContext* context_;
+  scoped_refptr<gfx::GLSurfaceStub> surface_;
+  scoped_refptr<gfx::GLContextStub> context_;
   scoped_ptr<GLES2Decoder> decoder_;
+  scoped_ptr<MockSurfaceManager> surface_manager_;
 
   GLuint client_buffer_id_;
   GLuint client_framebuffer_id_;

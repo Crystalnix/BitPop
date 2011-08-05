@@ -93,7 +93,7 @@ class TestPersonalDataManager : public PersonalDataManager {
                                      month, year);
     credit_card->set_guid("00000000-0000-0000-0000-000000000007");
     credit_cards_->push_back(credit_card);
- }
+  }
 
  private:
   void CreateTestAutofillProfiles(ScopedVector<AutofillProfile>* profiles) {
@@ -408,7 +408,7 @@ void ExpectFilledCreditCardYearMonthWithYearMonth(int page_id,
 
 class TestAutofillManager : public AutofillManager {
  public:
-  TestAutofillManager(TabContents* tab_contents,
+  TestAutofillManager(TabContentsWrapper* tab_contents,
                       TestPersonalDataManager* personal_manager)
       : AutofillManager(tab_contents, personal_manager),
         autofill_enabled_(true) {
@@ -483,7 +483,7 @@ class AutofillManagerTest : public TabContentsWrapperTestHarness {
   virtual void SetUp() {
     TabContentsWrapperTestHarness::SetUp();
     test_personal_data_ = new TestPersonalDataManager();
-    autofill_manager_.reset(new TestAutofillManager(contents(),
+    autofill_manager_.reset(new TestAutofillManager(contents_wrapper(),
                                                     test_personal_data_.get()));
   }
 
@@ -1492,6 +1492,57 @@ TEST_F(AutofillManagerTest, GetFieldSuggestionsForMultiValuedProfileFilled) {
                     expected_labels, expected_icons, expected_unique_ids);
 }
 
+TEST_F(AutofillManagerTest, GetProfileSuggestionsFancyPhone) {
+  // Set up our form data.
+  FormData form;
+  CreateTestAddressFormData(&form);
+  std::vector<FormData> forms(1, form);
+  FormsSeen(forms);
+
+  AutofillProfile* profile = new AutofillProfile;
+  profile->set_guid("00000000-0000-0000-0000-000000000103");
+  std::vector<string16> multi_values(1);
+  multi_values[0] = ASCIIToUTF16("Natty Bumppo");
+  profile->SetMultiInfo(NAME_FULL, multi_values);
+  multi_values[0] = ASCIIToUTF16("1800PRAIRIE");
+  profile->SetMultiInfo(PHONE_HOME_WHOLE_NUMBER, multi_values);
+  autofill_manager_->AddProfile(profile);
+
+  const FormField& field = form.fields[9];
+  GetAutofillSuggestions(form, field);
+
+  // No suggestions provided, so send an empty vector as the results.
+  // This triggers the combined message send.
+  AutocompleteSuggestionsReturned(std::vector<string16>());
+
+  // Test that we sent the right message to the renderer.
+  int page_id = 0;
+  std::vector<string16> values;
+  std::vector<string16> labels;
+  std::vector<string16> icons;
+  std::vector<int> unique_ids;
+  GetAutofillSuggestionsMessage(
+      &page_id, &values, &labels, &icons, &unique_ids);
+
+  string16 expected_values[] = {
+    ASCIIToUTF16("12345678901"),
+    ASCIIToUTF16("23456789012"),
+    ASCIIToUTF16("18007724743"),  // 1800PRAIRIE
+  };
+  // Inferred labels include full first relevant field, which in this case is
+  // the address line 1.
+  string16 expected_labels[] = {
+    ASCIIToUTF16("Elvis Aaron Presley"),
+    ASCIIToUTF16("Charles Hardin Holley"),
+    ASCIIToUTF16("Natty Bumppo"),
+  };
+  string16 expected_icons[] = {string16(), string16(), string16()};
+  int expected_unique_ids[] = {1, 2, 103};
+  ExpectSuggestions(page_id, values, labels, icons, unique_ids,
+                    kDefaultPageID, arraysize(expected_values), expected_values,
+                    expected_labels, expected_icons, expected_unique_ids);
+}
+
 // Test that we correctly fill an address form.
 TEST_F(AutofillManagerTest, FillAddressForm) {
   // Set up our form data.
@@ -1879,16 +1930,15 @@ TEST_F(AutofillManagerTest, FillPhoneNumber) {
   AutofillProfile *work_profile = autofill_manager_->GetProfileWithGUID(
       "00000000-0000-0000-0000-000000000002");
   ASSERT_TRUE(work_profile != NULL);
-  string16 saved_phone = work_profile->GetInfo(PHONE_HOME_NUMBER);
 
   GUIDPair guid(work_profile->guid(), 0);
   GUIDPair empty(std::string(), 0);
 
-  char test_data[] = "1234567890123456";
+  char test_data[] = "16505554567890123456";
   for (int i = arraysize(test_data) - 1; i >= 0; --i) {
     test_data[i] = 0;
     SCOPED_TRACE(StringPrintf("Testing phone: %s", test_data));
-    work_profile->SetInfo(PHONE_HOME_NUMBER, ASCIIToUTF16(test_data));
+    work_profile->SetInfo(PHONE_HOME_WHOLE_NUMBER, ASCIIToUTF16(test_data));
     // The page ID sent to the AutofillManager from the RenderView, used to send
     // an IPC message back to the renderer.
     int page_id = 100 - i;
@@ -1899,17 +1949,15 @@ TEST_F(AutofillManagerTest, FillPhoneNumber) {
     FormData results;
     EXPECT_TRUE(GetAutofillFormDataFilledMessage(&page_id, &results));
 
-    if (i != 7) {
-      EXPECT_EQ(ASCIIToUTF16(test_data), results.fields[2].value);
-      EXPECT_EQ(ASCIIToUTF16(test_data), results.fields[3].value);
+    if (i != 11) {
+      // The only parsable phone is 16505554567.
+      EXPECT_EQ(string16(), results.fields[2].value);
+      EXPECT_EQ(string16(), results.fields[3].value);
     } else {
-      // The only size that is parsed and split, right now is 7:
-      EXPECT_EQ(ASCIIToUTF16("123"), results.fields[2].value);
+      EXPECT_EQ(ASCIIToUTF16("555"), results.fields[2].value);
       EXPECT_EQ(ASCIIToUTF16("4567"), results.fields[3].value);
     }
   }
-
-  work_profile->SetInfo(PHONE_HOME_NUMBER, saved_phone);
 }
 
 // Test that we can still fill a form when a field has been removed from it.
@@ -2058,4 +2106,52 @@ TEST_F(AutofillManagerTest, AuxiliaryProfilesReset) {
   ASSERT_FALSE(profile()->GetPrefs()->GetBoolean(
       prefs::kAutofillAuxiliaryProfilesEnabled));
 #endif
+}
+
+TEST_F(AutofillManagerTest, DeterminePossibleFieldTypesForUpload) {
+  test_personal_data_->ClearAutofillProfiles();
+  const int kNumProfiles = 5;
+  for (int i = 0; i < kNumProfiles; ++i) {
+    AutofillProfile* profile = new AutofillProfile;
+    autofill_test::SetProfileInfo(profile,
+                                  StringPrintf("John%d", i).c_str(),
+                                  "",
+                                  StringPrintf("Doe%d", i).c_str(),
+                                  StringPrintf("JohnDoe%d@somesite.com",
+                                               i).c_str(),
+                                  "",
+                                  StringPrintf("%d 1st st.", i).c_str(),
+                                  "",
+                                  "Memphis", "Tennessee", "38116", "USA",
+                                  StringPrintf("650234%04d", i).c_str(),
+                                  "");
+    profile->set_guid(
+        StringPrintf("00000000-0000-0000-0001-00000000%04d", i).c_str());
+    test_personal_data_->AddProfile(profile);
+  }
+  FormData form;
+  CreateTestAddressFormData(&form);
+  ASSERT_LT(3U, form.fields.size());
+  form.fields[0].value = ASCIIToUTF16("6502340001");
+  form.fields[1].value = ASCIIToUTF16("John1");
+  form.fields[2].value = ASCIIToUTF16("12345");
+  FormStructure form_structure(form);
+  autofill_manager_->DeterminePossibleFieldTypesForUpload(&form_structure);
+  ASSERT_LT(3U, form_structure.field_count());
+  const FieldTypeSet& possible_types0 =
+      form_structure.field(0)->possible_types();
+  EXPECT_EQ(2U, possible_types0.size());
+  EXPECT_TRUE(possible_types0.find(PHONE_HOME_WHOLE_NUMBER) !=
+              possible_types0.end());
+  EXPECT_TRUE(possible_types0.find(PHONE_HOME_CITY_AND_NUMBER) !=
+              possible_types0.end());
+  const FieldTypeSet& possible_types1 =
+      form_structure.field(1)->possible_types();
+  EXPECT_EQ(1U, possible_types1.size());
+  EXPECT_TRUE(possible_types1.find(NAME_FIRST) != possible_types1.end());
+  const FieldTypeSet& possible_types2 =
+      form_structure.field(2)->possible_types();
+  EXPECT_EQ(1U, possible_types2.size());
+  EXPECT_TRUE(possible_types2.find(UNKNOWN_TYPE) !=
+              possible_types2.end());
 }

@@ -6,9 +6,9 @@
 
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/scoped_temp_dir.h"
 #include "base/test/test_file_util.h"
 #include "base/values.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "build/build_config.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
@@ -79,7 +79,7 @@ class PreferenceServiceTest : public UITest {
   ScopedTempDir temp_dir_;
 };
 
-#if !defined(OS_LINUX)
+#if defined(OS_WIN) || defined(OS_MACOSX)
 // This test verifies that the window position from the prefs file is restored
 // when the app restores.  This doesn't really make sense on Linux, where
 // the window manager might fight with you over positioning.  However, we
@@ -142,7 +142,7 @@ TEST_F(PreferenceServiceTest, PreservedWindowPlacementIsLoaded) {
 }
 #endif
 
-#if !defined(OS_LINUX)
+#if defined(OS_WIN) || defined(OS_MACOSX)
 TEST_F(PreferenceServiceTest, PreservedWindowPlacementIsMigrated) {
   // The window should open with the old reference profile, with window
   // placement values stored in Local State.

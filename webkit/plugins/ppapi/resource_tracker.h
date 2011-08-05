@@ -12,10 +12,15 @@
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/hash_tables.h"
+#include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_module.h"
 #include "ppapi/c/pp_resource.h"
+#include "ppapi/proxy/interface_id.h"
+#include "ppapi/shared_impl/function_group_base.h"
+#include "ppapi/shared_impl/tracker_base.h"
 
 namespace webkit {
 namespace ppapi {
@@ -30,7 +35,7 @@ class Var;
 // us to check resource ID validity and to map them to a specific module.
 //
 // This object is NOT threadsafe.
-class ResourceTracker {
+class ResourceTracker : public ::ppapi::TrackerBase {
  public:
   // Returns the pointer to the singleton object.
   static ResourceTracker* Get();
@@ -51,6 +56,14 @@ class ResourceTracker {
 
   // Returns the number of resources associated with this module.
   uint32 GetLiveObjectsForInstance(PP_Instance instance) const;
+
+  // ResourceTrackerBase.
+  virtual ::ppapi::ResourceObjectBase* GetResourceAPI(
+      PP_Resource res) OVERRIDE;
+  virtual ::ppapi::FunctionGroupBase* GetFunctionAPI(
+      PP_Instance pp_instance,
+      pp::proxy::InterfaceID id) OVERRIDE;
+  virtual PP_Instance GetInstanceForResource(PP_Resource resource) OVERRIDE;
 
   // PP_Vars -------------------------------------------------------------------
 
@@ -106,6 +119,13 @@ class ResourceTracker {
   // Prohibit creation other then by the Singleton class.
   ResourceTracker();
   ~ResourceTracker();
+
+  // Called when a new resource is created and associates it with its
+  // PluginInstance.
+  void ResourceCreated(Resource* resource, PluginInstance* instance);
+
+  // Removes a resource from the resource map.
+  void ResourceDestroyed(Resource* resource);
 
   // Adds the given resource to the tracker and assigns it a resource ID and
   // refcount of 1. The assigned resource ID will be returned. Used only by the
@@ -169,7 +189,7 @@ class ResourceTracker {
   VarMap live_vars_;
 
   // Tracks all live instances and their associated data.
-  typedef std::map<PP_Instance, InstanceData> InstanceMap;
+  typedef std::map<PP_Instance, linked_ptr<InstanceData> > InstanceMap;
   InstanceMap instance_map_;
 
   // Tracks all live modules. The pointers are non-owning, the PluginModule

@@ -13,7 +13,7 @@
 class TranslateTabHelper : public TabContentsObserver {
  public:
   explicit TranslateTabHelper(TabContents* tab_contents);
-  ~TranslateTabHelper();
+  virtual ~TranslateTabHelper();
 
   LanguageState& language_state() { return language_state_; }
 
@@ -21,7 +21,7 @@ class TranslateTabHelper : public TabContentsObserver {
   // TabContentsObserver implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void DidNavigateAnyFramePostCommit(
-      const NavigationController::LoadCommittedDetails& details,
+      const content::LoadCommittedDetails& details,
       const ViewHostMsg_FrameNavigate_Params& params) OVERRIDE;
 
   void OnLanguageDetermined(const std::string& language,

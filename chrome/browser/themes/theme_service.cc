@@ -8,19 +8,20 @@
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/browser_theme_pack.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/pref_names.h"
+#include "content/browser/user_metrics.h"
 #include "content/common/notification_service.h"
 #include "content/common/notification_type.h"
 #include "grit/app_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_WIN)
-#include "views/widget/widget_win.h"
+#include "views/widget/native_widget_win.h"
 #endif
 
 // Strings used in alignment properties.
@@ -270,7 +271,7 @@ bool ThemeService::ShouldUseNativeFrame() const {
   if (HasCustomImage(IDR_THEME_FRAME))
     return false;
 #if defined(OS_WIN)
-  return views::WidgetWin::IsAeroGlassEnabled();
+  return views::NativeWidgetWin::IsAeroGlassEnabled();
 #else
   return false;
 #endif
@@ -313,7 +314,7 @@ void ThemeService::SetTheme(const Extension* extension) {
   SaveThemeID(extension->id());
 
   NotifyThemeChanged();
-  UserMetrics::RecordAction(UserMetricsAction("Themes_Installed"), profile_);
+  UserMetrics::RecordAction(UserMetricsAction("Themes_Installed"));
 }
 
 void ThemeService::RemoveUnusedThemes() {
@@ -338,17 +339,21 @@ void ThemeService::RemoveUnusedThemes() {
 void ThemeService::UseDefaultTheme() {
   ClearAllThemeData();
   NotifyThemeChanged();
-  UserMetrics::RecordAction(UserMetricsAction("Themes_Reset"), profile_);
+  UserMetrics::RecordAction(UserMetricsAction("Themes_Reset"));
 }
 
 void ThemeService::SetNativeTheme() {
   UseDefaultTheme();
 }
 
-bool ThemeService::UsingDefaultTheme() {
+bool ThemeService::UsingDefaultTheme() const {
   std::string id = GetThemeID();
   return id == ThemeService::kDefaultThemeID ||
       id == kDefaultThemeGalleryID;
+}
+
+bool ThemeService::UsingNativeTheme() const {
+  return UsingDefaultTheme();
 }
 
 std::string ThemeService::GetThemeID() const {
@@ -571,7 +576,7 @@ void ThemeService::LoadThemePrefs() {
     }
 
     if (loaded_pack) {
-      UserMetrics::RecordAction(UserMetricsAction("Themes.Loaded"), profile_);
+      UserMetrics::RecordAction(UserMetricsAction("Themes.Loaded"));
     } else {
       // TODO(erg): We need to pop up a dialog informing the user that their
       // theme is being migrated.
@@ -582,12 +587,11 @@ void ThemeService::LoadThemePrefs() {
         if (extension) {
           DLOG(ERROR) << "Migrating theme";
           BuildFromExtension(extension);
-          UserMetrics::RecordAction(UserMetricsAction("Themes.Migrated"),
-                                    profile_);
+          UserMetrics::RecordAction(UserMetricsAction("Themes.Migrated"));
         } else {
           DLOG(ERROR) << "Theme is mysteriously gone.";
           ClearAllThemeData();
-          UserMetrics::RecordAction(UserMetricsAction("Themes.Gone"), profile_);
+          UserMetrics::RecordAction(UserMetricsAction("Themes.Gone"));
         }
       }
     }

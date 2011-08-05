@@ -27,14 +27,16 @@
 #include "chrome/browser/ui/views/toolbar_view.h"
 #include "chrome/common/chrome_switches.h"
 #include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "third_party/cros/chromeos_wm_ipc_enums.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/theme_provider.h"
 #include "ui/gfx/canvas.h"
 #include "views/controls/button/button.h"
 #include "views/controls/button/image_button.h"
-#include "views/controls/menu/menu_2.h"
+#include "views/controls/menu/menu_delegate.h"
+#include "views/controls/menu/menu_item_view.h"
 #include "views/screen.h"
 #include "views/widget/root_view.h"
 #include "views/window/hit_test.h"
@@ -50,6 +52,58 @@ const int kStatusAreaVerticalAdjustment = -1;
 // If a popup window is larger than this fraction of the screen, create a tab.
 const float kPopupMaxWidthFactor = 0.5;
 const float kPopupMaxHeightFactor = 0.6;
+
+// This MenuItemView delegate class forwards to the
+// SimpleMenuModel::Delegate() implementation.
+class SimpleMenuModelDelegateAdapter : public views::MenuDelegate {
+ public:
+  explicit SimpleMenuModelDelegateAdapter(
+      ui::SimpleMenuModel::Delegate* simple_menu_model_delegate);
+
+  // views::MenuDelegate implementation.
+  virtual bool GetAccelerator(int id,
+                              views::Accelerator* accelerator) OVERRIDE;
+  virtual std::wstring GetLabel(int id) const OVERRIDE;
+  virtual bool IsCommandEnabled(int id) const OVERRIDE;
+  virtual bool IsItemChecked(int id) const OVERRIDE;
+  virtual void ExecuteCommand(int id) OVERRIDE;
+
+ private:
+  ui::SimpleMenuModel::Delegate* simple_menu_model_delegate_;
+
+  DISALLOW_COPY_AND_ASSIGN(SimpleMenuModelDelegateAdapter);
+};
+
+// SimpleMenuModelDelegateAdapter:
+SimpleMenuModelDelegateAdapter::SimpleMenuModelDelegateAdapter(
+    ui::SimpleMenuModel::Delegate* simple_menu_model_delegate)
+    : simple_menu_model_delegate_(simple_menu_model_delegate) {
+}
+
+// SimpleMenuModelDelegateAdapter, views::MenuDelegate implementation.
+
+bool SimpleMenuModelDelegateAdapter::GetAccelerator(
+    int id,
+    views::Accelerator* accelerator) {
+  return simple_menu_model_delegate_->GetAcceleratorForCommandId(
+      id, accelerator);
+}
+
+std::wstring SimpleMenuModelDelegateAdapter::GetLabel(int id) const {
+  return UTF16ToWide(simple_menu_model_delegate_->GetLabelForCommandId(id));
+}
+
+bool SimpleMenuModelDelegateAdapter::IsCommandEnabled(int id) const {
+  return simple_menu_model_delegate_->IsCommandIdEnabled(id);
+}
+
+bool SimpleMenuModelDelegateAdapter::IsItemChecked(int id) const {
+  return simple_menu_model_delegate_->IsCommandIdChecked(id);
+}
+
+void SimpleMenuModelDelegateAdapter::ExecuteCommand(int id) {
+  simple_menu_model_delegate_->ExecuteCommand(id);
+}
 
 }  // namespace
 
@@ -86,7 +140,7 @@ class BrowserViewLayout : public ::BrowserViewLayout {
   // In the normal and the compact navigation bar mode, ChromeOS
   // layouts compact navigation buttons and status views in the title
   // area. See Layout
-  virtual int LayoutTabStrip() {
+  virtual int LayoutTabStripRegion() OVERRIDE {
     if (browser_view_->IsFullscreen() || !browser_view_->IsTabStripVisible()) {
       status_area_->SetVisible(false);
       tabstrip_->SetVisible(false);
@@ -105,7 +159,7 @@ class BrowserViewLayout : public ::BrowserViewLayout {
         LayoutTitlebarComponents(tabstrip_bounds);
   }
 
-  virtual int LayoutToolbar(int top) {
+  virtual int LayoutToolbar(int top) OVERRIDE {
     if (!browser_view_->IsFullscreen() && browser_view_->IsTabStripVisible() &&
         browser_view_->UseVerticalTabs()) {
       // For vertical tabs the toolbar is positioned in
@@ -115,12 +169,12 @@ class BrowserViewLayout : public ::BrowserViewLayout {
     return ::BrowserViewLayout::LayoutToolbar(top);
   }
 
-  virtual bool IsPositionInWindowCaption(const gfx::Point& point) {
+  virtual bool IsPositionInWindowCaption(const gfx::Point& point) OVERRIDE {
     return ::BrowserViewLayout::IsPositionInWindowCaption(point)
         && !IsPointInViewsInTitleArea(point);
   }
 
-  virtual int NonClientHitTest(const gfx::Point& point) {
+  virtual int NonClientHitTest(const gfx::Point& point) OVERRIDE {
     gfx::Point point_in_browser_view_coords(point);
     views::View::ConvertPointToView(
         browser_view_->parent(), browser_view_,
@@ -218,10 +272,13 @@ class BrowserViewLayout : public ::BrowserViewLayout {
   DISALLOW_COPY_AND_ASSIGN(BrowserViewLayout);
 };
 
+// BrowserView
+
 BrowserView::BrowserView(Browser* browser)
     : ::BrowserView(browser),
       status_area_(NULL),
       saved_focused_widget_(NULL) {
+  system_menu_delegate_.reset(new SimpleMenuModelDelegateAdapter(this));
 }
 
 BrowserView::~BrowserView() {
@@ -229,7 +286,6 @@ BrowserView::~BrowserView() {
     toolbar()->RemoveMenuListener(this);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 // BrowserView, ::BrowserView overrides:
 
 void BrowserView::Init() {
@@ -238,14 +294,8 @@ void BrowserView::Init() {
   status_area_->SetID(VIEW_ID_STATUS_AREA);
   AddChildView(status_area_);
   status_area_->Init();
-  InitSystemMenu();
 
-  // The ContextMenuController has to be set to a NonClientView but
-  // not to a NonClientFrameView because a TabStrip is not a child of
-  // a NonClientFrameView even though visually a TabStrip is over a
-  // NonClientFrameView.
-  BrowserFrameGtk* gtk_frame = static_cast<BrowserFrameGtk*>(frame());
-  gtk_frame->non_client_view()->SetContextMenuController(this);
+  frame()->non_client_view()->SetContextMenuController(this);
 
   // Listen to wrench menu opens.
   if (toolbar())
@@ -257,7 +307,7 @@ void BrowserView::Init() {
   params.push_back(browser()->active_index());
   params.push_back(gtk_get_current_event_time());
   WmIpc::instance()->SetWindowType(
-      GTK_WIDGET(frame()->GetWindow()->GetNativeWindow()),
+      GTK_WIDGET(frame()->GetNativeWindow()),
       WM_IPC_WINDOW_CHROME_TOPLEVEL,
       &params);
 }
@@ -271,7 +321,7 @@ void BrowserView::ShowInactive() {
 }
 
 void BrowserView::ShowInternal(bool is_active) {
-  bool was_visible = frame()->GetWindow()->IsVisible();
+  bool was_visible = frame()->IsVisible();
   if (is_active)
     ::BrowserView::Show();
   else
@@ -282,7 +332,7 @@ void BrowserView::ShowInternal(bool is_active) {
     params.push_back(browser()->tab_count());
     params.push_back(browser()->active_index());
     WmIpc::instance()->SetWindowType(
-        GTK_WIDGET(frame()->GetWindow()->GetNativeWindow()),
+        GTK_WIDGET(frame()->GetNativeWindow()),
         WM_IPC_WINDOW_CHROME_TOPLEVEL,
         &params);
   }
@@ -326,7 +376,31 @@ void BrowserView::Paste() {
   gtk_util::DoPaste(this);
 }
 
-// views::ContextMenuController overrides.
+// This is a static function so that the logic can be shared by
+// chromeos::PanelBrowserView.
+WindowOpenDisposition BrowserView::DispositionForPopupBounds(
+    const gfx::Rect& bounds) {
+  // If a popup is larger than a given fraction of the screen, turn it into
+  // a foreground tab. Also check for width or height == 0, which would
+  // indicate a tab sized popup window.
+  GdkScreen* screen = gdk_screen_get_default();
+  int max_width = gdk_screen_get_width(screen) * kPopupMaxWidthFactor;
+  int max_height = gdk_screen_get_height(screen) * kPopupMaxHeightFactor;
+  if (bounds.width() > max_width ||
+      bounds.width() == 0 ||
+      bounds.height() > max_height ||
+      bounds.height() == 0) {
+    return NEW_FOREGROUND_TAB;
+  }
+  return NEW_POPUP;
+}
+
+WindowOpenDisposition BrowserView::GetDispositionForPopupBounds(
+    const gfx::Rect& bounds) {
+  return DispositionForPopupBounds(bounds);
+}
+
+// views::ContextMenuController implementation.
 void BrowserView::ShowContextMenuForView(views::View* source,
                                          const gfx::Point& p,
                                          bool is_mouse_gesture) {
@@ -337,16 +411,24 @@ void BrowserView::ShowContextMenuForView(views::View* source,
   gfx::Point point_in_parent_coords(p);
   views::View::ConvertPointToView(NULL, parent(), &point_in_parent_coords);
   int hit_test = NonClientHitTest(point_in_parent_coords);
-  if (hit_test == HTCAPTION || hit_test == HTNOWHERE)
-    system_menu_menu_->RunMenuAt(p, views::Menu2::ALIGN_TOPLEFT);
+  if (hit_test == HTCAPTION || hit_test == HTNOWHERE) {
+    // rebuild menu so it reflects current application state
+    InitSystemMenu();
+    system_menu_->RunMenuAt(source->GetWindow()->GetNativeWindow(), NULL,
+                            gfx::Rect(p, gfx::Size(0,0)),
+                            views::MenuItemView::TOPLEFT,
+                            true);
+  }
 }
 
+// BrowserView, views::MenuListener implementation.
 void BrowserView::OnMenuOpened() {
   // Save the focused widget before wrench menu opens.
   saved_focused_widget_ = gtk_window_get_focus(GetNativeHandle());
 }
 
-// StatusAreaHost overrides.
+// BrowserView, StatusAreaHost implementation.
+
 Profile* BrowserView::GetProfile() const {
   return browser()->profile();
 }
@@ -385,7 +467,6 @@ StatusAreaHost::TextStyle BrowserView::GetTextStyle() const {
           StatusAreaHost::kWhitePlain : StatusAreaHost::kGrayEmbossed);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 // BrowserView protected:
 
 void BrowserView::GetAccessiblePanes(
@@ -394,18 +475,19 @@ void BrowserView::GetAccessiblePanes(
   panes->push_back(status_area_);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// BrowserView private:
+// BrowserView private.
 
 void BrowserView::InitSystemMenu() {
-  system_menu_contents_.reset(new ui::SimpleMenuModel(this));
-  system_menu_contents_->AddItemWithStringId(IDC_RESTORE_TAB,
-                                               IDS_RESTORE_TAB);
-  system_menu_contents_->AddItemWithStringId(IDC_NEW_TAB, IDS_NEW_TAB);
-  system_menu_contents_->AddSeparator();
-  system_menu_contents_->AddItemWithStringId(IDC_TASK_MANAGER,
-                                               IDS_TASK_MANAGER);
-  system_menu_menu_.reset(new views::Menu2(system_menu_contents_.get()));
+  system_menu_.reset(new views::MenuItemView(system_menu_delegate_.get()));
+  system_menu_->AppendDelegateMenuItem(IDC_RESTORE_TAB);
+
+  system_menu_->AppendMenuItemWithLabel(
+      IDC_NEW_TAB,
+      UTF16ToWide(l10n_util::GetStringUTF16(IDS_NEW_TAB)));
+  system_menu_->AppendSeparator();
+  system_menu_->AppendMenuItemWithLabel(
+      IDC_TASK_MANAGER,
+      UTF16ToWide(l10n_util::GetStringUTF16(IDS_TASK_MANAGER)));
 }
 
 }  // namespace chromeos
@@ -414,10 +496,10 @@ void BrowserView::InitSystemMenu() {
 BrowserWindow* BrowserWindow::CreateBrowserWindow(Browser* browser) {
   // Create a browser view for chromeos.
   BrowserView* view;
-  if (browser->type() & Browser::TYPE_POPUP)
+  if (browser->is_type_popup() || browser->is_type_panel())
     view = new chromeos::PanelBrowserView(browser);
   else
     view = new chromeos::BrowserView(browser);
-  BrowserFrame::Create(view, browser->profile());
+  (new BrowserFrame(view))->InitBrowserFrame();
   return view;
 }

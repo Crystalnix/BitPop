@@ -6,23 +6,24 @@
 
 #include <algorithm>
 
-#include "base/command_line.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/content_setting_bubble_model.h"
-#include "chrome/browser/content_setting_image_model.h"
+#include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_list.h"
 #import "chrome/browser/ui/cocoa/content_settings/content_setting_bubble_cocoa.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
-#include "chrome/common/chrome_switches.h"
+#include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
+#include "chrome/browser/ui/content_settings/content_setting_image_model.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/pref_names.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image.h"
+#include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
 namespace {
 
@@ -185,13 +186,22 @@ bool ContentSettingDecoration::UpdateFromTabContents(
     SetImage(rb.GetNativeImageNamed(content_setting_image_model_->get_icon()));
     SetToolTip(base::SysUTF8ToNSString(
         content_setting_image_model_->get_tooltip()));
+
     // Check if there is an animation and start it if it hasn't yet started.
     bool has_animated_text =
         content_setting_image_model_->explanatory_string_id();
-    // Check if the animation is enabled.
-    bool animation_enabled = !CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kDisableBlockContentAnimation);
-    if (has_animated_text && animation_enabled && !animation_) {
+
+    // Check if the animation has already run.
+    TabSpecificContentSettings* content_settings =
+        TabContentsWrapper::GetCurrentWrapperForContents(tab_contents)->
+            content_settings();
+    ContentSettingsType content_type =
+        content_setting_image_model_->get_content_settings_type();
+    bool ran_animation = content_settings->IsBlockageIndicated(content_type);
+
+    if (has_animated_text && !ran_animation && !animation_) {
+      // Mark the animation as having been run.
+      content_settings->SetBlockageHasBeenIndicated(content_type);
       // Start animation, its timer will drive reflow. Note the text is
       // cached so it is not allowed to change during the animation.
       animation_.reset(
@@ -248,8 +258,8 @@ bool ContentSettingDecoration::AcceptsMousePress() {
 
 bool ContentSettingDecoration::OnMousePressed(NSRect frame) {
   // Get host. This should be shared on linux/win/osx medium-term.
-  TabContents* tabContents =
-      BrowserList::GetLastActive()->GetSelectedTabContents();
+  Browser* browser = BrowserList::GetLastActive();
+  TabContentsWrapper* tabContents = browser->GetSelectedTabContentsWrapper();
   if (!tabContents)
     return true;
 
@@ -258,13 +268,6 @@ bool ContentSettingDecoration::OnMousePressed(NSRect frame) {
       content_setting_image_model_->get_content_settings_type();
   if (content_settings_type == CONTENT_SETTINGS_TYPE_PRERENDER)
     return true;
-
-  GURL url = tabContents->GetURL();
-  std::wstring displayHost;
-  net::AppendFormattedHost(
-      url,
-      UTF8ToWide(profile_->GetPrefs()->GetString(prefs::kAcceptLanguages)),
-      &displayHost, NULL, NULL);
 
   // Find point for bubble's arrow in screen coordinates.
   // TODO(shess): |owner_| is only being used to fetch |field|.
@@ -279,10 +282,10 @@ bool ContentSettingDecoration::OnMousePressed(NSRect frame) {
   // Open bubble.
   ContentSettingBubbleModel* model =
       ContentSettingBubbleModel::CreateContentSettingBubbleModel(
-          tabContents, profile_, content_settings_type);
+          browser, tabContents, profile_, content_settings_type);
   [ContentSettingBubbleController showForModel:model
-                                   parentWindow:[field window]
-                                     anchoredAt:anchor];
+                                  parentWindow:[field window]
+                                    anchoredAt:anchor];
   return true;
 }
 
@@ -338,8 +341,7 @@ void ContentSettingDecoration::DrawInFrame(NSRect frame, NSView* control_view) {
       gradient_.reset([[NSGradient alloc] initWithColors:color_array]);
     }
 
-    NSGraphicsContext* context = [NSGraphicsContext currentContext];
-    [context saveGraphicsState];
+    gfx::ScopedNSGraphicsContextSaveGState scopedGState;
 
     NSRectClip(frame);
 
@@ -368,8 +370,6 @@ void ContentSettingDecoration::DrawInFrame(NSRect frame, NSView* control_view) {
     NSInsetRect(remainder, kTextMarginPadding, kTextMarginPadding);
     // .get() needed to fix compiler warning (confusion with NSImageRep).
     [animated_text_.get() drawAtPoint:remainder.origin];
-
-    [context restoreGraphicsState];
   } else {
     // No animation, draw the image as normal.
     ImageDecoration::DrawInFrame(frame, control_view);

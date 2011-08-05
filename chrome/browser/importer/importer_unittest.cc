@@ -10,8 +10,8 @@
 #include <unknwn.h>
 #include <intshcut.h>
 #include <pstore.h>
-#include <urlhist.h>
 #include <shlguid.h>
+#include <urlhist.h>
 #endif
 
 #include <vector>
@@ -21,10 +21,10 @@
 #include "base/file_util.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
+#include "base/scoped_temp_dir.h"
 #include "base/stl_util-inl.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/importer/importer_bridge.h"
 #include "chrome/browser/importer/importer_data_types.h"
@@ -153,10 +153,10 @@ bool FindBookmarkEntry(const ProfileWriter::BookmarkEntry& entry,
 
 #if defined(OS_WIN)
 static const BookmarkList kIEBookmarks[] = {
-  {true, 0, {},
+  {true, 1, {L"Links"},
    L"TheLink",
    "http://www.links-thelink.com/"},
-  {true, 1, {L"SubFolderOfLinks"},
+  {true, 2, {L"Links", L"SubFolderOfLinks"},
    L"SubLink",
    "http://www.links-sublink.com/"},
   {false, 0, {},
@@ -238,12 +238,11 @@ class TestObserver : public ProfileWriter,
     EXPECT_EQ(history::SOURCE_IE_IMPORTED, visit_source);
   }
 
-  virtual void AddBookmarkEntry(const std::vector<BookmarkEntry>& bookmark,
-                                const string16& first_folder_name,
-                                int options) {
+  virtual void AddBookmarks(const std::vector<BookmarkEntry>& bookmarks,
+                            const string16& top_level_folder_name) OVERRIDE {
     // Importer should import the IE Favorites folder the same as the list.
-    for (size_t i = 0; i < bookmark.size(); ++i) {
-      if (FindBookmarkEntry(bookmark[i], kIEBookmarks,
+    for (size_t i = 0; i < bookmarks.size(); ++i) {
+      if (FindBookmarkEntry(bookmarks[i], kIEBookmarks,
                             arraysize(kIEBookmarks)))
         ++bookmark_count_;
     }
@@ -465,10 +464,10 @@ TEST_F(ImporterTest, IE7Importer) {
 #endif  // defined(OS_WIN)
 
 static const BookmarkList kFirefox2Bookmarks[] = {
-  {true, 1, {L"Folder"},
+  {true, 2, {L"Bookmarks Toolbar Folder", L"Folder"},
    L"On Toolbar's Subfolder",
    "http://on.toolbar/bookmark/folder"},
-  {true, 0, {},
+  {true, 1, {L"Bookmarks Toolbar Folder"},
    L"On Bookmark Toolbar",
    "http://on.toolbar/bookmark"},
   {false, 1, {L"Folder"},
@@ -604,11 +603,10 @@ class FirefoxObserver : public ProfileWriter,
     ++history_count_;
   }
 
-  virtual void AddBookmarkEntry(const std::vector<BookmarkEntry>& bookmark,
-                                const string16& first_folder_name,
-                                int options) {
-    for (size_t i = 0; i < bookmark.size(); ++i) {
-      if (FindBookmarkEntry(bookmark[i], kFirefox2Bookmarks,
+  virtual void AddBookmarks(const std::vector<BookmarkEntry>& bookmarks,
+                            const string16& top_level_folder_name) OVERRIDE {
+    for (size_t i = 0; i < bookmarks.size(); ++i) {
+      if (FindBookmarkEntry(bookmarks[i], kFirefox2Bookmarks,
                             arraysize(kFirefox2Bookmarks)))
         ++bookmark_count_;
     }
@@ -701,7 +699,7 @@ TEST_F(ImporterTest, MAYBE(Firefox2Importer)) {
 }
 
 static const BookmarkList kFirefox3Bookmarks[] = {
-  {true, 0, {},
+  {true, 1, {L"Bookmarks Toolbar"},
     L"Toolbar",
     "http://site/"},
   {false, 0, {},
@@ -814,11 +812,10 @@ class Firefox3Observer : public ProfileWriter,
     ++history_count_;
   }
 
-  virtual void AddBookmarkEntry(const std::vector<BookmarkEntry>& bookmark,
-                                const string16& first_folder_name,
-                                int options) {
-    for (size_t i = 0; i < bookmark.size(); ++i) {
-      if (FindBookmarkEntry(bookmark[i], kFirefox3Bookmarks,
+  virtual void AddBookmarks(const std::vector<BookmarkEntry>& bookmarks,
+                            const string16& top_level_folder_name) OVERRIDE {
+    for (size_t i = 0; i < bookmarks.size(); ++i) {
+      if (FindBookmarkEntry(bookmarks[i], kFirefox3Bookmarks,
                             arraysize(kFirefox3Bookmarks)))
         ++bookmark_count_;
     }

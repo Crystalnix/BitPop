@@ -6,15 +6,29 @@
 #define CONTENT_BROWSER_CONTENT_BROWSER_CLIENT_H_
 #pragma once
 
+#include <string>
+
 #include "content/common/content_client.h"
 
 class BrowserRenderProcessHost;
+class CommandLine;
+class FilePath;
 class GURL;
+class PluginProcessHost;
 class Profile;
+class QuotaPermissionContext;
 class RenderViewHost;
+class TabContents;
+class WorkerProcessHost;
+
+namespace net {
+class CookieList;
+class CookieOptions;
+}
 
 namespace content {
 
+class ResourceContext;
 class WebUIFactory;
 
 // Embedder API for participating in browser logic.
@@ -23,13 +37,20 @@ class ContentBrowserClient {
   // Notifies that a new RenderHostView has been created.
   virtual void RenderViewHostCreated(RenderViewHost* render_view_host);
 
-  // Initialize a RenderViewHost before its CreateRenderView method is called.
-  virtual void PreCreateRenderView(RenderViewHost* render_view_host,
-                                   Profile* profile,
-                                   const GURL& url);
-
-  // Notifies that a BrowserRenderProcessHost has been created.
+  // Notifies that a BrowserRenderProcessHost has been created. This is called
+  // before the content layer adds its own BrowserMessageFilters, so that the
+  // embedder's IPC filters have priority.
   virtual void BrowserRenderProcessHostCreated(BrowserRenderProcessHost* host);
+
+  // Notifies that a PluginProcessHost has been created. This is called
+  // before the content layer adds its own message filters, so that the
+  // embedder's IPC filters have priority.
+  virtual void PluginProcessHostCreated(PluginProcessHost* host);
+
+  // Notifies that a WorkerProcessHost has been created. This is called
+  // before the content layer adds its own message filters, so that the
+  // embedder's IPC filters have priority.
+  virtual void WorkerProcessHostCreated(WorkerProcessHost* host);
 
   // Gets the WebUIFactory which will be responsible for generating WebUIs.
   virtual WebUIFactory* GetWebUIFactory();
@@ -37,6 +58,61 @@ class ContentBrowserClient {
   // Get the effective URL for the given actual URL, to allow an embedder to
   // group different url schemes in the same SiteInstance.
   virtual GURL GetEffectiveURL(Profile* profile, const GURL& url);
+
+  // Returns whether a specified URL is to be considered the same as any
+  // SiteInstance.
+  virtual bool IsURLSameAsAnySiteInstance(const GURL& url);
+
+  // See CharacterEncoding's comment.
+  virtual std::string GetCanonicalEncodingNameByAliasName(
+      const std::string& alias_name);
+
+  // Allows the embedder to pass extra command line flags.
+  // switches::kProcessType will already be set at this point.
+  virtual void AppendExtraCommandLineSwitches(CommandLine* command_line,
+                                              int child_process_id);
+
+  // Returns the locale used by the application.
+  virtual std::string GetApplicationLocale();
+
+  // Returns the languages used in the Accept-Languages HTTP header.
+  // (Not called GetAcceptLanguages so it doesn't clash with win32).
+  virtual std::string GetAcceptLangs(const TabContents* tab);
+
+  // Allow the embedder to control if an AppCache can be used for the given url.
+  // This is called on the IO thread.
+  virtual bool AllowAppCache(const GURL& manifest_url,
+                             const content::ResourceContext& context);
+
+  // Allow the embedder to control if the given cookie can be read.
+  // This is called on the IO thread.
+  virtual bool AllowGetCookie(const GURL& url,
+                              const GURL& first_party,
+                              const net::CookieList& cookie_list,
+                              const content::ResourceContext& context,
+                              int render_process_id,
+                              int render_view_id);
+
+  // Allow the embedder to control if the given cookie can be set.
+  // This is called on the IO thread.
+  virtual bool AllowSetCookie(const GURL& url,
+                              const GURL& first_party,
+                              const std::string& cookie_line,
+                              const content::ResourceContext& context,
+                              int render_process_id,
+                              int render_view_id,
+                              net::CookieOptions* options);
+
+  // Create and return a new quota permission context.
+  virtual QuotaPermissionContext* CreateQuotaPermissionContext();
+
+  // Shows the given path using the OS file manager.
+  virtual void RevealFolderInOS(const FilePath& path);
+
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
+  // Can return an optional fd for crash handling, otherwise returns -1.
+  virtual int GetCrashSignalFD(const std::string& process_type);
+#endif
 };
 
 }  // namespace content

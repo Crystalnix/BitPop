@@ -7,11 +7,13 @@
 #pragma once
 
 #include "base/basictypes.h"
-#include "base/callback.h"
+#include "base/callback_old.h"
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
+#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "content/browser/cancelable_request.h"
+#include "googleurl/src/gurl.h"
 
 class NavigationEntry;
 class Profile;
@@ -28,7 +30,7 @@ class Thread;
 // it manages a set of SessionCommands that are periodically sent to a
 // SessionBackend.
 class BaseSessionService : public CancelableRequestProvider,
-    public base::RefCountedThreadSafe<BaseSessionService> {
+                           public ProfileKeyedService {
  public:
   // Identifies the type of session service this is. This is used by the
   // backend to determine the name of the files.
@@ -76,8 +78,6 @@ class BaseSessionService : public CancelableRequestProvider,
   };
 
  protected:
-  friend class base::RefCountedThreadSafe<BaseSessionService>;
-
   virtual ~BaseSessionService();
 
   // Returns the backend.
@@ -140,11 +140,8 @@ class BaseSessionService : public CancelableRequestProvider,
       SessionID::id_type* tab_id,
       std::string* extension_app_id);
 
-  // Returns true if the NavigationEntry should be written to disk.
-  bool ShouldTrackEntry(const NavigationEntry& entry);
-
-  // Returns true if the TabNavigationshould be written to disk.
-  bool ShouldTrackEntry(const TabNavigation& navigation);
+  // Returns true if the entry at specified |url| should be written to disk.
+  bool ShouldTrackEntry(const GURL& url);
 
   // Invokes ReadLastSessionCommands with request on the backend thread.
   // If testing, ReadLastSessionCommands is invoked directly.

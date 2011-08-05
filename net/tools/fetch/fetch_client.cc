@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,7 @@
 #include "net/base/host_resolver.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
-#include "net/base/ssl_config_service.h"
+#include "net/base/ssl_config_service_defaults.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_layer.h"
@@ -117,7 +117,7 @@ class Client {
   net::CompletionCallbackImpl<Client> read_callback_;
 };
 
-int main(int argc, char**argv) {
+int main(int argc, char** argv) {
   base::AtExitManager exit;
   base::StatsTable table("fetchclient", 50, 1000);
   table.set_current(&table);
@@ -139,13 +139,14 @@ int main(int argc, char**argv) {
 
   scoped_ptr<net::HostResolver> host_resolver(
       net::CreateSystemHostResolver(net::HostResolver::kDefaultParallelism,
-                                    NULL, NULL));
+                                    net::HostResolver::kDefaultRetryAttempts,
+                                    NULL));
 
   scoped_ptr<net::CertVerifier> cert_verifier(new net::CertVerifier);
-  scoped_refptr<net::ProxyService> proxy_service(
+  scoped_ptr<net::ProxyService> proxy_service(
       net::ProxyService::CreateDirect());
   scoped_refptr<net::SSLConfigService> ssl_config_service(
-      net::SSLConfigService::CreateSystemSSLConfigService());
+      new net::SSLConfigServiceDefaults);
   net::HttpTransactionFactory* factory = NULL;
   scoped_ptr<net::HttpAuthHandlerFactory> http_auth_handler_factory(
       net::HttpAuthHandlerFactory::CreateDefault(host_resolver.get()));
@@ -153,7 +154,7 @@ int main(int argc, char**argv) {
   net::HttpNetworkSession::Params session_params;
   session_params.host_resolver = host_resolver.get();
   session_params.cert_verifier = cert_verifier.get();
-  session_params.proxy_service = proxy_service;
+  session_params.proxy_service = proxy_service.get();
   session_params.http_auth_handler_factory = http_auth_handler_factory.get();
   session_params.ssl_config_service = ssl_config_service;
 

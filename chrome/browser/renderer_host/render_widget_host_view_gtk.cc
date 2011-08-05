@@ -726,9 +726,10 @@ void RenderWidgetHostViewGtk::SetIsLoading(bool is_loading) {
 }
 
 void RenderWidgetHostViewGtk::ImeUpdateTextInputState(
-    WebKit::WebTextInputType type,
+    ui::TextInputType type,
+    bool can_compose_inline,
     const gfx::Rect& caret_rect) {
-  im_context_->UpdateInputMethodState(type, caret_rect);
+  im_context_->UpdateInputMethodState(type, can_compose_inline, caret_rect);
 }
 
 void RenderWidgetHostViewGtk::ImeCancelComposition() {
@@ -830,7 +831,8 @@ void RenderWidgetHostViewGtk::SetTooltipText(const std::wstring& tooltip_text) {
   }
 }
 
-void RenderWidgetHostViewGtk::SelectionChanged(const std::string& text) {
+void RenderWidgetHostViewGtk::SelectionChanged(const std::string& text,
+                                               const ui::Range& range) {
   if (!text.empty()) {
     GtkClipboard* x_clipboard = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
     gtk_clipboard_set_text(x_clipboard, text.c_str(), text.length());
@@ -1146,7 +1148,8 @@ void RenderWidgetHostViewGtk::ForwardKeyboardEvent(
   EditCommands edit_commands;
   if (!event.skip_in_browser &&
       key_bindings_handler_->Match(event, &edit_commands)) {
-    host_->ForwardEditCommandsForNextKeyEvent(edit_commands);
+    host_->Send(new ViewMsg_SetEditCommandsForNextKeyEvent(
+        host_->routing_id(), edit_commands));
     NativeWebKeyboardEvent copy_event(event);
     copy_event.match_edit_command = true;
     host_->ForwardKeyboardEvent(copy_event);

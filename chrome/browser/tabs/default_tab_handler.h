@@ -6,6 +6,8 @@
 #define CHROME_BROWSER_TABS_DEFAULT_TAB_HANDLER_H_
 #pragma once
 
+#include <vector>
+
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/tabs/tab_handler.h"
 #include "chrome/browser/tabs/tab_strip_model_delegate.h"
@@ -45,15 +47,17 @@ class DefaultTabHandler : public TabHandler,
   virtual void CloseFrameAfterDragSession();
   virtual void CreateHistoricalTab(TabContentsWrapper* contents);
   virtual bool RunUnloadListenerBeforeClosing(TabContentsWrapper* contents);
-  virtual bool CanCloseContentsAt(int index);
+  virtual bool CanCloseContents(std::vector<int>* indices);
   virtual bool CanBookmarkAllTabs() const;
   virtual void BookmarkAllTabs();
   virtual bool CanCloseTab() const;
   virtual void ToggleUseVerticalTabs();
+  virtual void ToggleUseCompactNavigationBar();
   virtual bool CanRestoreTab();
   virtual void RestoreTab();
   virtual bool LargeIconsPermitted() const;
   virtual bool UseVerticalTabs() const;
+  virtual bool UseCompactNavigationBar() const;
 
   // Overridden from TabStripModelObserver:
   virtual void TabInsertedAt(TabContentsWrapper* contents,
@@ -64,10 +68,10 @@ class DefaultTabHandler : public TabHandler,
                             int index);
   virtual void TabDetachedAt(TabContentsWrapper* contents, int index);
   virtual void TabDeselected(TabContentsWrapper* contents);
-  virtual void TabSelectedAt(TabContentsWrapper* old_contents,
-                             TabContentsWrapper* new_contents,
-                             int index,
-                             bool user_gesture);
+  virtual void ActiveTabChanged(TabContentsWrapper* old_contents,
+                                TabContentsWrapper* new_contents,
+                                int index,
+                                bool user_gesture);
   virtual void TabMoved(TabContentsWrapper* contents,
                         int from_index,
                         int to_index);
@@ -87,4 +91,3 @@ class DefaultTabHandler : public TabHandler,
 };
 
 #endif  // CHROME_BROWSER_TABS_DEFAULT_TAB_HANDLER_H_
-

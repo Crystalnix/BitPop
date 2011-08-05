@@ -29,7 +29,7 @@ static int next_pipe_id = 0;
 
 PluginChannelBase* PluginChannelBase::GetChannel(
     const IPC::ChannelHandle& channel_handle, IPC::Channel::Mode mode,
-    PluginChannelFactory factory, MessageLoop* ipc_message_loop,
+    PluginChannelFactory factory, base::MessageLoopProxy* ipc_message_loop,
     bool create_pipe_now) {
   scoped_refptr<PluginChannelBase> channel;
   std::string channel_key = channel_handle.name;
@@ -112,7 +112,7 @@ NPObjectBase* PluginChannelBase::GetNPObjectListenerForRoute(int route_id) {
   return iter->second;
 }
 
-bool PluginChannelBase::Init(MessageLoop* ipc_message_loop,
+bool PluginChannelBase::Init(base::MessageLoopProxy* ipc_message_loop,
                              bool create_pipe_now) {
   channel_.reset(new IPC::SyncChannel(
       channel_handle_, mode_, this, ipc_message_loop, create_pipe_now,
@@ -238,4 +238,35 @@ bool PluginChannelBase::OnControlMessageReceived(const IPC::Message& msg) {
 
 void PluginChannelBase::OnChannelError() {
   channel_valid_ = false;
+}
+
+NPObject* PluginChannelBase::GetExistingNPObjectProxy(int route_id) {
+  ProxyMap::iterator iter = proxy_map_.find(route_id);
+  return iter != proxy_map_.end() ? iter->second : NULL;
+}
+
+int PluginChannelBase::GetExistingRouteForNPObjectStub(NPObject* npobject) {
+  StubMap::iterator iter = stub_map_.find(npobject);
+  return iter != stub_map_.end() ? iter->second : MSG_ROUTING_NONE;
+}
+
+void PluginChannelBase::AddMappingForNPObjectProxy(int route_id,
+                                                   NPObject* object) {
+  proxy_map_[route_id] = object;
+}
+
+void PluginChannelBase::AddMappingForNPObjectStub(int route_id,
+                                                  NPObject* object) {
+  DCHECK(object != NULL);
+  stub_map_[object] = route_id;
+}
+
+void PluginChannelBase::RemoveMappingForNPObjectStub(int route_id,
+                                                     NPObject* object) {
+  DCHECK(object != NULL);
+  stub_map_.erase(object);
+}
+
+void PluginChannelBase::RemoveMappingForNPObjectProxy(int route_id) {
+  proxy_map_.erase(route_id);
 }

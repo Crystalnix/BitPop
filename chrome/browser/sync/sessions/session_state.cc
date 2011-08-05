@@ -49,7 +49,9 @@ SyncerStatus::SyncerStatus()
       num_successful_commits(0),
       num_successful_bookmark_commits(0),
       num_updates_downloaded_total(0),
-      num_tombstone_updates_downloaded_total(0) {
+      num_tombstone_updates_downloaded_total(0),
+      num_local_overwrites(0),
+      num_server_overwrites(0) {
 }
 
 SyncerStatus::~SyncerStatus() {
@@ -67,6 +69,8 @@ DictionaryValue* SyncerStatus::ToValue() const {
                 num_updates_downloaded_total);
   value->SetInteger("numTombstoneUpdatesDownloadedTotal",
                 num_tombstone_updates_downloaded_total);
+  value->SetInteger("numLocalOverwrites", num_local_overwrites);
+  value->SetInteger("numServerOverwrites", num_server_overwrites);
   return value;
 }
 
@@ -114,9 +118,11 @@ SyncSessionSnapshot::SyncSessionSnapshot(
     bool more_to_sync,
     bool is_silenced,
     int64 unsynced_count,
+    int num_blocking_conflicting_updates,
     int num_conflicting_updates,
     bool did_commit_items,
-    const SyncSourceInfo& source)
+    const SyncSourceInfo& source,
+    size_t num_entries)
     : syncer_status(syncer_status),
       errors(errors),
       num_server_changes_remaining(num_server_changes_remaining),
@@ -126,9 +132,11 @@ SyncSessionSnapshot::SyncSessionSnapshot(
       has_more_to_sync(more_to_sync),
       is_silenced(is_silenced),
       unsynced_count(unsynced_count),
+      num_blocking_conflicting_updates(num_blocking_conflicting_updates),
       num_conflicting_updates(num_conflicting_updates),
       did_commit_items(did_commit_items),
-      source(source) {
+      source(source),
+      num_entries(num_entries){
   for (int i = syncable::FIRST_REAL_MODEL_TYPE;
        i < syncable::MODEL_TYPE_COUNT; ++i) {
     const_cast<std::string&>(this->download_progress_markers[i]).assign(
@@ -155,8 +163,11 @@ DictionaryValue* SyncSessionSnapshot::ToValue() const {
   // We don't care too much if we lose precision here, also.
   value->SetInteger("unsyncedCount",
                     static_cast<int>(unsynced_count));
+  value->SetInteger("numBlockingConflictingUpdates",
+                    num_blocking_conflicting_updates);
   value->SetInteger("numConflictingUpdates", num_conflicting_updates);
   value->SetBoolean("didCommitItems", did_commit_items);
+  value->SetInteger("numEntries", num_entries);
   value->Set("source", source.ToValue());
   return value;
 }
@@ -228,6 +239,21 @@ void ConflictProgress::AddConflictingItemById(const syncable::Id& the_id) {
 
 void ConflictProgress::EraseConflictingItemById(const syncable::Id& the_id) {
   int items_erased = conflicting_item_ids_.erase(the_id);
+  if (items_erased != 0)
+    *dirty_ = true;
+}
+
+void ConflictProgress::AddNonblockingConflictingItemById(
+    const syncable::Id& the_id) {
+  std::pair<std::set<syncable::Id>::iterator, bool> ret =
+      nonblocking_conflicting_item_ids_.insert(the_id);
+  if (ret.second)
+    *dirty_ = true;
+}
+
+void ConflictProgress::EraseNonblockingConflictingItemById(
+    const syncable::Id& the_id) {
+  int items_erased = nonblocking_conflicting_item_ids_.erase(the_id);
   if (items_erased != 0)
     *dirty_ = true;
 }

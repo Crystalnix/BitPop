@@ -10,7 +10,9 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/browser/ui/webui/print_preview_ui.h"
 #include "chrome/common/url_constants.h"
+#include "content/browser/tab_contents/navigation_details.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/common/notification_details.h"
 #include "content/common/notification_source.h"
@@ -76,7 +78,7 @@ void PrintPreviewTabController::Observe(NotificationType type,
                                         const NotificationSource& source,
                                         const NotificationDetails& details) {
   TabContents* source_tab = NULL;
-  NavigationController::LoadCommittedDetails* detail_info = NULL;
+  content::LoadCommittedDetails* detail_info = NULL;
 
   switch (type.value) {
     case NotificationType::TAB_CONTENTS_DESTROYED: {
@@ -87,8 +89,7 @@ void PrintPreviewTabController::Observe(NotificationType type,
       NavigationController* controller =
           Source<NavigationController>(source).ptr();
       source_tab = controller->tab_contents();
-      detail_info =
-          Details<NavigationController::LoadCommittedDetails>(details).ptr();
+      detail_info = Details<content::LoadCommittedDetails>(details).ptr();
       break;
     }
     default: {
@@ -139,6 +140,11 @@ void PrintPreviewTabController::Observe(NotificationType type,
     // Erase the map entry.
     preview_tab_map_.erase(source_tab);
   } else {
+    // Initiator tab is closed. Disable the controls in preview tab.
+    PrintPreviewUI* print_preview_ui =
+        static_cast<PrintPreviewUI*>(preview_tab->web_ui());
+    print_preview_ui->OnInitiatorTabClosed(source_tab->GetURL().spec());
+
     // |source_tab| is an initiator tab, update the map entry.
     preview_tab_map_[preview_tab] = NULL;
   }
@@ -164,11 +170,26 @@ TabContents* PrintPreviewTabController::CreatePrintPreviewTab(
     TabContents* initiator_tab) {
   Browser* current_browser = BrowserList::FindBrowserWithID(
       initiator_tab->controller().window_id().id());
+  if (!current_browser) {
+    if (initiator_tab->delegate()->IsExternalTabContainer()) {
+      current_browser = Browser::CreateForType(Browser::TYPE_POPUP,
+                                               initiator_tab->profile());
+      if (!current_browser) {
+        NOTREACHED() << "Failed to create popup browser window";
+        return NULL;
+      }
+    } else {
+      return NULL;
+    }
+  }
+
   // Add a new tab next to initiator tab.
   browser::NavigateParams params(current_browser,
                                  GURL(chrome::kChromeUIPrintURL),
                                  PageTransition::LINK);
   params.disposition = NEW_FOREGROUND_TAB;
+  if (initiator_tab->delegate()->IsExternalTabContainer())
+    params.disposition = NEW_POPUP;
   params.tabstrip_index = current_browser->tabstrip_model()->
       GetWrapperIndex(initiator_tab) + 1;
   browser::Navigate(&params);

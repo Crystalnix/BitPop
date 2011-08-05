@@ -1,4 +1,4 @@
-# Copyright (c) 2010 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -33,6 +33,8 @@
           'installer/util/delete_reg_value_work_item.h',
           'installer/util/delete_tree_work_item.cc',
           'installer/util/delete_tree_work_item.h',
+          'installer/util/duplicate_tree_detector.cc',
+          'installer/util/duplicate_tree_detector.h',
           'installer/util/google_chrome_binaries_distribution.cc',
           'installer/util/google_chrome_binaries_distribution.h',
           'installer/util/google_chrome_sxs_distribution.cc',
@@ -85,7 +87,7 @@
       'targets': [
         {
           'target_name': 'installer_util',
-          'type': '<(library)',
+          'type': 'static_library',
           'msvs_guid': 'EFBB1436-A63F-4CD8-9E99-B89226E782EC',
           'variables': {
             'installer_util_target': 1,
@@ -97,6 +99,8 @@
             'chrome_resources',
             'chrome_strings',
             '../content/content.gyp:content_common',
+            '<(DEPTH)/base/base.gyp:base',
+            '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
             '<(DEPTH)/courgette/courgette.gyp:courgette_lib',
             '<(DEPTH)/third_party/bspatch/bspatch.gyp:bspatch',
             '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
@@ -137,7 +141,7 @@
         },
         {
           'target_name': 'installer_util_nacl_win64',
-          'type': '<(library)',
+          'type': 'static_library',
           'msvs_guid': '91016F29-C324-4236-8AA0-032765E71582',
           'variables': {
             'installer_util_target': 1,
@@ -165,7 +169,7 @@
       'targets': [
         {
           'target_name': 'installer_util',
-          'type': '<(library)',
+          'type': 'static_library',
           'dependencies': [
             'common_constants',
             'chrome_resources',

@@ -11,10 +11,12 @@
 // the platform spell checker requests from SpellCheckProvider.
 class SpellCheckMessageFilter : public BrowserMessageFilter {
  public:
-  SpellCheckMessageFilter();
-  ~SpellCheckMessageFilter();
+  explicit SpellCheckMessageFilter(int render_process_id);
+  virtual ~SpellCheckMessageFilter();
 
   // BrowserMessageFilter implementation.
+  virtual void OverrideThreadForMessage(const IPC::Message& message,
+                                        BrowserThread::ID* thread);
   virtual bool OnMessageReceived(const IPC::Message& message,
                                  bool* message_was_ok);
 
@@ -30,6 +32,10 @@ class SpellCheckMessageFilter : public BrowserMessageFilter {
                                   int identifier,
                                   int document_tag,
                                   const string16& text);
+  void OnSpellCheckerRequestDictionary();
+  void OnNotifyChecked(bool misspelled);
+
+  int render_process_id_;
 };
 
 #endif  // CHROME_BROWSER_SPELLCHECK_MESSAGE_FILTER_H_

@@ -42,7 +42,7 @@ void FFmpegVideoDecodeEngine::Initialize(
     MessageLoop* message_loop,
     VideoDecodeEngine::EventHandler* event_handler,
     VideoDecodeContext* context,
-    const VideoCodecConfig& config) {
+    const VideoDecoderConfig& config) {
   allocator_.reset(new FFmpegVideoAllocator());
 
   // Always try to use three threads for video decoding.  There is little reason
@@ -60,7 +60,7 @@ void FFmpegVideoDecodeEngine::Initialize(
   // Initialize AVCodecContext structure.
   codec_context_ = avcodec_alloc_context();
 
-  // TODO(scherkus): should video format get passed in via VideoCodecConfig?
+  // TODO(scherkus): should video format get passed in via VideoDecoderConfig?
   codec_context_->pix_fmt = PIX_FMT_YUV420P;
   codec_context_->codec_type = AVMEDIA_TYPE_VIDEO;
   codec_context_->codec_id = VideoCodecToCodecID(config.codec());
@@ -244,12 +244,11 @@ void FFmpegVideoDecodeEngine::DecodeFrame(scoped_refptr<Buffer> buffer) {
 
   // Log the problem if we can't decode a video frame and exit early.
   if (result < 0) {
-    VLOG(1) << "Error decoding a video frame with timestamp: "
-            << buffer->GetTimestamp().InMicroseconds() << " us, duration: "
-            << buffer->GetDuration().InMicroseconds() << " us, packet size: "
-            << buffer->GetDataSize() << " bytes";
-    // TODO(jiesun): call event_handler_->OnError() instead.
-    event_handler_->ConsumeVideoFrame(video_frame, statistics);
+    LOG(ERROR) << "Error decoding a video frame with timestamp: "
+               << buffer->GetTimestamp().InMicroseconds() << " us, duration: "
+               << buffer->GetDuration().InMicroseconds() << " us, packet size: "
+               << buffer->GetDataSize() << " bytes";
+    event_handler_->OnError();
     return;
   }
 
@@ -274,8 +273,7 @@ void FFmpegVideoDecodeEngine::DecodeFrame(scoped_refptr<Buffer> buffer) {
   if (!av_frame_->data[VideoFrame::kYPlane] ||
       !av_frame_->data[VideoFrame::kUPlane] ||
       !av_frame_->data[VideoFrame::kVPlane]) {
-    // TODO(jiesun): call event_handler_->OnError() instead.
-    event_handler_->ConsumeVideoFrame(video_frame, statistics);
+    event_handler_->OnError();
     return;
   }
 

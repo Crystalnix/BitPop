@@ -81,7 +81,7 @@ class FFmpegDemuxerStream : public DemuxerStream {
   // not make calls into FFmpegDemuxerStream directly or that may cause a
   // deadlock. |read_callback| should execute as quickly as possible because
   // |lock_| is held throughout the life of the callback.
-  virtual void Read(Callback1<Buffer*>::Type* read_callback);
+  virtual void Read(const ReadCallback& read_callback);
   // Bitstream converter to convert input packet.
   virtual void EnableBitstreamConverter();
   virtual AVStream* GetAVStream();
@@ -90,7 +90,7 @@ class FFmpegDemuxerStream : public DemuxerStream {
   virtual ~FFmpegDemuxerStream();
 
   // Carries out enqueuing a pending read on the demuxer thread.
-  void ReadTask(Callback1<Buffer*>::Type* read_callback);
+  void ReadTask(const ReadCallback& read_callback);
 
   // Attempts to fulfill a single pending read by dequeueing a buffer and read
   // callback pair and executing the callback. The calling function must
@@ -112,7 +112,7 @@ class FFmpegDemuxerStream : public DemuxerStream {
   typedef std::deque<scoped_refptr<Buffer> > BufferQueue;
   BufferQueue buffer_queue_;
 
-  typedef std::deque<Callback1<Buffer*>::Type*> ReadQueue;
+  typedef std::deque<ReadCallback> ReadQueue;
   ReadQueue read_queue_;
 
   // Used to translate bitstream formats.
@@ -142,7 +142,7 @@ class FFmpegDemuxer : public Demuxer,
 
   // Filter implementation.
   virtual void Stop(FilterCallback* callback);
-  virtual void Seek(base::TimeDelta time, FilterCallback* callback);
+  virtual void Seek(base::TimeDelta time, const FilterStatusCB& cb);
   virtual void OnAudioRendererDisabled();
   virtual void set_host(FilterHost* filter_host);
   virtual void SetPlaybackRate(float playback_rate);
@@ -161,6 +161,9 @@ class FFmpegDemuxer : public Demuxer,
   // Provide access to FFmpegDemuxerStream.
   MessageLoop* message_loop();
 
+  // For testing purposes.
+  void disable_first_seek_hack_for_testing() { first_seek_hack_ = false; }
+
  private:
   // Only allow a factory to create this class.
   friend class MockFFmpegDemuxer;
@@ -171,7 +174,7 @@ class FFmpegDemuxer : public Demuxer,
       DataSource* data_source, PipelineStatusCallback* callback);
 
   // Carries out a seek on the demuxer thread.
-  void SeekTask(base::TimeDelta time, FilterCallback* callback);
+  void SeekTask(base::TimeDelta time, const FilterStatusCB& cb);
 
   // Carries out demuxing and satisfying stream reads on the demuxer thread.
   void DemuxTask();
@@ -245,6 +248,10 @@ class FFmpegDemuxer : public Demuxer,
   // store these bits for deferred reporting to the FilterHost when we get one.
   base::TimeDelta max_duration_;
   PipelineStatus deferred_status_;
+
+  // Used to skip the implicit "first seek" to avoid resetting FFmpeg's internal
+  // state.
+  bool first_seek_hack_;
 
   DISALLOW_COPY_AND_ASSIGN(FFmpegDemuxer);
 };

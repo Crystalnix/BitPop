@@ -121,7 +121,7 @@ TEST_F(FramedBrowserWindowTest, WindowWidgetLocation) {
             NSMaxY(windowBounds) -
                 kFramedWindowButtonsWithoutTabStripOffsetFromTop);
   EXPECT_EQ(NSMinX(miniaturizeFrame),
-            NSMaxX(closeBoxFrame) + kFramedWindowButtonsInterButtonSpacing);
+            NSMaxX(closeBoxFrame) + [window_ windowButtonsInterButtonSpacing]);
 
   // Then with a tabstrip.
   id controller = [OCMockObject mockForClass:[BrowserWindowController class]];
@@ -131,7 +131,7 @@ TEST_F(FramedBrowserWindowTest, WindowWidgetLocation) {
    isKindOfClass:[BrowserWindowController class]];
   [[[controller expect] andReturnValue:OCMOCK_VALUE(yes)] hasTabStrip];
   [[[controller expect] andReturnValue:OCMOCK_VALUE(no)] hasTitleBar];
-  [[[controller expect] andReturnValue:OCMOCK_VALUE(yes)] isNormalWindow];
+  [[[controller expect] andReturnValue:OCMOCK_VALUE(yes)] isTabbedWindow];
   [window_ setWindowController:controller];
 
   closeBoxControl = [window_ standardWindowButton:NSWindowCloseButton];
@@ -153,7 +153,7 @@ TEST_F(FramedBrowserWindowTest, WindowWidgetLocation) {
             NSMaxY(windowBounds) -
                 kFramedWindowButtonsWithTabStripOffsetFromTop);
   EXPECT_EQ(NSMinX(miniaturizeFrame),
-            NSMaxX(closeBoxFrame) + kFramedWindowButtonsInterButtonSpacing);
+            NSMaxX(closeBoxFrame) + [window_ windowButtonsInterButtonSpacing]);
   [window_ setWindowController:nil];
 }
 

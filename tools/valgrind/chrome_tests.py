@@ -216,6 +216,9 @@ class ChromeTests:
   def TestBrowser(self):
     return self.SimpleTest("chrome", "browser_tests")
 
+  def TestCrypto(self):
+    return self.SimpleTest("crypto", "crypto_unittests")
+
   def TestGURL(self):
     return self.SimpleTest("chrome", "googleurl_unittests")
 
@@ -234,7 +237,6 @@ class ChromeTests:
   def TestRemoting(self):
     return self.SimpleTest("chrome", "remoting_unittests",
                            cmd_args=[
-                               "--ui-test-timeout=240000",
                                "--ui-test-action-timeout=120000",
                                "--ui-test-action-max-timeout=280000"])
 
@@ -273,11 +275,8 @@ class ChromeTests:
   # Valgrind timeouts are in seconds.
   UI_VALGRIND_ARGS = ["--timeout=7200", "--trace_children", "--indirect"]
   # UI test timeouts are in milliseconds.
-  UI_TEST_ARGS = ["--ui-test-timeout=240000",
-                  "--ui-test-action-timeout=120000",
-                  "--ui-test-action-max-timeout=280000",
-                  "--ui-test-sleep-timeout=120000",
-                  "--ui-test-terminate-timeout=120000"]
+  UI_TEST_ARGS = ["--ui-test-action-timeout=120000",
+                  "--ui-test-action-max-timeout=280000"]
   def TestUI(self):
     return self.SimpleTest("chrome", "ui_tests",
                            valgrind_test_args=self.UI_VALGRIND_ARGS,
@@ -422,6 +421,7 @@ class ChromeTests:
     "automated_ui" : TestAutomatedUI,
     "base": TestBase,            "base_unittests": TestBase,
     "browser": TestBrowser,      "browser_tests": TestBrowser,
+    "crypto": TestCrypto,        "crypto_unittests": TestCrypto,
     "googleurl": TestGURL,       "googleurl_unittests": TestGURL,
     "courgette": TestCourgette,  "courgette_unittests": TestCourgette,
     "ipc": TestIpc,              "ipc_tests": TestIpc,

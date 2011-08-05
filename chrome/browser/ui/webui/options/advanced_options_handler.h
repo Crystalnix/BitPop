@@ -9,7 +9,6 @@
 #include "chrome/browser/prefs/pref_member.h"
 #include "chrome/browser/prefs/pref_set_observer.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_setup_handler.h"
-#include "chrome/browser/remoting/remoting_options_handler.h"
 #include "chrome/browser/ui/shell_dialogs.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
 
@@ -91,6 +90,10 @@ class AdvancedOptionsHandler
   void ShowManageSSLCertificates(const ListValue* args);
 #endif
 
+  // Callback for the Cloud Print manage button.  This will open a new
+  // tab pointed at the management URL.
+  void ShowCloudPrintManagePage(const ListValue* args);
+
 #if !defined(OS_CHROMEOS)
   // Callback for the Sign in to Cloud Print button.  This will start
   // the authentication process.
@@ -99,10 +102,6 @@ class AdvancedOptionsHandler
   // Callback for the Disable Cloud Print button.  This will sign out
   // of cloud print.
   void HandleDisableCloudPrintProxy(const ListValue* args);
-
-  // Callback for the Cloud Print manage button.  This will open a new
-  // tab pointed at the management URL.
-  void ShowCloudPrintManagePage(const ListValue* args);
 
   // Pings the service to send us it's current notion of the enabled state.
   void RefreshCloudPrintStatusFromService();
@@ -117,15 +116,13 @@ class AdvancedOptionsHandler
 
 #endif
 
-#if defined(ENABLE_REMOTING) && !defined(OS_CHROMEOS)
-  // Removes remoting section. Called if remoting is not enabled.
-  void RemoveRemotingSection();
+#if !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
+  // Sets up the checked state for the "Continue running background apps..."
+  // checkbox.
+  void SetupBackgroundModeSettings();
 
-  // Callback for Setup Remoting button.
-  void ShowRemotingSetupDialog(const ListValue* args);
-
-  // Disable Remoting.
-  void DisableRemoting(const ListValue* args);
+  // Callback for the "Continue running background apps..." checkbox.
+  void HandleBackgroundModeCheckbox(const ListValue* args);
 #endif
 
   // Setup the checked state for the metrics reporting checkbox.
@@ -166,12 +163,13 @@ class AdvancedOptionsHandler
   BooleanPrefMember ssl3_enabled_;
   BooleanPrefMember tls1_enabled_;
 
-#if defined(ENABLE_REMOTING) && !defined(OS_CHROMEOS)
-  remoting::RemotingOptionsHandler remoting_options_handler_;
+#if !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
+  BooleanPrefMember background_mode_enabled_;
 #endif
 
   FilePathPrefMember default_download_location_;
   BooleanPrefMember ask_for_save_location_;
+  BooleanPrefMember allow_file_selection_dialogs_;
   StringPrefMember auto_open_files_;
   IntegerPrefMember default_font_size_;
   scoped_ptr<PrefSetObserver> proxy_prefs_;

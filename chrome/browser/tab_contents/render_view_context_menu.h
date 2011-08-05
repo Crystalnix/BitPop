@@ -78,8 +78,19 @@ class RenderViewContextMenu : public ui::SimpleMenuModel::Delegate {
   std::map<int, ExtensionMenuItem::Id> extension_item_map_;
 
  private:
+  friend class RenderViewContextMenuTest;
+
   static bool IsDevToolsURL(const GURL& url);
   static bool IsInternalResourcesURL(const GURL& url);
+  static bool ExtensionContextAndPatternMatch(
+      const ContextMenuParams& params,
+      ExtensionMenuItem::ContextList contexts,
+      const URLPatternSet& target_url_patterns);
+  static ExtensionMenuItem::List GetRelevantExtensionItems(
+      const ExtensionMenuItem::List& items,
+      const ContextMenuParams& params,
+      Profile* profile,
+      bool can_cross_incognito);
   bool AppendCustomItems();
   void AppendDeveloperItems();
   void AppendLinkItems();
@@ -114,7 +125,7 @@ class RenderViewContextMenu : public ui::SimpleMenuModel::Delegate {
 
   // Opens the specified URL string in a new tab.  If |in_current_window| is
   // false, a new window is created to hold the new tab.
-  void OpenURL(const GURL& url,
+  void OpenURL(const GURL& url, const GURL& referrer,
                WindowOpenDisposition disposition,
                PageTransition::Type transition);
 

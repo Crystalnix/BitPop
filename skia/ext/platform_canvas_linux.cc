@@ -6,21 +6,21 @@
 
 #include <cairo/cairo.h>
 
-#include "skia/ext/platform_device_linux.h"
-#include "skia/ext/bitmap_platform_device_linux.h"
+#include "skia/ext/bitmap_platform_device.h"
+#include "skia/ext/platform_device.h"
 #include "third_party/skia/include/core/SkTypes.h"
 
 namespace skia {
 
-PlatformCanvas::PlatformCanvas(int width, int height, bool is_opaque)
-    : SkCanvas(SkNEW(BitmapPlatformDeviceFactory)) {
+PlatformCanvas::PlatformCanvas(int width, int height, bool is_opaque) {
+  setDeviceFactory(SkNEW(BitmapPlatformDeviceFactory))->unref();
   if (!initialize(width, height, is_opaque))
     SK_CRASH();
 }
 
 PlatformCanvas::PlatformCanvas(int width, int height, bool is_opaque,
-                               uint8_t* data)
-    : SkCanvas(SkNEW(BitmapPlatformDeviceFactory)) {
+                               uint8_t* data) {
+  setDeviceFactory(SkNEW(BitmapPlatformDeviceFactory))->unref();
   if (!initialize(width, height, is_opaque, data))
     SK_CRASH();
 }
@@ -31,14 +31,6 @@ bool PlatformCanvas::initialize(int width, int height, bool is_opaque,
                                 uint8_t* data) {
   return initializeWithDevice(BitmapPlatformDevice::Create(
       width, height, is_opaque, data));
-}
-
-cairo_t* PlatformCanvas::beginPlatformPaint() const {
-  return getTopPlatformDevice().BeginPlatformPaint();
-}
-
-void PlatformCanvas::endPlatformPaint() const {
-  getTopPlatformDevice().EndPlatformPaint();
 }
 
 }  // namespace skia

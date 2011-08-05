@@ -12,18 +12,20 @@
 #include "base/scoped_ptr.h"
 #include "base/time.h"
 #include "chrome/browser/prerender/prerender_final_status.h"
+#include "chrome/browser/prerender/prerender_render_view_host_observer.h"
 #include "chrome/browser/tab_contents/render_view_host_delegate_helper.h"
-#include "chrome/browser/ui/app_modal_dialogs/js_modal_dialog.h"
-#include "chrome/common/view_types.h"
-#include "content/browser/renderer_host/render_view_host_delegate.h"
+#include "chrome/browser/ui/download/download_tab_helper_delegate.h"
+#include "content/browser/tab_contents/tab_contents_observer.h"
 #include "content/common/notification_registrar.h"
 #include "content/common/window_container_type.h"
 #include "webkit/glue/window_open_disposition.h"
 
+class RenderViewHost;
 class TabContents;
+class TabContentsWrapper;
 struct FaviconURL;
-struct WebPreferences;
 struct ViewHostMsg_FrameNavigate_Params;
+struct WebPreferences;
 
 namespace base {
 class ProcessMetrics;
@@ -36,16 +38,16 @@ class Rect;
 namespace prerender {
 
 class PrerenderManager;
+class PrerenderTracker;
 
 // This class is a peer of TabContents. It can host a renderer, but does not
 // have any visible display. Its navigation is not managed by a
 // NavigationController because is has no facility for navigating (other than
 // programatically view window.location.href) or RenderViewHostManager because
 // it is never allowed to navigate across a SiteInstance boundary.
-class PrerenderContents : public RenderViewHostDelegate,
-                          public RenderViewHostDelegate::View,
-                          public NotificationObserver,
-                          public JavaScriptAppModalDialogDelegate {
+class PrerenderContents : public NotificationObserver,
+                          public TabContentsObserver,
+                          public DownloadTabHelperDelegate {
  public:
   // PrerenderContents::Create uses the currently registered Factory to create
   // the PrerenderContents. Factory is intended for testing.
@@ -54,9 +56,14 @@ class PrerenderContents : public RenderViewHostDelegate,
     Factory() {}
     virtual ~Factory() {}
 
+    // Ownership is not transfered through this interface as prerender_manager,
+    // prerender_tracker, and profile are stored as weak pointers.
     virtual PrerenderContents* CreatePrerenderContents(
-        PrerenderManager* prerender_manager, Profile* profile, const GURL& url,
-        const std::vector<GURL>& alias_urls, const GURL& referrer) = 0;
+        PrerenderManager* prerender_manager,
+        PrerenderTracker* prerender_tracker,
+        Profile* profile,
+        const GURL& url,
+        const GURL& referrer) = 0;
 
    private:
     DISALLOW_COPY_AND_ASSIGN(Factory);
@@ -64,19 +71,22 @@ class PrerenderContents : public RenderViewHostDelegate,
 
   virtual ~PrerenderContents();
 
+  bool Init();
+
   static Factory* CreateFactory();
 
-  virtual void StartPrerendering();
+  // |source_render_view_host| is the RenderViewHost that initiated
+  // prerendering.  It must be non-NULL and have its own view.  It is used
+  // solely to determine the window bounds while prerendering.
+  virtual void StartPrerendering(const RenderViewHost* source_render_view_host);
 
   // Verifies that the prerendering is not using too many resources, and kills
   // it if not.
   void DestroyWhenUsingTooManyResources();
 
-  RenderViewHost* render_view_host() { return render_view_host_; }
-  // Allows replacing of the RenderViewHost owned by this class, including
-  // replacing with a NULL value.  When a caller uses this, the caller will
-  // own (and is responsible for freeing) the old RVH.
-  void set_render_view_host(RenderViewHost* rvh) { render_view_host_ = rvh; }
+  RenderViewHost* render_view_host_mutable();
+  const RenderViewHost* render_view_host() const;
+
   ViewHostMsg_FrameNavigate_Params* navigate_params() {
     return navigate_params_.get();
   }
@@ -103,120 +113,89 @@ class PrerenderContents : public RenderViewHostDelegate,
   base::TimeTicks load_start_time() const { return load_start_time_; }
 
   // Indicates whether this prerendered page can be used for the provided
-  // URL, i.e. whether there is a match.
-  bool MatchesURL(const GURL& url) const;
+  // URL, i.e. whether there is a match. |matching_url| is optional and will be
+  // set to the URL that is found as a match if it is provided.
+  bool MatchesURL(const GURL& url, GURL* matching_url) const;
 
-  // RenderViewHostDelegate implementation.
-  virtual RenderViewHostDelegate::View* GetViewDelegate();
-  virtual const GURL& GetURL() const;
-  virtual ViewType::Type GetRenderViewType() const;
-  virtual int GetBrowserWindowID() const;
-  virtual void DidNavigate(RenderViewHost* render_view_host,
-                           const ViewHostMsg_FrameNavigate_Params& params);
-  virtual void UpdateTitle(RenderViewHost* render_view_host,
-                           int32 page_id,
-                           const std::wstring& title);
-  virtual WebPreferences GetWebkitPrefs();
-  virtual void RunJavaScriptMessage(const std::wstring& message,
-                                    const std::wstring& default_prompt,
-                                    const GURL& frame_url,
-                                    const int flags,
-                                    IPC::Message* reply_msg,
-                                    bool* did_suppress_message);
-  virtual void Close(RenderViewHost* render_view_host);
-  virtual void DidStopLoading();
-  virtual RendererPreferences GetRendererPrefs(Profile* profile) const;
+  void OnJSOutOfMemory();
+  void OnRunJavaScriptMessage(const string16& message,
+                              const string16& default_prompt,
+                              const GURL& frame_url,
+                              const int flags,
+                              bool* did_suppress_message,
+                              string16* prompt_field);
+  virtual void OnRenderViewGone(int status, int exit_code);
 
-  // RenderViewHostDelegate::View
-  virtual void CreateNewWindow(
-      int route_id,
-      const ViewHostMsg_CreateWindow_Params& params);
-  virtual void CreateNewWidget(int route_id, WebKit::WebPopupType popup_type);
-  virtual void CreateNewFullscreenWidget(int route_id);
-  virtual void ShowCreatedWindow(int route_id,
-                                 WindowOpenDisposition disposition,
-                                 const gfx::Rect& initial_pos,
-                                 bool user_gesture);
-  virtual void ShowCreatedWidget(int route_id,
-                                 const gfx::Rect& initial_pos);
-  virtual void ShowCreatedFullscreenWidget(int route_id);
-  virtual void ShowContextMenu(const ContextMenuParams& params) {}
-  virtual void ShowPopupMenu(const gfx::Rect& bounds,
-                             int item_height,
-                             double item_font_size,
-                             int selected_item,
-                             const std::vector<WebMenuItem>& items,
-                             bool right_aligned) {}
-  virtual void StartDragging(const WebDropData& drop_data,
-                             WebKit::WebDragOperationsMask allowed_operations,
-                             const SkBitmap& image,
-                             const gfx::Point& image_offset) {}
-  virtual void UpdateDragCursor(WebKit::WebDragOperation operation) {}
-  virtual void GotFocus() {}
-  virtual void TakeFocus(bool reverse) {}
-  virtual void LostCapture() {}
-  virtual void Activate() {}
-  virtual void Deactivate() {}
-  virtual bool PreHandleKeyboardEvent(const NativeWebKeyboardEvent& event,
-                                      bool* is_keyboard_shortcut);
-  virtual void HandleKeyboardEvent(const NativeWebKeyboardEvent& event) {}
-  virtual void HandleMouseMove() {}
-  virtual void HandleMouseDown() {}
-  virtual void HandleMouseLeave() {}
-  virtual void HandleMouseUp() {}
-  virtual void HandleMouseActivate() {}
-  virtual void UpdatePreferredSize(const gfx::Size& new_size) {}
+  // TabContentsObserver implementation.
+  virtual void DidStopLoading() OVERRIDE;
 
   // NotificationObserver
   virtual void Observe(NotificationType type,
                        const NotificationSource& source,
-                       const NotificationDetails& details);
+                       const NotificationDetails& details) OVERRIDE;
 
-  // Overridden from JavaScriptAppModalDialogDelegate:
-  virtual void OnMessageBoxClosed(IPC::Message* reply_msg,
-                                  bool success,
-                                  const std::wstring& prompt);
-  virtual void SetSuppressMessageBoxes(bool suppress_message_boxes) {}
-  virtual gfx::NativeWindow GetMessageBoxRootWindow();
-  virtual TabContents* AsTabContents();
-  virtual ExtensionHost* AsExtensionHost();
+  // DownloadTabHelperDelegate implementation.
+  virtual bool CanDownload(int request_id) OVERRIDE;
+  virtual void OnStartDownload(DownloadItem* download,
+                               TabContentsWrapper* tab) OVERRIDE;
 
-  virtual void UpdateInspectorSetting(const std::string& key,
-                                      const std::string& value);
-  virtual void ClearInspectorSettings();
+  // Adds an alias URL, for one of the many redirections. If the URL can not
+  // be prerendered - for example, it's an ftp URL - |this| will be destroyed
+  // and false is returned. Otherwise, true is returned and the alias is
+  // remembered.
+  bool AddAliasURL(const GURL& url);
 
-  virtual void OnJSOutOfMemory();
-  virtual void RendererUnresponsive(RenderViewHost* render_view_host,
-                                    bool is_during_unload);
+  // The preview TabContents (may be null).
+  TabContentsWrapper* prerender_contents() const {
+    return prerender_contents_.get();
+  }
+
+  TabContentsWrapper* ReleasePrerenderContents();
+
+  // Sets the final status, calls OnDestroy and adds |this| to the
+  // PrerenderManager's pending deletes list.
+  void Destroy(FinalStatus reason);
+
+  // Applies all the URL history encountered during prerendering to the
+  // new tab.
+  void CommitHistory(TabContentsWrapper* tab);
+
+  int32 starting_page_id() { return starting_page_id_; }
 
  protected:
-  PrerenderContents(PrerenderManager* prerender_manager, Profile* profile,
-                    const GURL& url, const std::vector<GURL>& alias_urls,
+  PrerenderContents(PrerenderManager* prerender_manager,
+                    PrerenderTracker* prerender_tracker,
+                    Profile* profile,
+                    const GURL& url,
                     const GURL& referrer);
-
-  // from RenderViewHostDelegate.
-  virtual bool OnMessageReceived(const IPC::Message& message);
 
   const GURL& prerender_url() const { return prerender_url_; }
 
+  NotificationRegistrar& notification_registrar() {
+    return notification_registrar_;
+  }
+
+  // Called whenever a RenderViewHost is created for prerendering.  Only called
+  // once the RenderViewHost has a RenderView and RenderWidgetHostView.
+  virtual void OnRenderViewHostCreated(RenderViewHost* new_render_view_host);
+
  private:
+  class TabContentsDelegateImpl;
+
   // Needs to be able to call the constructor.
   friend class PrerenderContentsFactoryImpl;
+
+  friend class PrerenderRenderViewHostObserver;
 
   // Message handlers.
   void OnDidStartProvisionalLoadForFrame(int64 frame_id,
                                          bool main_frame,
+                                         bool has_opener_set,
                                          const GURL& url);
   void OnUpdateFaviconURL(int32 page_id, const std::vector<FaviconURL>& urls);
-  void OnMaybeCancelPrerenderForHTML5Media();
 
-  // Adds an alias URL, for one of the many redirections. Returns whether
-  // the URL is valid.
-  bool AddAliasURL(const GURL& url);
-
-  // Remove |this| from the PrerenderManager, set a final status, and
-  // delete |this|.
-  void Destroy(FinalStatus reason);
+  // Returns the RenderViewHost Delegate for this prerender.
+  RenderViewHostDelegate* GetRenderViewHostDelegate();
 
   // Returns the ProcessMetrics for the render process, if it exists.
   base::ProcessMetrics* MaybeGetProcessMetrics();
@@ -224,8 +203,8 @@ class PrerenderContents : public RenderViewHostDelegate,
   // The prerender manager owning this object.
   PrerenderManager* prerender_manager_;
 
-  // The host for our HTML content.
-  RenderViewHost* render_view_host_;
+  // The prerender tracker tracking prerenders.
+  PrerenderTracker* prerender_tracker_;
 
   // Common implementations of some RenderViewHostDelegate::View methods.
   RenderViewHostDelegateViewHelper delegate_view_helper_;
@@ -251,7 +230,8 @@ class PrerenderContents : public RenderViewHostDelegate,
   int32 page_id_;
   GURL url_;
   GURL icon_url_;
-  NotificationRegistrar registrar_;
+  NotificationRegistrar notification_registrar_;
+  TabContentsObserver::Registrar tab_contents_observer_registrar_;
 
   // A vector of URLs that this prerendered page matches against.
   // This array can contain more than element as a result of redirects,
@@ -260,9 +240,15 @@ class PrerenderContents : public RenderViewHostDelegate,
 
   bool has_stopped_loading_;
 
+  // This must be the same value as the PrerenderTracker has recorded for
+  // |this|, when |this| has a RenderView.
   FinalStatus final_status_;
 
   bool prerendering_has_started_;
+
+  // Tracks whether or not prerendering has been cancelled by calling Destroy.
+  // Used solely to prevent double deletion.
+  bool prerendering_has_been_cancelled_;
 
   // Time at which we started to load the URL.  This is used to compute
   // the time elapsed from initiating a prerender until the time the
@@ -273,13 +259,26 @@ class PrerenderContents : public RenderViewHostDelegate,
   // RenderViewHost for this object.
   scoped_ptr<base::ProcessMetrics> process_metrics_;
 
-  // Maximum amount of private memory that may be used per PrerenderContents,
-  // in MB.
-  static const int kMaxPrerenderPrivateMB = 100;
+  // The prerendered TabContents; may be null.
+  scoped_ptr<TabContentsWrapper> prerender_contents_;
+
+  scoped_ptr<PrerenderRenderViewHostObserver> render_view_host_observer_;
+
+  scoped_ptr<TabContentsDelegateImpl> tab_contents_delegate_;
+
+  // These are -1 before a RenderView is created.
+  int child_id_;
+  int route_id_;
+
+  // Page ID at which prerendering started.
+  int32 starting_page_id_;
+
+  // Offset by which to offset prerendered pages
+  static const int32 kPrerenderPageIdOffset = 10;
 
   DISALLOW_COPY_AND_ASSIGN(PrerenderContents);
 };
 
-}  // prerender
+}  // namespace prerender
 
 #endif  // CHROME_BROWSER_PRERENDER_PRERENDER_CONTENTS_H_

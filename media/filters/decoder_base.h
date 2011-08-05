@@ -9,6 +9,7 @@
 
 #include <deque>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/stl_util-inl.h"
 #include "base/task.h"
@@ -33,11 +34,10 @@ class DecoderBase : public Decoder {
         NewRunnableMethod(this, &DecoderBase::StopTask, callback));
   }
 
-  virtual void Seek(base::TimeDelta time,
-                    FilterCallback* callback) {
+  virtual void Seek(base::TimeDelta time, const FilterStatusCB& cb) {
     message_loop_->PostTask(
         FROM_HERE,
-        NewRunnableMethod(this, &DecoderBase::SeekTask, time, callback));
+        NewRunnableMethod(this, &DecoderBase::SeekTask, time, cb));
   }
 
   // Decoder implementation.
@@ -53,12 +53,9 @@ class DecoderBase : public Decoder {
                           callback));
   }
 
-  virtual const MediaFormat& media_format() { return media_format_; }
-
-  // Audio decoder.
-  // Note that this class is only used by the audio decoder, this will
-  // eventually be merged into FFmpegAudioDecoder.
-  virtual void ProduceAudioSamples(scoped_refptr<Output> output) {
+  // TODO(scherkus): Since FFmpegAudioDecoder is the only subclass this is a
+  // temporary hack until I finish removing DecoderBase.
+  void PostReadTaskHack(scoped_refptr<Output> output) {
     message_loop_->PostTask(FROM_HERE,
         NewRunnableMethod(this, &DecoderBase::ReadTask, output));
   }
@@ -97,8 +94,7 @@ class DecoderBase : public Decoder {
   // the demuxer stream.  Returns true if successful, otherwise false indicates
   // a fatal error.  The derived class should NOT call the filter host's
   // InitializationComplete() method.  If this method returns true, then the
-  // base class will call the host to complete initialization.  During this
-  // call, the derived class must fill in the media_format_ member.
+  // base class will call the host to complete initialization.
   virtual void DoInitialize(DemuxerStream* demuxer_stream, bool* success,
                             Task* done_cb) = 0;
 
@@ -106,7 +102,7 @@ class DecoderBase : public Decoder {
   // be called from within the Filter::Stop() method prior to stopping the
   // base class.
   virtual void DoStop(Task* done_cb) {
-    AutoTaskRunner done_runner(done_cb);
+    base::ScopedTaskRunner run_done_cb(done_cb);
   }
 
   // Derived class can implement this method and perform seeking logic prior
@@ -117,8 +113,6 @@ class DecoderBase : public Decoder {
   // operation produces one or more outputs, the derived class should call
   // the EnequeueResult() method from within this method.
   virtual void DoDecode(Buffer* input) = 0;
-
-  MediaFormat media_format_;
 
   void OnDecodeComplete(const PipelineStatistics& statistics) {
     statistics_callback_->Run(statistics);
@@ -135,8 +129,8 @@ class DecoderBase : public Decoder {
     DCHECK_LE(pending_reads_, pending_requests_);
     if (!fulfilled) {
       DCHECK_LT(pending_reads_, pending_requests_);
-      demuxer_stream_->Read(NewCallback(this, &DecoderBase::OnReadComplete));
       ++pending_reads_;
+      demuxer_stream_->Read(base::Bind(&DecoderBase::OnReadComplete, this));
     }
   }
 
@@ -175,25 +169,22 @@ class DecoderBase : public Decoder {
     }
   }
 
-  void SeekTask(base::TimeDelta time, FilterCallback* callback) {
+  void SeekTask(base::TimeDelta time, const FilterStatusCB& cb) {
     DCHECK_EQ(MessageLoop::current(), message_loop_);
     DCHECK_EQ(0u, pending_reads_) << "Pending reads should have completed";
     DCHECK_EQ(0u, pending_requests_) << "Pending requests should be empty";
 
     // Delegate to the subclass first.
-    DoSeek(time,
-           NewRunnableMethod(this, &DecoderBase::OnSeekComplete, callback));
+    DoSeek(time, NewRunnableMethod(this, &DecoderBase::OnSeekComplete, cb));
   }
 
-  void OnSeekComplete(FilterCallback* callback) {
+  void OnSeekComplete(const FilterStatusCB& cb) {
     // Flush our decoded results.
     result_queue_.clear();
 
     // Signal that we're done seeking.
-    if (callback) {
-      callback->Run();
-      delete callback;
-    }
+    if (!cb.is_null())
+      cb.Run(PIPELINE_OK);
   }
 
   void InitializeTask(DemuxerStream* demuxer_stream,
@@ -240,8 +231,8 @@ class DecoderBase : public Decoder {
 
     // Since we can't fulfill a read request now then submit a read
     // request to the demuxer stream.
-    demuxer_stream_->Read(NewCallback(this, &DecoderBase::OnReadComplete));
     ++pending_reads_;
+    demuxer_stream_->Read(base::Bind(&DecoderBase::OnReadComplete, this));
   }
 
   void ReadCompleteTask(scoped_refptr<Buffer> buffer) {
@@ -273,10 +264,9 @@ class DecoderBase : public Decoder {
     // Execute the callback!
     --pending_requests_;
 
-    // TODO(hclam): We only inherit this class from FFmpegAudioDecoder so we
-    // are making this call. We should correct this by merging this class into
-    // FFmpegAudioDecoder.
-    Decoder::consume_audio_samples_callback()->Run(output);
+    // TODO(scherkus): Since FFmpegAudioDecoder is the only subclass this is a
+    // temporary hack until I finish removing DecoderBase.
+    Decoder::ConsumeAudioSamples(output);
     return true;
   }
 

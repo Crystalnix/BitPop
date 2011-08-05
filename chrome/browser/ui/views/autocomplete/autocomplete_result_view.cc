@@ -24,7 +24,7 @@
 #include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/color_utils.h"
 
-#if defined(OS_LINUX)
+#if defined(TOOLKIT_USES_GTK)
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "ui/gfx/skia_utils_gtk.h"
 #endif
@@ -140,7 +140,7 @@ SkColor AutocompleteResultView::GetColor(ResultViewState state,
     colors[SELECTED][BACKGROUND] = color_utils::GetSysSkColor(COLOR_HIGHLIGHT);
     colors[NORMAL][TEXT] = color_utils::GetSysSkColor(COLOR_WINDOWTEXT);
     colors[SELECTED][TEXT] = color_utils::GetSysSkColor(COLOR_HIGHLIGHTTEXT);
-#elif defined(OS_LINUX)
+#elif defined(TOOLKIT_USES_GTK)
     GdkColor bg_color, selected_bg_color, text_color, selected_text_color;
     gtk_util::GetTextColors(
         &bg_color, &selected_bg_color, &text_color, &selected_text_color);
@@ -205,7 +205,7 @@ void AutocompleteResultView::PaintMatch(gfx::Canvas* canvas,
   }
 }
 
-int AutocompleteResultView::GetFontHeight() const {
+int AutocompleteResultView::GetTextHeight() const {
   return std::max(normal_font_.GetHeight(), bold_font_.GetHeight());
 }
 
@@ -496,7 +496,7 @@ void AutocompleteResultView::Elide(Runs* runs, int remaining_width) const {
 gfx::Size AutocompleteResultView::GetPreferredSize() {
   return gfx::Size(0, std::max(
       default_icon_size_ + (kMinimumIconVerticalPadding * 2),
-      GetFontHeight() + (kMinimumTextVerticalPadding * 2)));
+      GetTextHeight() + (kMinimumTextVerticalPadding * 2)));
 }
 
 void AutocompleteResultView::Layout() {
@@ -508,10 +508,10 @@ void AutocompleteResultView::Layout() {
 
   int text_x = LocationBarView::kEdgeItemPadding + default_icon_size_ +
       LocationBarView::kItemPadding;
-  int font_height = GetFontHeight();
-  text_bounds_.SetRect(text_x, std::max(0, (height() - font_height) / 2),
+  int text_height = GetTextHeight();
+  text_bounds_.SetRect(text_x, std::max(0, (height() - text_height) / 2),
       std::max(bounds().width() - text_x - LocationBarView::kEdgeItemPadding,
-      0), font_height);
+      0), text_height);
 }
 
 void AutocompleteResultView::OnPaint(gfx::Canvas* canvas) {

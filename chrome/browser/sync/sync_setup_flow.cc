@@ -5,6 +5,7 @@
 #include "chrome/browser/sync/sync_setup_flow.h"
 
 #include "base/callback.h"
+#include "base/command_line.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/metrics/histogram.h"
@@ -15,19 +16,14 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_service.h"
+#include "chrome/browser/sync/syncable/model_type.h"
 #include "chrome/browser/sync/sync_setup_flow_handler.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/net/gaia/google_service_auth_error.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
 #include "grit/generated_resources.h"
-#include "grit/locale_settings.h"
-#include "ui/base/l10n/l10n_font_util.h"
-#include "ui/gfx/font.h"
 
 namespace {
 
@@ -64,24 +60,16 @@ SyncSetupFlow* SyncSetupFlow::Run(ProfileSyncService* service,
     SyncSetupFlow::GetArgsForConfigure(service, &args);
   else if (start == SyncSetupWizard::ENTER_PASSPHRASE)
     SyncSetupFlow::GetArgsForEnterPassphrase(false, false, &args);
-  else if (start == SyncSetupWizard::PASSPHRASE_MIGRATION)
-    args.SetString("iframeToShow", "firstpassphrase");
 
   std::string json_args;
   base::JSONWriter::Write(&args, false, &json_args);
 
-  SyncSetupFlow* flow = new SyncSetupFlow(start, end, json_args,
-      container, service);
-
-  Browser* b = BrowserList::GetLastActive();
-  b->ShowOptionsTab(chrome::kSyncSetupSubPage);
-  return flow;
+  return new SyncSetupFlow(start, end, json_args, container, service);
 }
 
 // static
 void SyncSetupFlow::GetArgsForGaiaLogin(const ProfileSyncService* service,
                                         DictionaryValue* args) {
-  args->SetString("iframeToShow", "login");
   const GoogleServiceAuthError& error = service->GetAuthError();
   if (!service->last_attempted_user_email().empty()) {
     args->SetString("user", service->last_attempted_user_email());
@@ -104,10 +92,8 @@ void SyncSetupFlow::GetArgsForGaiaLogin(const ProfileSyncService* service,
 // static
 void SyncSetupFlow::GetArgsForConfigure(ProfileSyncService* service,
                                         DictionaryValue* args) {
-  args->SetString("iframeToShow", "configure");
-
   // The SYNC_EVERYTHING case will set this to true.
-  args->SetBoolean("syncEverything", false);
+  args->SetBoolean("showSyncEverythingPage", false);
 
   args->SetBoolean("keepEverythingSynced",
       service->profile()->GetPrefs()->GetBoolean(prefs::kKeepEverythingSynced));
@@ -146,6 +132,15 @@ void SyncSetupFlow::GetArgsForConfigure(ProfileSyncService* service,
       service->profile()->GetPrefs()->GetBoolean(prefs::kSyncTypedUrls));
   args->SetBoolean("syncApps",
       service->profile()->GetPrefs()->GetBoolean(prefs::kSyncApps));
+  args->SetBoolean("encryptionEnabled",
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableSyncEncryption));
+
+  syncable::ModelTypeSet encrypted_types;
+  service->GetEncryptedDataTypes(&encrypted_types);
+  bool encrypt_all =
+      encrypted_types.upper_bound(syncable::PASSWORDS) != encrypted_types.end();
+  args->SetBoolean("encryptAllData", encrypt_all);
 
   // Load the parameters for the encryption tab.
   args->SetBoolean("usePassphrase", service->IsUsingSecondaryPassphrase());
@@ -156,7 +151,7 @@ void SyncSetupFlow::GetArgsForEnterPassphrase(
     bool tried_creating_explicit_passphrase,
     bool tried_setting_explicit_passphrase,
     DictionaryValue* args) {
-  args->SetString("iframeToShow", "passphrase");
+  args->SetBoolean("show_passphrase", true);
   args->SetBoolean("passphrase_creation_rejected",
                    tried_creating_explicit_passphrase);
   args->SetBoolean("passphrase_setting_rejected",
@@ -186,8 +181,7 @@ void SyncSetupFlow::Focus() {
 void SyncSetupFlow::OnDialogClosed(const std::string& json_retval) {
   DCHECK(json_retval.empty());
   container_->set_flow(NULL);  // Sever ties from the wizard.
-  if (current_state_ == SyncSetupWizard::DONE ||
-      current_state_ == SyncSetupWizard::DONE_FIRST_TIME) {
+  if (current_state_ == SyncSetupWizard::DONE) {
     service_->SetSyncSetupCompleted();
   }
 
@@ -209,7 +203,6 @@ void SyncSetupFlow::OnDialogClosed(const std::string& json_retval) {
       ProfileSyncService::SyncEvent(
           ProfileSyncService::CANCEL_DURING_CONFIGURE);
       break;
-    case SyncSetupWizard::DONE_FIRST_TIME:
     case SyncSetupWizard::DONE:
       // TODO(sync): rename this histogram; it's tracking authorization AND
       // initial sync download time.
@@ -234,6 +227,12 @@ void SyncSetupFlow::OnUserSubmittedAuth(const std::string& username,
 void SyncSetupFlow::OnUserConfigured(const SyncConfiguration& configuration) {
   // Go to the "loading..." screen.
   Advance(SyncSetupWizard::SETTING_UP);
+
+  if (configuration.encrypt_all) {
+    syncable::ModelTypeSet data_types;
+    service_->GetRegisteredDataTypes(&data_types);
+    service_->EncryptDataTypes(data_types);
+  }
 
   // If we are activating the passphrase, we need to have one supplied.
   DCHECK(service_->IsUsingSecondaryPassphrase() ||
@@ -263,12 +262,6 @@ void SyncSetupFlow::OnPassphraseCancel() {
     DisablePasswordSync(service_);
 
   Advance(SyncSetupWizard::SETTING_UP);
-}
-
-// TODO(jhawkins): Remove this method.
-void SyncSetupFlow::OnFirstPassphraseEntry(const std::string& option,
-                                           const std::string& passphrase) {
-  NOTREACHED();
 }
 
 // TODO(jhawkins): Use this method instead of a direct link in the html.
@@ -309,8 +302,6 @@ bool SyncSetupFlow::ShouldAdvance(SyncSetupWizard::State state) {
       return current_state_ == SyncSetupWizard::SYNC_EVERYTHING ||
              current_state_ == SyncSetupWizard::CONFIGURE ||
              current_state_ == SyncSetupWizard::SETTING_UP;
-    case SyncSetupWizard::PASSPHRASE_MIGRATION:
-      return current_state_ == SyncSetupWizard::GAIA_LOGIN;
     case SyncSetupWizard::SETUP_ABORTED_BY_PENDING_CLEAR:
       DCHECK(current_state_ != SyncSetupWizard::GAIA_LOGIN &&
              current_state_ != SyncSetupWizard::GAIA_SUCCESS);
@@ -318,11 +309,9 @@ bool SyncSetupFlow::ShouldAdvance(SyncSetupWizard::State state) {
     case SyncSetupWizard::SETTING_UP:
       return current_state_ == SyncSetupWizard::SYNC_EVERYTHING ||
              current_state_ == SyncSetupWizard::CONFIGURE ||
-             current_state_ == SyncSetupWizard::ENTER_PASSPHRASE ||
-             current_state_ == SyncSetupWizard::PASSPHRASE_MIGRATION;
+             current_state_ == SyncSetupWizard::ENTER_PASSPHRASE;
     case SyncSetupWizard::FATAL_ERROR:
       return true;  // You can always hit the panic button.
-    case SyncSetupWizard::DONE_FIRST_TIME:
     case SyncSetupWizard::DONE:
       return current_state_ == SyncSetupWizard::SETTING_UP ||
              current_state_ == SyncSetupWizard::ENTER_PASSPHRASE;
@@ -350,7 +339,7 @@ void SyncSetupFlow::ActivateState(SyncSetupWizard::State state) {
     case SyncSetupWizard::SYNC_EVERYTHING: {
       DictionaryValue args;
       SyncSetupFlow::GetArgsForConfigure(service_, &args);
-      args.SetBoolean("syncEverything", true);
+      args.SetBoolean("showSyncEverythingPage", true);
       flow_handler_->ShowConfigure(args);
       break;
     }
@@ -362,17 +351,12 @@ void SyncSetupFlow::ActivateState(SyncSetupWizard::State state) {
     }
     case SyncSetupWizard::ENTER_PASSPHRASE: {
       DictionaryValue args;
+      SyncSetupFlow::GetArgsForConfigure(service_, &args);
       SyncSetupFlow::GetArgsForEnterPassphrase(
           tried_creating_explicit_passphrase_,
           tried_setting_explicit_passphrase_,
           &args);
       flow_handler_->ShowPassphraseEntry(args);
-      break;
-    }
-    case SyncSetupWizard::PASSPHRASE_MIGRATION: {
-      DictionaryValue args;
-      args.SetString("iframeToShow", "firstpassphrase");
-      flow_handler_->ShowFirstPassphrase(args);
       break;
     }
     case SyncSetupWizard::SETUP_ABORTED_BY_PENDING_CLEAR: {
@@ -395,10 +379,6 @@ void SyncSetupFlow::ActivateState(SyncSetupWizard::State state) {
       flow_handler_->ShowGaiaLogin(args);
       break;
     }
-    case SyncSetupWizard::DONE_FIRST_TIME:
-      flow_handler_->ShowFirstTimeDone(
-          UTF16ToWide(service_->GetAuthenticatedUsername()));
-      break;
     case SyncSetupWizard::DONE:
       flow_handler_->ShowSetupDone(
           UTF16ToWide(service_->GetAuthenticatedUsername()));

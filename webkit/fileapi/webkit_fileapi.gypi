@@ -1,4 +1,4 @@
-# Copyright (c) 2010 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -6,12 +6,14 @@
   'targets': [
     {
       'target_name': 'fileapi',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '40B53211-03ED-4932-8D53-52B172599DFE',
       'dependencies': [
         '<(DEPTH)/app/app.gyp:app_base',
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/net/net.gyp:net',
+        '<(DEPTH)/third_party/leveldb/leveldb.gyp:leveldb',
+        '<(DEPTH)/webkit/support/webkit_support.gyp:quota',
       ],
       'sources': [
         'file_system_callback_dispatcher.cc',
@@ -20,6 +22,8 @@
         'file_system_context.h',
         'file_system_dir_url_request_job.cc',
         'file_system_dir_url_request_job.h',
+        'file_system_directory_database.cc',
+        'file_system_directory_database.h',
         'file_system_file_util.cc',
         'file_system_file_util.h',
         'file_system_file_util_proxy.cc',
@@ -29,23 +33,31 @@
         'file_system_operation.h',
         'file_system_operation_context.cc',
         'file_system_operation_context.h',
+        'file_system_origin_database.cc',
+        'file_system_origin_database.h',
         'file_system_path_manager.cc',
         'file_system_path_manager.h',
+        'file_system_quota_client.cc',
+        'file_system_quota_client.h',
+        'file_system_quota_util.cc',
+        'file_system_quota_util.h',
         'file_system_types.h',
         'file_system_url_request_job.cc',
         'file_system_url_request_job.h',
-        'file_system_url_request_job_base.cc',
-        'file_system_url_request_job_base.h',
-        'file_system_usage_tracker.cc',
-        'file_system_usage_tracker.h',
+        'file_system_url_request_job_factory.cc',
+        'file_system_url_request_job_factory.h',
+        'file_system_usage_cache.cc',
+        'file_system_usage_cache.h',
         'file_system_util.cc',
         'file_system_util.h',
-        'file_system_usage_cache.h',
-        'file_system_usage_cache.cc',
         'file_writer_delegate.cc',
         'file_writer_delegate.h',
         'local_file_system_file_util.cc',
         'local_file_system_file_util.h',
+        'obfuscated_file_system_file_util.cc',
+        'obfuscated_file_system_file_util.h',
+        'quota_file_util.cc',
+        'quota_file_util.h',
         'sandbox_mount_point_provider.cc',
         'sandbox_mount_point_provider.h',
         'webfilewriter_base.cc',

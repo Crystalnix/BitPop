@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/callback.h"
+#include "base/callback_old.h"
 #include "base/id_map.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/process.h"
@@ -23,9 +23,9 @@
 class Profile;
 class CommandLine;
 
-namespace remoting {
-struct ChromotingHostInfo;
-}  // namespace remoting
+namespace cloud_print {
+struct CloudPrintProxyInfo;
+}  // namespace cloud_print
 
 // A ServiceProcessControl works as a portal between the service process and
 // the browser process.
@@ -43,18 +43,8 @@ class ServiceProcessControl : public IPC::Channel::Sender,
  public:
   typedef IDMap<ServiceProcessControl>::iterator iterator;
   typedef std::queue<IPC::Message> MessageQueue;
-  typedef Callback1<const remoting::ChromotingHostInfo&>::Type
-      RemotingHostStatusHandler;
-
-  // An interface for handling messages received from the service process.
-  class MessageHandler {
-   public:
-    virtual ~MessageHandler() {}
-
-    // Called when we receive reply to remoting host status request.
-    virtual void OnRemotingHostInfo(
-        const remoting::ChromotingHostInfo& host_info) = 0;
-  };
+  typedef Callback1<const cloud_print::CloudPrintProxyInfo&>::Type
+      CloudPrintProxyInfoHandler;
 
   // Construct a ServiceProcessControl with |profile|..
   explicit ServiceProcessControl(Profile* profile);
@@ -94,40 +84,18 @@ class ServiceProcessControl : public IPC::Channel::Sender,
                        const NotificationDetails& details);
 
   // Message handlers
-  void OnCloudPrintProxyIsEnabled(bool enabled, std::string email);
-  void OnRemotingHostInfo(const remoting::ChromotingHostInfo& host_info);
+  void OnCloudPrintProxyInfo(
+      const cloud_print::CloudPrintProxyInfo& proxy_info);
 
   // Send a shutdown message to the service process. IPC channel will be
   // destroyed after calling this method.
   // Return true if the message was sent.
   bool Shutdown();
 
-  // Send request for cloud print proxy status and the registered
-  // email address. The callback gets the information when received.
-  bool GetCloudPrintProxyStatus(
-      Callback2<bool, std::string>::Type* cloud_print_status_callback);
-
-  // Send a message to enable the remoting service in the service process.
-  // Return true if the message was sent.
-  bool SetRemotingHostCredentials(const std::string& user,
-                                  const std::string& auth_token);
-
-  bool EnableRemotingHost();
-  bool DisableRemotingHost();
-
-  // Send request for current status of the remoting service.
-  // MessageHandler::OnRemotingHostInfo() will be called when remoting host
-  // status is available.
-  bool RequestRemotingHostStatus();
-
-  // Add a message handler for receiving messages from the service
-  // process.
-  void AddMessageHandler(MessageHandler* message_handler);
-
-  // Remove a message handler from the list of message handlers. Must
-  // not be called from a message handler (i.e. while a message is
-  // being processed).
-  void RemoveMessageHandler(MessageHandler* message_handler);
+  // Send request for cloud print proxy info (enabled state, email, proxy id).
+  // The callback gets the information when received.
+  bool GetCloudPrintProxyInfo(
+      CloudPrintProxyInfoHandler* cloud_print_status_callback);
 
  private:
   // This class is responsible for launching the service process on the
@@ -191,10 +159,7 @@ class ServiceProcessControl : public IPC::Channel::Sender,
 
   // Callback that gets invoked when a status message is received from
   // the cloud print proxy.
-  scoped_ptr<Callback2<bool, std::string>::Type> cloud_print_status_callback_;
-
-  // Handler for messages from service process.
-  std::set<MessageHandler*> message_handlers_;
+  scoped_ptr<CloudPrintProxyInfoHandler> cloud_print_info_callback_;
 
   NotificationRegistrar registrar_;
 };

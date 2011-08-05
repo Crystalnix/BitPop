@@ -10,9 +10,9 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
-#include "chrome/common/security_style.h"
 #include "content/common/page_transition_types.h"
 #include "content/common/page_type.h"
+#include "content/common/security_style.h"
 #include "googleurl/src/gurl.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
@@ -206,7 +206,7 @@ class NavigationEntry {
   //
   // Note that the SiteInstance should usually not be changed after it is set,
   // but this may happen if the NavigationEntry was cloned and needs to use a
-  // different SiteInstance.
+  // different SiteInstance, or if a hosted app is installed or uninstalled.
   void set_site_instance(SiteInstance* site_instance);
   SiteInstance* site_instance() const {
     return site_instance_;

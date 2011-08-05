@@ -1120,6 +1120,14 @@ int SSLClientSocketMac::DoVerifyCert() {
   DCHECK(server_cert_);
 
   VLOG(1) << "DoVerifyCert...";
+  int cert_status;
+  if (ssl_config_.IsAllowedBadCert(server_cert_, &cert_status)) {
+    VLOG(1) << "Received an expected bad cert with status: " << cert_status;
+    server_cert_verify_result_.Reset();
+    server_cert_verify_result_.cert_status = cert_status;
+    return OK;
+  }
+
   int flags = 0;
   if (ssl_config_.rev_checking_enabled)
     flags |= X509Certificate::VERIFY_REV_CHECKING_ENABLED;
@@ -1136,9 +1144,6 @@ int SSLClientSocketMac::DoVerifyCertComplete(int result) {
   verifier_.reset();
 
   VLOG(1) << "...DoVerifyCertComplete (result=" << result << ")";
-  if (IsCertificateError(result) && ssl_config_.IsAllowedBadCert(server_cert_))
-    result = OK;
-
   if (result == OK && client_cert_requested_ &&
       !ssl_config_.send_client_cert) {
     // Caller hasn't specified a client cert, so let it know the server is
@@ -1189,8 +1194,11 @@ int SSLClientSocketMac::DoPayloadRead() {
   // transparent renegotiation, so that we can update our state machine above,
   // which otherwise would get out of sync with the SSLContextRef's internal
   // state machine.
-  if (processed > 0)
+  if (processed > 0) {
+    LogByteTransfer(net_log_, NetLog::TYPE_SSL_SOCKET_BYTES_RECEIVED,
+                    processed, user_read_buf_->data());
     return processed;
+  }
 
   switch (status) {
     case errSSLClosedNoNotify:
@@ -1215,8 +1223,11 @@ int SSLClientSocketMac::DoPayloadWrite() {
                              user_write_buf_len_,
                              &processed);
 
-  if (processed > 0)
+  if (processed > 0) {
+    LogByteTransfer(net_log_, NetLog::TYPE_SSL_SOCKET_BYTES_SENT, processed,
+                    user_write_buf_->data());
     return processed;
+  }
 
   return NetErrorFromOSStatus(status);
 }

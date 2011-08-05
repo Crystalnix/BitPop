@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,8 @@ cr.define('options.passwordManager', function() {
 
   /**
    * Creates a new passwords list item.
-   * @param {Array} entry An array of the form [url, username, password].
+   * @param {Array} entry An array of the form [url, username, password]. When
+   *     the list has been filtered, a fourth element [index] may be present.
    * @constructor
    * @extends {cr.ui.ListItem}
    */
@@ -34,6 +35,7 @@ cr.define('options.passwordManager', function() {
       var urlLabel = this.ownerDocument.createElement('div');
       urlLabel.classList.add('favicon-cell');
       urlLabel.classList.add('url');
+      urlLabel.setAttribute('title', this.url);
       urlLabel.textContent = this.url;
       urlLabel.style.backgroundImage = url('chrome://favicon/' + this.url);
       this.contentElement.appendChild(urlLabel);
@@ -53,13 +55,13 @@ cr.define('options.passwordManager', function() {
       passwordInput.type = 'password';
       passwordInput.className = 'inactive-password';
       passwordInput.readOnly = true;
-      passwordInput.value = showPasswords ? this.password : "********";
+      passwordInput.value = showPasswords ? this.password : '********';
       passwordInputDiv.appendChild(passwordInput);
 
       // The show/hide button.
       if (showPasswords) {
         var button = this.ownerDocument.createElement('button');
-        button.classList.add('hidden');
+        button.hidden = true;
         button.classList.add('password-button');
         button.textContent = localStrings.getString('passwordShowButton');
         button.addEventListener('click', this.onClick_, true);
@@ -80,10 +82,10 @@ cr.define('options.passwordManager', function() {
         return;
       if (this.selected) {
         input.classList.remove('inactive-password');
-        button.classList.remove('hidden');
+        button.hidden = false;
       } else {
         input.classList.add('inactive-password');
-        button.classList.add('hidden');
+        button.hidden = true;
       }
     },
 
@@ -226,6 +228,11 @@ cr.define('options.passwordManager', function() {
 
     /** @inheritDoc */
     deleteItemAtIndex: function(index) {
+      var item = this.dataModel.item(index);
+      if (item && item.length > 3) {
+        // The fourth element, if present, is the original index to delete.
+        index = item[3];
+      }
       PasswordManager.removeSavedPassword(index);
     },
 

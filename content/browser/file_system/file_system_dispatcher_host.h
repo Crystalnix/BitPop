@@ -12,9 +12,7 @@
 #include "content/browser/browser_message_filter.h"
 #include "webkit/fileapi/file_system_types.h"
 
-class ChromeURLRequestContext;
 class GURL;
-class HostContentSettingsMap;
 class Profile;
 class Receiver;
 class RenderMessageFilter;
@@ -34,19 +32,17 @@ class FileSystemOperation;
 
 namespace net {
 class URLRequestContext;
-class URLRequestContextGetter;
 }  // namespace net
 
 class FileSystemDispatcherHost : public BrowserMessageFilter {
  public:
   // Used by the renderer.
-  FileSystemDispatcherHost(
-      const content::ResourceContext* resource_context,
-      HostContentSettingsMap* host_content_settings_map);
+  explicit FileSystemDispatcherHost(
+      const content::ResourceContext* resource_context);
   // Used by the worker, since it has the context handy already.
-  FileSystemDispatcherHost(ChromeURLRequestContext* request_context,
+  FileSystemDispatcherHost(net::URLRequestContext* request_context,
                            fileapi::FileSystemContext* file_system_context);
-  ~FileSystemDispatcherHost();
+  virtual ~FileSystemDispatcherHost();
 
   // BrowserMessageFilter implementation.
   virtual void OnChannelConnected(int32 peer_pid);
@@ -92,9 +88,6 @@ class FileSystemDispatcherHost : public BrowserMessageFilter {
   fileapi::FileSystemOperation* GetNewOperation(int request_id);
 
   fileapi::FileSystemContext* context_;
-
-  // Used to look up permissions.
-  scoped_refptr<HostContentSettingsMap> host_content_settings_map_;
 
   // Keeps ongoing file system operations.
   typedef IDMap<fileapi::FileSystemOperation> OperationsMap;

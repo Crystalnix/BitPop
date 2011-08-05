@@ -9,15 +9,16 @@
 #include "base/process_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/render_messages.h"
 #include "content/browser/plugin_service.h"
 #include "content/browser/renderer_host/render_message_filter.h"
 #include "content/common/pepper_plugin_registry.h"
 #include "ipc/ipc_switches.h"
 #include "ppapi/proxy/ppapi_messages.h"
 
-PpapiPluginProcessHost::PpapiPluginProcessHost()
-    : BrowserChildProcessHost(ChildProcessInfo::PPAPI_PLUGIN_PROCESS) {
+PpapiPluginProcessHost::PpapiPluginProcessHost(net::HostResolver* host_resolver)
+    : BrowserChildProcessHost(ChildProcessInfo::PPAPI_PLUGIN_PROCESS),
+      filter_(new PepperMessageFilter(host_resolver)) {
+  AddFilter(filter_.get());
 }
 
 PpapiPluginProcessHost::~PpapiPluginProcessHost() {
@@ -45,7 +46,14 @@ bool PpapiPluginProcessHost::Init(const PepperPluginInfo& info) {
                               switches::kPpapiPluginProcess);
   cmd_line->AppendSwitchASCII(switches::kProcessChannelID, channel_id());
 
-  SetCrashReporterCommandLine(cmd_line);
+  // TODO(vtl): Stop passing flash args in the command line, on windows is
+  // going to explode.
+  static const char* kForwardSwitches[] = {
+    switches::kPpapiFlashArgs,
+    switches::kPpapiStartupDialog
+  };
+  cmd_line->CopySwitchesFrom(browser_command_line, kForwardSwitches,
+                             arraysize(kForwardSwitches));
 
   if (!plugin_launcher.empty())
     cmd_line->PrependWrapper(plugin_launcher);

@@ -49,14 +49,6 @@ class NativeThemeWin : public NativeTheme {
 
   bool IsThemingActive() const;
 
-  HRESULT GetThemePartSize(ThemeName themeName,
-                           HDC hdc,
-                           int part_id,
-                           int state_id,
-                           RECT* rect,
-                           int ts,
-                           SIZE* size) const;
-
   HRESULT GetThemeColor(ThemeName theme,
                         int part_id,
                         int state_id,
@@ -71,12 +63,6 @@ class NativeThemeWin : public NativeTheme {
                                    int state_id,
                                    int prop_id,
                                    int default_sys_color) const;
-
-  HRESULT GetThemeInt(ThemeName theme,
-                      int part_id,
-                      int state_id,
-                      int prop_id,
-                      int *result) const;
 
   // Get the thickness of the border associated with the specified theme,
   // defaulting to GetSystemMetrics edge size if themes are disabled.
@@ -99,6 +85,173 @@ class NativeThemeWin : public NativeTheme {
 
   // Gets our singleton instance.
   static const NativeThemeWin* instance();
+
+  HRESULT PaintTextField(HDC hdc,
+                         int part_id,
+                         int state_id,
+                         int classic_state,
+                         RECT* rect,
+                         COLORREF color,
+                         bool fill_content_area,
+                         bool draw_edges) const;
+
+ private:
+  NativeThemeWin();
+  ~NativeThemeWin();
+
+  // NativeTheme Implementation:
+  virtual gfx::Size GetPartSize(Part part,
+                                State state,
+                                const ExtraParams& extra) const;
+  virtual void Paint(SkCanvas* canvas,
+                     Part part,
+                     State state,
+                     const gfx::Rect& rect,
+                     const ExtraParams& extra) const;
+
+  HRESULT GetThemePartSize(ThemeName themeName,
+                           HDC hdc,
+                           int part_id,
+                           int state_id,
+                           RECT* rect,
+                           int ts,
+                           SIZE* size) const;
+
+  HRESULT PaintButton(HDC hdc,
+                      int part_id,
+                      int state_id,
+                      int classic_state,
+                      RECT* rect) const;
+
+  HRESULT PaintMenuSeparator(HDC hdc,
+                             const gfx::Rect& rect,
+                             const MenuSeparatorExtraParams& extra) const;
+
+  HRESULT PaintMenuGutter(HDC hdc, const gfx::Rect& rect) const;
+
+  // |arrow_direction| determines whether the arrow is pointing to the left or
+  // to the right. In RTL locales, sub-menus open from right to left and
+  // therefore the menu arrow should point to the left and not to the right.
+  HRESULT PaintMenuArrow(HDC hdc,
+                         State state,
+                         const gfx::Rect& rect,
+                         const MenuArrowExtraParams& extra) const;
+
+  HRESULT PaintMenuBackground(HDC hdc, const gfx::Rect& rect) const;
+
+  HRESULT PaintMenuCheck(HDC hdc,
+                         State state,
+                         const gfx::Rect& rect,
+                         const MenuCheckExtraParams& extra) const;
+
+  HRESULT PaintMenuCheckBackground(HDC hdc,
+                                   State state,
+                                   const gfx::Rect& rect) const;
+
+  HRESULT PaintMenuItemBackground(HDC hdc,
+                                  State state,
+                                  const gfx::Rect& rect,
+                                  const MenuItemExtraParams& extra) const;
+
+  HRESULT PaintPushButton(HDC hdc,
+                          Part part,
+                          State state,
+                          const gfx::Rect& rect,
+                          const ButtonExtraParams& extra) const;
+
+  HRESULT PaintRadioButton(HDC hdc,
+                           Part part,
+                           State state,
+                           const gfx::Rect& rect,
+                           const ButtonExtraParams& extra) const;
+
+  HRESULT PaintCheckbox(HDC hdc,
+                        Part part,
+                        State state,
+                        const gfx::Rect& rect,
+                        const ButtonExtraParams& extra) const;
+
+  HRESULT PaintMenuList(HDC hdc,
+                        State state,
+                        const gfx::Rect& rect,
+                        const MenuListExtraParams& extra) const;
+
+  // Paints a scrollbar arrow.  |classic_state| should have the appropriate
+  // classic part number ORed in already.
+  HRESULT PaintScrollbarArrow(HDC hdc,
+                              Part part,
+                              State state,
+                              const gfx::Rect& rect,
+                              const ScrollbarArrowExtraParams& extra) const;
+
+  HRESULT PaintScrollbarThumb(HDC hdc,
+                              Part part,
+                              State state,
+                              const gfx::Rect& rect,
+                              const ScrollbarThumbExtraParams& extra) const;
+
+  // This method is deprecated and will be removed in the near future.
+  // Paints a scrollbar track section.  |align_rect| is only used in classic
+  // mode, and makes sure the checkerboard pattern in |target_rect| is aligned
+  // with one presumed to be in |align_rect|.
+  HRESULT PaintScrollbarTrack(SkCanvas* canvas,
+                              HDC hdc,
+                              Part part,
+                              State state,
+                              const gfx::Rect& rect,
+                              const ScrollbarTrackExtraParams& extra) const;
+
+  HRESULT PaintSpinButton(HDC hdc,
+                          Part part,
+                          State state,
+                          const gfx::Rect& rect,
+                          const InnerSpinButtonExtraParams& extra) const;
+
+  HRESULT PaintTrackbar(SkCanvas* canvas,
+                        HDC hdc,
+                        Part part,
+                        State state,
+                        const gfx::Rect& rect,
+                        const TrackbarExtraParams& extra) const;
+
+  HRESULT PaintProgressBar(HDC hdc,
+                           const gfx::Rect& rect,
+                           const ProgressBarExtraParams& extra) const;
+
+  HRESULT PaintWindowResizeGripper(HDC hdc, const gfx::Rect& rect) const;
+
+  HRESULT PaintTabPanelBackground(HDC hdc, const gfx::Rect& rect) const;
+
+  HRESULT PaintTextField(HDC hdc,
+                         Part part,
+                         State state,
+                         const gfx::Rect& rect,
+                         const TextFieldExtraParams& extra) const;
+
+
+  // Get the windows theme name/part/state.  These three helper functions are
+  // used only by GetPartSize(), as each of the corresponding PaintXXX()
+  // methods do further validation of the part and state that is required for
+  // getting the size.
+  static ThemeName GetThemeName(Part part);
+  static int GetWindowsPart(Part part, State state, const ExtraParams& extra);
+  static int GetWindowsState(Part part, State state, const ExtraParams& extra);
+
+  HRESULT GetThemeInt(ThemeName theme,
+                      int part_id,
+                      int state_id,
+                      int prop_id,
+                      int *result) const;
+
+  HRESULT PaintFrameControl(HDC hdc,
+                            const gfx::Rect& rect,
+                            UINT type,
+                            UINT state,
+                            bool is_selected,
+                            State control_state) const;
+
+  // Returns a handle to the theme data.
+  HANDLE GetThemeHandle(ThemeName theme_name) const;
 
   typedef HRESULT (WINAPI* DrawThemeBackgroundPtr)(HANDLE theme,
                                                    HDC hdc,
@@ -141,181 +294,6 @@ class NativeThemeWin : public NativeTheme {
                                            int state_id,
                                            int prop_id,
                                            int *value);
-
-  // The PaintXXX methods below this point should be private or be deleted,
-  // but remain public while NativeThemeWin is transitioned over to use the
-  // single Paint() entry point.  Do not make new calls to these methods.
-
-  // This method is deprecated and will be removed in the near future.
-  HRESULT PaintMenuList(HDC hdc,
-                        int part_id,
-                        int state_id,
-                        int classic_state,
-                        RECT* rect) const;
-
-  // This method is deprecated and will be removed in the near future.
-  // Paints a scrollbar arrow.  |classic_state| should have the appropriate
-  // classic part number ORed in already.
-  HRESULT PaintScrollbarArrow(HDC hdc,
-                              int state_id,
-                              int classic_state,
-                              RECT* rect) const;
-
-  // This method is deprecated and will be removed in the near future.
-  // Paints a scrollbar track section.  |align_rect| is only used in classic
-  // mode, and makes sure the checkerboard pattern in |target_rect| is aligned
-  // with one presumed to be in |align_rect|.
-  HRESULT PaintScrollbarTrack(HDC hdc,
-                              int part_id,
-                              int state_id,
-                              int classic_state,
-                              RECT* target_rect,
-                              RECT* align_rect,
-                              SkCanvas* canvas) const;
-
-  // This method is deprecated and will be removed in the near future.
-  // Paints a scrollbar thumb or gripper.
-  HRESULT PaintScrollbarThumb(HDC hdc,
-                              int part_id,
-                              int state_id,
-                              int classic_state,
-                              RECT* rect) const;
-
-  // This method is deprecated and will be removed in the near future.
-  HRESULT PaintSpinButton(HDC hdc,
-                          int part_id,
-                          int state_id,
-                          int classic_state,
-                          RECT* rect) const;
-
-  // This method is deprecated and will be removed in the near future.
-  HRESULT PaintStatusGripper(HDC hdc,
-                             int part_id,
-                             int state_id,
-                             int classic_state,
-                             RECT* rect) const;
-
-  // This method is deprecated and will be removed in the near future.
-  HRESULT PaintTabPanelBackground(HDC dc, RECT* rect) const;
-
-  // This method is deprecated and will be removed in the near future.
-  HRESULT PaintTextField(HDC hdc,
-                         int part_id,
-                         int state_id,
-                         int classic_state,
-                         RECT* rect,
-                         COLORREF color,
-                         bool fill_content_area,
-                         bool draw_edges) const;
-
-  // This method is deprecated and will be removed in the near future.
-  HRESULT PaintTrackbar(HDC hdc,
-                        int part_id,
-                        int state_id,
-                        int classic_state,
-                        RECT* rect,
-                        SkCanvas* canvas) const;
-
-  // This method is deprecated and will be removed in the near future.
-  HRESULT PaintProgressBar(HDC hdc,
-                           RECT* bar_rect,
-                           RECT* value_rect,
-                           bool determinate,
-                           double animated_seconds,
-                           SkCanvas* canvas) const;
-
- private:
-  NativeThemeWin();
-  ~NativeThemeWin();
-
-  // NativeTheme Implementation:
-  virtual gfx::Size GetPartSize(Part part) const;
-  virtual void Paint(SkCanvas* canvas,
-                     Part part,
-                     State state,
-                     const gfx::Rect& rect,
-                     const ExtraParams& extra) const;
-
-  HRESULT PaintButton(HDC hdc,
-                      int part_id,
-                      int state_id,
-                      int classic_state,
-                      RECT* rect) const;
-
-  HRESULT PaintMenuSeparator(HDC hdc,
-                             const gfx::Rect& rect,
-                             const MenuSeparatorExtraParams& extra) const;
-
-  HRESULT PaintMenuGutter(HDC hdc, const gfx::Rect& rect) const;
-
-  // |arrow_direction| determines whether the arrow is pointing to the left or
-  // to the right. In RTL locales, sub-menus open from right to left and
-  // therefore the menu arrow should point to the left and not to the right.
-  HRESULT PaintMenuArrow(HDC hdc,
-                         State state,
-                         const gfx::Rect& rect,
-                         const MenuArrowExtraParams& extra) const;
-
-  HRESULT PaintMenuBackground(HDC hdc, const gfx::Rect& rect) const;
-
-  HRESULT PaintMenuCheck(HDC hdc,
-                         State state,
-                         const gfx::Rect& rect,
-                         const MenuCheckExtraParams& extra) const;
-
-  HRESULT PaintMenuCheckBackground(HDC hdc,
-                                   State state,
-                                   const gfx::Rect& rect) const;
-
-  HRESULT PaintMenuItemBackground(HDC hdc,
-                                  State state,
-                                  const gfx::Rect& rect,
-                                  const MenuItemExtraParams& extra) const;
-
-  // Paints a scrollbar arrow.  |classic_state| should have the appropriate
-  // classic part number ORed in already.
-  HRESULT PaintScrollbarArrow(HDC hdc,
-                              Part direction,
-                              State state,
-                              const gfx::Rect& rect) const;
-
-  HRESULT PaintScrollbarThumb(HDC hdc,
-                              Part direction,
-                              State state,
-                              const gfx::Rect& rect) const;
-
-  HRESULT PaintPushButton(HDC hdc,
-                          Part part,
-                          State state,
-                          const gfx::Rect& rect,
-                          const ButtonExtraParams& extra) const;
-
-  HRESULT PaintRadioButton(HDC hdc,
-                           Part part,
-                           State state,
-                           const gfx::Rect& rect,
-                           const ButtonExtraParams& extra) const;
-
-  HRESULT PaintCheckbox(HDC hdc,
-                        Part part,
-                        State state,
-                        const gfx::Rect& rect,
-                        const ButtonExtraParams& extra) const;
-
-  // Get the windows theme name that goes with the part.
-  static ThemeName GetThemeName(Part part);
-
-  // Get the windows theme part id that goes with the part.
-  static int GetWindowsPart(Part part);
-
-  HRESULT PaintFrameControl(HDC hdc,
-                            const gfx::Rect& rect,
-                            UINT type,
-                            UINT state,
-                            State control_state) const;
-
-  // Returns a handle to the theme data.
-  HANDLE GetThemeHandle(ThemeName theme_name) const;
 
   // Function pointers into uxtheme.dll.
   DrawThemeBackgroundPtr draw_theme_;

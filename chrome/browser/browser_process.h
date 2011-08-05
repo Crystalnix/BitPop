@@ -24,6 +24,7 @@ namespace safe_browsing {
 class ClientSideDetectionService;
 }
 
+class BackgroundModeManager;
 class ChromeNetLog;
 class DevToolsManager;
 class DownloadRequestLimiter;
@@ -39,6 +40,7 @@ class PrefService;
 class ProfileManager;
 class ResourceDispatcherHost;
 class SidebarManager;
+class StatusTray;
 class TabCloseableStateWatcher;
 class ThumbnailGenerator;
 class WatchDogThread;
@@ -58,7 +60,12 @@ namespace net {
 class URLRequestContextGetter;
 }
 
+namespace prerender {
+class PrerenderTracker;
+}
+
 namespace printing {
+class BackgroundPrintingManager;
 class PrintJobManager;
 class PrintPreviewTabController;
 }
@@ -129,9 +136,6 @@ class BrowserProcess {
   // Returns the thread that is used for background cache operations.
   virtual base::Thread* cache_thread() = 0;
 
-  // Returns the thread that issues GPU calls.
-  virtual base::Thread* gpu_thread() = 0;
-
 #if defined(USE_X11)
   // Returns the thread that is used to process UI requests in cases where
   // we can't route the request to the UI thread. Note that this thread
@@ -143,6 +147,13 @@ class BrowserProcess {
 
   // Returns the thread that is used for health check of all browser threads.
   virtual WatchDogThread* watchdog_thread() = 0;
+
+#if defined(OS_CHROMEOS)
+  // Returns thread for websocket to TCP proxy.
+  // TODO(dilmah): remove this thread.  Instead provide this functionality via
+  // hooks into websocket bridge layer.
+  virtual base::Thread* web_socket_proxy_thread() = 0;
+#endif
 
   virtual policy::BrowserPolicyConnector* browser_policy_connector() = 0;
 
@@ -167,6 +178,8 @@ class BrowserProcess {
   virtual printing::PrintJobManager* print_job_manager() = 0;
   virtual printing::PrintPreviewTabController*
       print_preview_tab_controller() = 0;
+  virtual printing::BackgroundPrintingManager*
+      background_printing_manager() = 0;
 
   virtual GoogleURLTracker* google_url_tracker() = 0;
   virtual IntranetRedirectDetector* intranet_redirect_detector() = 0;
@@ -189,6 +202,14 @@ class BrowserProcess {
   // Returns the object that watches for changes in the closeable state of tab.
   virtual TabCloseableStateWatcher* tab_closeable_state_watcher() = 0;
 
+  // Returns the object that manages background applications.
+  virtual BackgroundModeManager* background_mode_manager() = 0;
+
+  // Returns the StatusTray, which provides an API for displaying status icons
+  // in the system status tray. Returns NULL if status icons are not supported
+  // on this platform (or this is a unit test).
+  virtual StatusTray* status_tray() = 0;
+
   // Returns an object which handles communication with the SafeBrowsing
   // client-side detection servers.
   virtual safe_browsing::ClientSideDetectionService*
@@ -210,6 +231,8 @@ class BrowserProcess {
 #endif
 
   virtual ChromeNetLog* net_log() = 0;
+
+  virtual prerender::PrerenderTracker* prerender_tracker() = 0;
 
 #if defined(IPC_MESSAGE_LOG_ENABLED)
   // Enable or disable IPC logging for the browser, all processes

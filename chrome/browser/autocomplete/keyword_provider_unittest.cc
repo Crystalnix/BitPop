@@ -81,7 +81,8 @@ void KeywordProviderTest::RunTest(
   }
 }
 
-TEST_F(KeywordProviderTest, Edit) {
+// http://crbug.com/80612
+TEST_F(KeywordProviderTest, DISABLED_Edit) {
   test_data<string16> edit_cases[] = {
     // Searching for a nonexistent prefix should give nothing.
     {ASCIIToUTF16("Not Found"),       0, {}},
@@ -180,7 +181,7 @@ TEST_F(KeywordProviderTest, Contents) {
                         &AutocompleteMatch::contents);
 }
 
-TEST_F(KeywordProviderTest, Description) {
+TEST_F(KeywordProviderTest, DISABLED_Description) {
   test_data<string16> description_cases[] = {
     // Whole keyword should be returned for both exact and inexact matches.
     {ASCIIToUTF16("z foo"),           1, {ASCIIToUTF16("(Keyword: z)")}},

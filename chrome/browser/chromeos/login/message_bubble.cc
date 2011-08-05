@@ -4,14 +4,17 @@
 
 #include "chrome/browser/chromeos/login/message_bubble.h"
 
+#include <vector>
+
 #include "base/logging.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "views/controls/button/image_button.h"
 #include "views/controls/image_view.h"
 #include "views/controls/label.h"
+#include "views/controls/link.h"
 #include "views/layout/grid_layout.h"
 #include "views/widget/widget.h"
 
@@ -20,16 +23,15 @@ namespace chromeos {
 static const int kBorderSize = 4;
 static const int kMaxLabelWidth = 250;
 
-MessageBubble::MessageBubble(views::WidgetGtk::Type type,
+MessageBubble::MessageBubble(views::Widget::InitParams::Type type,
                              views::Widget* parent,
                              SkBitmap* image,
                              const std::wstring& text,
-                             const std::wstring& help,
+                             const std::vector<std::wstring>& links,
                              bool grab_enabled,
                              MessageBubbleDelegate* delegate)
     : Bubble(type, false),  // don't show while screen is locked
       parent_(parent),
-      help_link_(NULL),
       message_delegate_(delegate),
       grab_enabled_(grab_enabled) {
   using views::GridLayout;
@@ -46,7 +48,7 @@ MessageBubble::MessageBubble(views::WidgetGtk::Type type,
   column_set->AddPaddingColumn(0, kBorderSize);
   column_set->AddColumn(GridLayout::TRAILING, GridLayout::LEADING, 0,
                         GridLayout::USE_PREF, 0, 0);
-  if (!help.empty()) {
+  if (!links.empty()) {
     column_set = layout->AddColumnSet(1);
     column_set->AddPaddingColumn(0, kBorderSize + image->width());
     column_set->AddColumn(GridLayout::LEADING, GridLayout::LEADING, 1,
@@ -75,14 +77,18 @@ MessageBubble::MessageBubble(views::WidgetGtk::Type type,
       rb.GetBitmapNamed(IDR_CLOSE_BAR_P));
   layout->AddView(close_button_);
 
-  if (!help.empty()) {
+  for (size_t i = 0; i < links.size(); ++i) {
     layout->StartRowWithPadding(0, 1, 0, kBorderSize);
-    help_link_ = new views::Link(help);
-    help_link_->SetController(this);
+    views::Link* help_link_ = new views::Link(links[i]);
+    help_links_.push_back(help_link_);
+    help_link_->set_listener(this);
     help_link_->SetNormalColor(login::kLinkColor);
     help_link_->SetHighlightedColor(login::kLinkColor);
     layout->AddView(help_link_);
   }
+}
+
+MessageBubble::~MessageBubble() {
 }
 
 void MessageBubble::ButtonPressed(views::Button* sender,
@@ -94,13 +100,16 @@ void MessageBubble::ButtonPressed(views::Button* sender,
   }
 }
 
-void MessageBubble::LinkActivated(views::Link* source, int event_flags) {
-  if (source == help_link_) {
-    if (message_delegate_)
-      message_delegate_->OnHelpLinkActivated();
-  } else {
-    NOTREACHED() << "Unknown view";
+void MessageBubble::LinkClicked(views::Link* source, int event_flags) {
+  if (!message_delegate_)
+    return;
+  for (size_t i = 0; i < help_links_.size(); ++i) {
+    if (source == help_links_[i]) {
+      message_delegate_->OnLinkActivated(i);
+      return;
+    }
   }
+  NOTREACHED() << "Unknown view";
 }
 
 // static
@@ -111,9 +120,31 @@ MessageBubble* MessageBubble::Show(views::Widget* parent,
                                    const std::wstring& text,
                                    const std::wstring& help,
                                    MessageBubbleDelegate* delegate) {
+  std::vector<std::wstring> links;
+  if (!help.empty())
+    links.push_back(help);
+  return MessageBubble::ShowWithLinks(parent,
+                                      position_relative_to,
+                                      arrow_location,
+                                      image,
+                                      text,
+                                      links,
+                                      delegate);
+}
+
+// static
+MessageBubble* MessageBubble::ShowWithLinks(
+    views::Widget* parent,
+    const gfx::Rect& position_relative_to,
+    BubbleBorder::ArrowLocation arrow_location,
+    SkBitmap* image,
+    const std::wstring& text,
+    const std::vector<std::wstring>& links,
+    MessageBubbleDelegate* delegate) {
   // The bubble will be destroyed when it is closed.
   MessageBubble* bubble = new MessageBubble(
-      views::WidgetGtk::TYPE_WINDOW, parent, image, text, help, true, delegate);
+      views::Widget::InitParams::TYPE_POPUP, parent, image, text, links,
+      true, delegate);
   bubble->InitBubble(parent, position_relative_to, arrow_location,
                      bubble->text_->parent(), delegate);
   return bubble;
@@ -128,31 +159,41 @@ MessageBubble* MessageBubble::ShowNoGrab(
     const std::wstring& text,
     const std::wstring& help,
     MessageBubbleDelegate* delegate) {
+  std::vector<std::wstring> links;
+  if (!help.empty())
+    links.push_back(help);
   // The bubble will be destroyed when it is closed.
   MessageBubble* bubble = new MessageBubble(
-      views::WidgetGtk::TYPE_CHILD, parent, image, text, help, false, delegate);
+      views::Widget::InitParams::TYPE_CONTROL, parent, image, text, links,
+      false, delegate);
   bubble->InitBubble(parent, position_relative_to, arrow_location,
                      bubble->text_->parent(), delegate);
   return bubble;
 }
 
 void MessageBubble::IsActiveChanged() {
-  // Active parent instead.
   if (parent_ && IsActive()) {
-    gtk_window_present_with_time(
-        GTK_WINDOW(static_cast<WidgetGtk*>(parent_)->GetNativeView()),
-                   gtk_get_current_event_time());
+    // Show the parent.
+    gtk_window_present_with_time(parent_->GetNativeWindow(),
+                                 gtk_get_current_event_time());
   }
 }
 
 void MessageBubble::SetMouseCapture() {
   if (grab_enabled_)
-    WidgetGtk::SetMouseCapture();
+    NativeWidgetGtk::SetMouseCapture();
 }
 
 void MessageBubble::Close() {
   parent_ = NULL;
   Bubble::Close();
+}
+
+gboolean MessageBubble::OnButtonPress(GtkWidget* widget,
+                                      GdkEventButton* event) {
+  NativeWidgetGtk::OnButtonPress(widget, event);
+  // Never propagate event to parent.
+  return true;
 }
 
 }  // namespace chromeos

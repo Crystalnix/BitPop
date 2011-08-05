@@ -15,12 +15,12 @@
 #include "net/base/net_util.h"
 #include "net/base/sys_addrinfo.h"
 #include "net/base/test_completion_callback.h"
-#include "net/socket/client_socket.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/client_socket_pool_histograms.h"
 #include "net/socket/socket_test_util.h"
 #include "net/socket/ssl_host_info.h"
+#include "net/socket/stream_socket.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
@@ -45,13 +45,13 @@ void SetIPv6Address(IPEndPoint* address) {
   *address = IPEndPoint(number, 80);
 }
 
-class MockClientSocket : public ClientSocket {
+class MockClientSocket : public StreamSocket {
  public:
   MockClientSocket(const AddressList& addrlist)
       : connected_(false),
         addrlist_(addrlist) {}
 
-  // ClientSocket methods:
+  // StreamSocket methods:
   virtual int Connect(CompletionCallback* callback) {
     connected_ = true;
     return OK;
@@ -104,11 +104,11 @@ class MockClientSocket : public ClientSocket {
   BoundNetLog net_log_;
 };
 
-class MockFailingClientSocket : public ClientSocket {
+class MockFailingClientSocket : public StreamSocket {
  public:
   MockFailingClientSocket(const AddressList& addrlist) : addrlist_(addrlist) {}
 
-  // ClientSocket methods:
+  // StreamSocket methods:
   virtual int Connect(CompletionCallback* callback) {
     return ERR_CONNECTION_FAILED;
   }
@@ -154,7 +154,7 @@ class MockFailingClientSocket : public ClientSocket {
   BoundNetLog net_log_;
 };
 
-class MockPendingClientSocket : public ClientSocket {
+class MockPendingClientSocket : public StreamSocket {
  public:
   // |should_connect| indicates whether the socket should successfully complete
   // or fail.
@@ -172,7 +172,7 @@ class MockPendingClientSocket : public ClientSocket {
         is_connected_(false),
         addrlist_(addrlist) {}
 
-  // ClientSocket methods:
+  // StreamSocket methods:
   virtual int Connect(CompletionCallback* callback) {
     MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
@@ -265,7 +265,7 @@ class MockClientSocketFactory : public ClientSocketFactory {
         client_socket_index_max_(0),
         delay_ms_(ClientSocketPool::kMaxConnectRetryIntervalMs) {}
 
-  virtual ClientSocket* CreateTransportClientSocket(
+  virtual StreamSocket* CreateTransportClientSocket(
       const AddressList& addresses,
       NetLog* /* net_log */,
       const NetLog::Source& /* source */) {
@@ -399,19 +399,19 @@ class TransportClientSocketPoolTest : public testing::Test {
 TEST(TransportConnectJobTest, MakeAddrListStartWithIPv4) {
   IPAddressNumber ip_number;
   ASSERT_TRUE(ParseIPLiteralToNumber("192.168.1.1", &ip_number));
-  AddressList addrlist_v4_1(ip_number, 80, false);
+  AddressList addrlist_v4_1 = AddressList::CreateFromIPAddress(ip_number, 80);
   ASSERT_TRUE(ParseIPLiteralToNumber("192.168.1.2", &ip_number));
-  AddressList addrlist_v4_2(ip_number, 80, false);
+  AddressList addrlist_v4_2 = AddressList::CreateFromIPAddress(ip_number, 80);
   ASSERT_TRUE(ParseIPLiteralToNumber("2001:4860:b006::64", &ip_number));
-  AddressList addrlist_v6_1(ip_number, 80, false);
+  AddressList addrlist_v6_1 = AddressList::CreateFromIPAddress(ip_number, 80);
   ASSERT_TRUE(ParseIPLiteralToNumber("2001:4860:b006::66", &ip_number));
-  AddressList addrlist_v6_2(ip_number, 80, false);
+  AddressList addrlist_v6_2 = AddressList::CreateFromIPAddress(ip_number, 80);
 
   AddressList addrlist;
   const struct addrinfo* ai;
 
   // Test 1: IPv4 only.  Expect no change.
-  addrlist.Copy(addrlist_v4_1.head(), true);
+  addrlist = addrlist_v4_1;
   addrlist.Append(addrlist_v4_2.head());
   TransportConnectJob::MakeAddrListStartWithIPv4(&addrlist);
   ai = addrlist.head();
@@ -421,7 +421,7 @@ TEST(TransportConnectJobTest, MakeAddrListStartWithIPv4) {
   EXPECT_TRUE(ai->ai_next == NULL);
 
   // Test 2: IPv6 only.  Expect no change.
-  addrlist.Copy(addrlist_v6_1.head(), true);
+  addrlist = addrlist_v6_1;
   addrlist.Append(addrlist_v6_2.head());
   TransportConnectJob::MakeAddrListStartWithIPv4(&addrlist);
   ai = addrlist.head();
@@ -431,7 +431,7 @@ TEST(TransportConnectJobTest, MakeAddrListStartWithIPv4) {
   EXPECT_TRUE(ai->ai_next == NULL);
 
   // Test 3: IPv4 then IPv6.  Expect no change.
-  addrlist.Copy(addrlist_v4_1.head(), true);
+  addrlist = addrlist_v4_1;
   addrlist.Append(addrlist_v4_2.head());
   addrlist.Append(addrlist_v6_1.head());
   addrlist.Append(addrlist_v6_2.head());
@@ -447,7 +447,7 @@ TEST(TransportConnectJobTest, MakeAddrListStartWithIPv4) {
   EXPECT_TRUE(ai->ai_next == NULL);
 
   // Test 4: IPv6, IPv4, IPv6, IPv4.  Expect first IPv6 moved to the end.
-  addrlist.Copy(addrlist_v6_1.head(), true);
+  addrlist = addrlist_v6_1;
   addrlist.Append(addrlist_v4_1.head());
   addrlist.Append(addrlist_v6_2.head());
   addrlist.Append(addrlist_v4_2.head());
@@ -463,7 +463,7 @@ TEST(TransportConnectJobTest, MakeAddrListStartWithIPv4) {
   EXPECT_TRUE(ai->ai_next == NULL);
 
   // Test 5: IPv6, IPv6, IPv4, IPv4.  Expect first two IPv6's moved to the end.
-  addrlist.Copy(addrlist_v6_1.head(), true);
+  addrlist = addrlist_v6_1;
   addrlist.Append(addrlist_v6_2.head());
   addrlist.Append(addrlist_v4_1.head());
   addrlist.Append(addrlist_v4_2.head());

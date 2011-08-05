@@ -89,56 +89,17 @@ struct TestShellRequestContextParams {
       bool in_no_proxy)
       : cache_path(in_cache_path),
         cache_mode(in_cache_mode),
-        no_proxy(in_no_proxy),
-        accept_all_cookies(false) {}
+        no_proxy(in_no_proxy) {}
 
   FilePath cache_path;
   net::HttpCache::Mode cache_mode;
   bool no_proxy;
-  bool accept_all_cookies;
 };
-
-net::URLRequestJob* BlobURLRequestJobFactory(net::URLRequest* request,
-                                             const std::string& scheme) {
-  webkit_blob::BlobStorageController* blob_storage_controller =
-      static_cast<TestShellRequestContext*>(request->context())->
-          blob_storage_controller();
-  return new webkit_blob::BlobURLRequestJob(
-      request,
-      blob_storage_controller->GetBlobDataFromUrl(request->url()),
-      SimpleResourceLoaderBridge::GetIoThread());
-}
-
-
-net::URLRequestJob* FileSystemURLRequestJobFactory(net::URLRequest* request,
-                                                   const std::string& scheme) {
-  fileapi::FileSystemContext* fs_context =
-      static_cast<TestShellRequestContext*>(request->context())
-          ->file_system_context();
-  if (!fs_context) {
-    LOG(WARNING) << "No FileSystemContext found, ignoring filesystem: URL";
-    return NULL;
-  }
-
-  // If the path ends with a /, we know it's a directory. If the path refers
-  // to a directory and gets dispatched to FileSystemURLRequestJob, that class
-  // redirects back here, by adding a / to the URL.
-  const std::string path = request->url().path();
-  if (!path.empty() && path[path.size() - 1] == '/') {
-    return new fileapi::FileSystemDirURLRequestJob(
-        request,
-        fs_context,
-        SimpleResourceLoaderBridge::GetIoThread());
-  }
-  return new fileapi::FileSystemURLRequestJob(
-      request,
-      fs_context,
-      SimpleResourceLoaderBridge::GetIoThread());
-}
 
 TestShellRequestContextParams* g_request_context_params = NULL;
 TestShellRequestContext* g_request_context = NULL;
 base::Thread* g_cache_thread = NULL;
+bool g_accept_all_cookies = false;
 
 //-----------------------------------------------------------------------------
 
@@ -159,12 +120,10 @@ class IOThread : public base::Thread {
           g_request_context_params->cache_path,
           g_request_context_params->cache_mode,
           g_request_context_params->no_proxy);
-      SetAcceptAllCookies(g_request_context_params->accept_all_cookies);
       delete g_request_context_params;
       g_request_context_params = NULL;
     } else {
       g_request_context = new TestShellRequestContext();
-      SetAcceptAllCookies(false);
     }
 
     g_request_context->AddRef();
@@ -174,10 +133,6 @@ class IOThread : public base::Thread {
     SimpleFileWriter::InitializeOnIOThread(g_request_context);
     TestShellWebBlobRegistryImpl::InitializeOnIOThread(
         g_request_context->blob_storage_controller());
-
-    net::URLRequest::RegisterProtocolFactory("blob", &BlobURLRequestJobFactory);
-    net::URLRequest::RegisterProtocolFactory("filesystem",
-                                             &FileSystemURLRequestJobFactory);
   }
 
   virtual void CleanUp() {
@@ -191,14 +146,6 @@ class IOThread : public base::Thread {
       g_request_context->Release();
       g_request_context = NULL;
     }
-  }
-
-  void SetAcceptAllCookies(bool accept_all_cookies) {
-    StaticCookiePolicy::Type policy_type = accept_all_cookies ?
-        StaticCookiePolicy::ALLOW_ALL_COOKIES :
-        StaticCookiePolicy::BLOCK_SETTING_THIRD_PARTY_COOKIES;
-    static_cast<StaticCookiePolicy*>(g_request_context->cookie_policy())->
-        set_type(policy_type);
   }
 };
 
@@ -492,6 +439,30 @@ class RequestProxy : public net::URLRequest::Delegate,
                                      net::X509Certificate* cert) {
     // Allow all certificate errors.
     request->ContinueDespiteLastError();
+  }
+
+  virtual bool CanGetCookies(net::URLRequest* request) {
+    StaticCookiePolicy::Type policy_type = g_accept_all_cookies ?
+        StaticCookiePolicy::ALLOW_ALL_COOKIES :
+        StaticCookiePolicy::BLOCK_SETTING_THIRD_PARTY_COOKIES;
+
+    StaticCookiePolicy policy(policy_type);
+    int rv = policy.CanGetCookies(
+        request->url(), request->first_party_for_cookies());
+    return rv == net::OK;
+  }
+
+  virtual bool CanSetCookie(net::URLRequest* request,
+                            const std::string& cookie_line,
+                            net::CookieOptions* options) {
+    StaticCookiePolicy::Type policy_type = g_accept_all_cookies ?
+        StaticCookiePolicy::ALLOW_ALL_COOKIES :
+        StaticCookiePolicy::BLOCK_SETTING_THIRD_PARTY_COOKIES;
+
+    StaticCookiePolicy policy(policy_type);
+    int rv = policy.CanSetCookie(
+        request->url(), request->first_party_for_cookies());
+    return rv == net::OK;
   }
 
   virtual void OnReadCompleted(net::URLRequest* request, int bytes_read) {
@@ -931,13 +902,7 @@ bool SimpleResourceLoaderBridge::EnsureIOThread() {
 
 // static
 void SimpleResourceLoaderBridge::SetAcceptAllCookies(bool accept_all_cookies) {
-  if (g_request_context_params) {
-    g_request_context_params->accept_all_cookies = accept_all_cookies;
-    DCHECK(!g_request_context);
-    DCHECK(!g_io_thread);
-  } else {
-    g_io_thread->SetAcceptAllCookies(accept_all_cookies);
-  }
+  g_accept_all_cookies = accept_all_cookies;
 }
 
 // static

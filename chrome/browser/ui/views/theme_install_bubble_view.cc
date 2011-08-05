@@ -70,14 +70,14 @@ ThemeInstallBubbleView::ThemeInstallBubbleView(TabContents* tab_contents)
       NotificationType::EXTENSION_WILL_SHOW_CONFIRM_DIALOG,
       NotificationService::AllSources());
 
-  gfx::Rect rc(0, 0, 0, 0);
-  views::Widget::CreateParams params(views::Widget::CreateParams::TYPE_POPUP);
+  popup_ = new views::Widget;
+  views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
   params.transparent = true;
   params.accept_events = false;
-  popup_ = views::Widget::CreateWidget(params);
-  popup_->SetOpacity(0xCC);
-  popup_->Init(tab_contents->GetNativeView(), rc);
+  params.parent = tab_contents->GetNativeView();
+  popup_->Init(params);
   popup_->SetContentsView(this);
+  popup_->SetOpacity(0xCC);
   Reposition();
   popup_->Show();
 

@@ -18,7 +18,7 @@ class Browser;
 class CommandLine;
 class GURL;
 class Profile;
-class TabContents;
+class TabContentsWrapper;
 
 // class containing helpers for BrowserMain to spin up a new instance and
 // initialize the profile.
@@ -175,21 +175,21 @@ class BrowserInit {
 
     // If the last session didn't exit cleanly and tab is a web contents tab,
     // an infobar is added allowing the user to restore the last session.
-    void AddCrashedInfoBarIfNecessary(TabContents* tab);
+    void AddCrashedInfoBarIfNecessary(TabContentsWrapper* tab);
 
     // If we have been started with unsupported flags like --single-process,
     // politely nag the user about it.
-    void AddBadFlagsInfoBarIfNecessary(TabContents* tab);
+    void AddBadFlagsInfoBarIfNecessary(TabContentsWrapper* tab);
 
     // If DNS based certificate checking has been enabled then we show a
     // warning infobar.
     void AddDNSCertProvenanceCheckingWarningInfoBarIfNecessary(
-        TabContents* tab);
+        TabContentsWrapper* tab);
 
     // If the user is using an operating system that we have deprecated
     // support for and will no longer provide updates, warn the user
     // about it.
-    void AddObsoleteSystemInfoBarIfNecessary(TabContents* tab);
+    void AddObsoleteSystemInfoBarIfNecessary(TabContentsWrapper* tab);
 
     // Adds additional startup URLs to the specified vector.
     void AddStartupURLs(std::vector<GURL>* startup_urls) const;

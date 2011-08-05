@@ -6,7 +6,7 @@
   'targets': [
     {
       'target_name': 'webkit_gpu',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/third_party/angle/src/build_angle.gyp:translator_common',
@@ -15,6 +15,8 @@
       ],
       'sources': [
         # This list contains all .h and .cc in gpu except for test code.
+        'webgraphicscontext3d_in_process_command_buffer_impl.cc',
+        'webgraphicscontext3d_in_process_command_buffer_impl.h',
         'webgraphicscontext3d_in_process_impl.cc',
         'webgraphicscontext3d_in_process_impl.h',
         'webkit_gpu.gypi',

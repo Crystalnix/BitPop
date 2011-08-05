@@ -8,17 +8,19 @@
 #include "chrome/browser/ui/views/event_utils.h"
 #include "views/controls/button/text_button.h"
 #include "views/controls/label.h"
+#include "views/controls/link.h"
 
 // ConfirmInfoBarDelegate -----------------------------------------------------
 
-InfoBar* ConfirmInfoBarDelegate::CreateInfoBar() {
-  return new ConfirmInfoBar(this);
+InfoBar* ConfirmInfoBarDelegate::CreateInfoBar(TabContentsWrapper* owner) {
+  return new ConfirmInfoBar(owner, this);
 }
 
 // ConfirmInfoBar -------------------------------------------------------------
 
-ConfirmInfoBar::ConfirmInfoBar(ConfirmInfoBarDelegate* delegate)
-    : InfoBarView(delegate),
+ConfirmInfoBar::ConfirmInfoBar(TabContentsWrapper* owner,
+                               ConfirmInfoBarDelegate* delegate)
+    : InfoBarView(owner, delegate),
       label_(NULL),
       ok_button_(NULL),
       cancel_button_(NULL),
@@ -118,7 +120,7 @@ int ConfirmInfoBar::ContentMinimumWidth() const {
       (before_cancel_spacing + cancel_button_->GetPreferredSize().width()));
 }
 
-void ConfirmInfoBar::LinkActivated(views::Link* source, int event_flags) {
+void ConfirmInfoBar::LinkClicked(views::Link* source, int event_flags) {
   DCHECK(link_ != NULL);
   DCHECK_EQ(link_, source);
   if (GetDelegate()->LinkClicked(

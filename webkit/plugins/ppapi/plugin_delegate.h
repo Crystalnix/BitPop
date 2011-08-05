@@ -7,7 +7,7 @@
 
 #include <string>
 
-#include "base/callback.h"
+#include "base/callback_old.h"
 #include "base/message_loop_proxy.h"
 #include "base/memory/ref_counted.h"
 #include "base/platform_file.h"
@@ -16,6 +16,7 @@
 #include "base/time.h"
 #include "googleurl/src/gurl.h"
 #include "media/video/video_decode_accelerator.h"
+#include "ppapi/c/dev/pp_video_dev.h"
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/pp_instance.h"
@@ -47,6 +48,10 @@ namespace gpu {
 class CommandBuffer;
 }
 
+namespace ppapi {
+struct Preferences;
+}
+
 namespace skia {
 class PlatformCanvas;
 }
@@ -61,7 +66,6 @@ class P2PTransport;
 }  // namespace webkit_glue
 
 struct PP_Flash_NetAddress;
-struct PP_VideoDecoderConfig_Dev;
 
 class TransportDIB;
 
@@ -226,6 +230,9 @@ class PluginDelegate {
     virtual ~PpapiBroker() {}
   };
 
+  // Notification that the given plugin is focused or unfocused.
+  virtual void PluginFocusChanged(bool focused) = 0;
+
   // Notification that the given plugin has crashed. When a plugin crashes, all
   // instances associated with that plugin will notify that they've crashed via
   // this function.
@@ -251,7 +258,7 @@ class PluginDelegate {
 
   // The caller will own the pointer returned from this.
   virtual PlatformVideoDecoder* CreateVideoDecoder(
-      PP_VideoDecoderConfig_Dev* decoder_config) = 0;
+      media::VideoDecodeAccelerator::Client* client) = 0;
 
   // The caller is responsible for calling Shutdown() on the returned pointer
   // to clean up the corresponding resources allocated during this call.
@@ -390,6 +397,17 @@ class PluginDelegate {
   virtual webkit_glue::P2PTransport* CreateP2PTransport() = 0;
 
   virtual double GetLocalTimeZoneOffset(base::Time t) = 0;
+
+  // TODO(viettrungluu): Generalize this for use with other plugins if it proves
+  // necessary.
+  virtual std::string GetFlashCommandLineArgs() = 0;
+
+  // Create an anonymous shared memory segment of size |size| bytes, and return
+  // a pointer to it, or NULL on error.  Caller owns the returned pointer.
+  virtual base::SharedMemory* CreateAnonymousSharedMemory(uint32_t size) = 0;
+
+  // Returns the current preferences.
+  virtual ::ppapi::Preferences GetPreferences() = 0;
 };
 
 }  // namespace ppapi

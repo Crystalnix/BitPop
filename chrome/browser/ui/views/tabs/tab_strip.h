@@ -19,11 +19,6 @@ class Tab;
 
 namespace views {
 class ImageView;
-#if defined(OS_LINUX)
-class WidgetGtk;
-#elif defined(OS_WIN)
-class WidgetWin;
-#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -70,7 +65,6 @@ class TabStrip : public BaseTabStrip,
 
   // views::View overrides:
   virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
-  virtual const views::View* GetViewByID(int id) const OVERRIDE;
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   // NOTE: the drag and drop methods are invoked from FrameView. This is done
   // to allow for a drop region that extends outside the bounds of the TabStrip.

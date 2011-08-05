@@ -2,63 +2,30 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "content/browser/renderer_host/render_process_host_browsertest.h"
+
 #include "base/command_line.h"
-#include "chrome/browser/debugger/devtools_manager.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/url_constants.h"
-#include "chrome/test/in_process_browser_test.h"
 #include "chrome/test/ui_test_utils.h"
 #include "content/browser/renderer_host/render_process_host.h"
-#include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/renderer_host/render_widget_host.h"
-#include "content/browser/site_instance.h"
 #include "content/browser/tab_contents/tab_contents.h"
+#include "content/common/test_url_constants.h"
 
-class RenderProcessHostTest : public InProcessBrowserTest {
- public:
-  RenderProcessHostTest() {
-    EnableDOMAutomation();
-  }
+RenderProcessHostTest::RenderProcessHostTest() {
+  EnableDOMAutomation();
+}
 
-  int RenderProcessHostCount() {
-    RenderProcessHost::iterator hosts = RenderProcessHost::AllHostsIterator();
-    int count = 0;
-    while (!hosts.IsAtEnd()) {
-      if (hosts.GetCurrentValue()->HasConnection())
-        count++;
-      hosts.Advance();
-    }
-    return count;
+int RenderProcessHostTest::RenderProcessHostCount() {
+  RenderProcessHost::iterator hosts = RenderProcessHost::AllHostsIterator();
+  int count = 0;
+  while (!hosts.IsAtEnd()) {
+    if (hosts.GetCurrentValue()->HasConnection())
+      count++;
+    hosts.Advance();
   }
-
-  RenderViewHost* FindFirstDevToolsHost() {
-    RenderProcessHost::iterator hosts = RenderProcessHost::AllHostsIterator();
-    for (; !hosts.IsAtEnd(); hosts.Advance()) {
-      RenderProcessHost* render_process_host = hosts.GetCurrentValue();
-      DCHECK(render_process_host);
-      if (!render_process_host->HasConnection())
-        continue;
-      RenderProcessHost::listeners_iterator iter(
-          render_process_host->ListenersIterator());
-      for (; !iter.IsAtEnd(); iter.Advance()) {
-        const RenderWidgetHost* widget =
-            static_cast<const RenderWidgetHost*>(iter.GetCurrentValue());
-        DCHECK(widget);
-        if (!widget || !widget->IsRenderView())
-          continue;
-        RenderViewHost* host = const_cast<RenderViewHost*>(
-            static_cast<const RenderViewHost*>(widget));
-        RenderViewHostDelegate* host_delegate = host->delegate();
-        GURL url = host_delegate->GetURL();
-        if (url.SchemeIs(chrome::kChromeDevToolsScheme))
-          return host;
-      }
-    }
-    return NULL;
-  }
-};
+  return count;
+}
 
 IN_PROC_BROWSER_TEST_F(RenderProcessHostTest, ProcessPerTab) {
   // Set max renderers to 1 to force running out of processes.
@@ -70,13 +37,17 @@ IN_PROC_BROWSER_TEST_F(RenderProcessHostTest, ProcessPerTab) {
   int tab_count = 1;
   int host_count = 1;
 
+#if defined(TOUCH_UI)
+  ++host_count;  // For the touch keyboard.
+#endif
+
   // Change the first tab to be the new tab page (TYPE_WEBUI).
-  GURL newtab(chrome::kChromeUINewTabURL);
+  GURL newtab(chrome::kTestNewTabURL);
   ui_test_utils::NavigateToURL(browser(), newtab);
   EXPECT_EQ(tab_count, browser()->tab_count());
   EXPECT_EQ(host_count, RenderProcessHostCount());
 
-  // Create a new TYPE_NORMAL tab.  It should be in its own process.
+  // Create a new TYPE_TABBED tab.  It should be in its own process.
   GURL page1("data:text/html,hello world1");
   browser()->ShowSingletonTab(page1);
   if (browser()->tab_count() == tab_count)
@@ -86,7 +57,7 @@ IN_PROC_BROWSER_TEST_F(RenderProcessHostTest, ProcessPerTab) {
   EXPECT_EQ(tab_count, browser()->tab_count());
   EXPECT_EQ(host_count, RenderProcessHostCount());
 
-  // Create another TYPE_NORMAL tab.  It should share the previous process.
+  // Create another TYPE_TABBED tab.  It should share the previous process.
   GURL page2("data:text/html,hello world2");
   browser()->ShowSingletonTab(page2);
   if (browser()->tab_count() == tab_count)
@@ -108,73 +79,6 @@ IN_PROC_BROWSER_TEST_F(RenderProcessHostTest, ProcessPerTab) {
   if (browser()->tab_count() == tab_count)
     ui_test_utils::WaitForNewTab(browser());
   tab_count++;
-  EXPECT_EQ(tab_count, browser()->tab_count());
-  EXPECT_EQ(host_count, RenderProcessHostCount());
-}
-
-// Ensure that DevTools opened to debug DevTools is launched in a separate
-// process when --process-per-tab is set. See crbug.com/69873.
-IN_PROC_BROWSER_TEST_F(RenderProcessHostTest, DevToolsOnSelfInOwnProcessPPT) {
-  CommandLine& parsed_command_line = *CommandLine::ForCurrentProcess();
-  parsed_command_line.AppendSwitch(switches::kProcessPerTab);
-
-  int tab_count = 1;
-  int host_count = 1;
-
-  GURL page1("data:text/html,hello world1");
-  browser()->ShowSingletonTab(page1);
-  if (browser()->tab_count() == tab_count)
-    ui_test_utils::WaitForNewTab(browser());
-  tab_count++;
-  host_count++;
-  EXPECT_EQ(tab_count, browser()->tab_count());
-  EXPECT_EQ(host_count, RenderProcessHostCount());
-
-  // DevTools start in docked mode (no new tab), in a separate process.
-  browser()->ToggleDevToolsWindow(DEVTOOLS_TOGGLE_ACTION_INSPECT);
-  host_count++;
-  EXPECT_EQ(tab_count, browser()->tab_count());
-  EXPECT_EQ(host_count, RenderProcessHostCount());
-
-  RenderViewHost* devtools = FindFirstDevToolsHost();
-  DCHECK(devtools);
-
-  // DevTools start in a separate process.
-  DevToolsManager::GetInstance()->ToggleDevToolsWindow(
-      devtools, DEVTOOLS_TOGGLE_ACTION_INSPECT);
-  host_count++;
-  EXPECT_EQ(tab_count, browser()->tab_count());
-  EXPECT_EQ(host_count, RenderProcessHostCount());
-}
-
-// Ensure that DevTools opened to debug DevTools is launched in a separate
-// process. See crbug.com/69873.
-IN_PROC_BROWSER_TEST_F(RenderProcessHostTest, DevToolsOnSelfInOwnProcess) {
-  int tab_count = 1;
-  int host_count = 1;
-
-  GURL page1("data:text/html,hello world1");
-  browser()->ShowSingletonTab(page1);
-  if (browser()->tab_count() == tab_count)
-    ui_test_utils::WaitForNewTab(browser());
-  tab_count++;
-  host_count++;
-  EXPECT_EQ(tab_count, browser()->tab_count());
-  EXPECT_EQ(host_count, RenderProcessHostCount());
-
-  // DevTools start in docked mode (no new tab), in a separate process.
-  browser()->ToggleDevToolsWindow(DEVTOOLS_TOGGLE_ACTION_INSPECT);
-  host_count++;
-  EXPECT_EQ(tab_count, browser()->tab_count());
-  EXPECT_EQ(host_count, RenderProcessHostCount());
-
-  RenderViewHost* devtools = FindFirstDevToolsHost();
-  DCHECK(devtools);
-
-  // DevTools start in a separate process.
-  DevToolsManager::GetInstance()->ToggleDevToolsWindow(
-      devtools, DEVTOOLS_TOGGLE_ACTION_INSPECT);
-  host_count++;
   EXPECT_EQ(tab_count, browser()->tab_count());
   EXPECT_EQ(host_count, RenderProcessHostCount());
 }
@@ -195,8 +99,12 @@ IN_PROC_BROWSER_TEST_F(RenderProcessHostTest, ProcessOverflow) {
   RenderProcessHost* rph2 = NULL;
   RenderProcessHost* rph3 = NULL;
 
+#if defined(TOUCH_UI)
+  ++host_count;  // For the touch keyboard.
+#endif
+
   // Change the first tab to be the new tab page (TYPE_WEBUI).
-  GURL newtab(chrome::kChromeUINewTabURL);
+  GURL newtab(chrome::kTestNewTabURL);
   ui_test_utils::NavigateToURL(browser(), newtab);
   EXPECT_EQ(tab_count, browser()->tab_count());
   tab1 = browser()->GetTabContentsAt(tab_count - 1);
@@ -204,7 +112,7 @@ IN_PROC_BROWSER_TEST_F(RenderProcessHostTest, ProcessOverflow) {
   EXPECT_EQ(tab1->GetURL(), newtab);
   EXPECT_EQ(host_count, RenderProcessHostCount());
 
-  // Create a new TYPE_NORMAL tab.  It should be in its own process.
+  // Create a new TYPE_TABBED tab.  It should be in its own process.
   GURL page1("data:text/html,hello world1");
   browser()->ShowSingletonTab(page1);
   if (browser()->tab_count() == tab_count)
@@ -218,7 +126,7 @@ IN_PROC_BROWSER_TEST_F(RenderProcessHostTest, ProcessOverflow) {
   EXPECT_EQ(host_count, RenderProcessHostCount());
   EXPECT_NE(rph1, rph2);
 
-  // Create another TYPE_NORMAL tab.  It should share the previous process.
+  // Create another TYPE_TABBED tab.  It should share the previous process.
   GURL page2("data:text/html,hello world2");
   browser()->ShowSingletonTab(page2);
   if (browser()->tab_count() == tab_count)
@@ -231,10 +139,10 @@ IN_PROC_BROWSER_TEST_F(RenderProcessHostTest, ProcessOverflow) {
   EXPECT_EQ(tab2->GetRenderProcessHost(), rph2);
 
   // Create another TYPE_WEBUI tab.  It should share the process with newtab.
-  // Note: intentionally create this tab after the TYPE_NORMAL tabs to exercise
+  // Note: intentionally create this tab after the TYPE_TABBED tabs to exercise
   // bug 43448 where extension and WebUI tabs could get combined into normal
   // renderers.
-  GURL history(chrome::kChromeUIHistoryURL);
+  GURL history(chrome::kTestHistoryURL);
   browser()->ShowSingletonTab(history);
   if (browser()->tab_count() == tab_count)
     ui_test_utils::WaitForNewTab(browser());
@@ -247,12 +155,16 @@ IN_PROC_BROWSER_TEST_F(RenderProcessHostTest, ProcessOverflow) {
 
   // Create a TYPE_EXTENSION tab.  It should be in its own process.
   // (the bookmark manager is implemented as an extension)
-  GURL bookmarks(chrome::kChromeUIBookmarksURL);
+  GURL bookmarks(chrome::kTestBookmarksURL);
   browser()->ShowSingletonTab(bookmarks);
   if (browser()->tab_count() == tab_count)
     ui_test_utils::WaitForNewTab(browser());
   tab_count++;
+#if !defined(TOUCH_UI)
+  // The keyboard in touchui already creates an extension process. So this
+  // should not increase the process count.
   host_count++;
+#endif
   EXPECT_EQ(tab_count, browser()->tab_count());
   tab1 = browser()->GetTabContentsAt(tab_count - 1);
   rph3 = tab1->GetRenderProcessHost();

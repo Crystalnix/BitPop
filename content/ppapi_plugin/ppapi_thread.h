@@ -7,35 +7,41 @@
 #pragma once
 
 #include "base/basictypes.h"
-#include "base/memory/scoped_native_library.h"
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/process.h"
+#include "base/scoped_native_library.h"
 #include "build/build_config.h"
 #include "content/common/child_thread.h"
 #include "ppapi/c/pp_module.h"
-#include "ppapi/proxy/dispatcher.h"
 #include "ppapi/c/trusted/ppp_broker.h"
+#include "ppapi/proxy/plugin_dispatcher.h"
 
 class FilePath;
+class PpapiWebKitThread;
 
 namespace IPC {
 struct ChannelHandle;
 }
 
 class PpapiThread : public ChildThread,
-                    public pp::proxy::Dispatcher::Delegate {
+                    public pp::proxy::PluginDispatcher::PluginDelegate {
  public:
   explicit PpapiThread(bool is_broker);
-  ~PpapiThread();
+  virtual ~PpapiThread();
 
  private:
   // ChildThread overrides.
-  virtual bool OnMessageReceived(const IPC::Message& msg);
+  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
 
   // Dispatcher::Delegate implementation.
-  virtual MessageLoop* GetIPCMessageLoop();
-  virtual base::WaitableEvent* GetShutdownEvent();
-  virtual std::set<PP_Instance>* GetGloballySeenInstanceIDSet();
+  virtual base::MessageLoopProxy* GetIPCMessageLoop() OVERRIDE;
+  virtual base::WaitableEvent* GetShutdownEvent() OVERRIDE;
+  virtual std::set<PP_Instance>* GetGloballySeenInstanceIDSet() OVERRIDE;
+  virtual ppapi::WebKitForwarding* GetWebKitForwarding() OVERRIDE;
+  virtual void PostToWebKitThread(const tracked_objects::Location& from_here,
+                                  const base::Closure& task) OVERRIDE;
+  virtual bool SendToBrowser(IPC::Message* msg) OVERRIDE;
 
   // Message handlers.
   void OnMsgLoadPlugin(const FilePath& path);
@@ -69,6 +75,11 @@ class PpapiThread : public ChildThread,
 
   // See Dispatcher::Delegate::GetGloballySeenInstanceIDSet.
   std::set<PP_Instance> globally_seen_instance_ids_;
+
+  // Lazily created by GetWebKitForwarding.
+  scoped_ptr<ppapi::WebKitForwarding> webkit_forwarding_;
+
+  scoped_ptr<PpapiWebKitThread> webkit_thread_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(PpapiThread);
 };

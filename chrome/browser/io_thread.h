@@ -12,6 +12,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/browser_process_sub_thread.h"
+#include "chrome/browser/net/ssl_config_service_manager.h"
 #include "chrome/browser/prefs/pref_member.h"
 #include "chrome/common/net/predictor_common.h"
 #include "net/base/network_change_notifier.h"
@@ -59,19 +60,22 @@ class IOThread : public BrowserProcessSubThread {
     scoped_ptr<net::DnsRRResolver> dnsrr_resolver;
     scoped_refptr<net::SSLConfigService> ssl_config_service;
     scoped_ptr<net::HttpAuthHandlerFactory> http_auth_handler_factory;
-    scoped_refptr<net::ProxyService> proxy_script_fetcher_proxy_service;
+    scoped_ptr<net::ProxyService> proxy_script_fetcher_proxy_service;
     scoped_ptr<net::HttpTransactionFactory>
         proxy_script_fetcher_http_transaction_factory;
     scoped_ptr<net::FtpTransactionFactory>
         proxy_script_fetcher_ftp_transaction_factory;
     scoped_ptr<net::URLSecurityManager> url_security_manager;
+    // We use a separate URLRequestContext for PAC fetches, in order to break
+    // the reference cycle:
+    // URLRequestContext=>PAC fetch=>URLRequest=>URLRequestContext.
+    // The first URLRequestContext is |system_url_request_context|. We introduce
+    // |proxy_script_fetcher_context| for the second context. It has a direct
+    // ProxyService, since we always directly connect to fetch the PAC script.
     scoped_refptr<net::URLRequestContext> proxy_script_fetcher_context;
+    scoped_ptr<net::ProxyService> system_proxy_service;
     scoped_ptr<net::HttpTransactionFactory> system_http_transaction_factory;
     scoped_ptr<net::FtpTransactionFactory> system_ftp_transaction_factory;
-    scoped_refptr<net::ProxyService> system_proxy_service;
-    // NOTE(willchan): This request context is unusable until a system
-    // SSLConfigService is provided that doesn't rely on
-    // Profiles. Do NOT use this yet.
     scoped_refptr<net::URLRequestContext> system_request_context;
     scoped_refptr<ExtensionEventRouterForwarder>
         extension_event_router_forwarder;
@@ -160,6 +164,9 @@ class IOThread : public BrowserProcessSubThread {
   // called on the IO thread.
   void ClearHostCache();
 
+  // Returns an SSLConfigService instance.
+  net::SSLConfigService* GetSSLConfigService();
+
   // The NetLog is owned by the browser process, to allow logging from other
   // threads during shutdown, but is used most frequently on the IOThread.
   ChromeNetLog* net_log_;
@@ -191,6 +198,10 @@ class IOThread : public BrowserProcessSubThread {
   std::string auth_server_whitelist_;
   std::string auth_delegate_whitelist_;
   std::string gssapi_library_name_;
+
+  // This is an instance of the default SSLConfigServiceManager for the current
+  // platform and it gets SSL preferences from local_state object.
+  scoped_ptr<SSLConfigServiceManager> ssl_config_service_manager_;
 
   // These member variables are initialized by a task posted to the IO thread,
   // which gets posted by calling certain member functions of IOThread.

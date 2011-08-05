@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,7 +22,11 @@ struct TitleMatch;
 //   This is synchronous.
 class HistoryContentsProvider : public HistoryProvider {
  public:
-  HistoryContentsProvider(ACProviderListener* listener, Profile* profile);
+  // If |body_only| then only provide results for which there is a match in
+  // the body, otherwise also match in the page URL and title.
+  HistoryContentsProvider(ACProviderListener* listener,
+                          Profile* profile,
+                          bool body_only);
 
   // As necessary asks the history service for the relevant results. When
   // done SetResults is invoked.
@@ -31,7 +35,7 @@ class HistoryContentsProvider : public HistoryProvider {
   virtual void Stop() OVERRIDE;
 
  private:
-  ~HistoryContentsProvider();
+  virtual ~HistoryContentsProvider();
 
   void QueryComplete(HistoryService::Handle handle,
                      history::QueryResults* results);
@@ -61,6 +65,9 @@ class HistoryContentsProvider : public HistoryProvider {
   // results_.
   void AddBookmarkTitleMatchToResults(const bookmark_utils::TitleMatch& match);
 
+  // Return true if the search term can be found in the title of |result|.
+  bool MatchInTitle(const history::URLResult& result);
+
   CancelableRequestConsumerT<int, 0> request_consumer_;
 
   // The number of times we're returned each different type of result. These are
@@ -72,6 +79,12 @@ class HistoryContentsProvider : public HistoryProvider {
 
   // Current autocomplete input type.
   AutocompleteInput::Type input_type_;
+
+  // Whether we should match against the body text only (true) or also against
+  // url and titles (false).
+  // TODO(mrossetti): Remove body_only_ and MatchInTitle once body_only_
+  // becomes permanent.
+  bool body_only_;
 
   // Whether we should trim "http://" from results.
   bool trim_http_;

@@ -69,6 +69,11 @@ class InstantLoader : public NotificationObserver {
   bool ShouldCommitInstantOnMouseUp();
   void CommitInstantLoader();
 
+  // Preload |template_url|'s instant URL, if the loader doesn't already have
+  // a |preview_contents()| for it.
+  void MaybeLoadInstantURL(TabContentsWrapper* tab_contents,
+                           const TemplateURL* template_url);
+
   // NotificationObserver:
   virtual void Observe(NotificationType type,
                        const NotificationSource& source,
@@ -150,8 +155,24 @@ class InstantLoader : public NotificationObserver {
   // waiting on the load and |force_if_loading| is false this does nothing.
   void SendBoundsToPage(bool force_if_loading);
 
+  // Called when the TabContentsDelegate wants to swap a new TabContentsWrapper
+  // into our |preview_contents_|.
+  void ReplacePreviewContents(TabContentsWrapper* old_tc,
+                              TabContentsWrapper* new_tc);
+
+  // Called to set up the |preview_contents_| based on |tab_contents| when it is
+  // created or replaced.
+  void SetupPreviewContents(TabContentsWrapper* tab_contents);
+
   // Creates and sets the preview TabContentsWrapper.
   void CreatePreviewContents(TabContentsWrapper* tab_contents);
+
+  // Creates and loads the |template_url|'s instant URL.
+  void LoadInstantURL(TabContentsWrapper* tab_contents,
+                      const TemplateURL* template_url,
+                      PageTransition::Type transition_type,
+                      const string16& user_text,
+                      bool verbatim);
 
   InstantLoaderDelegate* delegate_;
 

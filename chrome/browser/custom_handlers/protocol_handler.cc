@@ -5,27 +5,43 @@
 #include "chrome/browser/custom_handlers/protocol_handler.h"
 
 #include "base/string_util.h"
+#include "base/utf_string_conversions.h"
 #include "net/base/escape.h"
 
 ProtocolHandler::ProtocolHandler(const std::string& protocol,
                                  const GURL& url,
                                  const string16& title)
-  : protocol_(protocol),
-    url_(url),
-    title_(title) {
+    : protocol_(protocol),
+      url_(url),
+      title_(title) {
 }
 
-ProtocolHandler* ProtocolHandler::CreateProtocolHandler(
+ProtocolHandler ProtocolHandler::CreateProtocolHandler(
     const std::string& protocol,
     const GURL& url,
     const string16& title) {
-  std::string lower_protocol(protocol);
-  lower_protocol = StringToLowerASCII(protocol);
-  return new ProtocolHandler(lower_protocol, url, title);
+  std::string lower_protocol = StringToLowerASCII(protocol);
+  return ProtocolHandler(lower_protocol, url, title);
 }
 
-ProtocolHandler* ProtocolHandler::CreateProtocolHandler(
+ProtocolHandler::ProtocolHandler() {
+}
+
+bool ProtocolHandler::IsValidDict(const DictionaryValue* value) {
+  return value->HasKey("protocol") && value->HasKey("url") &&
+    value->HasKey("title");
+}
+
+const ProtocolHandler& ProtocolHandler::EmptyProtocolHandler() {
+  static const ProtocolHandler* const kEmpty = new ProtocolHandler();
+  return *kEmpty;
+}
+
+ProtocolHandler ProtocolHandler::CreateProtocolHandler(
     const DictionaryValue* value) {
+  if (!IsValidDict(value)) {
+    return EmptyProtocolHandler();
+  }
   std::string protocol, url;
   string16 title;
   value->GetString("protocol", &protocol);
@@ -34,14 +50,14 @@ ProtocolHandler* ProtocolHandler::CreateProtocolHandler(
   return ProtocolHandler::CreateProtocolHandler(protocol, GURL(url), title);
 }
 
-GURL ProtocolHandler::TranslateUrl(const GURL& url) {
+GURL ProtocolHandler::TranslateUrl(const GURL& url) const {
   std::string translatedUrlSpec(url_.spec());
   ReplaceSubstringsAfterOffset(&translatedUrlSpec, 0, "%s",
       EscapeQueryParamValue(url.spec(), true));
   return GURL(translatedUrlSpec);
 }
 
-Value* ProtocolHandler::Encode() {
+DictionaryValue* ProtocolHandler::Encode() const {
   DictionaryValue* d = new DictionaryValue();
   d->Set("protocol", Value::CreateStringValue(protocol_));
   d->Set("url", Value::CreateStringValue(url_.spec()));
@@ -49,9 +65,8 @@ Value* ProtocolHandler::Encode() {
   return d;
 }
 
-bool ProtocolHandler::operator==(const ProtocolHandler &other) const {
+bool ProtocolHandler::operator==(const ProtocolHandler& other) const {
   return protocol_ == other.protocol_ &&
     url_ == other.url_ &&
     title_ == other.title_;
 }
-

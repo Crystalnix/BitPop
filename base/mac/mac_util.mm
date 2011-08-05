@@ -8,8 +8,10 @@
 
 #include "base/file_path.h"
 #include "base/logging.h"
+#include "base/mac/foundation_util.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/scoped_nsobject.h"
+#include "base/sys_info.h"
 #include "base/sys_string_conversions.h"
 
 namespace base {
@@ -238,47 +240,27 @@ void ActivateProcess(pid_t pid) {
   }
 }
 
-bool SetFileBackupExclusion(const FilePath& file_path, bool exclude) {
-  NSString* filePath =
+bool SetFileBackupExclusion(const FilePath& file_path) {
+  NSString* file_path_ns =
       [NSString stringWithUTF8String:file_path.value().c_str()];
+  NSURL* file_url = [NSURL fileURLWithPath:file_path_ns];
 
-  // If being asked to exclude something in a tmp directory, just lie and say it
-  // was done.  TimeMachine will already ignore tmp directories.  This keeps the
-  // temporary profiles used by unittests from being added to the exclude list.
-  // Otherwise, as /Library/Preferences/com.apple.TimeMachine.plist grows the
-  // bots slow down due to reading/writing all the temporary profiles used over
-  // time.
-
-  NSString* tmpDir = NSTemporaryDirectory();
-  // Make sure the temp dir is terminated with a slash
-  if (tmpDir && ![tmpDir hasSuffix:@"/"])
-    tmpDir = [tmpDir stringByAppendingString:@"/"];
-  // '/var' is a link to '/private/var', make sure to check both forms.
-  NSString* privateTmpDir = nil;
-  if ([tmpDir hasPrefix:@"/var/"])
-    privateTmpDir = [@"/private" stringByAppendingString:tmpDir];
-
-  if ((tmpDir && [filePath hasPrefix:tmpDir]) ||
-      (privateTmpDir && [filePath hasPrefix:privateTmpDir]) ||
-      [filePath hasPrefix:@"/tmp/"] ||
-      [filePath hasPrefix:@"/var/tmp/"] ||
-      [filePath hasPrefix:@"/private/tmp/"] ||
-      [filePath hasPrefix:@"/private/var/tmp/"]) {
-    return true;
-  }
-
-  NSURL* url = [NSURL fileURLWithPath:filePath];
-  // Note that we always set CSBackupSetItemExcluded's excludeByPath param
-  // to true.  This prevents a problem with toggling the setting: if the file
-  // is excluded with excludeByPath set to true then excludeByPath must
-  // also be true when un-excluding the file, otherwise the un-excluding
-  // will be ignored.
-  bool success =
-      CSBackupSetItemExcluded((CFURLRef)url, exclude, true) == noErr;
-  if (!success)
+  // When excludeByPath is true the application must be running with root
+  // privileges (admin for 10.6 and earlier) but the URL does not have to
+  // already exist. When excludeByPath is false the URL must already exist but
+  // can be used in non-root (or admin as above) mode. We use false so that
+  // non-root (or admin) users don't get their TimeMachine drive filled up with
+  // unnecessary backups.
+  OSStatus os_err =
+      CSBackupSetItemExcluded(base::mac::NSToCFCast(file_url), TRUE, FALSE);
+  if (os_err != noErr) {
     LOG(WARNING) << "Failed to set backup exclusion for file '"
-                 << file_path.value().c_str() << "'.  Continuing.";
-  return success;
+                 << file_path.value().c_str() << "' with error "
+                 << os_err << " (" << GetMacOSStatusErrorString(os_err)
+                 << ": " << GetMacOSStatusCommentString(os_err)
+                 << ").  Continuing.";
+  }
+  return os_err == noErr;
 }
 
 void SetProcessName(CFStringRef process_name) {
@@ -480,77 +462,5 @@ bool WasLaunchedAsHiddenLoginItem() {
   return IsHiddenLoginItem(item);
 }
 
-// Definitions for the corresponding CF_TO_NS_CAST_DECL macros in mac_util.h.
-#define CF_TO_NS_CAST_DEFN(TypeCF, TypeNS) \
-\
-TypeNS* CFToNSCast(TypeCF##Ref cf_val) { \
-  DCHECK(!cf_val || TypeCF##GetTypeID() == CFGetTypeID(cf_val)); \
-  TypeNS* ns_val = \
-      const_cast<TypeNS*>(reinterpret_cast<const TypeNS*>(cf_val)); \
-  return ns_val; \
-} \
-\
-TypeCF##Ref NSToCFCast(TypeNS* ns_val) { \
-  TypeCF##Ref cf_val = reinterpret_cast<TypeCF##Ref>(ns_val); \
-  DCHECK(!cf_val || TypeCF##GetTypeID() == CFGetTypeID(cf_val)); \
-  return cf_val; \
-} \
-
-#define CF_TO_NS_MUTABLE_CAST_DEFN(name) \
-CF_TO_NS_CAST_DEFN(CF##name, NS##name) \
-\
-NSMutable##name* CFToNSCast(CFMutable##name##Ref cf_val) { \
-  DCHECK(!cf_val || CF##name##GetTypeID() == CFGetTypeID(cf_val)); \
-  NSMutable##name* ns_val = reinterpret_cast<NSMutable##name*>(cf_val); \
-  return ns_val; \
-} \
-\
-CFMutable##name##Ref NSToCFCast(NSMutable##name* ns_val) { \
-  CFMutable##name##Ref cf_val = \
-      reinterpret_cast<CFMutable##name##Ref>(ns_val); \
-  DCHECK(!cf_val || CF##name##GetTypeID() == CFGetTypeID(cf_val)); \
-  return cf_val; \
-} \
-
-CF_TO_NS_MUTABLE_CAST_DEFN(Array);
-CF_TO_NS_MUTABLE_CAST_DEFN(AttributedString);
-CF_TO_NS_CAST_DEFN(CFCalendar, NSCalendar);
-CF_TO_NS_MUTABLE_CAST_DEFN(CharacterSet);
-CF_TO_NS_MUTABLE_CAST_DEFN(Data);
-CF_TO_NS_CAST_DEFN(CFDate, NSDate);
-CF_TO_NS_MUTABLE_CAST_DEFN(Dictionary);
-CF_TO_NS_CAST_DEFN(CFError, NSError);
-CF_TO_NS_CAST_DEFN(CFLocale, NSLocale);
-CF_TO_NS_CAST_DEFN(CFNumber, NSNumber);
-CF_TO_NS_CAST_DEFN(CFRunLoopTimer, NSTimer);
-CF_TO_NS_CAST_DEFN(CFTimeZone, NSTimeZone);
-CF_TO_NS_MUTABLE_CAST_DEFN(Set);
-CF_TO_NS_CAST_DEFN(CFReadStream, NSInputStream);
-CF_TO_NS_CAST_DEFN(CFWriteStream, NSOutputStream);
-CF_TO_NS_MUTABLE_CAST_DEFN(String);
-CF_TO_NS_CAST_DEFN(CFURL, NSURL);
-
 }  // namespace mac
 }  // namespace base
-
-std::ostream& operator<<(std::ostream& o, const CFStringRef string) {
-  return o << base::SysCFStringRefToUTF8(string);
-}
-
-std::ostream& operator<<(std::ostream& o, const CFErrorRef err) {
-  base::mac::ScopedCFTypeRef<CFStringRef> desc(CFErrorCopyDescription(err));
-  base::mac::ScopedCFTypeRef<CFDictionaryRef> user_info(
-      CFErrorCopyUserInfo(err));
-  CFStringRef errorDesc = NULL;
-  if (user_info.get()) {
-    errorDesc = reinterpret_cast<CFStringRef>(
-        CFDictionaryGetValue(user_info.get(), kCFErrorDescriptionKey));
-  }
-  o << "Code: " << CFErrorGetCode(err)
-    << " Domain: " << CFErrorGetDomain(err)
-    << " Desc: " << desc.get();
-  if(errorDesc) {
-    o << "(" << errorDesc << ")";
-  }
-  return o;
-}

@@ -90,7 +90,7 @@ class PassiveLogCollector : public ChromeNetLog::ThreadSafeObserver {
   class GlobalSourceTracker : public SourceTrackerInterface {
    public:
     GlobalSourceTracker();
-    ~GlobalSourceTracker();
+    virtual ~GlobalSourceTracker();
 
     // SourceTrackerInterface implementation:
     virtual void OnAddEntry(const ChromeNetLog::Entry& entry);
@@ -341,9 +341,22 @@ class PassiveLogCollector : public ChromeNetLog::ThreadSafeObserver {
     DISALLOW_COPY_AND_ASSIGN(HttpStreamJobTracker);
   };
 
+  class ExponentialBackoffThrottlingTracker : public SourceTracker {
+   public:
+    static const size_t kMaxNumSources;
+    static const size_t kMaxGraveyardSize;
+
+    explicit ExponentialBackoffThrottlingTracker(PassiveLogCollector* parent);
+
+   private:
+    virtual Action DoAddEntry(const ChromeNetLog::Entry& entry,
+                              SourceInfo* out_info);
+    DISALLOW_COPY_AND_ASSIGN(ExponentialBackoffThrottlingTracker);
+  };
+
 
   PassiveLogCollector();
-  ~PassiveLogCollector();
+  virtual ~PassiveLogCollector();
 
   // ThreadSafeObserver implementation:
   virtual void OnAddEntry(net::NetLog::EventType type,
@@ -381,6 +394,7 @@ class PassiveLogCollector : public ChromeNetLog::ThreadSafeObserver {
   DiskCacheEntryTracker disk_cache_entry_tracker_;
   MemCacheEntryTracker mem_cache_entry_tracker_;
   HttpStreamJobTracker http_stream_job_tracker_;
+  ExponentialBackoffThrottlingTracker exponential_backoff_throttling_tracker_;
 
   // This array maps each NetLog::SourceType to one of the tracker instances
   // defined above. Use of this array avoid duplicating the list of trackers

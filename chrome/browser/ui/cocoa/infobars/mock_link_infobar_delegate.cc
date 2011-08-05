@@ -10,24 +10,22 @@
 const char MockLinkInfoBarDelegate::kMessage[] = "MockLinkInfoBarMessage ";
 const char MockLinkInfoBarDelegate::kLink[] = "http://dev.chromium.org";
 
-MockLinkInfoBarDelegate::MockLinkInfoBarDelegate()
+MockLinkInfoBarDelegate::MockLinkInfoBarDelegate(Owner* owner)
     : LinkInfoBarDelegate(NULL),
+      owner_(owner),
       closes_on_action_(true),
       icon_accessed_(false),
       message_text_accessed_(false),
       link_text_accessed_(false),
-      link_clicked_(false),
-      closed_(false) {
+      link_clicked_(false) {
 }
 
 MockLinkInfoBarDelegate::~MockLinkInfoBarDelegate() {
+  if (owner_)
+    owner_->OnInfoBarDelegateClosed();
 }
 
-void MockLinkInfoBarDelegate::InfoBarClosed() {
-  closed_ = true;
-}
-
-SkBitmap* MockLinkInfoBarDelegate::GetIcon() const {
+gfx::Image* MockLinkInfoBarDelegate::GetIcon() const {
   icon_accessed_ = true;
   return NULL;
 }

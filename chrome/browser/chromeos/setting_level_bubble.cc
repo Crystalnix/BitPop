@@ -51,9 +51,8 @@ static views::Widget* GetToplevelWidget() {
   // We just use the default profile here -- this gets overridden as needed
   // in Chrome OS depending on whether the user is logged in or not.
   Browser* browser =
-      BrowserList::FindBrowserWithType(
+      BrowserList::FindTabbedBrowser(
           ProfileManager::GetDefaultProfile(),
-          Browser::TYPE_NORMAL,
           true);  // match_incognito
   if (browser) {
     window = GTK_WINDOW(browser->window()->GetNativeHandle());
@@ -86,6 +85,8 @@ SettingLevelBubble::SettingLevelBubble(SkBitmap* increase_icon,
   animation_.SetSlideDuration(kAnimationDurationMs);
   animation_.SetTweenType(ui::Tween::LINEAR);
 }
+
+SettingLevelBubble::~SettingLevelBubble() {}
 
 void SettingLevelBubble::ShowBubble(int percent) {
   percent = LimitPercent(percent);
@@ -164,6 +165,14 @@ void SettingLevelBubble::BubbleClosing(Bubble* bubble, bool) {
   animation_.Stop();
   bubble_ = NULL;
   view_ = NULL;
+}
+
+bool SettingLevelBubble::CloseOnEscape() {
+  return true;
+}
+
+bool SettingLevelBubble::FadeInOnShow() {
+  return false;
 }
 
 void SettingLevelBubble::AnimationEnded(const ui::Animation* animation) {

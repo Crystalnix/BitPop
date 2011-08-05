@@ -89,7 +89,7 @@ cr.define('options', function() {
 
         // Show experimental features if enabled.
         if (templateData.experimentalSpellCheckFeatures == 'true') {
-          $('auto-spell-correction-option').classList.remove('hidden');
+          $('auto-spell-correction-option').hidden = false;
         }
       }
     },
@@ -327,12 +327,18 @@ cr.define('options', function() {
       } else if (languageCode in templateData.uiLanguageCodeSet) {
         // If the language is supported as UI language, users can click on
         // the button to change the UI language.
-        uiLanguageButton.textContent =
-            localStrings.getString('display_in_this_language');
-        uiLanguageButton.className = '';
-        // Send the change request to Chrome.
-        uiLanguageButton.onclick = function(e) {
-          chrome.send('uiLanguageChange', [languageCode]);
+        if (cr.commandLine.options['--bwsi']) {
+          // In the guest mode for ChromeOS, changing UI language does not make
+          // sense because it does not take effect after browser restart.
+          uiLanguageButton.hidden = true;
+        } else {
+          uiLanguageButton.textContent =
+              localStrings.getString('display_in_this_language');
+          uiLanguageButton.className = '';
+          // Send the change request to Chrome.
+          uiLanguageButton.onclick = function(e) {
+            chrome.send('uiLanguageChange', [languageCode]);
+          }
         }
         if (cr.isChromeOS) {
           $('language-options-ui-restart-button').onclick = function(e) {
@@ -695,7 +701,7 @@ cr.define('options', function() {
       return filteredPreloadEngines;
     },
 
-    // TODO(kochi): This is an adapted copy from new_new_tab.js.
+    // TODO(kochi): This is an adapted copy from new_tab.js.
     // If this will go as final UI, refactor this to share the component with
     // new new tab page.
     /**

@@ -22,10 +22,7 @@ class BrowserAccessibilityMac : public BrowserAccessibility {
   virtual void NativeReleaseReference();
 
   // Overrides from BrowserAccessibility.
-  // Used to know when to update the cocoa children.
-  virtual void ReplaceChild(
-      BrowserAccessibility* old_acc,
-      BrowserAccessibility* new_acc);
+  virtual void DetachTree(std::vector<BrowserAccessibility*>* nodes);
 
   // The BrowserAccessibilityCocoa associated with us.
   BrowserAccessibilityCocoa* native_view() const {

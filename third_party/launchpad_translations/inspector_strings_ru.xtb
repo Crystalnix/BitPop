@@ -131,4 +131,27 @@
 <translation id="1436722359433789623">Узел удален</translation>
 <translation id="1507648903387903382">Новое правило стиля</translation>
 <translation id="1644861063548770358">Удалить узел</translation>
+<translation id="1062798188241579840">Цвета в шестнадцатеричном формате</translation>
+<translation id="230848277395574520">Принять предположение</translation>
+<translation id="2326802841004704199">Добавить условную точку останова…</translation>
+<translation id="2516706892830004734"><ph name="WIDTH"/> × <ph name="HEIGHT"/> точек</translation>
+<translation id="2630955248802405275">Загрузка XHR</translation>
+<translation id="2685884034607832835">Отключить все точки останова</translation>
+<translation id="1215014271600658849">Показать кол-во и размер в процентах.</translation>
+<translation id="1324319449713370867"><ph name="LATENCY"/> время ожидания</translation>
+<translation id="137671950541962857">Собрано</translation>
+<translation id="1927081658806650620">Только выбранный узел</translation>
+<translation id="2243185493588087847">Показать абсолютный размер и кол-во.</translation>
+<translation id="2312740652191388094">(из кеша)</translation>
+<translation id="2332815705129827753">Оценить скрипт</translation>
+<translation id="2362657748192933744">Экспортировать в HAR формат</translation>
+<translation id="2441568932527294164">Следующее/предыдущее свойство</translation>
+<translation id="2729392955572924879"><ph name="DURATION"/> загруженно</translation>
+<translation id="2968088195674830792">Добро пожаловать в панель профилей</translation>
+<translation id="3169289721517350539">Очистить профили CPU.</translation>
+<translation id="3241921515408606578">Следующая/предыдущая панель</translation>
+<translation id="3293586211597699933">(внутренний скрипт)</translation>
+<translation id="3548877692560438464">Элементы навигации</translation>
+<translation id="6863589982688145509">Горячие клавиши</translation>
+<translation id="6903403507726942474">Перейти к строке:</translation>
 </translationbundle>

@@ -4,6 +4,7 @@
 
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "ui/gfx/gl/gl_context.h"
+#include "ui/gfx/gl/gl_surface.h"
 
 using ::base::SharedMemory;
 
@@ -28,10 +29,22 @@ bool GpuScheduler::Initialize(
     DCHECK(parent_context);
   }
 
-  scoped_ptr<gfx::GLContext> context(
-      gfx::GLContext::CreateOffscreenGLContext(parent_context));
-  if (!context.get())
+  scoped_refptr<gfx::GLSurface> surface(
+      gfx::GLSurface::CreateOffscreenGLSurface(gfx::Size(1, 1)));
+  if (!surface.get()) {
+    LOG(ERROR) << "CreateOffscreenGLSurface failed.\n";
+    Destroy();
     return false;
+  }
+
+  // Create a GLContext and attach the surface.
+  scoped_refptr<gfx::GLContext> context(
+      gfx::GLContext::CreateGLContext(parent_context, surface.get()));
+  if (!context.get()) {
+    LOG(ERROR) << "CreateGLContext failed.\n";
+    Destroy();
+    return false;
+  }
 
   // On Mac OS X since we can not render on-screen we don't even
   // attempt to create a view based GLContext. The only difference
@@ -53,7 +66,8 @@ bool GpuScheduler::Initialize(
     }
   }
 
-  return InitializeCommon(context.release(),
+  return InitializeCommon(surface,
+                          context,
                           size,
                           disallowed_extensions,
                           allowed_extensions,
@@ -74,7 +88,7 @@ void GpuScheduler::Destroy() {
 uint64 GpuScheduler::SetWindowSizeForIOSurface(const gfx::Size& size) {
   // This is called from an IPC handler, so it's undefined which context is
   // current. Make sure the right one is.
-  decoder_->GetGLContext()->MakeCurrent();
+  decoder_->GetGLContext()->MakeCurrent(decoder_->GetGLSurface());
 
   ResizeOffscreenFrameBuffer(size);
   decoder_->UpdateOffscreenFrameBufferSize();
@@ -106,6 +120,10 @@ uint64 GpuScheduler::swap_buffers_count() const {
   return swap_buffers_count_;
 }
 
+uint64 GpuScheduler::acknowledged_swap_buffers_count() const {
+  return acknowledged_swap_buffers_count_;
+}
+
 void GpuScheduler::set_acknowledged_swap_buffers_count(
     uint64 acknowledged_swap_buffers_count) {
   acknowledged_swap_buffers_count_ = acknowledged_swap_buffers_count;
@@ -126,7 +144,7 @@ void GpuScheduler::DidDestroySurface() {
 void GpuScheduler::WillSwapBuffers() {
   DCHECK(decoder_.get());
   DCHECK(decoder_->GetGLContext());
-  DCHECK(decoder_->GetGLContext()->IsCurrent());
+  DCHECK(decoder_->GetGLContext()->IsCurrent(decoder_->GetGLSurface()));
 
   ++swap_buffers_count_;
 

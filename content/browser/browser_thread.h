@@ -6,12 +6,14 @@
 #define CONTENT_BROWSER_BROWSER_THREAD_H_
 #pragma once
 
-#if defined(UNIT_TEST)
-#include "base/logging.h"
-#endif  // UNIT_TEST
+#include "base/callback.h"
 #include "base/synchronization/lock.h"
 #include "base/task.h"
 #include "base/threading/thread.h"
+
+#if defined(UNIT_TEST)
+#include "base/logging.h"
+#endif  // UNIT_TEST
 
 namespace base {
 class MessageLoopProxy;
@@ -65,14 +67,18 @@ class BrowserThread : public base::Thread {
     // This is the thread that processes IPC and network messages.
     IO,
 
-    // This thread issues calls to the GPU in the browser process.
-    GPU,
-
 #if defined(USE_X11)
     // This thread has a second connection to the X server and is used to
     // process UI requests when routing the request to the UI thread would risk
     // deadlock.
     BACKGROUND_X11,
+#endif
+
+#if defined(OS_CHROMEOS)
+    // This thread runs websocket to TCP proxy.
+    // TODO(dilmah): remove this thread, instead implement this functionality
+    // as hooks into websocket layer.
+    WEB_SOCKET_PROXY,
 #endif
 
     // This identifier does not represent a thread.  Instead it counts the
@@ -96,6 +102,23 @@ class BrowserThread : public base::Thread {
   // They return true iff the thread existed and the task was posted.  Note that
   // even if the task is posted, there's no guarantee that it will run, since
   // the target thread may already have a Quit message in its queue.
+  static bool PostTask(ID identifier,
+                       const tracked_objects::Location& from_here,
+                       const base::Closure& task);
+  static bool PostDelayedTask(ID identifier,
+                              const tracked_objects::Location& from_here,
+                              const base::Closure& task,
+                              int64 delay_ms);
+  static bool PostNonNestableTask(ID identifier,
+                                  const tracked_objects::Location& from_here,
+                                  const base::Closure& task);
+  static bool PostNonNestableDelayedTask(
+      ID identifier,
+      const tracked_objects::Location& from_here,
+      const base::Closure& task,
+      int64 delay_ms);
+
+  // TODO(brettw) remove these when Task->Closure conversion is done.
   static bool PostTask(ID identifier,
                        const tracked_objects::Location& from_here,
                        Task* task);
@@ -196,10 +219,17 @@ class BrowserThread : public base::Thread {
   // Common initialization code for the constructors.
   void Initialize();
 
+  // TODO(brettw) remove this variant when Task->Closure migration is complete.
   static bool PostTaskHelper(
       ID identifier,
       const tracked_objects::Location& from_here,
       Task* task,
+      int64 delay_ms,
+      bool nestable);
+  static bool PostTaskHelper(
+      ID identifier,
+      const tracked_objects::Location& from_here,
+      const base::Closure& task,
       int64 delay_ms,
       bool nestable);
 

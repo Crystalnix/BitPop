@@ -8,16 +8,17 @@
 #include <utility>
 #include <vector>
 
+#include "base/stringprintf.h"
 #include "base/string_split.h"
 #include "base/string_util.h"
 #include "chrome/common/net/gaia/gaia_auth_consumer.h"
 #include "chrome/common/net/gaia/gaia_constants.h"
 #include "chrome/common/net/gaia/google_service_auth_error.h"
 #include "chrome/common/net/http_return.h"
+#include "net/base/escape.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_status.h"
-#include "third_party/libjingle/source/talk/base/urlencode.h"
 
 // TODO(chron): Add sourceless version of this formatter.
 // static
@@ -142,10 +143,10 @@ std::string GaiaAuthFetcher::MakeClientLoginBody(
     const std::string& login_token,
     const std::string& login_captcha,
     HostedAccountsSetting allow_hosted_accounts) {
-  std::string encoded_username = UrlEncodeString(username);
-  std::string encoded_password = UrlEncodeString(password);
-  std::string encoded_login_token = UrlEncodeString(login_token);
-  std::string encoded_login_captcha = UrlEncodeString(login_captcha);
+  std::string encoded_username = EscapeUrlEncodedData(username);
+  std::string encoded_password = EscapeUrlEncodedData(password);
+  std::string encoded_login_token = EscapeUrlEncodedData(login_token);
+  std::string encoded_login_captcha = EscapeUrlEncodedData(login_captcha);
 
   const char* account_type = allow_hosted_accounts == HostedAccountsAllowed ?
       kAccountTypeHostedOrGoogle :
@@ -178,8 +179,8 @@ std::string GaiaAuthFetcher::MakeIssueAuthTokenBody(
     const std::string& sid,
     const std::string& lsid,
     const char* const service) {
-  std::string encoded_sid = UrlEncodeString(sid);
-  std::string encoded_lsid = UrlEncodeString(lsid);
+  std::string encoded_sid = EscapeUrlEncodedData(sid);
+  std::string encoded_lsid = EscapeUrlEncodedData(lsid);
 
   // All tokens should be session tokens except the gaia auth token.
   bool session = true;
@@ -195,7 +196,7 @@ std::string GaiaAuthFetcher::MakeIssueAuthTokenBody(
 
 // static
 std::string GaiaAuthFetcher::MakeGetUserInfoBody(const std::string& lsid) {
-  std::string encoded_lsid = UrlEncodeString(lsid);
+  std::string encoded_lsid = EscapeUrlEncodedData(lsid);
   return base::StringPrintf(kGetUserInfoFormat, encoded_lsid.c_str());
 }
 
@@ -421,7 +422,7 @@ void GaiaAuthFetcher::OnURLFetchComplete(const URLFetcher* source,
                                          const GURL& url,
                                          const net::URLRequestStatus& status,
                                          int response_code,
-                                         const ResponseCookies& cookies,
+                                         const net::ResponseCookies& cookies,
                                          const std::string& data) {
   fetch_pending_ = false;
   if (url == client_login_gurl_) {

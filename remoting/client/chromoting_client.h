@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,6 +30,7 @@ class NotifyResolutionRequest;
 }  // namespace protocol
 
 class ClientContext;
+class ClientLogger;
 class InputHandler;
 class RectangleUpdateDecoder;
 
@@ -45,7 +46,8 @@ class ChromotingClient : public protocol::ConnectionToHost::HostEventCallback,
                    ChromotingView* view,
                    RectangleUpdateDecoder* rectangle_decoder,
                    InputHandler* input_handler,
-                   CancelableTask* client_done);
+                   ClientLogger* logger,
+                   Task* client_done);
   virtual ~ChromotingClient();
 
   void Start();
@@ -117,9 +119,10 @@ class ChromotingClient : public protocol::ConnectionToHost::HostEventCallback,
   ChromotingView* view_;
   RectangleUpdateDecoder* rectangle_decoder_;
   InputHandler* input_handler_;
+  ClientLogger* logger_;
 
   // If non-NULL, this is called when the client is done.
-  CancelableTask* client_done_;
+  Task* client_done_;
 
   ConnectionState state_;
 
@@ -135,6 +138,9 @@ class ChromotingClient : public protocol::ConnectionToHost::HostEventCallback,
 
   // Record the statistics of the connection.
   ChromotingStats stats_;
+
+  // Keep track of the last sequence number bounced back from the host.
+  int64 last_sequence_number_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromotingClient);
 };

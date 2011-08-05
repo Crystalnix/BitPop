@@ -21,12 +21,19 @@
 #include "base/string16.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_handle.h"
+#include "base/win/windows_version.h"
 #include "cloud_print/virtual_driver/win/port_monitor/spooler_win.h"
+#include "cloud_print/virtual_driver/win/virtual_driver_consts.h"
+#include "cloud_print/virtual_driver/win/virtual_driver_helpers.h"
 
 namespace switches {
 // These constants are duplicated from chrome/common/chrome_switches.cc
 // in order to avoid dependency problems.
 // TODO(abodenha@chromium.org) Reunify them in some sensible manner.
+
+// Used with kCloudPrintFile.  Tells Chrome to delete the file when
+// finished displaying the print dialog.
+const char kCloudPrintDeleteFile[]          = "cloud-print-delete-file";
 
 // Tells chrome to display the cloud print dialog and upload the
 // specified file for printing.
@@ -52,19 +59,10 @@ const wchar_t kChromePathRegValue[] = L"PathToChromeExe";
 const wchar_t kChromePathRegKey[] = L"Software\\Google\\CloudPrint";
 
 namespace {
-#ifdef _WIN64
-const wchar_t kPortMonitorDllName[] = L"gcp_portmon64.dll";
-#else
-const wchar_t kPortMonitorDllName[] = L"gcp_portmon.dll";
-#endif
-
-const wchar_t kPortName[] = L"GCP:";
-
 const wchar_t kXpsMimeType[] = L"application/vnd.ms-xpsdocument";
 
 const size_t kMaxCommandLineLen = 0x7FFF;
 
-const size_t kMaxMessageLen = 100;
 
 struct MonitorData {
   base::AtExitManager* at_exit_manager;
@@ -111,16 +109,32 @@ MONITOR2 g_monitor_2 = {
   Monitor2Shutdown
 };
 
-// Returns true if registration/unregistration can be attempted.
-bool CanRegister() {
-  // TODO(abodenha@chromium.org) Add handling for XP.
-  // Should Verify admin rights and that XPS is installed.
-  base::IntegrityLevel level = base::INTEGRITY_UNKNOWN;
-  if (!GetProcessIntegrityLevel(base::GetCurrentProcessHandle(), &level)) {
+// Returns true if Xps support is installed.
+bool XpsIsInstalled() {
+  FilePath xps_path;
+  if (!SUCCEEDED(GetPrinterDriverDir(&xps_path))) {
     return false;
   }
-  if (level != base::HIGH_INTEGRITY) {
+  xps_path = xps_path.Append(L"mxdwdrv.dll");
+  if (!file_util::PathExists(xps_path)) {
     return false;
+  }
+  return true;
+}
+
+// Returns true if registration/unregistration can be attempted.
+bool CanRegister() {
+  if (!XpsIsInstalled()) {
+    return false;
+  }
+  if (base::win::GetVersion() >= base::win::VERSION_VISTA) {
+    base::IntegrityLevel level = base::INTEGRITY_UNKNOWN;
+    if (!GetProcessIntegrityLevel(base::GetCurrentProcessHandle(), &level)) {
+      return false;
+    }
+    if (level != base::HIGH_INTEGRITY) {
+      return false;
+    }
   }
   return true;
 }
@@ -154,7 +168,7 @@ bool GetJobTitle(HANDLE printer_handle,
     LOG(ERROR) << "Unable to get bytes needed for job info.";
     return false;
   }
-  scoped_ptr<BYTE> buffer(new BYTE[bytes_needed]);
+  scoped_array<BYTE> buffer(new BYTE[bytes_needed]);
   if (!GetJob(printer_handle,
               job_id,
               1,
@@ -175,27 +189,15 @@ bool GetJobTitle(HANDLE printer_handle,
 // configuration.
 void HandlePortUi(HWND hwnd, const string16& caption) {
   if (hwnd != NULL && IsWindow(hwnd)) {
-    wchar_t message_text[kMaxMessageLen + 1] = L"";
-
-    ::FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM|FORMAT_MESSAGE_IGNORE_INSERTS,
-                    NULL,
-                    CO_E_NOT_SUPPORTED,
-                    MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-                    message_text,
-                    kMaxMessageLen,
-                    NULL);
-    ::MessageBox(hwnd, message_text, caption.c_str(), MB_OK);
+    DisplayWindowsMessage(hwnd, CO_E_NOT_SUPPORTED, cloud_print::kPortName);
   }
 }
 
 // Launches the Cloud Print dialog in Chrome.
 // xps_path references a file to print.
 // job_title is the title to be used for the resulting print job.
-// process_handle is set to the handle of the resulting process.
 bool LaunchPrintDialog(const string16& xps_path,
-                       const string16& job_title,
-                       base::ProcessHandle* process_handle) {
-  DCHECK(process_handle != NULL);
+                       const string16& job_title) {
   HANDLE token = NULL;
   if (!OpenThreadToken(GetCurrentThread(),
                       TOKEN_QUERY|TOKEN_DUPLICATE|TOKEN_ASSIGN_PRIMARY,
@@ -227,10 +229,11 @@ bool LaunchPrintDialog(const string16& xps_path,
                                   kXpsMimeType);
   command_line.AppendSwitchNative(switches::kCloudPrintJobTitle,
                                   job_title);
+  command_line.AppendSwitch(switches::kCloudPrintDeleteFile);
   base::LaunchAppAsUser(primary_token_scoped,
                         command_line.command_line_string(),
                         false,
-                        process_handle);
+                        NULL);
   return true;
 }
 
@@ -271,16 +274,7 @@ bool GetChromeExePath(FilePath* chrome_path) {
 
   // Chrome doesn't appear to be installed per user.
   // Now check %programfiles(x86)%\google\chrome\application
-  // TODO(abodenha@chromium.org) Extend PathService::Get to be able to
-  // return the X86 program files path.  At a minimum, use SHGetKnownFolderPath
-  // instead.
-  wchar_t system_buffer[MAX_PATH] = L"";
-  SHGetFolderPath(NULL,
-                  CSIDL_PROGRAM_FILESX86,
-                  NULL,
-                  SHGFP_TYPE_CURRENT,
-                  system_buffer);
-  path = FilePath(system_buffer);
+  PathService::Get(base::DIR_PROGRAM_FILESX86, &path);
   path = path.Append(kChromeExePath);
   if (file_util::PathExists(path)) {
     *chrome_path = FilePath(path.value());
@@ -313,7 +307,7 @@ BOOL WINAPI Monitor2EnumPorts(HANDLE,
     SetLastError(ERROR_INVALID_LEVEL);
     return FALSE;
   }
-  *needed_bytes +=  sizeof(kPortName);
+  *needed_bytes += static_cast<DWORD>(cloud_print::kPortNameSize);
   if (ports_size < *needed_bytes) {
     LOG(WARNING) << *needed_bytes << " bytes are required.  Only "
                  << ports_size << " were allocated.";
@@ -337,15 +331,20 @@ BOOL WINAPI Monitor2EnumPorts(HANDLE,
   // EnumPorts to fail until the spooler is restarted.
   // This is NOT mentioned in the documentation.
   wchar_t* string_target =
-      reinterpret_cast<wchar_t*>(ports + ports_size - sizeof(kPortName));
+      reinterpret_cast<wchar_t*>(ports + ports_size -
+      cloud_print::kPortNameSize);
   if (level == 1) {
     PORT_INFO_1* port_info = reinterpret_cast<PORT_INFO_1*>(ports);
     port_info->pName = string_target;
-    StringCbCopy(port_info->pName, sizeof(kPortName), kPortName);
+    StringCbCopy(port_info->pName,
+                 cloud_print::kPortNameSize,
+                 cloud_print::kPortName);
   } else {
     PORT_INFO_2* port_info = reinterpret_cast<PORT_INFO_2*>(ports);
     port_info->pPortName = string_target;
-    StringCbCopy(port_info->pPortName, sizeof(kPortName), kPortName);
+    StringCbCopy(port_info->pPortName,
+                 cloud_print::kPortNameSize,
+                 cloud_print::kPortName);
     port_info->pMonitorName = NULL;
     port_info->pDescription = NULL;
     port_info->fPortType = PORT_TYPE_WRITE;
@@ -452,7 +451,6 @@ BOOL WINAPI Monitor2ReadPort(HANDLE, BYTE*, DWORD, DWORD* read_bytes) {
 
 BOOL WINAPI Monitor2EndDocPort(HANDLE port_handle) {
   LOG(INFO) << "Monitor2EndDocPort";
-  HANDLE process_handle = NULL;
   if (!ValidateCurrentUser()) {
     // TODO(abodenha@chromium.org) Abort the print job.
     return FALSE;
@@ -473,16 +471,7 @@ BOOL WINAPI Monitor2EndDocPort(HANDLE port_handle) {
                   &job_title);
     }
     LaunchPrintDialog(port_data->file_path->value().c_str(),
-                      job_title,
-                      &process_handle);
-
-    // Wait for the print dialog process to exit and then delete the file.
-    // TODO(abodenha@chromium.org) Consider launching a thread to handle the
-    // deletion.
-    if (process_handle != NULL) {
-      WaitForSingleObject(process_handle, INFINITE);
-    }
-    file_util::Delete(*(port_data->file_path), false);
+                      job_title);
   }
   if (port_data->printer_handle != NULL) {
     // Tell the spooler that the job is complete.
@@ -564,15 +553,18 @@ DWORD WINAPI Monitor2XcvDataPort(HANDLE xcv_handle,
   // We don't handle AddPort or DeletePort since we don't support
   // dynamic creation of ports.
   if (lstrcmp(L"MonitorUI", data_name) == 0) {
+    DWORD dll_path_len = 0;
+    FilePath dll_path(GetPortMonitorDllName());
+    dll_path_len = static_cast<DWORD>(dll_path.value().length());
     if (output_data_bytes_needed != NULL) {
-      *output_data_bytes_needed = sizeof(kPortMonitorDllName);
+      *output_data_bytes_needed = dll_path_len;
     }
-    if (output_data_bytes < sizeof(kPortMonitorDllName)) {
+    if (output_data_bytes < dll_path_len) {
         return ERROR_INSUFFICIENT_BUFFER;
     } else {
         ret_val = StringCbCopy(reinterpret_cast<wchar_t*>(output_data),
                                output_data_bytes,
-                               kPortMonitorDllName);
+                               dll_path.value().c_str());
     }
   } else {
     return ERROR_INVALID_PARAMETER;
@@ -630,30 +622,32 @@ MONITORUI* WINAPI InitializePrintMonitorUI(void) {
 }
 
 HRESULT WINAPI DllRegisterServer(void) {
+  base::AtExitManager at_exit_manager;
   if (!cloud_print::CanRegister()) {
     return E_ACCESSDENIED;
   }
   MONITOR_INFO_2 monitor_info = {0};
   // YUCK!!!  I can either copy the constant, const_cast, or define my own
   // MONITOR_INFO_2 that will take const strings.
-  monitor_info.pDLLName = const_cast<LPWSTR>(cloud_print::kPortMonitorDllName);
-  monitor_info.pName = const_cast<LPWSTR>(cloud_print::kPortMonitorDllName);
+  FilePath dll_path(cloud_print::GetPortMonitorDllName());
+  monitor_info.pDLLName = const_cast<LPWSTR>(dll_path.value().c_str());
+  monitor_info.pName = const_cast<LPWSTR>(dll_path.value().c_str());
   if (AddMonitor(NULL, 2, reinterpret_cast<BYTE*>(&monitor_info))) {
     return S_OK;
   }
-  DWORD error_code = GetLastError();
-  return HRESULT_FROM_WIN32(error_code);
+  return cloud_print::GetLastHResult();
 }
 
 HRESULT WINAPI DllUnregisterServer(void) {
+  base::AtExitManager at_exit_manager;
   if (!cloud_print::CanRegister()) {
     return E_ACCESSDENIED;
   }
+  FilePath dll_path(cloud_print::GetPortMonitorDllName());
   if (DeleteMonitor(NULL,
                     NULL,
-                    const_cast<LPWSTR>(cloud_print::kPortMonitorDllName))) {
+                    const_cast<LPWSTR>(dll_path.value().c_str()))) {
     return S_OK;
   }
-  DWORD error_code = GetLastError();
-  return HRESULT_FROM_WIN32(error_code);
+  return cloud_print::GetLastHResult();
 }

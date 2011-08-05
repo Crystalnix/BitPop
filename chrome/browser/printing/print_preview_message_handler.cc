@@ -4,6 +4,7 @@
 
 #include "chrome/browser/printing/print_preview_message_handler.h"
 
+#include "base/memory/ref_counted.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/printing/print_job_manager.h"
 #include "chrome/browser/printing/print_preview_tab_controller.h"
@@ -12,12 +13,28 @@
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/browser/ui/webui/print_preview_handler.h"
 #include "chrome/browser/ui/webui/print_preview_ui.h"
-#include "chrome/browser/ui/webui/print_preview_ui_html_source.h"
-#include "chrome/common/content_restriction.h"
 #include "chrome/common/print_messages.h"
 #include "content/browser/browser_thread.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/tab_contents/tab_contents.h"
+#include "content/common/content_restriction.h"
+
+namespace {
+
+void StopWorker(int document_cookie) {
+  printing::PrintJobManager* print_job_manager =
+      g_browser_process->print_job_manager();
+  scoped_refptr<printing::PrinterQuery> printer_query;
+  print_job_manager->PopPrinterQuery(document_cookie, &printer_query);
+  if (printer_query.get()) {
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        NewRunnableMethod(printer_query.get(),
+                          &printing::PrinterQuery::StopWorker));
+  }
+}
+
+}  // namespace
 
 namespace printing {
 
@@ -39,23 +56,17 @@ TabContents* PrintPreviewMessageHandler::GetPrintPreviewTab() {
   return tab_controller->GetPrintPreviewForTab(tab_contents());
 }
 
+void PrintPreviewMessageHandler::OnRequestPrintPreview() {
+  PrintPreviewTabController::PrintPreview(tab_contents());
+}
+
 void PrintPreviewMessageHandler::OnPagesReadyForPreview(
     const PrintHostMsg_DidPreviewDocument_Params& params) {
   // Always need to stop the worker and send PrintMsg_PrintingDone.
-  PrintJobManager* print_job_manager = g_browser_process->print_job_manager();
-  scoped_refptr<printing::PrinterQuery> printer_query;
-  print_job_manager->PopPrinterQuery(params.document_cookie, &printer_query);
-  if (printer_query.get()) {
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        NewRunnableMethod(printer_query.get(),
-                          &printing::PrinterQuery::StopWorker));
-  }
+  StopWorker(params.document_cookie);
 
   RenderViewHost* rvh = tab_contents()->render_view_host();
-  rvh->Send(new PrintMsg_PrintingDone(rvh->routing_id(),
-                                     params.document_cookie,
-                                     true));
+  rvh->Send(new PrintMsg_PrintingDone(rvh->routing_id(), true));
 
   // Get the print preview tab.
   TabContents* print_preview_tab = GetPrintPreviewTab();
@@ -77,32 +88,45 @@ void PrintPreviewMessageHandler::OnPagesReadyForPreview(
 
   PrintPreviewUI* print_preview_ui =
       static_cast<PrintPreviewUI*>(print_preview_tab->web_ui());
-  PrintPreviewUIHTMLSource* html_source = print_preview_ui->html_source();
-  html_source->SetPrintPreviewData(
-      std::make_pair(shared_buf, params.data_size));
-  print_preview_ui->PreviewDataIsAvailable(
+
+  char* preview_data = static_cast<char*>(shared_buf->memory());
+  uint32 preview_data_size = params.data_size;
+
+  scoped_refptr<RefCountedBytes> html_bytes(new RefCountedBytes);
+  html_bytes->data.resize(preview_data_size);
+  std::vector<unsigned char>::iterator it = html_bytes->data.begin();
+  for (uint32 i = 0; i < preview_data_size; ++i, ++it)
+    *it = *(preview_data + i);
+
+  print_preview_ui->SetPrintPreviewData(html_bytes.get());
+  print_preview_ui->OnPreviewDataIsAvailable(
       params.expected_pages_count,
-      wrapper->print_view_manager()->RenderSourceName());
+      wrapper->print_view_manager()->RenderSourceName(),
+      params.modifiable);
 }
 
-void PrintPreviewMessageHandler::OnPrintPreviewNodeUnderContextMenu() {
-  PrintPreviewTabController::PrintPreview(tab_contents());
-}
+void PrintPreviewMessageHandler::OnPrintPreviewFailed(int document_cookie) {
+  // Always need to stop the worker.
+  StopWorker(document_cookie);
 
-void PrintPreviewMessageHandler::OnScriptInitiatedPrintPreview() {
-  PrintPreviewTabController::PrintPreview(tab_contents());
+  // Inform the print preview tab of the failure.
+  TabContents* print_preview_tab = GetPrintPreviewTab();
+  // User might have closed it already.
+  if (!print_preview_tab)
+    return;
+  print_preview_tab->web_ui()->CallJavascriptFunction("printPreviewFailed");
 }
 
 bool PrintPreviewMessageHandler::OnMessageReceived(
     const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(PrintPreviewMessageHandler, message)
+    IPC_MESSAGE_HANDLER(PrintHostMsg_RequestPrintPreview,
+                        OnRequestPrintPreview)
     IPC_MESSAGE_HANDLER(PrintHostMsg_PagesReadyForPreview,
                         OnPagesReadyForPreview)
-    IPC_MESSAGE_HANDLER(PrintHostMsg_PrintPreviewNodeUnderContextMenu,
-                        OnPrintPreviewNodeUnderContextMenu)
-    IPC_MESSAGE_HANDLER(PrintHostMsg_ScriptInitiatedPrintPreview,
-                        OnScriptInitiatedPrintPreview)
+    IPC_MESSAGE_HANDLER(PrintHostMsg_PrintPreviewFailed,
+                        OnPrintPreviewFailed)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;

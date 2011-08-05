@@ -7,11 +7,13 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #if defined(OS_WIN)
 #include <windows.h>
 #endif
 
+#include "base/logging.h"
 // TODO(avi): remove when not needed
 #include "base/utf_string_conversions.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -20,6 +22,10 @@
 #if defined(OS_WIN)
 #include "ui/gfx/native_theme.h"
 #endif
+
+namespace gfx {
+class Font;
+}
 
 namespace ui {
 class MenuModel;
@@ -88,6 +94,16 @@ class MenuItemView : public View {
     TOPRIGHT
   };
 
+  // Where the menu should be drawn, above or below the bounds (when
+  // the bounds is non-empty).  POSITION_BEST_FIT (default) positions
+  // the menu below the bounds unless the menu does not fit on the
+  // screen and the re is more space above.
+  enum MenuPosition {
+    POSITION_BEST_FIT,
+    POSITION_ABOVE_BOUNDS,
+    POSITION_BELOW_BOUNDS
+  };
+
   // Constructor for use with the top level menu item. This menu is never
   // shown to the user, rather its use as the parent for all menu items.
   explicit MenuItemView(MenuDelegate* delegate);
@@ -127,7 +143,20 @@ class MenuItemView : public View {
   // Hides and cancels the menu. This does nothing if the menu is not open.
   void Cancel();
 
-  // Adds an item to this menu.
+  // Add an item to the menu at a specified index.  ChildrenChanged() should
+  // called after adding menu items if the menu may be active.
+  MenuItemView* AddMenuItemAt(int index,
+                              int item_id,
+                              const std::wstring& label,
+                              const SkBitmap& icon,
+                              Type type);
+
+  // Remove an item from the menu at a specified index.
+  // ChildrenChanged() should be called after removing menu items (whether
+  // the menu may be active or not).
+  void RemoveMenuItemAt(int index);
+
+  // Appends an item to this menu.
   // item_id    The id of the item, used to identify it in delegate callbacks
   //            or (if delegate is NULL) to identify the command associated
   //            with this item with the controller specified in the ctor. Note
@@ -135,10 +164,10 @@ class MenuItemView : public View {
   //            ("NULL command, no item selected")
   // label      The text label shown.
   // type       The type of item.
-  void AppendMenuItem(int item_id,
+  MenuItemView* AppendMenuItem(int item_id,
                       const std::wstring& label,
                       Type type) {
-    AppendMenuItemImpl(item_id, label, SkBitmap(), type);
+    return AppendMenuItemImpl(item_id, label, SkBitmap(), type);
   }
 
   // Append a submenu to this menu.
@@ -158,15 +187,15 @@ class MenuItemView : public View {
 
   // This is a convenience for standard text label menu items where the label
   // is provided with this call.
-  void AppendMenuItemWithLabel(int item_id,
+  MenuItemView* AppendMenuItemWithLabel(int item_id,
                                const std::wstring& label) {
-    AppendMenuItem(item_id, label, NORMAL);
+    return AppendMenuItem(item_id, label, NORMAL);
   }
 
   // This is a convenience for text label menu items where the label is
   // provided by the delegate.
-  void AppendDelegateMenuItem(int item_id) {
-    AppendMenuItem(item_id, std::wstring(), NORMAL);
+  MenuItemView* AppendDelegateMenuItem(int item_id) {
+    return AppendMenuItem(item_id, std::wstring(), NORMAL);
   }
 
   // Adds a separator to this menu
@@ -177,10 +206,10 @@ class MenuItemView : public View {
   // Appends a menu item with an icon. This is for the menu item which
   // needs an icon. Calling this function forces the Menu class to draw
   // the menu, instead of relying on Windows.
-  void AppendMenuItemWithIcon(int item_id,
+  MenuItemView* AppendMenuItemWithIcon(int item_id,
                               const std::wstring& label,
                               const SkBitmap& icon) {
-    AppendMenuItemImpl(item_id, label, icon, NORMAL);
+    return AppendMenuItemImpl(item_id, label, icon, NORMAL);
   }
 
   // Creates a menu item for the specified entry in the model and appends it as
@@ -261,7 +290,7 @@ class MenuItemView : public View {
 
   // Returns the mnemonic for this MenuItemView, or 0 if this MenuItemView
   // doesn't have a mnemonic.
-  wchar_t GetMnemonic();
+  char16 GetMnemonic();
 
   // Do we have icons? This only has effect on the top menu. Turning this on
   // makes the menus slightly wider and taller.
@@ -286,6 +315,19 @@ class MenuItemView : public View {
   // Returns true if the menu has mnemonics. This only useful on the root menu
   // item.
   bool has_mnemonics() const { return has_mnemonics_; }
+
+  // Set top and bottom margins in pixels.  If no margin is set or a
+  // negative margin is specified then MenuConfig values are used.
+  void set_margins(int top_margin, int bottom_margin) {
+    top_margin_ = top_margin;
+    bottom_margin_ = bottom_margin;
+  }
+
+  // Set the position of the menu with respect to the bounds (top
+  // level only).
+  void set_menu_position(MenuPosition menu_position) {
+    requested_menu_position_ = menu_position;
+  }
 
  protected:
   // Creates a MenuItemView. This is used by the various AddXXX methods.
@@ -316,6 +358,9 @@ class MenuItemView : public View {
   // Returns the flags passed to DrawStringInt.
   int GetDrawStringFlags();
 
+  // Returns the font to use for menu text.
+  const gfx::Font& GetFont();
+
   // If this menu item has no children a child is added showing it has no
   // children. Otherwise AddEmtpyMenus is recursively invoked on child menu
   // items that have children.
@@ -334,10 +379,12 @@ class MenuItemView : public View {
   void PaintButton(gfx::Canvas* canvas, PaintButtonMode mode);
 
 #if defined(OS_WIN)
-  // Paints the check/radio button indicator. |part_id| is the id passed to the
-  // native theme drawing routines.
+  enum SelectionState { SELECTED, UNSELECTED };
+
+  // Paints the check/radio button indicator.
   void PaintCheck(gfx::Canvas* canvas,
                   gfx::NativeTheme::State state,
+                  SelectionState selection_state,
                   const MenuConfig& config);
 #endif
 
@@ -360,6 +407,13 @@ class MenuItemView : public View {
 
   // Calculates the preferred size.
   gfx::Size CalculatePreferredSize();
+
+  // Used by MenuController to cache the menu position in use by the
+  // active menu.
+  MenuPosition actual_menu_position() const { return actual_menu_position_; }
+  void set_actual_menu_position(MenuPosition actual_menu_position) {
+    actual_menu_position_ = actual_menu_position;
+  }
 
   // The delegate. This is only valid for the root menu item. You shouldn't
   // use this directly, instead use GetDelegate() which walks the tree as
@@ -422,6 +476,19 @@ class MenuItemView : public View {
   // Previously calculated preferred size to reduce GetStringWidth calls in
   // GetPreferredSize.
   gfx::Size pref_size_;
+
+  // Removed items to be deleted in ChildrenChanged().
+  std::vector<View*> removed_items_;
+
+  // Margins in pixels.
+  int top_margin_;
+  int bottom_margin_;
+
+  // |menu_position_| is the requested position with respect to the bounds.
+  // |actual_menu_position_| is used by the controller to cache the
+  // position of the menu being shown.
+  MenuPosition requested_menu_position_;
+  MenuPosition actual_menu_position_;
 
   DISALLOW_COPY_AND_ASSIGN(MenuItemView);
 };

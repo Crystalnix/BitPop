@@ -5,7 +5,10 @@
 #include "base/command_line.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/sync/api/syncable_service.h"
+#include "chrome/browser/sync/glue/app_change_processor.h"
 #include "chrome/browser/sync/glue/app_data_type_controller.h"
+#include "chrome/browser/sync/glue/app_model_associator.h"
 #include "chrome/browser/sync/glue/autofill_change_processor.h"
 #include "chrome/browser/sync/glue/autofill_data_type_controller.h"
 #include "chrome/browser/sync/glue/autofill_model_associator.h"
@@ -20,15 +23,15 @@
 #include "chrome/browser/sync/glue/extension_data_type_controller.h"
 #include "chrome/browser/sync/glue/extension_model_associator.h"
 #include "chrome/browser/sync/glue/extension_sync_traits.h"
+#include "chrome/browser/sync/glue/generic_change_processor.h"
 #include "chrome/browser/sync/glue/password_change_processor.h"
 #include "chrome/browser/sync/glue/password_data_type_controller.h"
 #include "chrome/browser/sync/glue/password_model_associator.h"
-#include "chrome/browser/sync/glue/preference_change_processor.h"
 #include "chrome/browser/sync/glue/preference_data_type_controller.h"
-#include "chrome/browser/sync/glue/preference_model_associator.h"
 #include "chrome/browser/sync/glue/session_change_processor.h"
 #include "chrome/browser/sync/glue/session_data_type_controller.h"
 #include "chrome/browser/sync/glue/session_model_associator.h"
+#include "chrome/browser/sync/glue/syncable_service_adapter.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
 #include "chrome/browser/sync/glue/theme_change_processor.h"
 #include "chrome/browser/sync/glue/theme_data_type_controller.h"
@@ -41,7 +44,9 @@
 #include "chrome/browser/webdata/web_data_service.h"
 #include "chrome/common/chrome_switches.h"
 
+using browser_sync::AppChangeProcessor;
 using browser_sync::AppDataTypeController;
+using browser_sync::AppModelAssociator;
 using browser_sync::AutofillChangeProcessor;
 using browser_sync::AutofillProfileChangeProcessor;
 using browser_sync::AutofillDataTypeController;
@@ -57,12 +62,11 @@ using browser_sync::DataTypeManagerImpl;
 using browser_sync::ExtensionChangeProcessor;
 using browser_sync::ExtensionDataTypeController;
 using browser_sync::ExtensionModelAssociator;
+using browser_sync::GenericChangeProcessor;
 using browser_sync::PasswordChangeProcessor;
 using browser_sync::PasswordDataTypeController;
 using browser_sync::PasswordModelAssociator;
-using browser_sync::PreferenceChangeProcessor;
 using browser_sync::PreferenceDataTypeController;
-using browser_sync::PreferenceModelAssociator;
 using browser_sync::SessionChangeProcessor;
 using browser_sync::SessionDataTypeController;
 using browser_sync::SessionModelAssociator;
@@ -86,7 +90,10 @@ ProfileSyncService* ProfileSyncFactoryImpl::CreateProfileSyncService(
 
   ProfileSyncService* pss = new ProfileSyncService(
       this, profile_, cros_user);
+  return pss;
+}
 
+void ProfileSyncFactoryImpl::RegisterDataTypes(ProfileSyncService* pss) {
   // App sync is enabled by default.  Register unless explicitly
   // disabled.
   if (!command_line_->HasSwitch(switches::kDisableSyncApps)) {
@@ -98,7 +105,7 @@ ProfileSyncService* ProfileSyncFactoryImpl::CreateProfileSyncService(
   // disabled.
   if (!command_line_->HasSwitch(switches::kDisableSyncAutofill)) {
     pss->RegisterDataTypeController(
-        new AutofillDataTypeController(this, profile_, pss));
+        new AutofillDataTypeController(this, profile_));
   }
 
   // Bookmark sync is enabled by default.  Register unless explicitly
@@ -119,7 +126,7 @@ ProfileSyncService* ProfileSyncFactoryImpl::CreateProfileSyncService(
   // disabled.
   if (!command_line_->HasSwitch(switches::kDisableSyncPasswords)) {
     pss->RegisterDataTypeController(
-        new PasswordDataTypeController(this, profile_, pss));
+        new PasswordDataTypeController(this, profile_));
   }
 
   // Preference sync is enabled by default.  Register unless explicitly
@@ -139,7 +146,7 @@ ProfileSyncService* ProfileSyncFactoryImpl::CreateProfileSyncService(
   // explicitly enabled.
   if (command_line_->HasSwitch(switches::kEnableSyncTypedUrls)) {
     pss->RegisterDataTypeController(
-        new TypedUrlDataTypeController(this, profile_, pss));
+        new TypedUrlDataTypeController(this, profile_));
   }
 
   // Session sync is disabled by default.  Register only if explicitly
@@ -150,10 +157,9 @@ ProfileSyncService* ProfileSyncFactoryImpl::CreateProfileSyncService(
   }
 
   if (!command_line_->HasSwitch(switches::kDisableSyncAutofillProfile)) {
-    pss->RegisterDataTypeController(new AutofillProfileDataTypeController(
-        this, profile_, pss));
+    pss->RegisterDataTypeController(
+        new AutofillProfileDataTypeController(this, profile_));
   }
-  return pss;
 }
 
 DataTypeManager* ProfileSyncFactoryImpl::CreateDataTypeManager(
@@ -166,17 +172,16 @@ ProfileSyncFactory::SyncComponents
 ProfileSyncFactoryImpl::CreateAppSyncComponents(
     ProfileSyncService* profile_sync_service,
     UnrecoverableErrorHandler* error_handler) {
-  browser_sync::ExtensionSyncTraits traits = browser_sync::GetAppSyncTraits();
   // For now we simply use extensions sync objects with the app sync
   // traits.  If apps become more than simply extensions, we may have
   // to write our own apps model associator and/or change processor.
   ExtensionServiceInterface* extension_service =
       profile_sync_service->profile()->GetExtensionService();
   sync_api::UserShare* user_share = profile_sync_service->GetUserShare();
-  ExtensionModelAssociator* model_associator =
-      new ExtensionModelAssociator(traits, extension_service, user_share);
-  ExtensionChangeProcessor* change_processor =
-      new ExtensionChangeProcessor(traits, error_handler);
+  AppModelAssociator* model_associator =
+      new AppModelAssociator(extension_service, user_share);
+  AppChangeProcessor* change_processor =
+      new AppChangeProcessor(error_handler);
   return SyncComponents(model_associator, change_processor);
 }
 
@@ -239,15 +244,13 @@ ProfileSyncFactory::SyncComponents
 ProfileSyncFactoryImpl::CreateExtensionSyncComponents(
     ProfileSyncService* profile_sync_service,
     UnrecoverableErrorHandler* error_handler) {
-  browser_sync::ExtensionSyncTraits traits =
-      browser_sync::GetExtensionSyncTraits();
   ExtensionServiceInterface* extension_service =
       profile_sync_service->profile()->GetExtensionService();
   sync_api::UserShare* user_share = profile_sync_service->GetUserShare();
   ExtensionModelAssociator* model_associator =
-      new ExtensionModelAssociator(traits, extension_service, user_share);
+      new ExtensionModelAssociator(extension_service, user_share);
   ExtensionChangeProcessor* change_processor =
-      new ExtensionChangeProcessor(traits, error_handler);
+      new ExtensionChangeProcessor(error_handler);
   return SyncComponents(model_associator, change_processor);
 }
 
@@ -270,12 +273,16 @@ ProfileSyncFactory::SyncComponents
 ProfileSyncFactoryImpl::CreatePreferenceSyncComponents(
     ProfileSyncService* profile_sync_service,
     UnrecoverableErrorHandler* error_handler) {
-  PreferenceModelAssociator* model_associator =
-      new PreferenceModelAssociator(profile_sync_service);
-  PreferenceChangeProcessor* change_processor =
-      new PreferenceChangeProcessor(model_associator,
-                                    error_handler);
-  return SyncComponents(model_associator, change_processor);
+  SyncableService* pref_sync_service =
+      profile_->GetPrefs()->GetSyncableService();
+  sync_api::UserShare* user_share = profile_sync_service->GetUserShare();
+  GenericChangeProcessor* change_processor =
+      new GenericChangeProcessor(pref_sync_service, error_handler, user_share);
+  browser_sync::SyncableServiceAdapter* sync_service_adapter =
+      new browser_sync::SyncableServiceAdapter(syncable::PREFERENCES,
+                                               pref_sync_service,
+                                               change_processor);
+  return SyncComponents(sync_service_adapter, change_processor);
 }
 
 ProfileSyncFactory::SyncComponents

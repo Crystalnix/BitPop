@@ -8,12 +8,13 @@
 
 #include <CoreFoundation/CoreFoundation.h>
 
-#include "base/callback.h"
+#include "base/callback_old.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/gl/gl_context.h"
+#include "ui/gfx/gl/gl_surface.h"
 #include "ui/gfx/surface/transport_dib.h"
 
 // Should not include GL headers in a header file. Forward declare these types
@@ -128,7 +129,8 @@ class AcceleratedSurface {
   // speaking, we do not need to allocate a GL context all of the
   // time. We only need one if (a) we are using the IOSurface code
   // path, or (b) if we are allocating an FBO internally.
-  scoped_ptr<gfx::GLContext> gl_context_;
+  scoped_refptr<gfx::GLSurface> gl_surface_;
+  scoped_refptr<gfx::GLContext> gl_context_;
   // Either |io_surface_| or |transport_dib_| is a valid pointer, but not both.
   // |io_surface_| is non-NULL if the IOSurface APIs are supported (Mac OS X
   // 10.6 and later).

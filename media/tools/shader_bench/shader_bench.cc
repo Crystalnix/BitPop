@@ -22,6 +22,7 @@
 #include "ui/gfx/gl/gl_bindings.h"
 #include "ui/gfx/gl/gl_context.h"
 #include "ui/gfx/gl/gl_implementation.h"
+#include "ui/gfx/gl/gl_surface.h"
 #include "ui/gfx/native_widget_types.h"
 
 #if defined(OS_LINUX)
@@ -130,11 +131,12 @@ int main(int argc, char** argv) {
 
   // Initialize window and graphics context.
   base::AtExitManager at_exit_manager;
-  gfx::GLContext::InitializeOneOff();
+  gfx::GLSurface::InitializeOneOff();
   scoped_ptr<media::Window> window(new media::Window(width, height));
-  gfx::GLContext* context =
-      gfx::GLContext::CreateViewGLContext(window->PluginWindow(), false);
-  context->MakeCurrent();
+  gfx::GLSurface* surface =
+      gfx::GLSurface::CreateViewGLSurface(window->PluginWindow());
+  gfx::GLContext* context = gfx::GLContext::CreateGLContext(NULL, surface);
+  context->MakeCurrent(surface);
   // This sets D3DPRESENT_INTERVAL_IMMEDIATE on Windows.
   context->SetSwapInterval(0);
 
@@ -153,7 +155,7 @@ int main(int argc, char** argv) {
   for (int i = 0; i < kNumPainters; i++) {
     scoped_ptr<GPUPainter> painter(painters[i].painter);
     painter->LoadFrames(&frames);
-    painter->SetGLContext(context);
+    painter->SetGLContext(surface, context);
     painter->Initialize(width, height);
     printf("Running %s tests...", painters[i].name);
     RunTest(window.get(), painter.get());

@@ -29,7 +29,7 @@ class ClientSideDetectionHost : public TabContentsObserver {
  public:
   // The caller keeps ownership of the tab object and is responsible for
   // ensuring that it stays valid for the entire lifetime of this object.
-  explicit ClientSideDetectionHost(TabContents* tab);
+  static ClientSideDetectionHost* Create(TabContents* tab);
   virtual ~ClientSideDetectionHost();
 
   // From TabContentsObserver.
@@ -39,13 +39,15 @@ class ClientSideDetectionHost : public TabContentsObserver {
   // callbacks that could show an interstitial, and check to see whether
   // we should classify the new URL.
   virtual void DidNavigateMainFramePostCommit(
-      const NavigationController::LoadCommittedDetails& details,
+      const content::LoadCommittedDetails& details,
       const ViewHostMsg_FrameNavigate_Params& params);
 
  private:
   friend class ClientSideDetectionHostTest;
   class ShouldClassifyUrlRequest;
   friend class ShouldClassifyUrlRequest;
+
+  explicit ClientSideDetectionHost(TabContents* tab);
 
   // Verdict is an encoded ClientPhishingRequest protocol message.
   void OnDetectedPhishingSite(const std::string& verdict);

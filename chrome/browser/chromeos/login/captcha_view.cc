@@ -22,12 +22,10 @@
 #include "views/controls/textfield/textfield.h"
 #include "views/layout/grid_layout.h"
 #include "views/layout/layout_constants.h"
-#include "views/widget/widget_gtk.h"
 #include "views/window/window.h"
 
 using views::Label;
 using views::Textfield;
-using views::WidgetGtk;
 
 namespace chromeos {
 
@@ -88,6 +86,14 @@ bool CaptchaView::Accept() {
   if (delegate_)
     delegate_->OnCaptchaEntered(UTF16ToUTF8(captcha_textfield_->text()));
   return true;
+}
+
+bool CaptchaView::IsModal() const {
+  return true;
+}
+
+views::View* CaptchaView::GetContentsView() {
+  return this;
 }
 
 std::wstring CaptchaView::GetWindowTitle() const {

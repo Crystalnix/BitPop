@@ -6,20 +6,11 @@
 
 #include "base/rand_util.h"
 
-namespace pp {
-namespace shared_impl {
+namespace ppapi {
 
 // static
 void CryptoImpl::GetRandomBytes(char* buffer, uint32_t num_bytes) {
-  // Note: this is a copy of WebKitClientImpl::cryptographicallyRandomValues.
-  uint64 bytes = 0;
-  for (uint32_t i = 0; i < num_bytes; ++i) {
-    uint32_t offset = i % sizeof(bytes);
-    if (!offset)
-      bytes = base::RandUint64();
-    buffer[i] = reinterpret_cast<char*>(&bytes)[offset];
-  }
+  base::RandBytes(buffer, num_bytes);
 }
 
-}  // namespace shared_impl
-}  // namespace pp
+}  // namespace ppapi

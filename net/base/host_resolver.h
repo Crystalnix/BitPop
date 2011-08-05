@@ -13,6 +13,7 @@
 #include "net/base/address_family.h"
 #include "net/base/completion_callback.h"
 #include "net/base/host_port_pair.h"
+#include "net/base/net_api.h"
 #include "net/base/request_priority.h"
 
 namespace net {
@@ -32,11 +33,11 @@ class NetLog;
 // request at a time is to create a SingleRequestHostResolver wrapper around
 // HostResolver (which will automatically cancel the single request when it
 // goes out of scope).
-class HostResolver {
+class NET_API HostResolver {
  public:
   // The parameters for doing a Resolve(). A hostname and port are required,
   // the rest are optional (and have reasonable defaults).
-  class RequestInfo {
+  class NET_API RequestInfo {
    public:
     explicit RequestInfo(const HostPortPair& host_port_pair);
 
@@ -131,6 +132,11 @@ class HostResolver {
   // concurrency.
   static const size_t kDefaultParallelism = 0;
 
+  // This value can be passed into CreateSystemHostResolver as the
+  // |max_retry_attempts| parameter. This is the maximum number of times we
+  // will retry for host resolution.
+  static const size_t kDefaultRetryAttempts = -1;
+
   // If any completion callbacks are pending when the resolver is destroyed,
   // the host resolutions are cancelled, and the completion callbacks will not
   // be called.
@@ -196,7 +202,7 @@ class HostResolver {
 // This class represents the task of resolving a hostname (or IP address
 // literal) to an AddressList object.  It wraps HostResolver to resolve only a
 // single hostname at a time and cancels this request when going out of scope.
-class SingleRequestHostResolver {
+class NET_API SingleRequestHostResolver {
  public:
   // |resolver| must remain valid for the lifetime of |this|.
   explicit SingleRequestHostResolver(HostResolver* resolver);
@@ -235,14 +241,18 @@ class SingleRequestHostResolver {
   DISALLOW_COPY_AND_ASSIGN(SingleRequestHostResolver);
 };
 
-// Creates a HostResolver implementation using |resolver_proc| as resolver,
-// (which if NULL, will default to getaddrinfo() wrapper) that queries the
-// underlying system, |max_concurrent_resolves| is how many resolve
-// requests will be allowed to run in parallel. Pass
-// HostResolver::kDefaultParallelism to choose a default value.
-HostResolver* CreateSystemHostResolver(size_t max_concurrent_resolves,
-                                       HostResolverProc* resolver_proc,
-                                       NetLog* net_log);
+// Creates a HostResolver implementation that queries the underlying system.
+// (Except if a unit-test has changed the global HostResolverProc using
+// ScopedHostResolverProc to intercept requests to the system).
+// |max_concurrent_resolves| is how many resolve requests will be allowed to
+// run in parallel. Pass HostResolver::kDefaultParallelism to choose a
+// default value.
+// |max_retry_attempts| is the maximum number of times we will retry for host
+// resolution. Pass HostResolver::kDefaultRetryAttempts to choose a default
+// value.
+NET_API HostResolver* CreateSystemHostResolver(size_t max_concurrent_resolves,
+                                               size_t max_retry_attempts,
+                                               NetLog* net_log);
 
 }  // namespace net
 

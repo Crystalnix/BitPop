@@ -1,4 +1,4 @@
-# Copyright (c) 2010 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -147,9 +147,10 @@
       'variables': {
         'chrome_exe_target': 1,
         'use_system_xdg_utils%': 0,
+        'disable_pie%': 0,
       },
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['os_posix == 1 and OS != "mac"', {
           'actions': [
             {
               'action_name': 'manpage',
@@ -187,12 +188,18 @@
             },
           ],
           'conditions': [
-            [ 'linux_use_tcmalloc==1', {
+            ['linux_use_tcmalloc==1', {
                 'dependencies': [
                   '<(allocator_target)',
                 ],
               },
             ],
+            # TODO(rkc): Remove this once we have a fix for remote gdb
+            # and are able to correctly get section header offsets for
+            # pie executables. Currently -pie breaks remote debugging.
+            ['disable_pie==1', {
+              'ldflags' : ['-nopie'],
+            }],
             ['use_system_xdg_utils==0', {
               'copies': [
                 {
@@ -377,12 +384,14 @@
               # Keystone keys from this plist and not the framework's, and
               # the ticket will reference this Info.plist to determine the tag
               # of the installed product.  Use -s1 to include Subversion
-              # information.
+              # information.  The -p flag controls whether to insert PDF as a
+              # supported type identifier that can be opened.
               'postbuild_name': 'Tweak Info.plist',
               'action': ['<(tweak_info_plist_path)',
                          '-b0',
                          '-k<(mac_keystone)',
                          '-s1',
+                         '-p<(internal_pdf)',
                          '<(branding)',
                          '<(mac_bundle_id)'],
             },
@@ -449,6 +458,7 @@
           'dependencies': [
             'installer_util',
             'installer_util_strings',
+            '../base/base.gyp:base',
             '../breakpad/breakpad.gyp:breakpad_handler',
             '../breakpad/breakpad.gyp:breakpad_sender',
             '../sandbox/sandbox.gyp:sandbox',
@@ -461,22 +471,6 @@
               'ProgramDatabaseFile': '$(OutDir)\\chrome_exe.pdb',
             },
           },
-        }],
-      ],
-    },
-    {
-      'target_name': 'chrome_mesa',
-      'type': 'none',
-      'dependencies': [
-        'chrome',
-        '../third_party/mesa/mesa.gyp:osmesa',
-      ],
-      'conditions': [
-        ['OS=="mac"', {
-          'copies': [{
-            'destination': '<(PRODUCT_DIR)/<(mac_product_name).app/Contents/Versions/<(version_full)/<(mac_product_name) Helper.app/Contents/MacOS/',
-            'files': ['<(PRODUCT_DIR)/osmesa.so'],
-          }],
         }],
       ],
     },

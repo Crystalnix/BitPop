@@ -14,12 +14,12 @@
 #include "content/common/child_process.h"
 #include "content/common/content_client.h"
 #include "content/common/content_switches.h"
-#include "content/common/gpu_messages.h"
+#include "content/common/gpu/gpu_messages.h"
 #include "content/gpu/gpu_info_collector.h"
 #include "content/gpu/gpu_watchdog_thread.h"
 #include "ipc/ipc_channel_handle.h"
-#include "ui/gfx/gl/gl_context.h"
 #include "ui/gfx/gl/gl_implementation.h"
+#include "ui/gfx/gl/gl_surface.h"
 
 #if defined(OS_MACOSX)
 #include "content/common/sandbox_init_wrapper.h"
@@ -86,12 +86,8 @@ void GpuChildThread::Init(const base::Time& process_start_time) {
 
 bool GpuChildThread::Send(IPC::Message* msg) {
   // The GPU process must never send a synchronous IPC message to the browser
-  // process. This could result in deadlock. Unfortunately linux does this for
-  // GpuHostMsg_ResizeXID. TODO(apatrick): fix this before issuing any GL calls
-  // on the browser process' GPU thread.
-#if !defined(OS_LINUX)
-    DCHECK(!msg->is_sync());
-#endif
+  // process. This could result in deadlock.
+  DCHECK(!msg->is_sync());
 
   return ChildThread::Send(msg);
 }
@@ -102,6 +98,7 @@ bool GpuChildThread::OnControlMessageReceived(const IPC::Message& msg) {
   IPC_BEGIN_MESSAGE_MAP_EX(GpuChildThread, msg, msg_is_ok)
     IPC_MESSAGE_HANDLER(GpuMsg_Initialize, OnInitialize)
     IPC_MESSAGE_HANDLER(GpuMsg_CollectGraphicsInfo, OnCollectGraphicsInfo)
+    IPC_MESSAGE_HANDLER(GpuMsg_Clean, OnClean)
     IPC_MESSAGE_HANDLER(GpuMsg_Crash, OnCrash)
     IPC_MESSAGE_HANDLER(GpuMsg_Hang, OnHang)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -115,12 +112,16 @@ bool GpuChildThread::OnControlMessageReceived(const IPC::Message& msg) {
 }
 
 void GpuChildThread::OnInitialize() {
-  logging::SetLogMessageHandler(GpuProcessLogMessageHandler);
+  // We don't need to pipe log messages if we are running the GPU thread in
+  // the browser process.
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess) &&
+      !CommandLine::ForCurrentProcess()->HasSwitch(switches::kInProcessGPU))
+    logging::SetLogMessageHandler(GpuProcessLogMessageHandler);
 
   // Load the GL implementation and locate the bindings before starting the GPU
   // watchdog because this can take a lot of time and the GPU watchdog might
   // terminate the GPU process.
-  if (!gfx::GLContext::InitializeOneOff()) {
+  if (!gfx::GLSurface::InitializeOneOff()) {
     LOG(INFO) << "GLContext::InitializeOneOff failed";
     MessageLoop::current()->Quit();
     return;
@@ -193,7 +194,7 @@ void GpuChildThread::OnInitialize() {
   gpu_channel_manager_.reset(new GpuChannelManager(
       this,
       watchdog_thread_,
-      ChildProcess::current()->io_message_loop(),
+      ChildProcess::current()->io_message_loop_proxy(),
       ChildProcess::current()->GetShutDownEvent()));
 
   // Ensure the browser process receives the GPU info before a reply to any
@@ -230,6 +231,12 @@ void GpuChildThread::OnCollectGraphicsInfo() {
   }
 #endif
   Send(new GpuHostMsg_GraphicsInfoCollected(gpu_info_));
+}
+
+void GpuChildThread::OnClean() {
+  LOG(INFO) << "GPU: Removing all contexts";
+  if (gpu_channel_manager_.get())
+    gpu_channel_manager_->LoseAllContexts();
 }
 
 void GpuChildThread::OnCrash() {

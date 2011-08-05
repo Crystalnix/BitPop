@@ -90,44 +90,72 @@ class InstallationValidator {
    public:
     virtual ~ProductRules() { }
     virtual BrowserDistribution::Type distribution_type() const = 0;
-    virtual void AddProductSwitchExpectations(
+    virtual void AddUninstallSwitchExpectations(
         const InstallationState& machine_state,
         bool system_install,
         const ProductState& product_state,
         SwitchExpectations* expectations) const = 0;
+    virtual void AddRenameSwitchExpectations(
+        const InstallationState& machine_state,
+        bool system_install,
+        const ProductState& product_state,
+        SwitchExpectations* expectations) const = 0;
+    // Return true if the rules allow usagestats setting.
+    virtual bool UsageStatsAllowed(const ProductState& product_state) const = 0;
   };
 
   // Validation rules for the Chrome browser.
   class ChromeRules : public ProductRules {
    public:
     virtual BrowserDistribution::Type distribution_type() const OVERRIDE;
-    virtual void AddProductSwitchExpectations(
+    virtual void AddUninstallSwitchExpectations(
         const InstallationState& machine_state,
         bool system_install,
         const ProductState& product_state,
         SwitchExpectations* expectations) const OVERRIDE;
+    virtual void AddRenameSwitchExpectations(
+        const InstallationState& machine_state,
+        bool system_install,
+        const ProductState& product_state,
+        SwitchExpectations* expectations) const OVERRIDE;
+    virtual bool UsageStatsAllowed(
+        const ProductState& product_state) const OVERRIDE;
   };
 
   // Validation rules for Chrome Frame.
   class ChromeFrameRules : public ProductRules {
    public:
     virtual BrowserDistribution::Type distribution_type() const OVERRIDE;
-    virtual void AddProductSwitchExpectations(
+    virtual void AddUninstallSwitchExpectations(
         const InstallationState& machine_state,
         bool system_install,
         const ProductState& product_state,
         SwitchExpectations* expectations) const OVERRIDE;
+    virtual void AddRenameSwitchExpectations(
+        const InstallationState& machine_state,
+        bool system_install,
+        const ProductState& product_state,
+        SwitchExpectations* expectations) const OVERRIDE;
+    virtual bool UsageStatsAllowed(
+        const ProductState& product_state) const OVERRIDE;
   };
 
   // Validation rules for the multi-install Chrome binaries.
   class ChromeBinariesRules : public ProductRules {
    public:
     virtual BrowserDistribution::Type distribution_type() const OVERRIDE;
-    virtual void AddProductSwitchExpectations(
+    virtual void AddUninstallSwitchExpectations(
         const InstallationState& machine_state,
         bool system_install,
         const ProductState& product_state,
         SwitchExpectations* expectations) const OVERRIDE;
+    virtual void AddRenameSwitchExpectations(
+        const InstallationState& machine_state,
+        bool system_install,
+        const ProductState& product_state,
+        SwitchExpectations* expectations) const OVERRIDE;
+    virtual bool UsageStatsAllowed(
+        const ProductState& product_state) const OVERRIDE;
   };
 
   struct ProductContext {
@@ -172,6 +200,8 @@ class InstallationValidator {
                                           bool* is_valid);
   static void ValidateAppCommands(const ProductContext& ctx,
                                   bool* is_valid);
+  static void ValidateUsageStats(const ProductContext& ctx,
+                                 bool* is_valid);
   static void ValidateProduct(const InstallationState& machine_state,
                               bool system_install,
                               const ProductState& product_state,

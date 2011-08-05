@@ -11,7 +11,7 @@
 
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_temp_dir.h"
+#include "base/scoped_temp_dir.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/logging_chrome.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -30,7 +30,8 @@ class SignedSettingsTempStorageTest : public ::testing::Test {
     FilePath temp_file;
     ASSERT_TRUE(
         file_util::CreateTemporaryFileInDir(temp_dir_.path(), &temp_file));
-    local_state_.reset(PrefService::CreatePrefService(temp_file, NULL, NULL));
+    local_state_.reset(
+        PrefService::CreatePrefService(temp_file, NULL, NULL, false));
     ASSERT_TRUE(NULL != local_state_.get());
     SignedSettingsTempStorage::RegisterPrefs(local_state_.get());
   }

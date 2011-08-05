@@ -54,7 +54,6 @@
 #include "base/metrics/histogram.h"
 #include "base/string_tokenizer.h"
 #include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "googleurl/src/gurl.h"
 #include "googleurl/src/url_canon.h"
 #include "net/base/net_util.h"
@@ -77,6 +76,8 @@ const size_t CookieMonster::kPurgeCookies               = 300;
 const int CookieMonster::kSafeFromGlobalPurgeDays       = 30;
 
 namespace {
+
+typedef std::vector<CookieMonster::CanonicalCookie*> CanonicalCookieVector;
 
 // Default minimum delay after updating a cookie's LastAccessDate before we
 // will update it again.
@@ -305,7 +306,7 @@ Time CanonExpiration(const CookieMonster::ParsedCookie& pc,
   Time expiration_time = CanonExpirationInternal(pc, current);
 
   if (options.force_session()) {
-    // Only override the expiry  adte if it's in the future. If the expiry date
+    // Only override the expiry date if it's in the future. If the expiry date
     // is before the creation date, the cookie is supposed to be deleted.
     if (expiration_time.is_null() || expiration_time > current)
       return Time();
@@ -379,6 +380,38 @@ ChangeCausePair ChangeCauseMapping[] = {
   // DELETE_COOKIE_LAST_ENTRY
   { CookieMonster::Delegate::CHANGE_COOKIE_EXPLICIT, false }
 };
+
+std::string BuildCookieLine(const CanonicalCookieVector& cookies) {
+  std::string cookie_line;
+  for (CanonicalCookieVector::const_iterator it = cookies.begin();
+       it != cookies.end(); ++it) {
+    if (it != cookies.begin())
+      cookie_line += "; ";
+    // In Mozilla if you set a cookie like AAAA, it will have an empty token
+    // and a value of AAAA.  When it sends the cookie back, it will send AAAA,
+    // so we need to avoid sending =AAAA for a blank token value.
+    if (!(*it)->Name().empty())
+      cookie_line += (*it)->Name() + "=";
+    cookie_line += (*it)->Value();
+  }
+  return cookie_line;
+}
+
+void BuildCookieInfoList(const CanonicalCookieVector& cookies,
+                         std::vector<CookieStore::CookieInfo>* cookie_infos) {
+  for (CanonicalCookieVector::const_iterator it = cookies.begin();
+       it != cookies.end(); ++it) {
+    const CookieMonster::CanonicalCookie* cookie = *it;
+    CookieStore::CookieInfo cookie_info;
+
+    cookie_info.name = cookie->Name();
+    cookie_info.creation_date = cookie->CreationDate();
+    cookie_info.mac_key = cookie->MACKey();
+    cookie_info.mac_algorithm = cookie->MACAlgorithm();
+
+    cookie_infos->push_back(cookie_info);
+  }
+}
 
 }  // namespace
 
@@ -549,9 +582,14 @@ bool CookieMonster::SetCookieWithDetails(
   Time creation_time = CurrentTime();
   last_time_seen_ = creation_time;
 
+  // TODO(abarth): Take these values as parameters.
+  std::string mac_key;
+  std::string mac_algorithm;
+
   scoped_ptr<CanonicalCookie> cc;
   cc.reset(CanonicalCookie::Create(
       url, name, value, domain, path,
+      mac_key, mac_algorithm,
       creation_time, expiration_time,
       secure, http_only));
 
@@ -771,35 +809,49 @@ std::string CookieMonster::GetCookiesWithOptions(const GURL& url,
   base::AutoLock autolock(lock_);
   InitIfNecessary();
 
-  if (!HasCookieableScheme(url)) {
+  if (!HasCookieableScheme(url))
     return std::string();
-  }
 
   TimeTicks start_time(TimeTicks::Now());
 
-  // Get the cookies for this host and its domain(s).
   std::vector<CanonicalCookie*> cookies;
   FindCookiesForHostAndDomain(url, options, true, &cookies);
   std::sort(cookies.begin(), cookies.end(), CookieSorter);
 
-  std::string cookie_line;
-  for (std::vector<CanonicalCookie*>::const_iterator it = cookies.begin();
-       it != cookies.end(); ++it) {
-    if (it != cookies.begin())
-      cookie_line += "; ";
-    // In Mozilla if you set a cookie like AAAA, it will have an empty token
-    // and a value of AAAA.  When it sends the cookie back, it will send AAAA,
-    // so we need to avoid sending =AAAA for a blank token value.
-    if (!(*it)->Name().empty())
-      cookie_line += (*it)->Name() + "=";
-    cookie_line += (*it)->Value();
-  }
+  std::string cookie_line = BuildCookieLine(cookies);
 
   histogram_time_get_->AddTime(TimeTicks::Now() - start_time);
 
   VLOG(kVlogGetCookies) << "GetCookies() result: " << cookie_line;
 
   return cookie_line;
+}
+
+void CookieMonster::GetCookiesWithInfo(const GURL& url,
+                                       const CookieOptions& options,
+                                       std::string* cookie_line,
+                                       std::vector<CookieInfo>* cookie_infos) {
+  DCHECK(cookie_line->empty());
+  DCHECK(cookie_infos->empty());
+
+  base::AutoLock autolock(lock_);
+  InitIfNecessary();
+
+  if (!HasCookieableScheme(url))
+    return;
+
+  TimeTicks start_time(TimeTicks::Now());
+
+  std::vector<CanonicalCookie*> cookies;
+  FindCookiesForHostAndDomain(url, options, true, &cookies);
+  std::sort(cookies.begin(), cookies.end(), CookieSorter);
+  *cookie_line = BuildCookieLine(cookies);
+
+  histogram_time_get_->AddTime(TimeTicks::Now() - start_time);
+
+  TimeTicks mac_start_time = TimeTicks::Now();
+  BuildCookieInfoList(cookies, cookie_infos);
+  histogram_time_mac_->AddTime(TimeTicks::Now() - mac_start_time);
 }
 
 void CookieMonster::DeleteCookie(const GURL& url,
@@ -1211,12 +1263,16 @@ bool CookieMonster::SetCookieWithCreationTimeAndOptions(
   }
 
   std::string cookie_path = CanonPath(url, pc);
+  std::string mac_key = pc.HasMACKey() ? pc.MACKey() : std::string();
+  std::string mac_algorithm = pc.HasMACAlgorithm() ?
+      pc.MACAlgorithm() : std::string();
 
   scoped_ptr<CanonicalCookie> cc;
   Time cookie_expires = CanonExpiration(pc, creation_time, options);
 
   cc.reset(new CanonicalCookie(url, pc.Name(), pc.Value(), cookie_domain,
-                               cookie_path, creation_time, cookie_expires,
+                               cookie_path, mac_key, mac_algorithm,
+                               creation_time, cookie_expires,
                                creation_time, pc.IsSecure(), pc.IsHttpOnly(),
                                !cookie_expires.is_null()));
 
@@ -1616,6 +1672,9 @@ void CookieMonster::InitializeHistograms() {
   histogram_time_get_ = base::Histogram::FactoryTimeGet("Cookie.TimeGet",
       base::TimeDelta::FromMilliseconds(1), base::TimeDelta::FromMinutes(1),
       50, base::Histogram::kUmaTargetedHistogramFlag);
+  histogram_time_mac_ = base::Histogram::FactoryTimeGet("Cookie.TimeGetMac",
+      base::TimeDelta::FromMilliseconds(1), base::TimeDelta::FromMinutes(1),
+      50, base::Histogram::kUmaTargetedHistogramFlag);
   histogram_time_load_ = base::Histogram::FactoryTimeGet("Cookie.TimeLoad",
       base::TimeDelta::FromMilliseconds(1), base::TimeDelta::FromMinutes(1),
       50, base::Histogram::kUmaTargetedHistogramFlag);
@@ -1634,6 +1693,8 @@ CookieMonster::ParsedCookie::ParsedCookie(const std::string& cookie_line)
     : is_valid_(false),
       path_index_(0),
       domain_index_(0),
+      mac_key_index_(0),
+      mac_algorithm_index_(0),
       expires_index_(0),
       maxage_index_(0),
       secure_index_(0),
@@ -1881,12 +1942,14 @@ void CookieMonster::ParsedCookie::ParseTokenValuePairs(
 }
 
 void CookieMonster::ParsedCookie::SetupAttributes() {
-  static const char kPathTokenName[]      = "path";
-  static const char kDomainTokenName[]    = "domain";
-  static const char kExpiresTokenName[]   = "expires";
-  static const char kMaxAgeTokenName[]    = "max-age";
-  static const char kSecureTokenName[]    = "secure";
-  static const char kHttpOnlyTokenName[]  = "httponly";
+  static const char kPathTokenName[] = "path";
+  static const char kDomainTokenName[] = "domain";
+  static const char kMACKeyTokenName[] = "mac-key";
+  static const char kMACAlgorithmTokenName[] = "mac-algorithm";
+  static const char kExpiresTokenName[] = "expires";
+  static const char kMaxAgeTokenName[] = "max-age";
+  static const char kSecureTokenName[] = "secure";
+  static const char kHttpOnlyTokenName[] = "httponly";
 
   // We skip over the first token/value, the user supplied one.
   for (size_t i = 1; i < pairs_.size(); ++i) {
@@ -1894,6 +1957,10 @@ void CookieMonster::ParsedCookie::SetupAttributes() {
       path_index_ = i;
     } else if (pairs_[i].first == kDomainTokenName) {
       domain_index_ = i;
+    } else if (pairs_[i].first == kMACKeyTokenName) {
+      mac_key_index_ = i;
+    } else if (pairs_[i].first == kMACAlgorithmTokenName) {
+      mac_algorithm_index_ = i;
     } else if (pairs_[i].first == kExpiresTokenName) {
       expires_index_ = i;
     } else if (pairs_[i].first == kMaxAgeTokenName) {
@@ -1914,22 +1981,19 @@ CookieMonster::CanonicalCookie::CanonicalCookie()
       has_expires_(false) {
 }
 
-CookieMonster::CanonicalCookie::CanonicalCookie(const GURL& url,
-                                                const std::string& name,
-                                                const std::string& value,
-                                                const std::string& domain,
-                                                const std::string& path,
-                                                const base::Time& creation,
-                                                const base::Time& expiration,
-                                                const base::Time& last_access,
-                                                bool secure,
-                                                bool httponly,
-                                                bool has_expires)
+CookieMonster::CanonicalCookie::CanonicalCookie(
+    const GURL& url, const std::string& name, const std::string& value,
+    const std::string& domain, const std::string& path,
+    const std::string& mac_key, const std::string& mac_algorithm,
+    const base::Time& creation, const base::Time& expiration,
+    const base::Time& last_access, bool secure, bool httponly, bool has_expires)
     : source_(GetCookieSourceFromURL(url)),
       name_(name),
       value_(value),
       domain_(domain),
       path_(path),
+      mac_key_(mac_key),
+      mac_algorithm_(mac_algorithm),
       creation_date_(creation),
       expiry_date_(expiration),
       last_access_date_(last_access),
@@ -1944,6 +2008,8 @@ CookieMonster::CanonicalCookie::CanonicalCookie(const GURL& url,
       name_(pc.Name()),
       value_(pc.Value()),
       path_(CanonPath(url, pc)),
+      mac_key_(pc.MACKey()),
+      mac_algorithm_(pc.MACAlgorithm()),
       creation_date_(Time::Now()),
       last_access_date_(Time()),
       secure_(pc.IsSecure()),
@@ -1988,6 +2054,8 @@ CookieMonster::CanonicalCookie* CookieMonster::CanonicalCookie::Create(
       const std::string& value,
       const std::string& domain,
       const std::string& path,
+      const std::string& mac_key,
+      const std::string& mac_algorithm,
       const base::Time& creation,
       const base::Time& expiration,
       bool secure,
@@ -2026,8 +2094,9 @@ CookieMonster::CanonicalCookie* CookieMonster::CanonicalCookie::Create(
                             canon_path_component.len);
 
   return new CanonicalCookie(url, parsed_name, parsed_value, cookie_domain,
-                             cookie_path, creation, expiration, creation,
-                             secure, http_only, !expiration.is_null());
+                             cookie_path, mac_key, mac_algorithm, creation,
+                             expiration, creation, secure, http_only,
+                             !expiration.is_null());
 }
 
 bool CookieMonster::CanonicalCookie::IsOnPath(

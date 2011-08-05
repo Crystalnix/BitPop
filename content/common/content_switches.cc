@@ -16,6 +16,10 @@ const char kAllowSandboxDebugging[]         = "allow-sandbox-debugging";
 // Path to the exe to run for the renderer and plugin subprocesses.
 const char kBrowserSubprocessPath[]         = "browser-subprocess-path";
 
+// Run Chrome in Chrome Frame mode. This means that Chrome expects to be run
+// as a dependent process of the Chrome Frame plugin.
+const char kChromeFrame[]                   = "chrome-frame";
+
 // Disables client-visible 3D APIs, in particular WebGL and Pepper 3D.
 // This is controlled by policy and is kept separate from the other
 // enable/disable switches to avoid accidentally regressing the policy
@@ -24,6 +28,9 @@ const char kDisable3DAPIs[]                 = "disable-3d-apis";
 
 // Disables accelerated compositing.
 const char kDisableAcceleratedCompositing[] = "disable-accelerated-compositing";
+
+// Disables the alternate window station for the renderer.
+const char kDisableAltWinstation[]          = "disable-winsta";
 
 // Disable the ApplicationCache.
 const char kDisableApplicationCache[]       = "disable-application-cache";
@@ -137,9 +144,6 @@ const char kEnableLogging[]                 = "enable-logging";
 // assumed to be sRGB.
 const char kEnableMonitorProfile[]          = "enable-monitor-profile";
 
-// Enable Pepper and JavaScript P2P API.
-const char kEnableP2PApi[]                  = "enable-p2papi";
-
 // Enable caching of pre-parsed JS script data.  See http://crbug.com/32407.
 const char kEnablePreparsedJsCaching[]      = "enable-preparsed-js-caching";
 
@@ -224,8 +228,20 @@ const char kLoggingLevel[]                  = "log-level";
 // Make plugin processes log their sent and received messages to VLOG(1).
 const char kLogPluginMessages[]             = "log-plugin-messages";
 
+// Causes the process to run as a NativeClient broker
+// (used for launching NaCl loader processes on 64-bit Windows).
+const char kNaClBrokerProcess[]             = "nacl-broker";
+
 // Causes the process to run as a NativeClient loader.
 const char kNaClLoaderProcess[]             = "nacl-loader";
+
+// By default, an https page can load images, fonts or frames from an http page.
+// This switch overrides this to block this lesser mixed-content problem.
+const char kNoDisplayingInsecureContent[]   = "no-displaying-insecure-content";
+
+// By default, an https page can load script, CSS or plugin-ins from an http
+// page. This switch overrides this to block this.
+const char kNoRunningInsecureContent[]   = "no-running-insecure-content";
 
 // Support a separate switch that enables the v8 playback extension.
 // The extension causes javascript calls to Date.now() and Math.random()
@@ -260,6 +276,9 @@ const char kPluginStartupDialog[]           = "plugin-startup-dialog";
 
 // Argument to the process type that indicates a PPAPI broker process type.
 const char kPpapiBrokerProcess[]            = "ppapi-broker";
+
+// "Command-line" arguments for the PPAPI Flash; used for debugging options.
+const char kPpapiFlashArgs[]                = "ppapi-flash-args";
 
 // Use the PPAPI (Pepper) Flash found at the given path.
 const char kPpapiFlashPath[]                = "ppapi-flash-path";
@@ -325,9 +344,6 @@ const char kRendererProcess[]               = "renderer";
 // Causes the renderer process to display a dialog on launch.
 const char kRendererStartupDialog[]         = "renderer-startup-dialog";
 
-// Runs the plugin processes inside the sandbox.
-const char kSafePlugins[]                   = "safe-plugins";
-
 // Causes the process to run as a service process.
 const char kServiceProcess[]                = "service";
 
@@ -390,6 +406,11 @@ const char kZygoteCmdPrefix[]               = "zygote-cmd-prefix";
 
 // Causes the process to run as a renderer zygote.
 const char kZygoteProcess[]                 = "zygote";
+
+#if defined(ENABLE_P2P_APIS)
+// Enable Pepper and JavaScript P2P API.
+const char kEnableP2PApi[]                  = "enable-p2papi";
+#endif
 
 #if !defined(OFFICIAL_BUILD)
 // Causes the renderer process to throw an assertion on launch.

@@ -8,35 +8,37 @@
 
 #include <string>
 
-#include "base/basictypes.h"
-
 class DictionaryValue;
 class ListValue;
+class StringValue;
 
 namespace test {
 
 // All the functions below expect that the value for the given key in
 // the given dictionary equals the given expected value.
 
-void ExpectBooleanValue(bool expected_value,
-                        const DictionaryValue& value,
-                        const std::string& key);
+void ExpectDictBooleanValue(bool expected_value,
+                            const DictionaryValue& value,
+                            const std::string& key);
 
-void ExpectDictionaryValue(const DictionaryValue& expected_value,
+void ExpectDictDictionaryValue(const DictionaryValue& expected_value,
+                               const DictionaryValue& value,
+                               const std::string& key);
+
+void ExpectDictIntegerValue(int expected_value,
+                            const DictionaryValue& value,
+                            const std::string& key);
+
+void ExpectDictListValue(const ListValue& expected_value,
+                         const DictionaryValue& value,
+                         const std::string& key);
+
+void ExpectDictStringValue(const std::string& expected_value,
                            const DictionaryValue& value,
                            const std::string& key);
 
-void ExpectIntegerValue(int expected_value,
-                        const DictionaryValue& value,
-                        const std::string& key);
-
-void ExpectListValue(const ListValue& expected_value,
-                     const DictionaryValue& value,
-                     const std::string& key);
-
-void ExpectStringValue(const std::string& expected_value,
-                       const DictionaryValue& value,
-                       const std::string& key);
+// Takes ownership of |actual|.
+void ExpectStringValue(const std::string& expected_str, StringValue* actual);
 
 }  // namespace test
 

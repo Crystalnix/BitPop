@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/webui/options/core_options_handler.h"
+#include "chrome/browser/ui/webui/web_ui_browsertest.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/ui_test_utils.h"
-#include "content/browser/webui/web_ui_browsertest.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -68,11 +68,13 @@ class SettingsWebUITest : public WebUIBrowserTest {
  protected:
   virtual void SetUpInProcessBrowserTestFixture() {
     WebUIBrowserTest::SetUpInProcessBrowserTestFixture();
-    AddLibrary(FILE_PATH_LITERAL("settings.js"));
+    AddLibrary(FilePath(FILE_PATH_LITERAL("settings.js")));
   }
 
   virtual void SetUpOnMainThread() {
     mock_core_options_handler_.reset(new StrictMock<MockCoreOptionsHandler>());
+    ui_test_utils::NavigateToURL(
+        browser(), GURL(chrome::kChromeUISettingsURL));
   }
 
   virtual void CleanUpOnMainThread() {
@@ -103,8 +105,22 @@ IN_PROC_BROWSER_TEST_F(SettingsWebUITest, MAYBE_TestSetBooleanPrefTriggers) {
   true_list_value.Append(Value::CreateBooleanValue(true));
   true_list_value.Append(
       Value::CreateStringValue("Options_Homepage_HomeButton"));
-  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUISettingsURL));
   EXPECT_CALL(*mock_core_options_handler_,
       HandleSetBooleanPref(Eq_ListValue(&true_list_value)));
   ASSERT_TRUE(RunJavascriptTest("testSetBooleanPrefTriggers"));
+}
+
+// Not meant to run on ChromeOS at this time.
+// Not finishing in windows. http://crbug.com/81723
+#if defined(OS_CHROMEOS) || defined(OS_MACOSX) || defined (OS_WIN)
+#define MAYBE_TestRefreshStaysOnCurrentPage\
+    DISABLED_TestRefreshStaysOnCurrentPage
+#else
+#define MAYBE_TestRefreshStaysOnCurrentPage TestRefreshStaysOnCurrentPage
+#endif
+IN_PROC_BROWSER_TEST_F(SettingsWebUITest,
+                       MAYBE_TestRefreshStaysOnCurrentPage) {
+  ASSERT_TRUE(RunJavascriptFunction("openUnderTheHood"));
+  ASSERT_TRUE(RunJavascriptFunction("refreshPage"));
+  ASSERT_TRUE(RunJavascriptTest("testPageIsUnderTheHood"));
 }

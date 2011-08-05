@@ -8,6 +8,7 @@
 #include <cmath>
 
 #include "base/callback.h"
+#include "base/i18n/case_conversion.h"
 #include "base/i18n/icu_string_conversions.h"
 #include "base/message_loop.h"
 #include "base/string16.h"
@@ -119,7 +120,7 @@ void SearchProvider::FinalizeInstantQuery(const string16& input_text,
                 CalculateRelevanceForWhatYouTyped() + 1,
                 AutocompleteMatch::SEARCH_SUGGEST,
                 did_not_accept_default_suggestion, false,
-                input_.initial_prevent_inline_autocomplete(), &match_map);
+                input_.prevent_inline_autocomplete(), &match_map);
   DCHECK_EQ(1u, match_map.size());
   matches_.push_back(match_map.begin()->second);
   // Sort the results so that UpdateFirstSearchDescription does the right thing.
@@ -172,9 +173,6 @@ void SearchProvider::Start(const AutocompleteInput& input,
       default_provider_suggest_text_.clear();
     else
       Stop();
-  } else if (minimal_changes &&
-             (input_.original_text() != input.original_text())) {
-    default_provider_suggest_text_.clear();
   }
 
   providers_.Set(default_provider, keyword_provider);
@@ -234,7 +232,7 @@ void SearchProvider::OnURLFetchComplete(const URLFetcher* source,
                                         const GURL& url,
                                         const net::URLRequestStatus& status,
                                         int response_code,
-                                        const ResponseCookies& cookie,
+                                        const net::ResponseCookies& cookie,
                                         const std::string& data) {
   DCHECK(!done_);
   suggest_results_pending_--;
@@ -543,13 +541,13 @@ void SearchProvider::ConvertResultsToAutocompleteMatches() {
                   CalculateRelevanceForWhatYouTyped(),
                   AutocompleteMatch::SEARCH_WHAT_YOU_TYPED,
                   did_not_accept_default_suggestion, false,
-                  input_.initial_prevent_inline_autocomplete(), &map);
+                  input_.prevent_inline_autocomplete(), &map);
     if (!default_provider_suggest_text_.empty()) {
       AddMatchToMap(input_.text() + default_provider_suggest_text_,
                     input_.text(), CalculateRelevanceForWhatYouTyped() + 1,
                     AutocompleteMatch::SEARCH_SUGGEST,
                     did_not_accept_default_suggestion, false,
-                    input_.initial_prevent_inline_autocomplete(), &map);
+                    input_.prevent_inline_autocomplete(), &map);
     }
   }
 
@@ -633,7 +631,7 @@ void SearchProvider::AddHistoryResultsToMap(const HistoryResults& results,
     if (!input_.prevent_inline_autocomplete() && classifier &&
         i->term != input_.text()) {
       AutocompleteMatch match;
-      classifier->Classify(i->term, string16(), false, &match, NULL);
+      classifier->Classify(i->term, string16(), false, false, &match, NULL);
       term_looks_like_url = match.transition == PageTransition::TYPED;
     }
     int relevance = CalculateRelevanceForHistory(i->time, term_looks_like_url,
@@ -645,7 +643,7 @@ void SearchProvider::AddHistoryResultsToMap(const HistoryResults& results,
                   is_keyword ? keyword_input_text_ : input_.text(),
                   relevance,
                   AutocompleteMatch::SEARCH_HISTORY, did_not_accept_suggestion,
-                  is_keyword, input_.initial_prevent_inline_autocomplete(),
+                  is_keyword, input_.prevent_inline_autocomplete(),
                   map);
   }
 }
@@ -662,7 +660,7 @@ void SearchProvider::AddSuggestResultsToMap(
                                                   is_keyword),
                   AutocompleteMatch::SEARCH_SUGGEST,
                   static_cast<int>(i), is_keyword,
-                  input_.initial_prevent_inline_autocomplete(), map);
+                  input_.prevent_inline_autocomplete(), map);
   }
 }
 
@@ -836,7 +834,7 @@ void SearchProvider::AddMatchToMap(const string16& query_string,
   // NOTE: Keep this ToLower() call in sync with url_database.cc.
   const std::pair<MatchMap::iterator, bool> i = map->insert(
       std::pair<string16, AutocompleteMatch>(
-          l10n_util::ToLower(query_string), match));
+          base::i18n::ToLower(query_string), match));
   // NOTE: We purposefully do a direct relevance comparison here instead of
   // using AutocompleteMatch::MoreRelevant(), so that we'll prefer "items added
   // first" rather than "items alphabetically first" when the scores are equal.

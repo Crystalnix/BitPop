@@ -1,10 +1,11 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "chrome/browser/ui/cocoa/url_drop_target.h"
 
 #include "base/basictypes.h"
+#include "chrome/browser/ui/cocoa/drag_util.h"
 #import "third_party/mozilla/NSPasteboard+Utils.h"
 
 @interface URLDropTargetHandler(Private)
@@ -40,12 +41,27 @@
 // (us).
 
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
+  if (drag_util::IsUnsupportedDropData(sender))
+    return NSDragOperationNone;
+
   return [self getDragOperation:sender];
 }
 
 - (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender {
-  NSDragOperation dragOp = [self getDragOperation:sender];
-  if (dragOp == NSDragOperationCopy) {
+  NSDragOperation dragOp = NSDragOperationNone;
+  BOOL showIndicator = NO;
+  // Show indicator for drag data supported for tab contents as well as for
+  // local file drags that may not be viewable in tab contents, but should
+  // still trigger hover tab selection.
+  if (!drag_util::IsUnsupportedDropData(sender)) {
+    dragOp = [self getDragOperation:sender];
+    if (dragOp == NSDragOperationCopy)
+      showIndicator = YES;
+  } else if (!drag_util::GetFileURLFromDropData(sender).is_empty()) {
+    showIndicator = YES;
+  }
+
+  if (showIndicator) {
     // Just tell the window controller to update the indicator.
     NSPoint hoverPoint = [view_ convertPoint:[sender draggingLocation]
                                     fromView:nil];

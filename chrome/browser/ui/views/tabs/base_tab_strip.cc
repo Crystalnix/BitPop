@@ -12,7 +12,8 @@
 #include "views/window/window.h"
 
 #if defined(OS_WIN)
-#include "views/widget/widget_win.h"
+// GET_X_LPARAM, et al.
+#include <windowsx.h>
 #endif
 
 namespace {
@@ -93,15 +94,14 @@ class BaseTabStrip::RemoveTabDelegate
     // This can be null during shutdown. See http://crbug.com/42737.
     if (!widget)
       return;
+
+    widget->ResetLastMouseMoveFlag();
+
     // Force the close button (that slides under the mouse) to highlight by
     // saying the mouse just moved, but sending the same coordinates.
     DWORD pos = GetMessagePos();
     POINT cursor_point = {GET_X_LPARAM(pos), GET_Y_LPARAM(pos)};
     MapWindowPoints(NULL, widget->GetNativeView(), &cursor_point, 1);
-
-    static_cast<views::WidgetWin*>(widget)->ResetLastMouseMoveFlag();
-    // Return to message loop - otherwise we may disrupt some operation that's
-    // in progress.
     SendMessage(widget->GetNativeView(), WM_MOUSEMOVE, 0,
                 MAKELPARAM(cursor_point.x, cursor_point.y));
 #else
@@ -352,7 +352,8 @@ void BaseTabStrip::ContinueDrag(const views::MouseEvent& event) {
     if (drag_controller_->started_drag() && !started_drag) {
       // The drag just started. Redirect mouse events to us to that the tab that
       // originated the drag can be safely deleted.
-      GetRootView()->SetMouseHandler(this);
+      static_cast<views::internal::RootView*>(GetWidget()->GetRootView())->
+          SetMouseHandler(this);
     }
   }
 }
@@ -372,11 +373,36 @@ BaseTab* BaseTabStrip::GetTabAt(BaseTab* tab,
   return GetTabAtLocal(local_point);
 }
 
+void BaseTabStrip::ClickActiveTab(const BaseTab* tab) const {
+  DCHECK(IsActiveTab(tab));
+  int index = GetModelIndexOfBaseTab(tab);
+  if (controller() && IsValidModelIndex(index))
+    controller()->ClickActiveTab(index);
+}
+
 void BaseTabStrip::Layout() {
   // Only do a layout if our size changed.
   if (last_layout_size_ == size())
     return;
   DoLayout();
+}
+
+// Overridden to support automation. See automation_proxy_uitest.cc.
+const views::View* BaseTabStrip::GetViewByID(int view_id) const {
+  if (tab_count() > 0) {
+    if (view_id == VIEW_ID_TAB_LAST) {
+      return base_tab_at_tab_index(tab_count() - 1);
+    } else if ((view_id >= VIEW_ID_TAB_0) && (view_id < VIEW_ID_TAB_LAST)) {
+      int index = view_id - VIEW_ID_TAB_0;
+      if (index >= 0 && index < tab_count()) {
+        return base_tab_at_tab_index(index);
+      } else {
+        return NULL;
+      }
+    }
+  }
+
+  return View::GetViewByID(view_id);
 }
 
 bool BaseTabStrip::OnMouseDragged(const views::MouseEvent&  event) {

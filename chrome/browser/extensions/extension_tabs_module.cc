@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/base64.h"
+#include "base/memory/ref_counted_memory.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
@@ -49,23 +50,51 @@ namespace errors = extension_manifest_errors;
 
 const int CaptureVisibleTabFunction::kDefaultQuality = 90;
 
-// Forward declare static helper functions defined below.
+namespace {
 
 // |error_message| can optionally be passed in a will be set with an appropriate
 // message if the window cannot be found by id.
-static Browser* GetBrowserInProfileWithId(Profile* profile,
-                                          const int window_id,
-                                          bool include_incognito,
-                                          std::string* error_message);
+Browser* GetBrowserInProfileWithId(Profile* profile,
+                                   const int window_id,
+                                   bool include_incognito,
+                                   std::string* error_message) {
+  Profile* incognito_profile =
+      include_incognito && profile->HasOffTheRecordProfile() ?
+          profile->GetOffTheRecordProfile() : NULL;
+  for (BrowserList::const_iterator browser = BrowserList::begin();
+       browser != BrowserList::end(); ++browser) {
+    if (((*browser)->profile() == profile ||
+         (*browser)->profile() == incognito_profile) &&
+        ExtensionTabUtil::GetWindowId(*browser) == window_id)
+      return *browser;
+  }
+
+  if (error_message)
+    *error_message = ExtensionErrorUtils::FormatErrorMessage(
+        keys::kWindowNotFoundError, base::IntToString(window_id));
+
+  return NULL;
+}
 
 // |error_message| can optionally be passed in and will be set with an
 // appropriate message if the tab cannot be found by id.
-static bool GetTabById(int tab_id, Profile* profile,
-                       bool include_incognito,
-                       Browser** browser,
-                       TabStripModel** tab_strip,
-                       TabContentsWrapper** contents,
-                       int* tab_index, std::string* error_message);
+bool GetTabById(int tab_id, Profile* profile,
+                bool include_incognito,
+                Browser** browser,
+                TabStripModel** tab_strip,
+                TabContentsWrapper** contents,
+                int* tab_index,
+                std::string* error_message) {
+  if (ExtensionTabUtil::GetTabById(tab_id, profile, include_incognito,
+                                   browser, tab_strip, contents, tab_index))
+    return true;
+
+  if (error_message)
+    *error_message = ExtensionErrorUtils::FormatErrorMessage(
+        keys::kTabNotFoundError, base::IntToString(tab_id));
+
+  return false;
+}
 
 // Takes |url_string| and returns a GURL which is either valid and absolute
 // or invalid. If |url_string| is not directly interpretable as a valid (it is
@@ -74,11 +103,27 @@ static bool GetTabById(int tab_id, Profile* profile,
 // (chrome-extension://<id>/). Using the source frame url would be more correct,
 // but because the api shipped with urls resolved relative to their extension
 // base, we decided it wasn't worth breaking existing extensions to fix.
-static GURL ResolvePossiblyRelativeURL(const std::string& url_string,
-                                       const Extension* extension);
+GURL ResolvePossiblyRelativeURL(const std::string& url_string,
+                                const Extension* extension) {
+  GURL url = GURL(url_string);
+  if (!url.is_valid())
+    url = extension->GetResourceURL(url_string);
+
+  return url;
+}
 
 // Return the type name for a browser window type.
-static std::string GetWindowTypeText(Browser::Type type);
+std::string GetWindowTypeText(const Browser* browser) {
+  if (browser->is_type_popup())
+    return keys::kWindowTypeValuePopup;
+  if (browser->is_type_panel())
+    return keys::kWindowTypeValuePanel;
+  if (browser->is_app())
+    return keys::kWindowTypeValueApp;
+  return keys::kWindowTypeValueNormal;
+}
+
+}  // namespace
 
 int ExtensionTabUtil::GetWindowId(const Browser* browser) {
   return browser->session_id().id();
@@ -168,7 +213,7 @@ DictionaryValue* ExtensionTabUtil::CreateWindowValue(const Browser* browser,
   result->SetInteger(keys::kTopKey, bounds.y());
   result->SetInteger(keys::kWidthKey, bounds.width());
   result->SetInteger(keys::kHeightKey, bounds.height());
-  result->SetString(keys::kWindowTypeKey, GetWindowTypeText(browser->type()));
+  result->SetString(keys::kWindowTypeKey, GetWindowTypeText(browser));
 
   if (populate_tabs) {
     result->Set(keys::kTabsKey, ExtensionTabUtil::CreateTabList(browser));
@@ -279,8 +324,8 @@ bool GetCurrentWindowFunction::RunImpl() {
 }
 
 bool GetLastFocusedWindowFunction::RunImpl() {
-  Browser* browser = BrowserList::FindBrowserWithType(
-      profile(), Browser::TYPE_ANY, include_incognito());
+  Browser* browser = BrowserList::FindAnyBrowser(
+      profile(), include_incognito());
   if (!browser || !browser->window()) {
     error_ = keys::kNoLastFocusedWindowError;
     return false;
@@ -415,8 +460,9 @@ bool CreateWindowFunction::RunImpl() {
 #endif
 
   Profile* window_profile = profile();
-  Browser::Type window_type = Browser::TYPE_NORMAL;
+  Browser::Type window_type = Browser::TYPE_TABBED;
   bool focused = true;
+  std::string app_name;
 
   if (args) {
     // Any part of the bounds can optionally be set by the caller.
@@ -470,25 +516,32 @@ bool CreateWindowFunction::RunImpl() {
     if (args->HasKey(keys::kWindowTypeKey)) {
       EXTENSION_FUNCTION_VALIDATE(args->GetString(keys::kWindowTypeKey,
                                                   &type_str));
-      if (type_str == keys::kWindowTypeValueNormal) {
-        window_type = Browser::TYPE_NORMAL;
-      } else if (type_str == keys::kWindowTypeValuePopup) {
-        window_type = Browser::TYPE_APP_POPUP;
+      if (type_str == keys::kWindowTypeValuePopup) {
+        window_type = Browser::TYPE_POPUP;
+        app_name = GetExtension()->id();
       } else if (type_str == keys::kWindowTypeValuePanel) {
         if (GetExtension()->HasApiPermission(
                 Extension::kExperimentalPermission)) {
-          window_type = Browser::TYPE_APP_PANEL;
+          window_type = Browser::TYPE_PANEL;
+          app_name = GetExtension()->id();
         } else {
           error_ = errors::kExperimentalFeature;
           return false;
         }
-      } else {
+      } else if (type_str != keys::kWindowTypeValueNormal) {
         EXTENSION_FUNCTION_VALIDATE(false);
       }
     }
   }
 
-  Browser* new_window = Browser::CreateForType(window_type, window_profile);
+  Browser* new_window;
+  if (app_name.empty()) {
+    new_window = Browser::CreateForType(window_type, window_profile);
+    new_window->window()->SetBounds(window_bounds);
+  } else {
+    new_window = Browser::CreateForApp(window_type, app_name, popup_bounds,
+                                       window_profile);
+  }
   for (std::vector<GURL>::iterator i = urls.begin(); i != urls.end(); ++i)
     new_window->AddSelectedTabWithURL(*i, PageTransition::LINK);
   if (contents) {
@@ -499,10 +552,6 @@ bool CreateWindowFunction::RunImpl() {
     new_window->NewTab();
   }
   new_window->SelectNumberedTab(0);
-  if (window_type & Browser::TYPE_POPUP)
-    new_window->window()->SetBounds(popup_bounds);
-  else
-    new_window->window()->SetBounds(window_bounds);
 
   if (focused)
     new_window->window()->Show();
@@ -717,13 +766,12 @@ bool CreateTabFunction::RunImpl() {
     EXTENSION_FUNCTION_VALIDATE(args->GetBoolean(keys::kPinnedKey, &pinned));
 
   // We can't load extension URLs into incognito windows unless the extension
-  // uses split mode. Special case to fall back to a normal window.
+  // uses split mode. Special case to fall back to a tabbed window.
   if (url.SchemeIs(chrome::kExtensionScheme) &&
       !GetExtension()->incognito_split_mode() &&
       browser->profile()->IsOffTheRecord()) {
     Profile* profile = browser->profile()->GetOriginalProfile();
-    browser = BrowserList::FindBrowserWithType(profile,
-                                               Browser::TYPE_NORMAL, false);
+    browser = BrowserList::FindTabbedBrowser(profile, false);
     if (!browser) {
       browser = Browser::Create(profile);
       browser->window()->Show();
@@ -786,7 +834,7 @@ bool GetTabFunction::RunImpl() {
 bool GetCurrentTabFunction::RunImpl() {
   DCHECK(dispatcher());
 
-  TabContents* contents = dispatcher()->delegate()->associated_tab_contents();
+  TabContents* contents = dispatcher()->delegate()->GetAssociatedTabContents();
   if (contents)
     result_.reset(ExtensionTabUtil::CreateTabValue(contents));
 
@@ -983,7 +1031,7 @@ bool MoveTabFunction::RunImpl() {
       return false;
     }
 
-    if (target_browser->type() != Browser::TYPE_NORMAL) {
+    if (!target_browser->is_type_tabbed()) {
       error_ = keys::kCanOnlyMoveTabsWithinNormalWindowsError;
       return false;
     }
@@ -1129,10 +1177,11 @@ bool CaptureVisibleTabFunction::RunImpl() {
     return true;
 
   // Ask the renderer for a snapshot of the tab.
-  render_view_host->CaptureSnapshot();
+  TabContentsWrapper* wrapper = browser->GetSelectedTabContentsWrapper();
+  wrapper->CaptureSnapshot();
   registrar_.Add(this,
                  NotificationType::TAB_SNAPSHOT_TAKEN,
-                 NotificationService::AllSources());
+                 Source<TabContentsWrapper>(wrapper));
   AddRef();  // Balanced in CaptureVisibleTabFunction::Observe().
 
   return true;
@@ -1153,7 +1202,7 @@ bool CaptureVisibleTabFunction::CaptureSnapshotFromBackingStore(
   VLOG(1) << "captureVisibleTab() got image from backing store.";
 
   SendResultFromBitmap(
-      temp_canvas.getTopPlatformDevice().accessBitmap(false));
+      skia::GetTopDevice(temp_canvas)->accessBitmap(false));
   return true;
 }
 
@@ -1211,8 +1260,7 @@ void CaptureVisibleTabFunction::SendResultFromBitmap(
   }
 
   if (!encoded) {
-    error_ = ExtensionErrorUtils::FormatErrorMessage(
-        keys::kInternalVisibleTabCaptureError, "");
+    error_ = keys::kInternalVisibleTabCaptureError;
     SendResponse(false);
     return;
   }
@@ -1302,72 +1350,4 @@ void DetectTabLanguageFunction::GotLanguage(const std::string& language) {
   SendResponse(true);
 
   Release();  // Balanced in Run()
-}
-
-// static helpers
-// TODO(jhawkins): Move these to unnamed namespace and remove static modifier.
-
-static Browser* GetBrowserInProfileWithId(Profile* profile,
-                                          const int window_id,
-                                          bool include_incognito,
-                                          std::string* error_message) {
-  Profile* incognito_profile =
-      include_incognito && profile->HasOffTheRecordProfile() ?
-          profile->GetOffTheRecordProfile() : NULL;
-  for (BrowserList::const_iterator browser = BrowserList::begin();
-       browser != BrowserList::end(); ++browser) {
-    if (((*browser)->profile() == profile ||
-         (*browser)->profile() == incognito_profile) &&
-        ExtensionTabUtil::GetWindowId(*browser) == window_id)
-      return *browser;
-  }
-
-  if (error_message)
-    *error_message = ExtensionErrorUtils::FormatErrorMessage(
-        keys::kWindowNotFoundError, base::IntToString(window_id));
-
-  return NULL;
-}
-
-static bool GetTabById(int tab_id, Profile* profile,
-                       bool include_incognito,
-                       Browser** browser,
-                       TabStripModel** tab_strip,
-                       TabContentsWrapper** contents,
-                       int* tab_index,
-                       std::string* error_message) {
-  if (ExtensionTabUtil::GetTabById(tab_id, profile, include_incognito,
-                                   browser, tab_strip, contents, tab_index))
-    return true;
-
-  if (error_message)
-    *error_message = ExtensionErrorUtils::FormatErrorMessage(
-        keys::kTabNotFoundError, base::IntToString(tab_id));
-
-  return false;
-}
-
-static std::string GetWindowTypeText(Browser::Type type) {
-  if (type == Browser::TYPE_APP_PANEL &&
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableExperimentalExtensionApis))
-    return keys::kWindowTypeValuePanel;
-
-  if ((type & Browser::TYPE_POPUP) == Browser::TYPE_POPUP)
-    return keys::kWindowTypeValuePopup;
-
-  if ((type & Browser::TYPE_APP) == Browser::TYPE_APP)
-    return keys::kWindowTypeValueApp;
-
-  DCHECK(type == Browser::TYPE_NORMAL);
-  return keys::kWindowTypeValueNormal;
-}
-
-static GURL ResolvePossiblyRelativeURL(const std::string& url_string,
-                                       const Extension* extension) {
-  GURL url = GURL(url_string);
-  if (!url.is_valid())
-    url = extension->GetResourceURL(url_string);
-
-  return url;
 }

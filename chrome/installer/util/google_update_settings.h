@@ -21,6 +21,13 @@ class InstallerState;
 // google_update.exe responsability to write the initial values.
 class GoogleUpdateSettings {
  public:
+  // Update policy constants defined by Google Update; do not change these.
+  enum UpdatePolicy {
+    UPDATES_DISABLED    = 0,
+    AUTOMATIC_UPDATES   = 1,
+    MANUAL_UPDATES_ONLY = 2,
+  };
+
   // Returns whether the user has given consent to collect UMA data and send
   // crash dumps to Google. This information is collected by the web server
   // used to download the chrome installer.
@@ -90,13 +97,18 @@ class GoogleUpdateSettings {
   // active users. Returns false if writting to the registry failed.
   static bool UpdateDidRunState(bool did_run, bool system_level);
 
+  // Returns only the channel name: "" (stable), "dev", "beta", "canary", or
+  // "unknown" if unknown. This value will not be modified by "-m" for a
+  // multi-install.
+  static std::wstring GetChromeChannel(bool system_install);
 
   // Return a human readable modifier for the version string, e.g.
   // the channel (dev, beta, stable). Returns true if this operation succeeded,
   // on success, channel contains one of "", "unknown", "dev" or "beta" (unless
   // it is a multi-install product, in which case it will return "m",
   // "unknown-m", "dev-m", or "beta-m").
-  static bool GetChromeChannel(bool system_install, std::wstring* channel);
+  static bool GetChromeChannelAndModifiers(bool system_install,
+                                           std::wstring* channel);
 
   // This method changes the Google Update "ap" value to move the installation
   // on to or off of one of the recovery channels.
@@ -154,6 +166,12 @@ class GoogleUpdateSettings {
   // a slightly different set of brand codes from the standard IsOrganic
   // method.
   static bool IsOrganicFirstRun(const std::wstring& brand);
+
+  // Returns the effective update policy for |app_guid| as dictated by
+  // Group Policy settings.  |is_overridden|, if non-NULL, is populated with
+  // true if an app-specific policy override is in force, or false otherwise.
+  static UpdatePolicy GetAppUpdatePolicy(const std::wstring& app_guid,
+                                         bool* is_overridden);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(GoogleUpdateSettings);

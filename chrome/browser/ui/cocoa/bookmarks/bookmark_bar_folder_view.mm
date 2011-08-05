@@ -1,19 +1,23 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_folder_view.h"
 
 #include "chrome/browser/bookmarks/bookmark_pasteboard_helper_mac.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_folder_target.h"
+#include "content/browser/user_metrics.h"
+
 #import "third_party/mozilla/NSPasteboard+Utils.h"
 
-@implementation BookmarkBarFolderView
+@interface BookmarkBarFolderView()
 
-@synthesize dropIndicatorShown = dropIndicatorShown_;
-@synthesize dropIndicatorPosition = dropIndicatorPosition_;
+@property(readonly, nonatomic) id<BookmarkButtonControllerProtocol> controller;
+
+@end
+
+@implementation BookmarkBarFolderView
 
 - (void)awakeFromNib {
   NSArray* types = [NSArray arrayWithObjects:
@@ -35,10 +39,6 @@
   // When needed for testing, set the local data member |controller_| to
   // the test controller.
   return controller_ ? controller_ : [[self window] windowController];
-}
-
-- (void)setController:(id)controller {
-  controller_ = controller;
 }
 
 - (void)drawRect:(NSRect)rect {

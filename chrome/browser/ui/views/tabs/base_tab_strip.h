@@ -133,6 +133,7 @@ class BaseTabStrip : public AbstractTabStripView,
   virtual bool EndDrag(bool canceled) OVERRIDE;
   virtual BaseTab* GetTabAt(BaseTab* tab,
                             const gfx::Point& tab_in_tab_coordinates) OVERRIDE;
+  virtual void ClickActiveTab(const BaseTab* tab) const OVERRIDE;
 
   // View overrides:
   virtual void Layout() OVERRIDE;
@@ -145,6 +146,7 @@ class BaseTabStrip : public AbstractTabStripView,
   };
 
   // View overrides.
+  virtual const views::View* GetViewByID(int id) const OVERRIDE;
   virtual bool OnMouseDragged(const views::MouseEvent& event) OVERRIDE;
   virtual void OnMouseReleased(const views::MouseEvent& event) OVERRIDE;
   virtual void OnMouseCaptureLost() OVERRIDE;

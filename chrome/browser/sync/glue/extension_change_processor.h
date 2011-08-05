@@ -28,9 +28,7 @@ class ExtensionChangeProcessor : public ChangeProcessor,
                                  public NotificationObserver {
  public:
   // Does not take ownership of |error_handler|.
-  ExtensionChangeProcessor(
-      const ExtensionSyncTraits& traits,
-      UnrecoverableErrorHandler* error_handler);
+  explicit ExtensionChangeProcessor(UnrecoverableErrorHandler* error_handler);
   virtual ~ExtensionChangeProcessor();
 
   // NotificationObserver implementation.
@@ -61,7 +59,6 @@ class ExtensionChangeProcessor : public ChangeProcessor,
   // Non-NULL iff |running()| is true.
   Profile* profile_;
   ExtensionServiceInterface* extension_service_;
-  sync_api::UserShare* user_share_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionChangeProcessor);
 };

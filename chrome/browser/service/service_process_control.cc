@@ -11,7 +11,6 @@
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/io_thread.h"
 #include "chrome/browser/upgrade_detector.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/service_messages.h"
@@ -43,15 +42,13 @@ void ServiceProcessControl::ConnectInternal() {
 
   // Actually going to connect.
   VLOG(1) << "Connecting to Service Process IPC Server";
-  // Run the IPC channel on the shared IO thread.
-  base::Thread* io_thread = g_browser_process->io_thread();
 
   // TODO(hclam): Handle error connecting to channel.
   const IPC::ChannelHandle channel_id = GetServiceProcessChannel();
-  channel_.reset(
-      new IPC::SyncChannel(channel_id, IPC::Channel::MODE_NAMED_CLIENT, this,
-                           io_thread->message_loop(), true,
-                           g_browser_process->shutdown_event()));
+  channel_.reset(new IPC::SyncChannel(
+      channel_id, IPC::Channel::MODE_NAMED_CLIENT, this,
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO), true,
+      g_browser_process->shutdown_event()));
 }
 
 void ServiceProcessControl::RunConnectDoneTasks() {
@@ -188,10 +185,8 @@ void ServiceProcessControl::OnProcessLaunched() {
 bool ServiceProcessControl::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ServiceProcessControl, message)
-    IPC_MESSAGE_HANDLER(ServiceHostMsg_CloudPrintProxy_IsEnabled,
-                        OnCloudPrintProxyIsEnabled)
-    IPC_MESSAGE_HANDLER(ServiceHostMsg_RemotingHost_HostInfo,
-                         OnRemotingHostInfo)
+    IPC_MESSAGE_HANDLER(ServiceHostMsg_CloudPrintProxy_Info,
+                        OnCloudPrintProxyInfo)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -235,75 +230,26 @@ void ServiceProcessControl::Observe(NotificationType type,
   }
 }
 
-void ServiceProcessControl::OnCloudPrintProxyIsEnabled(bool enabled,
-                                                       std::string email) {
+void ServiceProcessControl::OnCloudPrintProxyInfo(
+    const cloud_print::CloudPrintProxyInfo& proxy_info) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (cloud_print_status_callback_ != NULL) {
-    cloud_print_status_callback_->Run(enabled, email);
-    cloud_print_status_callback_.reset();
+  if (cloud_print_info_callback_ != NULL) {
+    cloud_print_info_callback_->Run(proxy_info);
+    cloud_print_info_callback_.reset();
   }
 }
 
-void ServiceProcessControl::OnRemotingHostInfo(
-    const remoting::ChromotingHostInfo& host_info) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  for (std::set<MessageHandler*>::iterator it = message_handlers_.begin();
-       it != message_handlers_.end(); ++it) {
-    (*it)->OnRemotingHostInfo(host_info);
-  }
-}
-
-bool ServiceProcessControl::GetCloudPrintProxyStatus(
-    Callback2<bool, std::string>::Type* cloud_print_status_callback) {
-  DCHECK(cloud_print_status_callback);
-  cloud_print_status_callback_.reset(cloud_print_status_callback);
-  return Send(new ServiceMsg_IsCloudPrintProxyEnabled);
+bool ServiceProcessControl::GetCloudPrintProxyInfo(
+    CloudPrintProxyInfoHandler* cloud_print_info_callback) {
+  DCHECK(cloud_print_info_callback);
+  cloud_print_info_callback_.reset(cloud_print_info_callback);
+  return Send(new ServiceMsg_GetCloudPrintProxyInfo());
 }
 
 bool ServiceProcessControl::Shutdown() {
   bool ret = Send(new ServiceMsg_Shutdown());
   channel_.reset();
   return ret;
-}
-
-bool ServiceProcessControl::SetRemotingHostCredentials(
-    const std::string& user,
-    const std::string& talk_token) {
-  return Send(
-      new ServiceMsg_SetRemotingHostCredentials(user, talk_token));
-}
-
-bool ServiceProcessControl::EnableRemotingHost() {
-  return Send(new ServiceMsg_EnableRemotingHost());
-}
-
-bool ServiceProcessControl::DisableRemotingHost() {
-  return Send(new ServiceMsg_DisableRemotingHost());
-}
-
-bool ServiceProcessControl::RequestRemotingHostStatus() {
-  if (CheckServiceProcessReady()) {
-    remoting::ChromotingHostInfo failure_host_info;
-    failure_host_info.enabled = false;
-
-    Launch(NewRunnableMethod(this, &ServiceProcessControl::Send,
-                             new ServiceMsg_GetRemotingHostInfo),
-           NewRunnableMethod(this,
-                             &ServiceProcessControl::OnRemotingHostInfo,
-                             failure_host_info));
-    return true;
-  }
-  return false;
-}
-
-void ServiceProcessControl::AddMessageHandler(
-    MessageHandler* message_handler) {
-  message_handlers_.insert(message_handler);
-}
-
-void ServiceProcessControl::RemoveMessageHandler(
-    MessageHandler* message_handler) {
-  message_handlers_.erase(message_handler);
 }
 
 DISABLE_RUNNABLE_METHOD_REFCOUNT(ServiceProcessControl);

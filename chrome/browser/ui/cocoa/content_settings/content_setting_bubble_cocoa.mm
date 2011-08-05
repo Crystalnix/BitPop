@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,10 +8,9 @@
 #include "base/logging.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/blocked_content_container.h"
-#include "chrome/browser/content_setting_bubble_model.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/plugin_updater.h"
+#include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
 #import "chrome/browser/ui/cocoa/hyperlink_button_cell.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
 #import "chrome/browser/ui/cocoa/l10n_util.h"
@@ -120,23 +119,25 @@ NSTextField* LabelWithFrame(NSString* text, const NSRect& frame) {
   scoped_ptr<ContentSettingBubbleModel> model(contentSettingBubbleModel);
   DCHECK(model.get());
 
-  NSString* const nibPaths[] = {
-    @"ContentBlockedCookies",
-    @"ContentBlockedImages",
-    @"ContentBlockedJavaScript",
-    @"ContentBlockedPlugins",
-    @"ContentBlockedPopups",
-    @"ContentBubbleGeolocation",
-    @"",  // Notifications do not have a bubble.
-    @"",  // Prerender does not have a bubble.
-  };
-  COMPILE_ASSERT(arraysize(nibPaths) == CONTENT_SETTINGS_NUM_TYPES,
-                 nibPaths_requires_an_entry_for_every_setting_type);
   const int settingsType = model->content_type();
-  // Nofifications do not have a bubble.
-  CHECK_NE(settingsType, CONTENT_SETTINGS_TYPE_NOTIFICATIONS);
-  DCHECK_LT(settingsType, CONTENT_SETTINGS_NUM_TYPES);
-  if ((self = [super initWithWindowNibPath:nibPaths[settingsType]
+  NSString* nibPath = @"";
+  switch (settingsType) {
+    case CONTENT_SETTINGS_TYPE_COOKIES:
+      nibPath = @"ContentBlockedCookies"; break;
+    case CONTENT_SETTINGS_TYPE_IMAGES:
+      nibPath = @"ContentBlockedImages"; break;
+    case CONTENT_SETTINGS_TYPE_JAVASCRIPT:
+      nibPath = @"ContentBlockedJavaScript"; break;
+    case CONTENT_SETTINGS_TYPE_PLUGINS:
+      nibPath = @"ContentBlockedPlugins"; break;
+    case CONTENT_SETTINGS_TYPE_POPUPS:
+      nibPath = @"ContentBlockedPopups"; break;
+    case CONTENT_SETTINGS_TYPE_GEOLOCATION:
+      nibPath = @"ContentBlockedGeolocation"; break;
+    default:
+      NOTREACHED();
+  }
+  if ((self = [super initWithWindowNibPath:nibPath
                               parentWindow:parentWindow
                                 anchoredAt:anchoredAt])) {
     contentSettingBubbleModel_.reset(model.release());

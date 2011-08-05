@@ -11,6 +11,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "net/base/cert_database.h"
+#include "net/base/net_api.h"
 
 namespace net {
 
@@ -23,10 +24,10 @@ class X509Certificate;
 //
 // TODO(wtc): This class is based on FtpAuthCache.  We can extract the common
 // code to a template class.
-class SSLClientAuthCache : public CertDatabase::Observer {
+class NET_TEST SSLClientAuthCache : public CertDatabase::Observer {
  public:
   SSLClientAuthCache();
-  ~SSLClientAuthCache();
+  virtual ~SSLClientAuthCache();
 
   // Checks for a client certificate preference for SSL server at |server|.
   // Returns true if a preference is found, and sets |*certificate| to the

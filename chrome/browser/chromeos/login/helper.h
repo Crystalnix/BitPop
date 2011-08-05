@@ -12,7 +12,6 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "views/controls/button/native_button.h"
 #include "views/view.h"
-#include "views/widget/widget_gtk.h"
 
 class GURL;
 
@@ -157,7 +156,7 @@ class WideButton : public views::NativeButton {
     CorrectNativeButtonFontSize(this);
   }
 
-  ~WideButton() {}
+  virtual ~WideButton() {}
 
  private:
   virtual gfx::Size GetPreferredSize();

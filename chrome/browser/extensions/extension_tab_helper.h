@@ -7,6 +7,7 @@
 #pragma once
 
 #include "content/browser/tab_contents/tab_contents_observer.h"
+#include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/extensions/image_loading_tracker.h"
 #include "chrome/common/web_apps.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -15,8 +16,13 @@ class Extension;
 class TabContentsWrapper;
 struct WebApplicationInfo;
 
+namespace content {
+struct LoadCommittedDetails;
+}
+
 // Per-tab extension helper. Also handles non-extension apps.
 class ExtensionTabHelper : public TabContentsObserver,
+                           public ExtensionFunctionDispatcher::Delegate,
                            public ImageLoadingTracker::Observer {
  public:
   explicit ExtensionTabHelper(TabContentsWrapper* wrapper);
@@ -73,13 +79,20 @@ class ExtensionTabHelper : public TabContentsObserver,
  private:
   // TabContentsObserver overrides.
   virtual void DidNavigateMainFramePostCommit(
-      const NavigationController::LoadCommittedDetails& details,
+      const content::LoadCommittedDetails& details,
       const ViewHostMsg_FrameNavigate_Params& params) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message);
+
+  // ExtensionFunctionDispatcher::Delegate overrides.
+  virtual Browser* GetBrowser();
+  virtual gfx::NativeView GetNativeViewOfHost();
+  virtual gfx::NativeWindow GetCustomFrameNativeWindow();
+  virtual TabContents* GetAssociatedTabContents() const;
 
   // Message handlers.
   void OnDidGetApplicationInfo(int32 page_id, const WebApplicationInfo& info);
   void OnInstallApplication(const WebApplicationInfo& info);
+  void OnRequest(const ExtensionHostMsg_Request_Params& params);
 
   // App extensions related methods:
 
@@ -100,6 +113,9 @@ class ExtensionTabHelper : public TabContentsObserver,
   // Icon for extension_app_ (if non-null) or a manually-set icon for
   // non-extension apps.
   SkBitmap extension_app_icon_;
+
+  // Process any extension messages coming from the tab.
+  ExtensionFunctionDispatcher extension_function_dispatcher_;
 
   // Used for loading extension_app_icon_.
   scoped_ptr<ImageLoadingTracker> extension_app_image_loader_;

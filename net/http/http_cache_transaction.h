@@ -16,6 +16,7 @@
 #include "net/base/net_log.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_response_info.h"
+#include "net/http/http_request_headers.h"
 #include "net/http/http_transaction.h"
 
 namespace net {
@@ -330,6 +331,7 @@ class HttpCache::Transaction : public HttpTransaction {
   const HttpRequestInfo* request_;
   BoundNetLog net_log_;
   scoped_ptr<HttpRequestInfo> custom_request_;
+  HttpRequestHeaders request_headers_copy_;
   // If extra_headers specified a "if-modified-since" or "if-none-match",
   // |external_validation_| contains the value of those headers.
   ValidationHeaders external_validation_;
@@ -351,6 +353,7 @@ class HttpCache::Transaction : public HttpTransaction {
   bool is_sparse_;  // The data is stored in sparse byte ranges.
   bool server_responded_206_;
   bool cache_pending_;  // We are waiting for the HttpCache.
+  bool done_reading_;
   scoped_refptr<IOBuffer> read_buf_;
   int io_buf_len_;
   int read_offset_;

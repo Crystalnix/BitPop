@@ -1,20 +1,21 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "chrome/browser/ui/cocoa/location_bar/selected_keyword_decoration.h"
 
 #include "base/utf_string_conversions.h"
-#import "chrome/browser/autocomplete/autocomplete_edit_view_mac.h"
 #import "chrome/browser/ui/cocoa/image_utils.h"
+#import "chrome/browser/ui/cocoa/omnibox/omnibox_view_mac.h"
 #include "chrome/browser/ui/omnibox/location_bar_util.h"
-#include "grit/theme_resources.h"
 #include "grit/generated_resources.h"
+#include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
 SelectedKeywordDecoration::SelectedKeywordDecoration(NSFont* font)
     : BubbleDecoration(font) {
-  search_image_.reset([AutocompleteEditViewMac::ImageForResource(
+  search_image_.reset([OmniboxViewMac::ImageForResource(
       IDR_KEYWORD_SEARCH_MAGNIFIER) retain]);
 
   // Matches the color of the highlighted line in the popup.

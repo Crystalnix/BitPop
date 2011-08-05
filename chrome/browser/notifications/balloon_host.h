@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/scoped_ptr.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/tab_contents/render_view_host_delegate_helper.h"
@@ -23,10 +24,13 @@ class SiteInstance;
 struct RendererPreferences;
 struct WebPreferences;
 
+namespace IPC {
+class Message;
+}
+
 class BalloonHost : public RenderViewHostDelegate,
                     public RenderViewHostDelegate::View,
-                    public ExtensionFunctionDispatcher::Delegate,
-                    public NotificationObserver {
+                    public ExtensionFunctionDispatcher::Delegate {
  public:
   explicit BalloonHost(Balloon* balloon);
 
@@ -39,7 +43,7 @@ class BalloonHost : public RenderViewHostDelegate,
   // ExtensionFunctionDispatcher::Delegate overrides.
   virtual Browser* GetBrowser();
   virtual gfx::NativeView GetNativeViewOfHost();
-  virtual TabContents* associated_tab_contents() const;
+  virtual TabContents* GetAssociatedTabContents() const;
 
   RenderViewHost* render_view_host() const { return render_view_host_; }
 
@@ -61,14 +65,6 @@ class BalloonHost : public RenderViewHostDelegate,
   virtual int GetBrowserWindowID() const;
   virtual ViewType::Type GetRenderViewType() const;
   virtual RenderViewHostDelegate::View* GetViewDelegate();
-  virtual void ProcessWebUIMessage(
-      const ExtensionHostMsg_DomMessage_Params& params);
-
-  // NotificationObserver override.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
-
 
   // RenderViewHostDelegate::View methods. Only the ones for opening new
   // windows are currently implemented.
@@ -121,6 +117,9 @@ class BalloonHost : public RenderViewHostDelegate,
                                       const std::string& value);
   virtual void ClearInspectorSettings();
 
+  // Returns whether the associated render view is ready. Used only for testing.
+  bool IsRenderViewReady() const;
+
  protected:
   virtual ~BalloonHost();
   // Must override in platform specific implementations.
@@ -131,6 +130,12 @@ class BalloonHost : public RenderViewHostDelegate,
   RenderViewHost* render_view_host_;
 
  private:
+  // RenderViewHostDelegate
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+
+  // Message handlers
+  void OnRequest(const ExtensionHostMsg_Request_Params& params);
+
   // Called to send an event that the balloon has been disconnected from
   // a renderer (if should_notify_on_disconnect_ is true).
   void NotifyDisconnect();
@@ -152,14 +157,10 @@ class BalloonHost : public RenderViewHostDelegate,
   // Common implementations of some RenderViewHostDelegate::View methods.
   RenderViewHostDelegateViewHelper delegate_view_helper_;
 
-  // Handles requests to extension APIs. Will only be non-NULL if we are
-  // rendering a page from an extension.
-  scoped_ptr<ExtensionFunctionDispatcher> extension_function_dispatcher_;
-
   // A flag to enable Web UI.
   bool enable_web_ui_;
 
-  NotificationRegistrar registrar_;
+  ExtensionFunctionDispatcher extension_function_dispatcher_;
 };
 
 #endif  // CHROME_BROWSER_NOTIFICATIONS_BALLOON_HOST_H_

@@ -897,7 +897,7 @@ bool X509Certificate::GetDEREncoded(std::string* encoded) {
 // http://cabforum.org/EV_Certificate_Guidelines.pdf.
 bool X509Certificate::CheckEV(PCCERT_CHAIN_CONTEXT chain_context,
                               const char* policy_oid) const {
-  DCHECK(chain_context->cChain != 0);
+  DCHECK_NE(static_cast<DWORD>(0), chain_context->cChain);
   // If the cert doesn't match any of the policies, the
   // CERT_TRUST_IS_NOT_VALID_FOR_USAGE bit (0x10) in
   // chain_context->TrustStatus.dwErrorStatus is set.
@@ -991,7 +991,7 @@ void X509Certificate::FreeOSCertHandle(OSCertHandle cert_handle) {
 SHA1Fingerprint X509Certificate::CalculateFingerprint(
     OSCertHandle cert) {
   DCHECK(NULL != cert->pbCertEncoded);
-  DCHECK(0 != cert->cbCertEncoded);
+  DCHECK_NE(static_cast<DWORD>(0), cert->cbCertEncoded);
 
   BOOL rv;
   SHA1Fingerprint sha1;
@@ -1006,8 +1006,8 @@ SHA1Fingerprint X509Certificate::CalculateFingerprint(
 
 // static
 X509Certificate::OSCertHandle
-X509Certificate::ReadCertHandleFromPickle(const Pickle& pickle,
-                                          void** pickle_iter) {
+X509Certificate::ReadOSCertHandleFromPickle(const Pickle& pickle,
+                                            void** pickle_iter) {
   const char* data;
   int length;
   if (!pickle.ReadData(pickle_iter, &data, &length))
@@ -1026,8 +1026,8 @@ X509Certificate::ReadCertHandleFromPickle(const Pickle& pickle,
 }
 
 // static
-bool X509Certificate::WriteCertHandleToPickle(OSCertHandle cert_handle,
-                                              Pickle* pickle) {
+bool X509Certificate::WriteOSCertHandleToPickle(OSCertHandle cert_handle,
+                                                Pickle* pickle) {
   DWORD length = 0;
   if (!CertSerializeCertificateStoreElement(cert_handle, 0, NULL, &length))
     return false;

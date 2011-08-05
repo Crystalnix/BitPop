@@ -9,11 +9,11 @@
 //
 // Relationship of classes.
 //
-//      P2PSocketHost                 P2PSocketClient
-//           ^                               ^
-//           |                               |
-//           v              IPC              v
-//      P2PSocketsHost  <--------->  P2PSocketDispatcher
+//       P2PSocketHost                     P2PSocketClient
+//            ^                                   ^
+//            |                                   |
+//            v                  IPC              v
+//  P2PSocketDispatcherHost  <--------->  P2PSocketDispatcher
 //
 
 #ifndef CONTENT_RENDERER_P2P_SOCKET_DISPATCHER_H_
@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "base/id_map.h"
+#include "base/synchronization/lock.h"
 #include "content/common/p2p_sockets.h"
 #include "content/renderer/p2p/socket_client.h"
 #include "content/renderer/render_view_observer.h"
@@ -38,9 +39,8 @@ class P2PSocketDispatcher : public RenderViewObserver {
   explicit P2PSocketDispatcher(RenderView* render_view);
   virtual ~P2PSocketDispatcher();
 
-  P2PSocketClient* CreateSocket(P2PSocketType type,
-                                const net::IPEndPoint& address,
-                                P2PSocketClient::Delegate* delegate);
+  void RequestNetworks();
+  void GetNetworks(net::NetworkInterfaceList* networks);
 
   // RenderViewObserver overrides.
   virtual bool OnMessageReceived(const IPC::Message& message);
@@ -55,6 +55,7 @@ class P2PSocketDispatcher : public RenderViewObserver {
   base::MessageLoopProxy* message_loop();
 
   // Incoming message handlers.
+  void OnNetworkList(const net::NetworkInterfaceList& networks);
   void OnSocketCreated(int socket_id, const net::IPEndPoint& address);
   void OnIncomingTcpConnection(int socket_id, const net::IPEndPoint& address);
   void OnError(int socket_id);
@@ -65,6 +66,8 @@ class P2PSocketDispatcher : public RenderViewObserver {
 
   scoped_refptr<base::MessageLoopProxy> message_loop_;
   IDMap<P2PSocketClient> clients_;
+  net::NetworkInterfaceList networks_;
+  base::Lock networks_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(P2PSocketDispatcher);
 };

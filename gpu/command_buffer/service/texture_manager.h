@@ -5,9 +5,9 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_TEXTURE_MANAGER_H_
 #define GPU_COMMAND_BUFFER_SERVICE_TEXTURE_MANAGER_H_
 
-#include <map>
 #include <vector>
 #include "base/basictypes.h"
+#include "base/hash_tables.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "gpu/command_buffer/service/gl_utils.h"
@@ -174,7 +174,8 @@ class TextureManager {
 
     // Sets a texture parameter.
     // TODO(gman): Expand to SetParameteri,f,iv,fv
-    void SetParameter(
+    // Returns false if param was INVALID_ENUN
+    bool SetParameter(
         const FeatureInfo* feature_info, GLenum pname, GLint param);
 
     // Makes each of the mip levels as though they were generated.
@@ -298,7 +299,7 @@ class TextureManager {
 
   // Sets a texture parameter of a TextureInfo
   // TODO(gman): Expand to SetParameteri,f,iv,fv
-  void SetParameter(
+  bool SetParameter(
       const FeatureInfo* feature_info,
       TextureInfo* info, GLenum pname, GLint param);
 
@@ -337,8 +338,7 @@ class TextureManager {
 
  private:
   // Info for each texture in the system.
-  // TODO(gman): Choose a faster container.
-  typedef std::map<GLuint, TextureInfo::Ref> TextureInfoMap;
+  typedef base::hash_map<GLuint, TextureInfo::Ref> TextureInfoMap;
   TextureInfoMap texture_infos_;
 
   GLsizei max_texture_size_;

@@ -10,6 +10,7 @@
 #include "chrome/browser/sync/glue/bookmark_data_type_controller.h"
 #include "chrome/browser/sync/glue/data_type_controller.h"
 #include "chrome/browser/sync/js_arg_list.h"
+#include "chrome/browser/sync/js_event_details.h"
 #include "chrome/browser/sync/js_test_util.h"
 #include "chrome/browser/sync/profile_sync_factory_mock.h"
 #include "chrome/browser/sync/test_profile_sync_service.h"
@@ -38,28 +39,29 @@ using testing::StrictMock;
 class ProfileSyncServiceTest : public testing::Test {
  protected:
   ProfileSyncServiceTest()
-      : ui_thread_(BrowserThread::UI, &message_loop_) {
+      : ui_thread_(BrowserThread::UI, &ui_loop_),
+        io_thread_(BrowserThread::IO) {}
+
+  virtual ~ProfileSyncServiceTest() {}
+
+  virtual void SetUp() {
+    base::Thread::Options options;
+    options.message_loop_type = MessageLoop::TYPE_IO;
+    io_thread_.StartWithOptions(options);
     profile_.reset(new TestingProfile());
+    profile_->CreateRequestContext();
   }
-  virtual ~ProfileSyncServiceTest() {
+
+  virtual void TearDown() {
     // Kill the service before the profile.
     service_.reset();
     profile_.reset();
-
+    // Pump messages posted by the sync core thread (which may end up
+    // posting on the IO thread).
+    ui_loop_.RunAllPending();
+    io_thread_.Stop();
     // Ensure that the sync objects destruct to avoid memory leaks.
-    MessageLoop::current()->RunAllPending();
-  }
-  virtual void SetUp() {
-    profile_->CreateRequestContext();
-  }
-  virtual void TearDown() {
-    {
-      // The request context gets deleted on the I/O thread. To prevent a leak
-      // supply one here.
-      BrowserThread io_thread(BrowserThread::IO, MessageLoop::current());
-      profile_->ResetRequestContext();
-    }
-    MessageLoop::current()->RunAllPending();
+    ui_loop_.RunAllPending();
   }
 
   // TODO(akalin): Refactor the StartSyncService*() functions below.
@@ -97,15 +99,11 @@ class ProfileSyncServiceTest : public testing::Test {
     }
   }
 
-  // This serves as the "UI loop" on which the ProfileSyncService lives and
-  // operates. It is needed because the SyncBackend can post tasks back to
-  // the service, meaning it can't be null. It doesn't have to be running,
-  // though -- OnInitializationCompleted is the only example (so far) in this
-  // test where we need to Run the loop to swallow a task and then quit, to
-  // avoid leaking the ProfileSyncService (the PostTask will retain the callee
-  // and caller until the task is run).
-  MessageLoop message_loop_;
+  MessageLoop ui_loop_;
+  // Needed by |service_|.
   BrowserThread ui_thread_;
+  // Needed by |service| and |profile_|'s request context.
+  BrowserThread io_thread_;
 
   scoped_ptr<TestProfileSyncService> service_;
   scoped_ptr<TestingProfile> profile_;
@@ -145,12 +143,8 @@ TEST_F(ProfileSyncServiceTest, AbortedByShutdown) {
   service_->Initialize();
   service_.reset();
 }
-#if defined(OS_CHROMEOS) && defined(GOOGLE_CHROME_BUILD)
-#define MAYBE_JsFrontendHandlersBasic DISABLED_JsFrontendHandlersBasic
-#else
-#define MAYBE_JsFrontendHandlersBasic JsFrontendHandlersBasic
-#endif
-TEST_F(ProfileSyncServiceTest, MAYBE_JsFrontendHandlersBasic) {
+
+TEST_F(ProfileSyncServiceTest, JsFrontendHandlersBasic) {
   StartSyncService();
 
   StrictMock<MockJsEventHandler> event_handler;
@@ -178,8 +172,8 @@ TEST_F(ProfileSyncServiceTest,
 
   StrictMock<MockJsEventHandler> event_handler;
   EXPECT_CALL(event_handler,
-              HandleJsEvent("onSyncServiceStateChanged",
-                            HasArgs(JsArgList()))).Times(AtLeast(3));
+              HandleJsEvent("onServiceStateChanged",
+                            HasDetails(JsEventDetails()))).Times(AtLeast(3));
   // For some reason, these events may or may not fire.
   //
   // TODO(akalin): Figure out exactly why there's non-determinism
@@ -188,7 +182,7 @@ TEST_F(ProfileSyncServiceTest,
       .Times(AtMost(1));
   EXPECT_CALL(event_handler, HandleJsEvent("onChangesComplete", _))
       .Times(AtMost(1));
-  EXPECT_CALL(event_handler, HandleJsEvent("onSyncNotificationStateChange", _))
+  EXPECT_CALL(event_handler, HandleJsEvent("onNotificationStateChange", _))
       .Times(AtMost(1));
 
   EXPECT_EQ(NULL, service_->GetBackendForTest());
@@ -222,26 +216,27 @@ TEST_F(ProfileSyncServiceTest, JsFrontendProcessMessageBasic) {
       .Times(AtMost(1));
   EXPECT_CALL(event_handler, HandleJsEvent("onChangesComplete", _))
       .Times(AtMost(1));
-  EXPECT_CALL(event_handler, HandleJsEvent("onSyncNotificationStateChange", _))
+  EXPECT_CALL(event_handler, HandleJsEvent("onNotificationStateChange", _))
       .Times(AtMost(1));
 
   ListValue arg_list1;
   arg_list1.Append(Value::CreateBooleanValue(true));
   arg_list1.Append(Value::CreateIntegerValue(5));
-  JsArgList args1(arg_list1);
-  EXPECT_CALL(event_handler, HandleJsEvent("testMessage1", HasArgs(args1)));
+  JsArgList args1(&arg_list1);
+  EXPECT_CALL(event_handler,
+              HandleJsMessageReply("testMessage1", HasArgs(args1)));
 
   ListValue arg_list2;
   arg_list2.Append(Value::CreateStringValue("test"));
   arg_list2.Append(arg_list1.DeepCopy());
-  JsArgList args2(arg_list2);
+  JsArgList args2(&arg_list2);
   EXPECT_CALL(event_handler,
-              HandleJsEvent("delayTestMessage2", HasArgs(args2)));
+              HandleJsMessageReply("delayTestMessage2", HasArgs(args2)));
 
   ListValue arg_list3;
   arg_list3.Append(arg_list1.DeepCopy());
   arg_list3.Append(arg_list2.DeepCopy());
-  JsArgList args3(arg_list3);
+  JsArgList args3(&arg_list3);
 
   JsFrontend* js_backend = service_->GetJsFrontend();
 
@@ -257,14 +252,14 @@ TEST_F(ProfileSyncServiceTest, JsFrontendProcessMessageBasic) {
   js_backend->ProcessMessage("testMessage1", args1, &event_handler);
 
   // Fires off reply for delayTestMessage2.
-  message_loop_.RunAllPending();
+  ui_loop_.RunAllPending();
 
   // Never replied to.
   js_backend->ProcessMessage("delayNotRepliedTo", args3, &event_handler);
 
   js_backend->RemoveHandler(&event_handler);
 
-  message_loop_.RunAllPending();
+  ui_loop_.RunAllPending();
 
   // Never replied to.
   js_backend->ProcessMessage("notRepliedTo", args3, &event_handler);
@@ -280,32 +275,34 @@ TEST_F(ProfileSyncServiceTest,
       .Times(AtMost(1));
   EXPECT_CALL(event_handler, HandleJsEvent("onChangesComplete", _))
       .Times(AtMost(1));
-  EXPECT_CALL(event_handler, HandleJsEvent("onSyncNotificationStateChange", _))
+  EXPECT_CALL(event_handler, HandleJsEvent("onNotificationStateChange", _))
       .Times(AtMost(1));
 
   ListValue arg_list1;
   arg_list1.Append(Value::CreateBooleanValue(true));
   arg_list1.Append(Value::CreateIntegerValue(5));
-  JsArgList args1(arg_list1);
-  EXPECT_CALL(event_handler, HandleJsEvent("testMessage1", HasArgs(args1)));
+  JsArgList args1(&arg_list1);
+  EXPECT_CALL(event_handler,
+              HandleJsMessageReply("testMessage1", HasArgs(args1)));
 
   ListValue arg_list2;
   arg_list2.Append(Value::CreateStringValue("test"));
   arg_list2.Append(arg_list1.DeepCopy());
-  JsArgList args2(arg_list2);
-  EXPECT_CALL(event_handler, HandleJsEvent("testMessage2", HasArgs(args2)));
+  JsArgList args2(&arg_list2);
+  EXPECT_CALL(event_handler,
+              HandleJsMessageReply("testMessage2", HasArgs(args2)));
 
   ListValue arg_list3;
   arg_list3.Append(arg_list1.DeepCopy());
   arg_list3.Append(arg_list2.DeepCopy());
-  JsArgList args3(arg_list3);
+  JsArgList args3(&arg_list3);
   EXPECT_CALL(event_handler,
-              HandleJsEvent("delayTestMessage3", HasArgs(args3)));
+              HandleJsMessageReply("delayTestMessage3", HasArgs(args3)));
 
-  const JsArgList kNoArgs;
+  const JsEventDetails kNoDetails;
 
-  EXPECT_CALL(event_handler, HandleJsEvent("onSyncServiceStateChanged",
-      HasArgs(kNoArgs))).Times(AtLeast(3));
+  EXPECT_CALL(event_handler, HandleJsEvent("onServiceStateChanged",
+      HasDetails(kNoDetails))).Times(AtLeast(3));
 
   JsFrontend* js_backend = service_->GetJsFrontend();
 
@@ -323,13 +320,15 @@ TEST_F(ProfileSyncServiceTest,
       GaiaConstants::kSyncService, "token");
 
   // Fires delayTestMessage3.
-  message_loop_.RunAllPending();
+  ui_loop_.RunAllPending();
+
+  const JsArgList kNoArgs;
 
   js_backend->ProcessMessage("delayNotRepliedTo", kNoArgs, &event_handler);
 
   js_backend->RemoveHandler(&event_handler);
 
-  message_loop_.RunAllPending();
+  ui_loop_.RunAllPending();
 
   js_backend->ProcessMessage("notRepliedTo", kNoArgs, &event_handler);
 }

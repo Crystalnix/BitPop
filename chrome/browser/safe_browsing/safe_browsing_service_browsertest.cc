@@ -11,6 +11,7 @@
 #include "base/metrics/histogram.h"
 #include "crypto/sha2.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/safe_browsing/safe_browsing_database.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/safe_browsing/safe_browsing_util.h"
@@ -401,15 +402,20 @@ IN_PROC_BROWSER_TEST_F(SafeBrowsingServiceTest, Prefetch) {
   class SetPrefetchForTest {
    public:
     explicit SetPrefetchForTest(bool prefetch)
-        : old_prefetch_state_(ResourceDispatcherHost::is_prefetch_enabled()) {
+        : old_prefetch_state_(ResourceDispatcherHost::is_prefetch_enabled()),
+          old_prerender_mode_(prerender::PrerenderManager::GetMode()) {
       ResourceDispatcherHost::set_is_prefetch_enabled(prefetch);
+      prerender::PrerenderManager::SetMode(
+          prerender::PrerenderManager::PRERENDER_MODE_DISABLED);
     }
 
     ~SetPrefetchForTest() {
       ResourceDispatcherHost::set_is_prefetch_enabled(old_prefetch_state_);
+      prerender::PrerenderManager::SetMode(old_prerender_mode_);
     }
    private:
     bool old_prefetch_state_;
+    prerender::PrerenderManager::PrerenderManagerMode old_prerender_mode_;
   } set_prefetch_for_test(true);
 
   // Even though we have added this uri to the safebrowsing database and

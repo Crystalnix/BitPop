@@ -77,6 +77,15 @@ FilePath ExtensionInfoMap::GetPathForDisabledExtension(
     return FilePath();
 }
 
+std::string ExtensionInfoMap::GetContentSecurityPolicyForExtension(
+    const std::string& id) const {
+  Map::const_iterator iter = extension_info_.find(id);
+  if (iter != extension_info_.end())
+    return iter->second->content_security_policy();
+  else
+    return std::string();
+}
+
 bool ExtensionInfoMap::ExtensionHasWebExtent(const std::string& id) const {
   Map::const_iterator iter = extension_info_.find(id);
   return iter != extension_info_.end() &&
@@ -100,10 +109,10 @@ std::string ExtensionInfoMap::GetDefaultLocaleForExtension(
   return result;
 }
 
-ExtensionExtent ExtensionInfoMap::GetEffectiveHostPermissionsForExtension(
+URLPatternSet ExtensionInfoMap::GetEffectiveHostPermissionsForExtension(
     const std::string& id) const {
   Map::const_iterator iter = extension_info_.find(id);
-  ExtensionExtent result;
+  URLPatternSet result;
   if (iter != extension_info_.end())
     result = iter->second->GetEffectiveHostPermissions();
 
@@ -123,7 +132,7 @@ bool ExtensionInfoMap::CheckURLAccessToExtensionPermission(
     // disallowed, so only one will match.
     info = extension_info_.begin();
     while (info != extension_info_.end() &&
-           !info->second->web_extent().ContainsURL(url))
+           !info->second->web_extent().MatchesURL(url))
       ++info;
   }
 

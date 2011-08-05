@@ -13,8 +13,11 @@
 #include "content/renderer/render_view.h"
 #include "content/renderer/render_view_observer.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPageSerializerClient.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebPermissionClient.h"
 
+class ContentSettingsObserver;
 class DomAutomationController;
+class ExtensionDispatcher;
 class ExternalHostBindings;
 class FilePath;
 class GURL;
@@ -22,10 +25,6 @@ class SkBitmap;
 class TranslateHelper;
 struct ThumbnailScore;
 struct ViewMsg_Navigate_Params;
-
-namespace WebKit {
-class WebView;
-}
 
 namespace safe_browsing {
 class PhishingClassifierDelegate;
@@ -38,11 +37,14 @@ class ImageResourceFetcher;
 // This class holds the Chrome specific parts of RenderView, and has the same
 // lifetime.
 class ChromeRenderViewObserver : public RenderViewObserver,
-                                 public WebKit::WebPageSerializerClient {
+                                 public WebKit::WebPageSerializerClient,
+                                 public WebKit::WebPermissionClient {
  public:
   // translate_helper and/or phishing_classifier can be NULL.
   ChromeRenderViewObserver(
       RenderView* render_view,
+      ContentSettingsObserver* content_settings,
+      ExtensionDispatcher* extension_dispatcher,
       TranslateHelper* translate_helper,
       safe_browsing::PhishingClassifierDelegate* phishing_classifier);
   virtual ~ChromeRenderViewObserver();
@@ -51,15 +53,43 @@ class ChromeRenderViewObserver : public RenderViewObserver,
   // RenderViewObserver implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void DidStopLoading() OVERRIDE;
-  virtual void DidChangeIcons(WebKit::WebFrame* frame) OVERRIDE;
+  virtual void DidChangeIcon(WebKit::WebFrame* frame,
+                             WebKit::WebIconURL::Type icon_type) OVERRIDE;
   virtual void DidCommitProvisionalLoad(WebKit::WebFrame* frame,
                                         bool is_new_navigation) OVERRIDE;
   virtual void DidClearWindowObject(WebKit::WebFrame* frame) OVERRIDE;
 
   // WebKit::WebPageSerializerClient implementation.
-  virtual void didSerializeDataForFrame(const WebKit::WebURL& frame_url,
-                                        const WebKit::WebCString& data,
-                                        PageSerializationStatus status);
+  virtual void didSerializeDataForFrame(
+      const WebKit::WebURL& frame_url,
+      const WebKit::WebCString& data,
+      PageSerializationStatus status) OVERRIDE;
+
+  // WebKit::WebPermissionClient implementation.
+  virtual bool allowDatabase(WebKit::WebFrame* frame,
+                             const WebKit::WebString& name,
+                             const WebKit::WebString& display_name,
+                             unsigned long estimated_size) OVERRIDE;
+  virtual bool allowFileSystem(WebKit::WebFrame* frame) OVERRIDE;
+  virtual bool allowImages(WebKit::WebFrame* frame,
+                           bool enabled_per_settings) OVERRIDE;
+  virtual bool allowIndexedDB(WebKit::WebFrame* frame,
+                              const WebKit::WebString& name,
+                              const WebKit::WebSecurityOrigin& origin) OVERRIDE;
+  virtual bool allowPlugins(WebKit::WebFrame* frame,
+                            bool enabled_per_settings) OVERRIDE;
+  virtual bool allowScript(WebKit::WebFrame* frame,
+                           bool enabled_per_settings) OVERRIDE;
+  virtual bool allowScriptExtension(WebKit::WebFrame* frame,
+                                    const WebKit::WebString& extension_name,
+                                    int extension_group) OVERRIDE;
+  virtual bool allowStorage(WebKit::WebFrame* frame, bool local) OVERRIDE;
+  virtual bool allowReadFromClipboard(WebKit::WebFrame* frame,
+                                      bool default_value) OVERRIDE;
+  virtual bool allowWriteToClipboard(WebKit::WebFrame* frame,
+                                     bool default_value) OVERRIDE;
+  virtual void didNotAllowPlugins(WebKit::WebFrame* frame) OVERRIDE;
+  virtual void didNotAllowScript(WebKit::WebFrame* frame) OVERRIDE;
 
   void OnCaptureSnapshot();
   void OnHandleMessageFromExternalHost(const std::string& message,
@@ -74,6 +104,7 @@ class ChromeRenderViewObserver : public RenderViewObserver,
   void OnDownloadFavicon(int id, const GURL& image_url, int image_size);
   void OnEnableViewSourceMode();
   void OnNavigate(const ViewMsg_Navigate_Params& params);
+  void OnSetIsPrerendering(bool is_prerendering);
 
   // Captures the thumbnail and text contents for indexing for the given load
   // ID. If the view's load ID is different than the parameter, this call is
@@ -122,6 +153,8 @@ class ChromeRenderViewObserver : public RenderViewObserver,
   SkBitmap ImageFromDataUrl(const GURL&) const;
 
   // Have the same lifetime as us.
+  ContentSettingsObserver* content_settings_;
+  ExtensionDispatcher* extension_dispatcher_;
   TranslateHelper* translate_helper_;
   safe_browsing::PhishingClassifierDelegate* phishing_classifier_;
 

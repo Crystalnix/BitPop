@@ -18,10 +18,10 @@
 #include "chrome/browser/sync/sync_ui_util.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/net/url_fetcher.h"
 #include "chrome/common/web_resource/web_resource_unpacker.h"
 #include "content/browser/browser_thread.h"
 #include "content/common/notification_service.h"
+#include "content/common/url_fetcher.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_request_status.h"
@@ -82,7 +82,7 @@ class WebResourceService::WebResourceFetcher
                           const GURL& url,
                           const net::URLRequestStatus& status,
                           int response_code,
-                          const ResponseCookies& cookies,
+                          const net::ResponseCookies& cookies,
                           const std::string& data) {
     // Delete the URLFetcher when this function exits.
     scoped_ptr<URLFetcher> clean_up_fetcher(url_fetcher_.release());
@@ -218,7 +218,9 @@ WebResourceService::WebResourceService(
       web_resource_update_scheduled_(false) {
   DCHECK(prefs);
   DCHECK(profile);
-  prefs_->RegisterStringPref(last_update_time_pref_name, "0");
+  prefs_->RegisterStringPref(last_update_time_pref_name,
+                             "0",
+                             PrefService::UNSYNCABLE_PREF);
   resource_dispatcher_host_ = g_browser_process->resource_dispatcher_host();
   web_resource_fetcher_.reset(new WebResourceFetcher(this));
 }

@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_CHROMEOS_MOCK_SYSTEM_ACCESS_H_
 #pragma once
 
+#include "base/basictypes.h"
 #include "chrome/browser/chromeos/system_access.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -13,7 +14,8 @@ namespace chromeos {
 
 class MockSystemAccess : public SystemAccess {
  public:
-  MockSystemAccess() {}
+  MockSystemAccess();
+  virtual ~MockSystemAccess();
 
   MOCK_METHOD0(GetTimezone, const icu::TimeZone&());
   MOCK_METHOD1(SetTimezone, void(const icu::TimeZone& timezone));

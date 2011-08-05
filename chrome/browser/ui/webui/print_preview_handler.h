@@ -12,8 +12,9 @@
 #include "content/browser/webui/web_ui.h"
 
 class FilePath;
-class PrintSystemTaskProxy;
 class FundamentalValue;
+class PrintSystemTaskProxy;
+class StringValue;
 
 namespace printing {
 class PrintBackend;
@@ -39,6 +40,11 @@ class PrintPreviewHandler : public WebUIMessageHandler,
  private:
   friend class PrintSystemTaskProxy;
 
+  TabContents* preview_tab();
+
+  // Get the default printer. |args| is unused.
+  void HandleGetDefaultPrinter(const ListValue* args);
+
   // Get the list of printers. |args| is unused.
   void HandleGetPrinters(const ListValue* args);
 
@@ -54,19 +60,40 @@ class PrintPreviewHandler : public WebUIMessageHandler,
   // First element of |args| is the printer name.
   void HandleGetPrinterCapabilities(const ListValue* args);
 
+  // Ask the initiator renderer to show the native print system dialog.
+  // |args| is unused.
+  void HandleShowSystemDialog(const ListValue* args);
+
+  // Ask the browser to show the native printer management dialog.
+  // |args| is unused.
+  void HandleManagePrinters(const ListValue* args);
+
+  // Ask the browser to close the preview tab.
+  // |args| is unused.
+  void HandleClosePreviewTab(const ListValue* args);
+
   // Send the printer capabilities to the Web UI.
   // |settings_info| contains printer capabilities information.
   void SendPrinterCapabilities(const DictionaryValue& settings_info);
+
+  // Send the default printer to the Web UI.
+  void SendDefaultPrinter(const StringValue& default_printer);
 
   // Send the list of printers to the Web UI.
   void SendPrinterList(const ListValue& printers,
                        const FundamentalValue& default_printer_index);
 
-  // Helper function to process the color setting in the dictionary.
-  void ProcessColorSetting(const DictionaryValue& settings);
+  // Helper function to get the initiator tab for the print preview tab.
+  TabContents* GetInitiatorTab();
 
-  // Helper function to process the landscape setting in the dictionary.
-  void ProcessLandscapeSetting(const DictionaryValue& settings);
+  // Helper function to close the print preview tab.
+  void ClosePrintPreviewTab();
+
+  // Helper function to activate the initiator tab and close the preview tab.
+  void ActivateInitiatorTabAndClosePreviewTab();
+
+  // Adds all the recorded stats taken so far to histogram counts.
+  void ReportStats();
 
   // Pointer to current print system.
   scoped_refptr<printing::PrintBackend> print_backend_;
@@ -75,6 +102,19 @@ class PrintPreviewHandler : public WebUIMessageHandler,
   scoped_refptr<SelectFileDialog> select_file_dialog_;
 
   static FilePath* last_saved_path_;
+
+  // A count of how many requests received to regenerate preview data.
+  // Initialized to 0 then incremented and emitted to a histogram.
+  int regenerate_preview_request_count_;
+
+  // A count of how many requests received to show manage printers dialog.
+  int manage_printers_dialog_request_count_;
+
+  // Whether we have already logged a failed print preview.
+  bool reported_failed_preview_;
+
+  // Whether we have already logged the number of printers this session.
+  bool has_logged_printers_count_;
 
   DISALLOW_COPY_AND_ASSIGN(PrintPreviewHandler);
 };

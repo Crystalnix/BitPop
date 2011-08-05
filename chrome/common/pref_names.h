@@ -58,6 +58,8 @@ extern const char kWebKitUsesUniversalDetector[];
 extern const char kWebKitTextAreasAreResizable[];
 extern const char kWebKitJavaEnabled[];
 extern const char kWebkitTabsToLinks[];
+extern const char kWebKitAllowDisplayingInsecureContent[];
+extern const char kWebKitAllowRunningInsecureContent[];
 extern const char kPasswordManagerEnabled[];
 extern const char kPasswordManagerAllowShowPasswords[];
 extern const char kSafeBrowsingEnabled[];
@@ -164,7 +166,6 @@ extern const char kLabsMediaplayerEnabled[];
 extern const char kEnableScreenLock[];
 extern const char kShowPlanNotifications[];
 extern const char kShow3gPromoNotification[];
-extern const char kCarrierDealPromoShown[];
 extern const char kLastUsedFileBrowserHandlers[];
 #endif
 extern const char kIpcDisabledMessages[];
@@ -208,6 +209,7 @@ extern const char kPluginsEnabledInternalPDF[];
 extern const char kPluginsShowSetReaderDefaultInfobar[];
 extern const char kPluginsShowDetails[];
 extern const char kPluginsAllowOutdated[];
+extern const char kPluginsAlwaysAuthorize[];
 extern const char kCheckDefaultBrowser[];
 extern const char kDefaultBrowserSettingEnabled[];
 #if defined(OS_MACOSX)
@@ -224,7 +226,6 @@ extern const char kPerHostContentSettings[];  // OBSOLETE
 extern const char kContentSettingsVersion[];
 extern const char kContentSettingsPatterns[];
 extern const char kBlockThirdPartyCookies[];
-extern const char kBlockNonsandboxedPlugins[];
 extern const char kClearSiteDataOnExit[];
 extern const char kDefaultZoomLevel[];
 extern const char kPerHostZoomLevels[];
@@ -237,6 +238,7 @@ extern const char kAutofillPersonalDataManagerFirstRun[];
 extern const char kEditBookmarksEnabled[];
 
 extern const char kUseVerticalTabs[];
+extern const char kUseCompactNavigationBar[];
 extern const char kEnableTranslate[];
 extern const char kEnableBookmarkBar[];
 extern const char kPinnedTabs[];
@@ -259,6 +261,10 @@ extern const char kMetricsClientIDTimestamp[];
 extern const char kMetricsReportingEnabled[];
 extern const char kMetricsInitialLogs[];
 extern const char kMetricsOngoingLogs[];
+
+extern const char kProfileLastUsed[];
+extern const char kProfileDirectoryMap[];
+extern const char kProfilesNumCreated[];
 
 extern const char kProfileMetrics[];
 extern const char kProfilePrefix[];
@@ -394,12 +400,15 @@ extern const char kNTPPromoClosed[];
 extern const char kNTPPromoGroup[];
 extern const char kNTPPromoGroupTimeSlice[];
 extern const char kNTPPromoBuild[];
+extern const char kNTPWebStoreEnabled[];
 extern const char kNTPWebStorePromoLastId[];
 extern const char kNTPWebStorePromoId[];
 extern const char kNTPWebStorePromoHeader[];
 extern const char kNTPWebStorePromoButton[];
 extern const char kNTPWebStorePromoLink[];
+extern const char kNTPWebStorePromoLogo[];
 extern const char kNTPWebStorePromoExpire[];
+extern const char kNTPWebStorePromoUserGroup[];
 
 extern const char kGpuBlacklist[];
 extern const char kGpuBlacklistUpdate[];
@@ -448,9 +457,8 @@ extern const char kCloudPrintXMPPAuthToken[];
 extern const char kCloudPrintEmail[];
 extern const char kCloudPrintPrintSystemSettings[];
 extern const char kCloudPrintEnableJobPoll[];
-
-extern const char kRemotingHasSetupCompleted[];
-extern const char kRemotingHostEnabled[];
+extern const char kCloudPrintRobotRefreshToken[];
+extern const char kCloudPrintRobotEmail[];
 
 extern const char kProxy[];
 
@@ -475,9 +483,12 @@ extern const char kManagedPopupsBlockedForUrls[];
 #if defined(OS_CHROMEOS)
 extern const char kSignedSettingsTempStorage[];
 extern const char kHardwareKeyboardLayout[];
+extern const char kCarrierDealPromoShown[];
 #endif
 
 extern const char kClearPluginLSODataEnabled[];
+
+extern const char kDiskCacheDir[];
 
 extern const char kRegisteredBackgroundContents[];
 
@@ -487,12 +498,14 @@ extern const char kEnableAuthNegotiatePort[];
 extern const char kAuthServerWhitelist[];
 extern const char kAuthNegotiateDelegateWhitelist[];
 extern const char kGSSAPILibraryName[];
-
-extern const char kKnownBackgroundPages[];
+extern const char kAllowCrossOriginAuthPrompt[];
 
 extern const char kRegisteredProtocolHandlers[];
+extern const char kIgnoredProtocolHandlers[];
+extern const char kCustomHandlersEnabled[];
 
 extern const char kUserCreatedLoginItem[];
+extern const char kBackgroundModeEnabled[];
 
 }  // namespace prefs
 

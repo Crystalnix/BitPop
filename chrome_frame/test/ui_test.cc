@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -67,7 +67,7 @@ TEST_P(FullTabUITest, KeyboardInput) {
 }
 
 // Tests keyboard shortcuts for back and forward.
-TEST_P(FullTabUITest, KeyboardBackForward) {
+TEST_P(FullTabUITest, FLAKY_KeyboardBackForward) {
   if (IsWorkstationLocked()) {
     LOG(ERROR) << "This test cannot be run in a locked workstation.";
     return;
@@ -103,7 +103,7 @@ TEST_P(FullTabUITest, KeyboardBackForward) {
       .WillOnce(CloseBrowserMock(&ie_mock_));
 
   LaunchIENavigateAndLoop(page1,
-                          kChromeFrameLongNavigationTimeoutInSeconds * 2);
+                          kChromeFrameVeryLongNavigationTimeoutInSeconds);
 }
 
 // Tests new window behavior with ctrl+N.
@@ -180,7 +180,8 @@ TEST_P(FullTabUITest, CtrlF) {
 }
 
 // Test that ctrl+r does cause a refresh.
-TEST_P(FullTabUITest, CtrlR) {
+// http://code.google.com/p/chromium/issues/detail?id=84297
+TEST_P(FullTabUITest, FLAKY_CtrlR) {
   if (IsWorkstationLocked()) {
     LOG(ERROR) << "This test cannot be run in a locked workstation.";
     return;
@@ -219,7 +220,8 @@ TEST_P(FullTabUITest, CtrlW) {
 }
 
 // Test address bar navigation with Alt+d and URL.
-TEST_P(FullTabUITest, AltD) {
+// http://code.google.com/p/chromium/issues/detail?id=84297
+TEST_P(FullTabUITest, FLAKY_AltD) {
   if (IsWorkstationLocked()) {
     LOG(ERROR) << "This test cannot be run in a locked workstation.";
     return;
@@ -426,9 +428,10 @@ class ContextMenuTest : public MockIEEventSinkTest, public testing::Test {
             AccDoDefaultAction(AccObjectMatcher(L"Save", L"push button"))));
 
     EXPECT_CALL(win_observer_mock, OnWindowClose(_))
-        .WillOnce(CloseWhenFileSaved(&ie_mock_, temp_file_path, 5000));
+        .WillOnce(CloseWhenFileSaved(&ie_mock_, temp_file_path, 8000));
 
-    LaunchIEAndNavigate(GetTestUrl(L"save_as_context_menu.html"));
+    LaunchIENavigateAndLoop(GetTestUrl(L"save_as_context_menu.html"),
+                            kChromeFrameVeryLongNavigationTimeoutInSeconds);
     ASSERT_TRUE(file_util::DieFileDie(temp_file_path, false));
   }
 
@@ -501,7 +504,7 @@ TEST_F(ContextMenuTest, CFViewSource) {
   LaunchIEAndNavigate(GetSimplePageUrl());
 }
 
-TEST_F(ContextMenuTest, CFPageInfo) {
+TEST_F(ContextMenuTest, DISABLED_CFPageInfo) {
   server_mock_.ExpectAndServeAnyRequests(CFInvocation::MetaTag());
   MockWindowObserver win_observer_mock;
   InSequence expect_in_sequence_for_scope;
@@ -548,10 +551,11 @@ TEST_F(ContextMenuTest, CFInspector) {
       .WillOnce(CloseBrowserMock(&ie_mock_));
 
   LaunchIENavigateAndLoop(GetSimplePageUrl(),
-                          kChromeFrameLongNavigationTimeoutInSeconds * 2);
+                          kChromeFrameVeryLongNavigationTimeoutInSeconds);
 }
 
-TEST_F(ContextMenuTest, CFSavePageAs) {
+// http://code.google.com/p/chromium/issues/detail?id=83114
+TEST_F(ContextMenuTest, FLAKY_CFSavePageAs) {
   // Please see http://code.google.com/p/chromium/issues/detail?id=60987
   // for more information on why this test is disabled for Vista with IE7.
   if (base::win::GetVersion() == base::win::VERSION_VISTA &&
@@ -562,7 +566,8 @@ TEST_F(ContextMenuTest, CFSavePageAs) {
   ASSERT_NO_FATAL_FAILURE(DoSaveAsTest(L"", L"Save as...", L".html"));
 }
 
-TEST_F(ContextMenuTest, CFSaveLinkAs) {
+// http://code.google.com/p/chromium/issues/detail?id=83114
+TEST_F(ContextMenuTest, DISABLED_CFSaveLinkAs) {
   // Please see http://code.google.com/p/chromium/issues/detail?id=60987
   // for more information on why this test is disabled for Vista with IE7.
   if (base::win::GetVersion() == base::win::VERSION_VISTA &&

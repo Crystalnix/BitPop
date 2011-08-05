@@ -10,30 +10,33 @@
 #include "base/command_line.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
+#include "base/stringprintf.h"
 #include "base/string_util.h"
+#include "base/synchronization/waitable_event.h"
 #include "base/task.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/platform_thread.h"
 #include "base/values.h"
-#include "base/synchronization/waitable_event.h"
 #include "chrome/browser/password_manager/encryptor.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/sync/profile_sync_service_harness.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/net/url_fetcher.h"
-#include "chrome/common/net/test_url_fetcher_factory.h"
 #include "chrome/test/testing_browser_process.h"
 #include "chrome/test/ui_test_utils.h"
 #include "content/browser/browser_thread.h"
+#include "content/browser/tab_contents/tab_contents.h"
+#include "content/common/test_url_fetcher_factory.h"
+#include "content/common/url_fetcher.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/escape.h"
 #include "net/base/network_change_notifier.h"
-#include "net/test/test_server.h"
 #include "net/proxy/proxy_config.h"
 #include "net/proxy/proxy_config_service_fixed.h"
 #include "net/proxy/proxy_service.h"
+#include "net/test/test_server.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_status.h"
@@ -64,7 +67,7 @@ class SyncServerStatusChecker : public URLFetcher::Delegate {
                                   const GURL& url,
                                   const net::URLRequestStatus& status,
                                   int response_code,
-                                  const ResponseCookies& cookies,
+                                  const net::ResponseCookies& cookies,
                                   const std::string& data) {
     running_ = (status.status() == net::URLRequestStatus::SUCCESS &&
                 response_code == 200 && data.find("ok") == 0);
@@ -104,10 +107,10 @@ class SetProxyConfigTask : public Task {
 LiveSyncTest::LiveSyncTest(TestType test_type)
     : sync_server_(net::TestServer::TYPE_SYNC, FilePath()),
       test_type_(test_type),
+      server_type_(SERVER_TYPE_UNDECIDED),
       num_clients_(-1),
       test_server_handle_(base::kNullProcessHandle) {
   InProcessBrowserTest::set_show_window(true);
-
   switch (test_type_) {
     case SINGLE_CLIENT: {
       num_clients_ = 1;
@@ -141,6 +144,33 @@ void LiveSyncTest::SetUp() {
   } else {
     SetupMockGaiaResponses();
   }
+
+   if (!cl->HasSwitch(switches::kSyncServiceURL) &&
+       !cl->HasSwitch(switches::kSyncServerCommandLine)) {
+    // If neither a sync server URL nor a sync server command line is
+    // provided, start up a local python sync test server and point Chrome
+    // to its URL.  This is the most common configuration, and the only
+    // one that makes sense for most developers.
+    server_type_ = LOCAL_PYTHON_SERVER;
+   } else if (cl->HasSwitch(switches::kSyncServiceURL) &&
+              cl->HasSwitch(switches::kSyncServerCommandLine)) {
+    // If a sync server URL and a sync server command line are provided,
+    // start up a local sync server by running the command line. Chrome
+    // will connect to the server at the URL that was provided.
+    server_type_ = LOCAL_LIVE_SERVER;
+  } else if (cl->HasSwitch(switches::kSyncServiceURL) &&
+             !cl->HasSwitch(switches::kSyncServerCommandLine)) {
+    // If a sync server URL is provided, but not a server command line,
+    // it is assumed that the server is already running. Chrome will
+    // automatically connect to it at the URL provided. There is nothing
+    // to do here.
+    server_type_ = EXTERNAL_LIVE_SERVER;
+  } else {
+    // If a sync server command line is provided, but not a server URL,
+    // we flag an error.
+    LOG(FATAL) << "Can't figure out how to run a server.";
+  }
+
   if (username_.empty() || password_.empty())
     LOG(FATAL) << "Cannot run sync tests without GAIA credentials.";
 
@@ -174,16 +204,13 @@ void LiveSyncTest::SetUpCommandLine(CommandLine* cl) {
   if (!cl->HasSwitch(switches::kEnableSyncSessions))
     cl->AppendSwitch(switches::kEnableSyncSessions);
 
+  // TODO(sync): Remove this once typed url sync is enabled by default.
+  if (!cl->HasSwitch(switches::kEnableSyncTypedUrls))
+    cl->AppendSwitch(switches::kEnableSyncTypedUrls);
+
   // Disable non-essential access of external network resources.
   if (!cl->HasSwitch(switches::kDisableBackgroundNetworking))
     cl->AppendSwitch(switches::kDisableBackgroundNetworking);
-
-#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
-  // Use a basic non-encrypted password store on Linux while running tests.
-  // See http://code.google.com/p/chromium/wiki/LinuxPasswordStorage.
-  if (!cl->HasSwitch(switches::kPasswordStore))
-    cl->AppendSwitchASCII(switches::kPasswordStore, "basic");
-#endif
 }
 
 // static
@@ -232,7 +259,7 @@ bool LiveSyncTest::SetupClients() {
   // Create the required number of sync profiles and clients.
   for (int i = 0; i < num_clients_; ++i) {
     profiles_.push_back(MakeProfile(
-        StringPrintf(FILE_PATH_LITERAL("Profile%d"), i)));
+        base::StringPrintf(FILE_PATH_LITERAL("Profile%d"), i)));
     EXPECT_FALSE(GetProfile(i) == NULL) << "GetProfile(" << i << ") failed.";
     clients_.push_back(
         new ProfileSyncServiceHarness(GetProfile(i), username_, password_, i));
@@ -313,7 +340,8 @@ void LiveSyncTest::ReadPasswordFile() {
 void LiveSyncTest::SetupMockGaiaResponses() {
   username_ = "user@gmail.com";
   password_ = "password";
-  factory_.reset(new FakeURLFetcherFactory());
+  integration_factory_.reset(new URLFetcherFactory());
+  factory_.reset(new FakeURLFetcherFactory(integration_factory_.get()));
   factory_->SetFakeResponse(kClientLoginUrl, "SID=sid\nLSID=lsid", true);
   factory_->SetFakeResponse(kGetUserInfoUrl, "email=user@gmail.com", true);
   factory_->SetFakeResponse(kIssueAuthTokenUrl, "auth", true);
@@ -321,31 +349,19 @@ void LiveSyncTest::SetupMockGaiaResponses() {
   URLFetcher::set_factory(factory_.get());
 }
 
-// Start up a local sync server if required.
-// - If a sync server URL and a sync server command line are provided, start up
-//   a local sync server by running the command line. Chrome will connect to the
-//   server at the URL that was provided.
-// - If neither a sync server URL nor a sync server command line are provided,
-//   start up a local python sync test server and point Chrome to its URL.
-// - If a sync server URL is provided, but not a server command line, it is
-//   assumed that the server is already running. Chrome will automatically
-//   connect to it at the URL provided. There is nothing to do here.
-// - If a sync server command line is provided, but not a server URL, we flag an
-//   error.
+// Start up a local sync server based on the value of server_type_, which
+// was determined from the command line parameters.
 void LiveSyncTest::SetUpTestServerIfRequired() {
-  CommandLine* cl = CommandLine::ForCurrentProcess();
-  if (cl->HasSwitch(switches::kSyncServiceURL) &&
-      cl->HasSwitch(switches::kSyncServerCommandLine)) {
-    if (!SetUpLocalTestServer())
-      LOG(FATAL) << "Failed to set up local test server";
-  } else if (!cl->HasSwitch(switches::kSyncServiceURL) &&
-             !cl->HasSwitch(switches::kSyncServerCommandLine)) {
+  if (server_type_ == LOCAL_PYTHON_SERVER) {
     if (!SetUpLocalPythonTestServer())
       LOG(FATAL) << "Failed to set up local python test server";
-  } else if (!cl->HasSwitch(switches::kSyncServiceURL) &&
-             cl->HasSwitch(switches::kSyncServerCommandLine)) {
-    LOG(FATAL) << "Sync server command line must be accompanied by sync "
-                  "service URL.";
+  } else if (server_type_ == LOCAL_LIVE_SERVER) {
+    if (!SetUpLocalTestServer())
+      LOG(FATAL) << "Failed to set up local test server";
+  } else if (server_type_ == EXTERNAL_LIVE_SERVER) {
+    // Nothing to do; we'll just talk to the URL we were given.
+  } else {
+    LOG(FATAL) << "Don't know which server environment to run test in.";
   }
 }
 
@@ -386,14 +402,10 @@ bool LiveSyncTest::SetUpLocalTestServer() {
   CommandLine* cl = CommandLine::ForCurrentProcess();
   CommandLine::StringType server_cmdline_string = cl->GetSwitchValueNative(
       switches::kSyncServerCommandLine);
-#if defined(OS_WIN)
-  CommandLine server_cmdline = CommandLine::FromString(server_cmdline_string);
-#else
-  std::vector<std::string> server_cmdline_vector;
-  std::string delimiters(" ");
+  CommandLine::StringVector server_cmdline_vector;
+  CommandLine::StringType delimiters(FILE_PATH_LITERAL(" "));
   Tokenize(server_cmdline_string, delimiters, &server_cmdline_vector);
   CommandLine server_cmdline(server_cmdline_vector);
-#endif
   if (!base::LaunchApp(server_cmdline, false, true, &test_server_handle_))
     LOG(ERROR) << "Could not launch local test server.";
 
@@ -469,6 +481,29 @@ void LiveSyncTest::DisableNetwork(Profile* profile) {
 
 bool LiveSyncTest::AwaitQuiescence() {
   return ProfileSyncServiceHarness::AwaitQuiescence(clients());
+}
+
+bool LiveSyncTest::ServerSupportsErrorTriggering() {
+  EXPECT_TRUE(server_type_ != SERVER_TYPE_UNDECIDED);
+
+  // Supported only if we're using the python testserver.
+  return server_type_ == LOCAL_PYTHON_SERVER;
+}
+
+void LiveSyncTest::TriggerMigrationDoneError(
+    const syncable::ModelTypeSet& model_types) {
+  ASSERT_TRUE(ServerSupportsErrorTriggering());
+  std::string path = "chromiumsync/migrate";
+  char joiner = '?';
+  for (syncable::ModelTypeSet::const_iterator it = model_types.begin();
+       it != model_types.end(); ++it) {
+    path.append(base::StringPrintf("%ctype=%d", joiner,
+        syncable::GetExtensionFieldNumberFromModelType(*it)));
+    joiner = '&';
+  }
+  ui_test_utils::NavigateToURL(browser(), sync_server_.GetURL(path));
+  ASSERT_EQ(ASCIIToUTF16("Migration: 200"),
+            browser()->GetSelectedTabContents()->GetTitle());
 }
 
 void LiveSyncTest::SetProxyConfig(net::URLRequestContextGetter* context_getter,

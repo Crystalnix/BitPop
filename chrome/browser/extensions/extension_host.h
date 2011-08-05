@@ -51,7 +51,7 @@ class ExtensionHost : public RenderViewHostDelegate,
 
   ExtensionHost(const Extension* extension, SiteInstance* site_instance,
                 const GURL& url, ViewType::Type host_type);
-  ~ExtensionHost();
+  virtual ~ExtensionHost();
 
 #if defined(TOOLKIT_VIEWS)
   void set_view(ExtensionView* view) { view_.reset(view); }
@@ -86,7 +86,7 @@ class ExtensionHost : public RenderViewHostDelegate,
   ViewType::Type extension_host_type() const { return extension_host_type_; }
 
   // ExtensionFunctionDispatcher::Delegate
-  virtual TabContents* associated_tab_contents() const;
+  virtual TabContents* GetAssociatedTabContents() const;
   void set_associated_tab_contents(TabContents* associated_tab_contents) {
     associated_tab_contents_ = associated_tab_contents;
   }
@@ -129,10 +129,9 @@ class ExtensionHost : public RenderViewHostDelegate,
   // RenderViewHostDelegate implementation.
   virtual RenderViewHostDelegate::View* GetViewDelegate();
   virtual WebPreferences GetWebkitPrefs();
-  virtual void ProcessWebUIMessage(
-      const ExtensionHostMsg_DomMessage_Params& params);
-  virtual void RunJavaScriptMessage(const std::wstring& message,
-                                    const std::wstring& default_prompt,
+  virtual void RunJavaScriptMessage(const RenderViewHost* rvh,
+                                    const string16& message,
+                                    const string16& default_prompt,
                                     const GURL& frame_url,
                                     const int flags,
                                     IPC::Message* reply_msg,
@@ -191,7 +190,7 @@ class ExtensionHost : public RenderViewHostDelegate,
   // Overridden from JavaScriptAppModalDialogDelegate:
   virtual void OnMessageBoxClosed(IPC::Message* reply_msg,
                                   bool success,
-                                  const std::wstring& prompt);
+                                  const std::wstring& user_input);
   virtual void SetSuppressMessageBoxes(bool suppress_message_boxes);
   virtual gfx::NativeWindow GetMessageBoxRootWindow();
   virtual TabContents* AsTabContents();
@@ -231,6 +230,7 @@ class ExtensionHost : public RenderViewHostDelegate,
 
   // Message handlers.
   void OnRunFileChooser(const ViewHostMsg_RunFileChooser_Params& params);
+  void OnRequest(const ExtensionHostMsg_Request_Params& params);
 
   // Handles keyboard events that were not handled by HandleKeyboardEvent().
   // Platform specific implementation may override this method to handle the
@@ -276,7 +276,7 @@ class ExtensionHost : public RenderViewHostDelegate,
 
   NotificationRegistrar registrar_;
 
-  scoped_ptr<ExtensionFunctionDispatcher> extension_function_dispatcher_;
+  ExtensionFunctionDispatcher extension_function_dispatcher_;
 
   // Only EXTENSION_INFOBAR, EXTENSION_POPUP, and EXTENSION_BACKGROUND_PAGE
   // are used here, others are not hosted by ExtensionHost.

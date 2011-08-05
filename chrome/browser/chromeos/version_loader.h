@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,7 @@
 
 #include <string>
 
-#include "base/callback.h"
+#include "base/callback_old.h"
 #include "base/gtest_prod_util.h"
 #include "content/browser/cancelable_request.h"
 
@@ -34,6 +34,7 @@ namespace chromeos {
 class VersionLoader : public CancelableRequestProvider {
  public:
   VersionLoader();
+  virtual ~VersionLoader();
 
   enum VersionFormat {
     VERSION_SHORT,
@@ -58,6 +59,12 @@ class VersionLoader : public CancelableRequestProvider {
   Handle GetFirmware(CancelableRequestConsumerBase* consumer,
                      GetFirmwareCallback* callback);
 
+  // Parse the version information as a Chrome platfrom, not Chrome OS
+  // TODO(rkc): Change this and everywhere it is used once we switch Chrome OS
+  // over to xx.yyy.zz version numbers instead of 0.xx.yyy.zz
+  // Refer to http://code.google.com/p/chromium-os/issues/detail?id=15789
+  void EnablePlatformVersions(bool enable);
+
   static const char kFullVersionPrefix[];
   static const char kVersionPrefix[];
   static const char kFirmwarePrefix[];
@@ -71,7 +78,7 @@ class VersionLoader : public CancelableRequestProvider {
   // and extract the version.
   class Backend : public base::RefCountedThreadSafe<Backend> {
    public:
-    Backend() {}
+    Backend() : parse_as_platform_(false) {}
 
     // Calls ParseVersion to get the version # and notifies request.
     // This is invoked on the file thread.
@@ -83,8 +90,12 @@ class VersionLoader : public CancelableRequestProvider {
     // This is invoked on the file thread.
     void GetFirmware(scoped_refptr<GetFirmwareRequest> request);
 
+    void set_parse_as_platform(bool value) { parse_as_platform_ = value; }
+
    private:
     friend class base::RefCountedThreadSafe<Backend>;
+
+    bool parse_as_platform_;
 
     ~Backend() {}
 

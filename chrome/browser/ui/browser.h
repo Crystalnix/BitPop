@@ -21,17 +21,22 @@
 #include "chrome/browser/debugger/devtools_toggle_action.h"
 #include "chrome/browser/instant/instant_delegate.h"
 #include "chrome/browser/prefs/pref_member.h"
+#include "chrome/browser/prefs/pref_change_registrar.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/sessions/tab_restore_service_observer.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "chrome/browser/tabs/tab_handler.h"
 #include "chrome/browser/tabs/tab_strip_model_delegate.h"  // TODO(beng): remove
 #include "chrome/browser/tabs/tab_strip_model_observer.h"  // TODO(beng): remove
+#include "chrome/browser/ui/blocked_content/blocked_content_tab_helper_delegate.h"
+#include "chrome/browser/ui/bookmarks/bookmark_tab_helper_delegate.h"
 #include "chrome/browser/ui/browser_navigator.h"
+#include "chrome/browser/ui/download/download_tab_helper_delegate.h"
 #include "chrome/browser/ui/search_engines/search_engine_tab_helper_delegate.h"
 #include "chrome/browser/ui/shell_dialogs.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper_delegate.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
+#include "chrome/common/content_settings_types.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "content/browser/tab_contents/page_navigator.h"
 #include "content/browser/tab_contents/tab_contents_delegate.h"
@@ -62,6 +67,9 @@ class Browser : public TabHandlerDelegate,
                 public TabContentsDelegate,
                 public TabContentsWrapperDelegate,
                 public SearchEngineTabHelperDelegate,
+                public BlockedContentTabHelperDelegate,
+                public BookmarkTabHelperDelegate,
+                public DownloadTabHelperDelegate,
                 public PageNavigator,
                 public CommandUpdater::CommandUpdaterDelegate,
                 public NotificationObserver,
@@ -74,25 +82,9 @@ class Browser : public TabHandlerDelegate,
   // enum, look at SessionService::WindowType to see if it needs to be
   // updated.
   enum Type {
-    TYPE_NORMAL = 1,
+    TYPE_TABBED = 1,
     TYPE_POPUP = 2,
-    // The old-style app created via "Create application shortcuts".
-    // Shortcuts to a URL and shortcuts to an installed application
-    // both have this type.
-    TYPE_APP = 4,
-    TYPE_APP_POPUP = TYPE_APP | TYPE_POPUP,
-    TYPE_DEVTOOLS = TYPE_APP | 8,
-
-    // TODO(skerner): crbug/56776: Until the panel UI is complete on all
-    // platforms, apps that set app.launch.container = "panel" have type
-    // APP_POPUP. (see Browser::CreateForApp)
-    // NOTE: TYPE_APP_PANEL is a superset of TYPE_APP_POPUP.
-    TYPE_APP_PANEL = TYPE_APP | TYPE_POPUP | 16,
-    TYPE_ANY = TYPE_NORMAL |
-               TYPE_POPUP |
-               TYPE_APP |
-               TYPE_DEVTOOLS |
-               TYPE_APP_PANEL
+    TYPE_PANEL = 3,
   };
 
   // Possible elements of the Browser window.
@@ -121,6 +113,25 @@ class Browser : public TabHandlerDelegate,
     MAXIMIZED_STATE_UNMAXIMIZED
   };
 
+  struct CreateParams {
+    CreateParams(Type type, Profile* profile);
+
+    // The browser type.
+    Type type;
+
+    // The associated profile.
+    Profile* profile;
+
+    // The application name that is also the name of the window to the shell.
+    // This name should be set when:
+    // 1) we launch an application via an application shortcut or extension API.
+    // 2) we launch an undocked devtool window.
+    std::string app_name;
+
+    // The bounds of the window to open.
+    gfx::Rect initial_bounds;
+  };
+
   // Constructors, Creation, Showing //////////////////////////////////////////
 
   // Creates a new browser of the given |type| and for the given |profile|. The
@@ -135,23 +146,20 @@ class Browser : public TabHandlerDelegate,
   // window is created by this function call.
   static Browser* Create(Profile* profile);
 
-  // Like Create, but creates a browser of the specified (popup) type, with the
-  // specified contents, in a popup window of the specified size/position.
-  static Browser* CreateForPopup(Type type, Profile* profile,
-                                 TabContents* new_contents,
-                                 const gfx::Rect& initial_bounds);
+  // Like Create, but creates a browser of the specified parameters.
+  static Browser* CreateWithParams(const CreateParams& params);
 
   // Like Create, but creates a browser of the specified type.
   static Browser* CreateForType(Type type, Profile* profile);
 
   // Like Create, but creates a toolbar-less "app" window for the specified
   // app. |app_name| is required and is used to identify the window to the
-  // shell.  If |extension| is set, it is used to determine the size of the
-  // window to open.
-  static Browser* CreateForApp(const std::string& app_name,
-                               const gfx::Size& window_size,
-                               Profile* profile,
-                               bool is_panel);
+  // shell.  If |window_bounds| is set, it is used to determine the bounds of
+  // the window to open.
+  static Browser* CreateForApp(Type type,
+                               const std::string& app_name,
+                               const gfx::Rect& window_bounds,
+                               Profile* profile);
 
   // Like Create, but creates a tabstrip-less and toolbar-less
   // DevTools "app" window.
@@ -231,14 +239,13 @@ class Browser : public TabHandlerDelegate,
   // |profile|, that session is re-used.
   static void OpenURLOffTheRecord(Profile* profile, const GURL& url);
 
-  // Open |extension| in |container|, using |existing_tab| if not NULL and if
-  // the correct container type.  Returns the TabContents* that was created or
-  // NULL.
+  // Open |extension| in |container|, using |disposition| if container type is
+  // TAB. Returns the TabContents* that was created or NULL.
   static TabContents* OpenApplication(
       Profile* profile,
       const Extension* extension,
       extension_misc::LaunchContainer container,
-      TabContents* existing_tab);
+      WindowOpenDisposition disposition);
 
   // Opens a new application window for the specified url. If |as_panel|
   // is true, the application will be opened as a Browser::Type::APP_PANEL in
@@ -264,12 +271,11 @@ class Browser : public TabHandlerDelegate,
                                             const GURL& url,
                                             bool update_shortcut);
 
-  // Open an application for |extension| in a new application tab, or
-  // |existing_tab| if not NULL.  Returns NULL if there are no appropriate
-  // existing browser windows for |profile|.
+  // Open an application for |extension| using |disposition|.  Returns NULL if
+  // there are no appropriate existing browser windows for |profile|.
   static TabContents* OpenApplicationTab(Profile* profile,
                                          const Extension* extension,
-                                         TabContents* existing_tab);
+                                         WindowOpenDisposition disposition);
 
   // Opens a new window and opens the bookmark manager.
   static void OpenBookmarkManagerWindow(Profile* profile);
@@ -289,6 +295,12 @@ class Browser : public TabHandlerDelegate,
   // Opens a window with the extensions tab in it - needed by long-lived
   // extensions which may run with no windows open.
   static void OpenExtensionsWindow(Profile* profile);
+
+  // Opens a new window with the given profile. This starts the session_service
+  // for the new profile as well; it is the static equivalent of the instance
+  // method Browser::NewWindow(), used for the creation of a Window from the
+  // multi-profile dropdown menu.
+  static void NewWindowWithProfile(Profile* profile);
 
   // State Storage and Retrieval for UI ///////////////////////////////////////
 
@@ -320,6 +332,11 @@ class Browser : public TabHandlerDelegate,
   // Invoked when the window containing us is closing. Performs the necessary
   // cleanup.
   void OnWindowClosing();
+
+  // OnWindowActivationChanged handling ///////////////////////////////////////
+
+  // Invoked when the window containing us is activated.
+  void OnWindowActivated();
 
   // In-progress download termination handling /////////////////////////////////
 
@@ -476,7 +493,6 @@ class Browser : public TabHandlerDelegate,
   void ToggleFullscreenMode();
   void Exit();
 #if defined(OS_CHROMEOS)
-  void ToggleCompactNavigationBar();
   void Search();
   void ShowKeyboardOverlay();
 #endif
@@ -546,13 +562,12 @@ class Browser : public TabHandlerDelegate,
   void ShowAboutConflictsTab();
   void ShowBrokenPageTab(TabContents* contents);
   void ShowOptionsTab(const std::string& sub_page);
+  // Shows the Content Settings page for a given content type.
+  void ShowContentSettingsPage(ContentSettingsType content_type);
   void OpenClearBrowsingDataDialog();
   void OpenOptionsDialog();
   void OpenPasswordManager();
   void OpenSyncMyBookmarksDialog();
-#if defined(ENABLE_REMOTING)
-  void OpenRemotingSetupDialog();
-#endif
   void OpenImportSettingsDialog();
   void OpenInstantConfirmDialog();
   void OpenAboutChromeDialog();
@@ -577,6 +592,7 @@ class Browser : public TabHandlerDelegate,
 
   // Overridden from TabStripModelDelegate:
   virtual bool UseVerticalTabs() const;
+  virtual bool UseCompactNavigationBar() const;
 
   /////////////////////////////////////////////////////////////////////////////
 
@@ -644,6 +660,9 @@ class Browser : public TabHandlerDelegate,
   // specified.
   GURL GetHomePage() const;
 
+  // Shows the cookies collected in the tab contents.
+  void ShowCollectedCookiesDialog(TabContents* tab_contents);
+
   // Interface implementations ////////////////////////////////////////////////
 
   // Overridden from PageNavigator:
@@ -693,11 +712,12 @@ class Browser : public TabHandlerDelegate,
   virtual void CloseFrameAfterDragSession();
   virtual void CreateHistoricalTab(TabContentsWrapper* contents);
   virtual bool RunUnloadListenerBeforeClosing(TabContentsWrapper* contents);
-  virtual bool CanCloseContentsAt(int index);
+  virtual bool CanCloseContents(std::vector<int>* indices);
   virtual bool CanBookmarkAllTabs() const;
   virtual void BookmarkAllTabs();
   virtual bool CanCloseTab() const;
   virtual void ToggleUseVerticalTabs();
+  virtual void ToggleUseCompactNavigationBar();
   virtual bool CanRestoreTab();
   virtual void RestoreTab();
   virtual bool LargeIconsPermitted() const;
@@ -711,10 +731,10 @@ class Browser : public TabHandlerDelegate,
                             int index);
   virtual void TabDetachedAt(TabContentsWrapper* contents, int index);
   virtual void TabDeselected(TabContentsWrapper* contents);
-  virtual void TabSelectedAt(TabContentsWrapper* old_contents,
-                             TabContentsWrapper* new_contents,
-                             int index,
-                             bool user_gesture);
+  virtual void ActiveTabChanged(TabContentsWrapper* old_contents,
+                                TabContentsWrapper* new_contents,
+                                int index,
+                                bool user_gesture);
   virtual void TabMoved(TabContentsWrapper* contents,
                         int from_index,
                         int to_index);
@@ -728,12 +748,20 @@ class Browser : public TabHandlerDelegate,
   // Figure out if there are tabs that have beforeunload handlers.
   bool TabsNeedBeforeUnloadFired();
 
+  bool is_type_tabbed() const { return type_ == TYPE_TABBED; }
+  bool is_type_popup() const { return type_ == TYPE_POPUP; }
+  bool is_type_panel() const { return type_ == TYPE_PANEL; }
+
+  bool is_app() const;
+  bool is_devtools() const;
+
  protected:
   // Wrapper for the factory method in BrowserWindow. This allows subclasses to
   // set their own window.
   virtual BrowserWindow* CreateBrowserWindow();
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(AppModeTest, EnableAppModeTest);
   FRIEND_TEST_ALL_PREFIXES(BrowserTest, NoTabsInPopups);
   FRIEND_TEST_ALL_PREFIXES(BrowserTest, ConvertTabToAppShortcut);
   FRIEND_TEST_ALL_PREFIXES(BrowserTest, OpenAppWindowLikeNtp);
@@ -775,28 +803,24 @@ class Browser : public TabHandlerDelegate,
   virtual void CloseContents(TabContents* source);
   virtual void MoveContents(TabContents* source, const gfx::Rect& pos);
   virtual void DetachContents(TabContents* source);
-  virtual bool IsPopup(const TabContents* source) const;
+  virtual bool IsPopupOrPanel(const TabContents* source) const;
   virtual bool CanReloadContents(TabContents* source) const;
   virtual void UpdateTargetURL(TabContents* source, const GURL& url);
   virtual void ContentsMouseEvent(
       TabContents* source, const gfx::Point& location, bool motion);
   virtual void ContentsZoomChange(bool zoom_in);
-  virtual void OnContentSettingsChange(TabContents* source);
   virtual void SetTabContentBlocked(TabContents* contents, bool blocked);
   virtual void TabContentsFocused(TabContents* tab_content);
   virtual bool TakeFocus(bool reverse);
   virtual bool IsApplication() const;
   virtual void ConvertContentsToApplication(TabContents* source);
   virtual bool ShouldDisplayURLField();
-  virtual void ShowHtmlDialog(HtmlDialogUIDelegate* delegate,
-                              gfx::NativeWindow parent_window);
   virtual void BeforeUnloadFired(TabContents* source,
                                  bool proceed,
                                  bool* proceed_to_fire_unload);
   virtual void SetFocusToLocationBar(bool select_all);
   virtual void RenderWidgetShowing();
   virtual int GetExtraRenderViewHeight() const;
-  virtual void OnStartDownload(DownloadItem* download, TabContents* tab);
   virtual void ShowPageInfo(Profile* profile,
                             const GURL& url,
                             const NavigationEntry::SSLStatus& ssl,
@@ -809,8 +833,6 @@ class Browser : public TabHandlerDelegate,
                                         bool* is_keyboard_shortcut);
   virtual void HandleKeyboardEvent(const NativeWebKeyboardEvent& event);
   virtual void ShowRepostFormWarningDialog(TabContents* tab_contents);
-  virtual void ShowContentSettingsPage(ContentSettingsType content_type);
-  virtual void ShowCollectedCookiesDialog(TabContents* tab_contents);
   virtual bool ShouldAddNavigationToHistory(
       const history::HistoryAddPageArgs& add_page_args,
       NavigationType::Type navigation_type);
@@ -818,13 +840,15 @@ class Browser : public TabHandlerDelegate,
   virtual void WorkerCrashed();
 
   // Overridden from TabContentsWrapperDelegate:
-  virtual void URLStarredChanged(TabContentsWrapper* source,
-                                 bool starred) OVERRIDE;
   virtual void OnDidGetApplicationInfo(TabContentsWrapper* source,
                                        int32 page_id) OVERRIDE;
   virtual void OnInstallApplication(
       TabContentsWrapper* source,
       const WebApplicationInfo& app_info) OVERRIDE;
+
+  // Note that the caller is responsible for deleting |old_tab_contents|.
+  virtual void SwapTabContents(TabContentsWrapper* old_tab_contents,
+                               TabContentsWrapper* new_tab_contents);
 
   // Overridden from SearchEngineTabHelperDelegate:
   virtual void ConfirmSetDefaultSearchProvider(
@@ -833,6 +857,20 @@ class Browser : public TabHandlerDelegate,
       TemplateURLModel* template_url_model) OVERRIDE;
   virtual void ConfirmAddSearchProvider(const TemplateURL* template_url,
                                         Profile* profile) OVERRIDE;
+
+  // Overridden from BlockedContentTabHelperDelegate:
+  virtual TabContentsWrapper* GetConstrainingContentsWrapper(
+      TabContentsWrapper* source) OVERRIDE;
+
+  // Overridden from BookmarkTabHelperDelegate:
+  virtual void URLStarredChanged(TabContentsWrapper* source,
+                                 bool starred) OVERRIDE;
+
+  // Overridden from DownloadTabHelperDelegate:
+  virtual bool CanDownload(int request_id) OVERRIDE;
+  virtual void OnStartDownload(DownloadItem* download,
+                               TabContentsWrapper* tab) OVERRIDE;
+
 
   // Overridden from SelectFileDialog::Listener:
   virtual void FileSelected(const FilePath& path, int index, void* params);
@@ -874,6 +912,12 @@ class Browser : public TabHandlerDelegate,
   // Updates the printing command state.
   void UpdatePrintingState(int content_restrictions);
 
+  // Updates the save-page-as command state.
+  void UpdateSaveAsState(int content_restrictions);
+
+  // Updates the open-file state (Mac Only).
+  void UpdateOpenFileState();
+
   // Ask the Reload/Stop button to change its icon, and update the Stop command
   // state.  |is_loading| is true if the current TabContents is loading.
   // |force| is true if the button should change its icon immediately.
@@ -908,6 +952,7 @@ class Browser : public TabHandlerDelegate,
   // TODO(beng): remove, and provide AutomationProvider a better way to access
   //             the LocationBarView's edit.
   friend class AutomationProvider;
+  friend class BrowserProxy;
   friend class TestingAutomationProvider;
 
   // Returns the StatusBubble from the current toolbar. It is possible for
@@ -1000,6 +1045,10 @@ class Browser : public TabHandlerDelegate,
   // policy of the tab strip model and notifies the window.
   void UseVerticalTabsChanged();
 
+  // Invoked when the use of the compact navigation bar preference changes.
+  // Notifies the window.
+  void UseCompactNavigationBarChanged();
+
   // Implementation of SupportsWindowFeature and CanSupportWindowFeature. If
   // |check_fullscreen| is true, the set of features reflect the actual state of
   // the browser, otherwise the set of features reflect the possible state of
@@ -1034,9 +1083,18 @@ class Browser : public TabHandlerDelegate,
                   const GURL& url,
                   const std::string& content_state);
 
+  // Retrieves the content restrictions for the currently selected tab.
+  // Returns 0 if no tab selected, which is equivalent to no content
+  // restrictions active.
+  int GetContentRestrictionsForSelectedTab();
+
   // Data members /////////////////////////////////////////////////////////////
 
   NotificationRegistrar registrar_;
+
+  PrefChangeRegistrar profile_pref_registrar_;
+
+  PrefChangeRegistrar local_pref_registrar_;
 
   // This Browser's type.
   const Type type_;
@@ -1053,8 +1111,10 @@ class Browser : public TabHandlerDelegate,
   // The CommandUpdater that manages the browser window commands.
   CommandUpdater command_updater_;
 
-  // An optional application name which is used to retrieve and save window
-  // positions.
+  // The application name that is also the name of the window to the shell.
+  // This name should be set when:
+  // 1) we launch an application via an application shortcut or extension API.
+  // 2) we launch an undocked devtool window.
   std::string app_name_;
 
   // Unique identifier of this browser for session restore. This id is only
@@ -1128,21 +1188,6 @@ class Browser : public TabHandlerDelegate,
   // Keep track of the encoding auto detect pref.
   BooleanPrefMember encoding_auto_detect_;
 
-  // Keep track of the printing enabled pref.
-  BooleanPrefMember printing_enabled_;
-
-  // Keep track of the development tools disabled pref.
-  BooleanPrefMember dev_tools_disabled_;
-
-  // Keep track of when instant enabled changes.
-  BooleanPrefMember instant_enabled_;
-
-  // Tracks the preference that controls whether incognito mode is allowed.
-  BooleanPrefMember incognito_mode_allowed_;
-
-  // Tracks whether bookmarks can be modified.
-  BooleanPrefMember edit_bookmarks_enabled_;
-
   // Indicates if command execution is blocked.
   bool block_command_execution_;
 
@@ -1166,6 +1211,9 @@ class Browser : public TabHandlerDelegate,
 
   // Tracks the display mode of the tabstrip.
   mutable BooleanPrefMember use_vertical_tabs_;
+
+  // Tracks the display mode of the navigation bar.
+  mutable BooleanPrefMember use_compact_navigation_bar_;
 
   // The profile's tab restore service. The service is owned by the profile,
   // and we install ourselves as an observer.

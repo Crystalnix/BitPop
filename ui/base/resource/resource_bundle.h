@@ -154,9 +154,7 @@ class ResourceBundle {
   // assert in debug mode if it does not. On failure, this will return a
   // pointer to a shared empty placeholder bitmap so it will be visible what
   // is missing.
-  GdkPixbuf* GetPixbufNamed(int resource_id);
-
-  // As above, but flips it in RTL locales.
+  // This function flips it in RTL locales.
   GdkPixbuf* GetRTLEnabledPixbufNamed(int resource_id);
 
  private:
@@ -235,6 +233,8 @@ class ResourceBundle {
   // Returns the full pathname of the main resources file to load.  May return
   // an empty string if no main resources data files are found.
   static FilePath GetResourcesFilePath();
+
+  static FilePath GetLargeIconResourcesFilePath();
 #endif
 
   // Returns the full pathname of the locale file to load.  May return an empty
@@ -263,6 +263,7 @@ class ResourceBundle {
 
   // Handles for data sources.
   DataHandle resources_data_;
+  DataHandle large_icon_resources_data_;
   DataHandle locale_resources_data_;
 
   // References to extra data packs loaded via AddDataPackToSharedInstance.

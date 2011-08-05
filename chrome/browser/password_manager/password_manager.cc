@@ -9,13 +9,13 @@
 #include "base/stl_util-inl.h"
 #include "base/threading/platform_thread.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "chrome/browser/password_manager/password_form_manager.h"
 #include "chrome/browser/password_manager/password_manager_delegate.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/autofill_messages.h"
 #include "chrome/common/pref_names.h"
+#include "content/browser/user_metrics.h"
 #include "content/common/view_messages.h"
 #include "grit/generated_resources.h"
 
@@ -24,8 +24,12 @@ using webkit_glue::PasswordFormMap;
 
 // static
 void PasswordManager::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kPasswordManagerEnabled, true);
-  prefs->RegisterBooleanPref(prefs::kPasswordManagerAllowShowPasswords, true);
+  prefs->RegisterBooleanPref(prefs::kPasswordManagerEnabled,
+                             true,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kPasswordManagerAllowShowPasswords,
+                             true,
+                             PrefService::UNSYNCABLE_PREF);
 }
 
 // This routine is called when PasswordManagers are constructed.
@@ -154,7 +158,7 @@ void PasswordManager::DidStopLoading() {
 }
 
 void PasswordManager::DidNavigateAnyFramePostCommit(
-      const NavigationController::LoadCommittedDetails& details,
+      const content::LoadCommittedDetails& details,
       const ViewHostMsg_FrameNavigate_Params& params) {
   if (params.password_form.origin.is_valid())
     ProvisionallySavePassword(params.password_form);

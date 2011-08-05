@@ -11,7 +11,6 @@
 #include "content/browser/tab_contents/tab_contents_view.h"
 #include "ui/base/keycodes/keyboard_code_conversion_win.h"
 #include "views/controls/scrollbar/native_scroll_bar.h"
-#include "views/widget/widget_win.h"
 
 NativeWebKeyboardEvent DropdownBarHost::GetKeyboardEvent(
      const TabContents* contents,
@@ -20,16 +19,6 @@ NativeWebKeyboardEvent DropdownBarHost::GetKeyboardEvent(
   WORD key = WindowsKeyCodeForKeyboardCode(key_event.key_code());
 
   return NativeWebKeyboardEvent(hwnd, key_event.native_event().message, key, 0);
-}
-
-views::Widget* DropdownBarHost::CreateHost() {
-  views::WidgetWin* widget = new views::WidgetWin();
-  views::Widget::CreateParams params(views::Widget::CreateParams::TYPE_CONTROL);
-  // Don't let WidgetWin manage our lifetime. We want our lifetime to
-  // coincide with TabContents.
-  params.delete_on_destroy = false;
-  widget->SetCreateParams(params);
-  return widget;
 }
 
 void DropdownBarHost::SetWidgetPositionNative(const gfx::Rect& new_pos,

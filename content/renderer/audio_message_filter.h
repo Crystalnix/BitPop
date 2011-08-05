@@ -19,6 +19,8 @@
 #include "ipc/ipc_channel_proxy.h"
 #include "media/audio/audio_buffers_state.h"
 
+class MessageLoop;
+
 namespace base {
 class Time;
 }
@@ -51,7 +53,7 @@ class AudioMessageFilter : public IPC::ChannelProxy::MessageFilter {
   };
 
   explicit AudioMessageFilter(int32 route_id);
-  ~AudioMessageFilter();
+  virtual ~AudioMessageFilter();
 
   // Add a delegate to the map and return id of the entry.
   int32 AddDelegate(Delegate* delegate);

@@ -110,11 +110,10 @@ class PrinterJobHandler : public base::RefCountedThreadSafe<PrinterJobHandler>,
   // Begin public interface
   PrinterJobHandler(const printing::PrinterBasicInfo& printer_info,
                     const PrinterInfoFromCloud& printer_info_from_server,
-                    const std::string& auth_token,
                     const GURL& cloud_print_server_url,
                     cloud_print::PrintSystem* print_system,
                     Delegate* delegate);
-  ~PrinterJobHandler();
+  virtual ~PrinterJobHandler();
   bool Initialize();
   // Requests a job check. |reason| is the reason for fetching the job. Used
   // for logging and diagnostc purposes.
@@ -127,6 +126,13 @@ class PrinterJobHandler : public base::RefCountedThreadSafe<PrinterJobHandler>,
   // Begin Delegate implementations
 
   // CloudPrintURLFetcher::Delegate implementation.
+  virtual CloudPrintURLFetcher::ResponseAction HandleRawResponse(
+      const URLFetcher* source,
+      const GURL& url,
+      const net::URLRequestStatus& status,
+      int response_code,
+      const net::ResponseCookies& cookies,
+      const std::string& data);
   virtual CloudPrintURLFetcher::ResponseAction HandleRawData(
       const URLFetcher* source,
       const GURL& url,
@@ -249,7 +255,6 @@ class PrinterJobHandler : public base::RefCountedThreadSafe<PrinterJobHandler>,
   scoped_refptr<cloud_print::PrintSystem> print_system_;
   printing::PrinterBasicInfo printer_info_;
   PrinterInfoFromCloud printer_info_cloud_;
-  std::string auth_token_;
   GURL cloud_print_server_url_;
   std::string print_data_url_;
   JobDetails job_details_;

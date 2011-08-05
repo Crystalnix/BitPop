@@ -14,6 +14,10 @@
 
 class GURL;
 
+namespace WebKit {
+class WebSecurityOrigin;
+}
+
 // Handles blocking content per content settings for each RenderView.
 class ContentSettingsObserver
     : public RenderViewObserver,
@@ -36,21 +40,33 @@ class ContentSettingsObserver
   void DidBlockContentType(ContentSettingsType settings_type,
                            const std::string& resource_identifier);
 
+  // These correspond to WebKit::WebPermissionClient methods.
+  bool AllowDatabase(WebKit::WebFrame* frame,
+                     const WebKit::WebString& name,
+                     const WebKit::WebString& display_name,
+                     unsigned long estimated_size);
+  bool AllowFileSystem(WebKit::WebFrame* frame);
+  bool AllowImages(WebKit::WebFrame* frame, bool enabled_per_settings);
+  bool AllowIndexedDB(WebKit::WebFrame* frame,
+                      const WebKit::WebString& name,
+                      const WebKit::WebSecurityOrigin& origin);
+  bool AllowPlugins(WebKit::WebFrame* frame, bool enabled_per_settings);
+  bool AllowScript(WebKit::WebFrame* frame, bool enabled_per_settings);
+  bool AllowStorage(WebKit::WebFrame* frame, bool local);
+  void DidNotAllowPlugins(WebKit::WebFrame* frame);
+  void DidNotAllowScript(WebKit::WebFrame* frame);
+
  private:
   // RenderViewObserver implementation.
   virtual bool OnMessageReceived(const IPC::Message& message);
   virtual void DidCommitProvisionalLoad(WebKit::WebFrame* frame,
                                         bool is_new_navigation);
-  virtual bool AllowImages(WebKit::WebFrame* frame, bool enabled_per_settings);
-  virtual bool AllowPlugins(WebKit::WebFrame* frame, bool enabled_per_settings);
-  virtual bool AllowScript(WebKit::WebFrame* frame, bool enabled_per_settings);
-  virtual void DidNotAllowPlugins(WebKit::WebFrame* frame);
-  virtual void DidNotAllowScript(WebKit::WebFrame* frame);
 
   // Message handlers.
   void OnSetContentSettingsForLoadingURL(
       const GURL& url,
       const ContentSettings& content_settings);
+  void OnLoadBlockedPlugins();
 
   // Helper method that returns if the user wants to block content of type
   // |content_type|.
@@ -67,6 +83,12 @@ class ContentSettingsObserver
 
   // Stores if images, scripts, and plugins have actually been blocked.
   bool content_blocked_[CONTENT_SETTINGS_NUM_TYPES];
+
+  // Caches the result of AllowStorage.
+  typedef std::pair<GURL, bool> StoragePermissionsKey;
+  std::map<StoragePermissionsKey, bool> cached_storage_permissions_;
+
+  bool plugins_temporarily_allowed_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentSettingsObserver);
 };

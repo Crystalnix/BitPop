@@ -38,7 +38,7 @@ static const int kMaxTimeSliceHours = 24 * 7 * 4;
 
 // The version of the service (used to expire the cache when upgrading Chrome
 // to versions with different types of promos).
-static const int kPromoServiceVersion = 1;
+static const int kPromoServiceVersion = 2;
 
 // Properties used by the server.
 static const char kAnswerIdProperty[] = "answer_id";
@@ -62,33 +62,52 @@ void PromoResourceService::RegisterPrefs(PrefService* local_state) {
 
 // static
 void PromoResourceService::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterDoublePref(prefs::kNTPCustomLogoStart, 0);
-  prefs->RegisterDoublePref(prefs::kNTPCustomLogoEnd, 0);
-  prefs->RegisterDoublePref(prefs::kNTPPromoStart, 0);
-  prefs->RegisterDoublePref(prefs::kNTPPromoEnd, 0);
-  prefs->RegisterStringPref(prefs::kNTPPromoLine, std::string());
-  prefs->RegisterBooleanPref(prefs::kNTPPromoClosed, false);
-  prefs->RegisterIntegerPref(prefs::kNTPPromoGroup, -1);
-  prefs->RegisterIntegerPref(prefs::kNTPPromoBuild,
-       CANARY_BUILD | DEV_BUILD | BETA_BUILD | STABLE_BUILD);
-  prefs->RegisterIntegerPref(prefs::kNTPPromoGroupTimeSlice, 0);
+  prefs->RegisterDoublePref(prefs::kNTPCustomLogoStart,
+                            0,
+                            PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterDoublePref(prefs::kNTPCustomLogoEnd,
+                            0,
+                            PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterDoublePref(prefs::kNTPPromoStart,
+                            0,
+                            PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterDoublePref(prefs::kNTPPromoEnd,
+                            0,
+                            PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kNTPPromoLine,
+                            std::string(),
+                            PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kNTPPromoClosed,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterIntegerPref(prefs::kNTPPromoGroup,
+                             -1,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterIntegerPref(
+      prefs::kNTPPromoBuild,
+      CANARY_BUILD | DEV_BUILD | BETA_BUILD | STABLE_BUILD,
+      PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterIntegerPref(prefs::kNTPPromoGroupTimeSlice,
+                             0,
+                             PrefService::UNSYNCABLE_PREF);
 }
 
 // static
-bool PromoResourceService::IsBuildTargeted(const std::string& channel,
+bool PromoResourceService::IsBuildTargeted(platform_util::Channel channel,
                                            int builds_allowed) {
   if (builds_allowed == NO_BUILD)
     return false;
-  if (channel == "canary" || channel == "canary-m") {
-    return (CANARY_BUILD & builds_allowed) != 0;
-  } else if (channel == "dev" || channel == "dev-m") {
-    return (DEV_BUILD & builds_allowed) != 0;
-  } else if (channel == "beta" || channel == "beta-m") {
-    return (BETA_BUILD & builds_allowed) != 0;
-  } else if (channel == "" || channel == "m") {
-    return (STABLE_BUILD & builds_allowed) != 0;
-  } else {
-    return false;
+  switch (channel) {
+    case platform_util::CHANNEL_CANARY:
+      return (CANARY_BUILD & builds_allowed) != 0;
+    case platform_util::CHANNEL_DEV:
+      return (DEV_BUILD & builds_allowed) != 0;
+    case platform_util::CHANNEL_BETA:
+      return (BETA_BUILD & builds_allowed) != 0;
+    case platform_util::CHANNEL_STABLE:
+      return (STABLE_BUILD & builds_allowed) != 0;
+    default:
+      return false;
   }
 }
 
@@ -102,7 +121,7 @@ PromoResourceService::PromoResourceService(Profile* profile)
                          kStartResourceFetchDelay,
                          kCacheUpdateDelay),
       web_resource_cache_(NULL),
-      channel_(NULL) {
+      channel_(platform_util::CHANNEL_UNKNOWN) {
   Init();
 }
 
@@ -113,9 +132,10 @@ void PromoResourceService::Init() {
 }
 
 bool PromoResourceService::IsThisBuildTargeted(int builds_targeted) {
-  if (channel_ == NULL) {
+  if (channel_ == platform_util::CHANNEL_UNKNOWN) {
+    // GetChannel hits the registry on Windows. See http://crbug.com/70898.
     base::ThreadRestrictions::ScopedAllowIO allow_io;
-    channel_ = platform_util::GetVersionStringModifier().c_str();
+    channel_ = platform_util::GetChannel();
   }
 
   return IsBuildTargeted(channel_, builds_targeted);
@@ -283,12 +303,15 @@ void PromoResourceService::UnpackWebStoreSignal(
   DictionaryValue* topic_dict;
   ListValue* answer_list;
 
+  bool is_webstore_active = false;
   bool signal_found = false;
   std::string promo_id = "";
   std::string promo_header = "";
   std::string promo_button = "";
   std::string promo_link = "";
   std::string promo_expire = "";
+  std::string promo_logo = "";
+  int maximize_setting = 0;
   int target_builds = 0;
 
   if (!parsed_json.GetDictionary("topic", &topic_dict) ||
@@ -301,19 +324,38 @@ void PromoResourceService::UnpackWebStoreSignal(
       continue;
     DictionaryValue* a_dic =
         static_cast<DictionaryValue*>(*answer_iter);
+
+    // The "name" field has three different values packed into it, each
+    // separated by a ':'.
     std::string name;
     if (!a_dic->GetString("name", &name))
       continue;
 
+    // (1) the string "webstore_promo"
     size_t split = name.find(":");
-    if (split == std::string::npos)
+    if (split == std::string::npos || name.substr(0, split) != "webstore_promo")
       continue;
 
-    std::string promo_signal = name.substr(0, split);
+    // If the "webstore_promo" string was found, that's enough to activate the
+    // apps section even if the rest of the promo fails parsing.
+    is_webstore_active = true;
 
-    if (promo_signal != "webstore_promo" ||
-        !base::StringToInt(name.substr(split+1), &target_builds))
+    // (2) an integer specifying which builds the promo targets
+    name = name.substr(split+1);
+    split = name.find(':');
+    if (split == std::string::npos ||
+        !base::StringToInt(name.substr(0, split), &target_builds))
       continue;
+
+    // (3) an integer specifying what users should maximize the promo
+    name = name.substr(split+1);
+    split = name.find(':');
+    if (split == std::string::npos ||
+        !base::StringToInt(name.substr(0, split), &maximize_setting))
+      continue;
+
+    // (4) optional text that specifies a URL of a logo image
+    promo_logo = name.substr(split+1);
 
     if (!a_dic->GetString(kAnswerIdProperty, &promo_id) ||
         !a_dic->GetString(kWebStoreHeaderProperty, &promo_header) ||
@@ -324,8 +366,9 @@ void PromoResourceService::UnpackWebStoreSignal(
 
     if (IsThisBuildTargeted(target_builds)) {
       // Store the first web store promo that targets the current build.
-      AppsPromo::SetPromo(
-          promo_id, promo_header, promo_button, GURL(promo_link), promo_expire);
+      AppsPromo::SetPromo(promo_id, promo_header, promo_button,
+                          GURL(promo_link), promo_expire, GURL(promo_logo),
+                          maximize_setting);
       signal_found = true;
       break;
     }
@@ -335,6 +378,8 @@ void PromoResourceService::UnpackWebStoreSignal(
     // If no web store promos target this build, then clear all the prefs.
     AppsPromo::ClearPromo();
   }
+
+  AppsPromo::SetWebStoreSupportedForLocale(is_webstore_active);
 
   NotificationService::current()->Notify(
       NotificationType::WEB_STORE_PROMO_LOADED,
@@ -428,9 +473,9 @@ bool CanShowPromo(Profile* profile) {
 
   bool is_promo_build = false;
   if (prefs->HasPrefPath(prefs::kNTPPromoBuild)) {
-    // GetVersionStringModifier hits the registry. See http://crbug.com/70898.
+    // GetChannel hits the registry on Windows. See http://crbug.com/70898.
     base::ThreadRestrictions::ScopedAllowIO allow_io;
-    const std::string channel = platform_util::GetVersionStringModifier();
+    platform_util::Channel channel = platform_util::GetChannel();
     is_promo_build = PromoResourceService::IsBuildTargeted(
         channel, prefs->GetInteger(prefs::kNTPPromoBuild));
   }

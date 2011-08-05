@@ -42,9 +42,7 @@ CrosMock::CrosMock()
       mock_power_library_(NULL),
       mock_screen_lock_library_(NULL),
       mock_speech_synthesis_library_(NULL),
-      mock_touchpad_library_(NULL),
-      current_input_method_("", "", "", ""),
-      previous_input_method_("", "", "", "") {
+      mock_touchpad_library_(NULL) {
   current_input_method_ =
       input_method::GetFallbackInputMethodDescriptor();
 }
@@ -278,6 +276,9 @@ void CrosMock::SetNetworkLibraryStatusAreaExpectations() {
   EXPECT_CALL(*mock_network_library_, virtual_networks())
       .Times(AnyNumber())
       .WillRepeatedly((ReturnRef(virtual_networks_)));
+  EXPECT_CALL(*mock_network_library_, connected_network())
+      .Times(AnyNumber())
+      .WillRepeatedly((Return((const Network*)(NULL))));
 
   // Set specific expectations for interesting functions:
 
@@ -312,7 +313,7 @@ void CrosMock::SetNetworkLibraryStatusAreaExpectations() {
 
 void CrosMock::SetPowerLibraryStatusAreaExpectations() {
   EXPECT_CALL(*mock_power_library_, AddObserver(_))
-      .Times(2)
+      .Times(3)
       .RetiresOnSaturation();
   EXPECT_CALL(*mock_power_library_, battery_fully_charged())
       .Times(1)
@@ -339,7 +340,7 @@ void CrosMock::SetPowerLibraryStatusAreaExpectations() {
       .WillRepeatedly((Return(base::TimeDelta::FromMinutes(24))))
       .RetiresOnSaturation();
   EXPECT_CALL(*mock_power_library_, RemoveObserver(_))
-      .Times(2)
+      .Times(3)
       .RetiresOnSaturation();
 }
 

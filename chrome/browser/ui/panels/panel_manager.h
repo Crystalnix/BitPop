@@ -46,9 +46,6 @@ class PanelManager {
   // Removes all active panels. Pending panels will be processed for display.
   void RemoveAllActive();
 
-  // Returns true if all active panels are in minimized state.
-  bool AreAllMinimized() const;
-
   // Drags the given active panel.
   void StartDragging(Panel* panel);
   void Drag(int delta_x);
@@ -84,8 +81,8 @@ class PanelManager {
   bool ComputeBoundsForNextPanel(gfx::Rect* bounds, bool allow_size_change);
 
   // Help functions to drag the given panel.
-  void DragNegative(int delta_x);
-  void DragPositive(int delta_x);
+  void DragLeft();
+  void DragRight();
 
   // Stores the active panels.
   ActivePanels active_panels_;

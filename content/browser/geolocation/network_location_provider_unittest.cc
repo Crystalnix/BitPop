@@ -4,11 +4,12 @@
 
 #include "base/json/json_reader.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/common/net/test_url_fetcher_factory.h"
 #include "content/browser/geolocation/fake_access_token_store.h"
 #include "content/browser/geolocation/network_location_provider.h"
+#include "content/common/test_url_fetcher_factory.h"
 #include "net/url_request/url_request_status.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -172,7 +173,8 @@ class GeolocationNetworkProviderTest : public testing::Test {
     WifiData data;
     for (int i = 0; i < ap_count; ++i) {
       AccessPointData ap;
-      ap.mac_address = ASCIIToUTF16(StringPrintf("%02d-34-56-78-54-32", i));
+      ap.mac_address =
+          ASCIIToUTF16(base::StringPrintf("%02d-34-56-78-54-32", i));
       ap.radio_signal_strength = i;
       ap.channel = IndexToChannal(i);
       ap.signal_to_noise = i + 42;
@@ -189,7 +191,7 @@ class GeolocationNetworkProviderTest : public testing::Test {
     for (int i = 0; i < router_count; ++i) {
       RouterData router;
       router.mac_address =
-          ASCIIToUTF16(StringPrintf("%02d-34-56-78-54-32", i));
+          ASCIIToUTF16(base::StringPrintf("%02d-34-56-78-54-32", i));
       data.router_data.insert(router);
     }
     return data;
@@ -432,7 +434,7 @@ TEST_F(GeolocationNetworkProviderTest, MultipleWifiScansComplete) {
       "}";
   fetcher->delegate()->OnURLFetchComplete(
       fetcher, test_server_url_, net::URLRequestStatus(), 200,  // OK
-      ResponseCookies(), kNoFixNetworkResponse);
+      net::ResponseCookies(), kNoFixNetworkResponse);
 
   // This should have set the access token anyhow
   EXPECT_EQ(UTF8ToUTF16(REFERENCE_ACCESS_TOKEN),
@@ -466,7 +468,7 @@ TEST_F(GeolocationNetworkProviderTest, MultipleWifiScansComplete) {
       "}";
   fetcher->delegate()->OnURLFetchComplete(
       fetcher, test_server_url_, net::URLRequestStatus(), 200,  // OK
-      ResponseCookies(), kReferenceNetworkResponse);
+      net::ResponseCookies(), kReferenceNetworkResponse);
 
   provider->GetPosition(&position);
   EXPECT_EQ(51.0, position.latitude);
@@ -505,7 +507,7 @@ TEST_F(GeolocationNetworkProviderTest, MultipleWifiScansComplete) {
       fetcher, test_server_url_,
       net::URLRequestStatus(net::URLRequestStatus::FAILED, -1),
       200,  // should be ignored
-      ResponseCookies(), "");
+      net::ResponseCookies(), "");
 
   // Error means we now no longer have a fix.
   provider->GetPosition(&position);
@@ -540,7 +542,7 @@ TEST_F(GeolocationNetworkProviderTest, GatewayAndWifiScans) {
       "}";
   fetcher->delegate()->OnURLFetchComplete(
       fetcher, test_server_url_, net::URLRequestStatus(), 200,  // OK
-      ResponseCookies(), kNoFixNetworkResponse);
+      net::ResponseCookies(), kNoFixNetworkResponse);
 
   // This should have set the access token anyhow
   EXPECT_EQ(UTF8ToUTF16(REFERENCE_ACCESS_TOKEN),
@@ -575,7 +577,7 @@ TEST_F(GeolocationNetworkProviderTest, GatewayAndWifiScans) {
       "}";
   fetcher->delegate()->OnURLFetchComplete(
       fetcher, test_server_url_, net::URLRequestStatus(), 200,  // OK
-      ResponseCookies(), kReferenceNetworkResponse_1);
+      net::ResponseCookies(), kReferenceNetworkResponse_1);
 
   provider->GetPosition(&position);
   EXPECT_EQ(51.0, position.latitude);
@@ -615,7 +617,7 @@ TEST_F(GeolocationNetworkProviderTest, GatewayAndWifiScans) {
       "}";
   fetcher->delegate()->OnURLFetchComplete(
       fetcher, test_server_url_, net::URLRequestStatus(), 200,  // OK
-      ResponseCookies(), kReferenceNetworkResponse_2);
+      net::ResponseCookies(), kReferenceNetworkResponse_2);
 
   provider->GetPosition(&position);
   EXPECT_EQ(51.1, position.latitude);
@@ -648,7 +650,7 @@ TEST_F(GeolocationNetworkProviderTest, GatewayAndWifiScans) {
       "}";
   fetcher->delegate()->OnURLFetchComplete(
       fetcher, test_server_url_, net::URLRequestStatus(), 200,  // OK
-      ResponseCookies(), kReferenceNetworkResponse_3);
+      net::ResponseCookies(), kReferenceNetworkResponse_3);
 
   provider->GetPosition(&position);
   EXPECT_EQ(51.3, position.latitude);

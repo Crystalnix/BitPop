@@ -4,29 +4,35 @@
 
 #include "content/browser/site_instance.h"
 
-#include "chrome/common/url_constants.h"
 #include "content/browser/browsing_instance.h"
 #include "content/browser/content_browser_client.h"
 #include "content/browser/renderer_host/browser_render_process_host.h"
 #include "content/browser/webui/web_ui_factory.h"
-#include "content/common/notification_service.h"
 #include "content/common/content_client.h"
+#include "content/common/notification_service.h"
+#include "content/common/url_constants.h"
 #include "net/base/registry_controlled_domain.h"
 
-// We treat javascript:, about:crash, about:hang, and about:shorthang as the
-// same site as any URL since they are actually modifiers on existing pages.
 static bool IsURLSameAsAnySiteInstance(const GURL& url) {
   if (!url.is_valid())
     return false;
-  return url.SchemeIs(chrome::kJavaScriptScheme) ||
-         url.spec() == chrome::kAboutCrashURL ||
-         url.spec() == chrome::kAboutKillURL ||
-         url.spec() == chrome::kAboutHangURL ||
-         url.spec() == chrome::kAboutShorthangURL;
+
+  // We treat javascript: and about:crash as the same site as any URL since they
+  // are actually modifiers on existing pages.
+  if (url.SchemeIs(chrome::kJavaScriptScheme) ||
+      url.spec() == chrome::kAboutCrashURL) {
+    return true;
+  }
+
+  return
+      content::GetContentClient()->browser()->IsURLSameAsAnySiteInstance(url);
 }
 
+int32 SiteInstance::next_site_instance_id_ = 1;
+
 SiteInstance::SiteInstance(BrowsingInstance* browsing_instance)
-    : browsing_instance_(browsing_instance),
+    : id_(next_site_instance_id_++),
+      browsing_instance_(browsing_instance),
       render_process_host_factory_(NULL),
       process_(NULL),
       max_page_id_(-1),
@@ -108,6 +114,18 @@ bool SiteInstance::HasRelatedSiteInstance(const GURL& url) {
 
 SiteInstance* SiteInstance::GetRelatedSiteInstance(const GURL& url) {
   return browsing_instance_->GetSiteInstanceForURL(url);
+}
+
+bool SiteInstance::HasWrongProcessForURL(const GURL& url) const {
+  // Having no process isn't a problem, since we'll assign it correctly.
+  if (!HasProcess())
+    return false;
+
+  // If the effective URL is an extension (e.g., for hosted apps) but the
+  // process is not (or vice versa), make sure we notice and fix it.
+  GURL effective_url = GetEffectiveURL(browsing_instance_->profile(), url);
+  return effective_url.SchemeIs(chrome::kExtensionScheme) !=
+      process_->is_extension_process();
 }
 
 /*static*/

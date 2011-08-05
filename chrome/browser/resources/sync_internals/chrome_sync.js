@@ -46,7 +46,7 @@ Event.prototype.findListener_ = function(listener) {
 
 // Fires the event.  Called by the actual event callback.  Any
 // exceptions thrown by a listener are caught and logged.
-Event.prototype.dispatch_ = function() {
+Event.prototype.fire = function() {
   var args = Array.prototype.slice.call(arguments);
   for (var i = 0; i < this.listeners_.length; i++) {
     try {
@@ -62,182 +62,109 @@ Event.prototype.dispatch_ = function() {
   }
 };
 
-// Service events.
-chrome.sync.onSyncServiceStateChanged = new Event();
+chrome.sync.events = {
+  'service': [
+    'onServiceStateChanged'
+  ],
 
-// Notifier events.
-chrome.sync.onSyncNotificationStateChange = new Event();
-chrome.sync.onSyncIncomingNotification = new Event();
+  'notifier': [
+    'onNotificationStateChange',
+    'onIncomingNotification'
+  ],
 
-// Manager events.
-chrome.sync.onChangesApplied = new Event();
-chrome.sync.onChangesComplete = new Event();
-chrome.sync.onSyncCycleCompleted = new Event();
-chrome.sync.onAuthError = new Event();
-chrome.sync.onUpdatedToken = new Event();
-chrome.sync.onPassphraseRequired = new Event();
-chrome.sync.onPassphraseAccepted = new Event();
-chrome.sync.onEncryptionComplete = new Event();
-chrome.sync.onMigrationNeededForTypes = new Event();
-chrome.sync.onInitializationComplete = new Event();
-chrome.sync.onPaused = new Event();
-chrome.sync.onResumed = new Event();
-chrome.sync.onStopSyncingPermanently = new Event();
-chrome.sync.onClearServerDataSucceeded = new Event();
-chrome.sync.onClearServerDataFailed = new Event();
+  'manager': [
+    'onChangesApplied',
+    'onChangesComplete',
+    'onSyncCycleCompleted',
+    'onAuthError',
+    'onUpdatedToken',
+    'onPassphraseRequired',
+    'onPassphraseAccepted',
+    'onEncryptionComplete',
+    'onMigrationNeededForTypes',
+    'onInitializationComplete',
+    'onPaused',
+    'onResumed',
+    'onStopSyncingPermanently',
+    'onClearServerDataSucceeded',
+    'onClearServerDataFailed'
+  ],
 
-function AsyncFunction(name) {
-  this.name_ = name;
-  this.callbacks_ = [];
+  'directory': [
+    'handleCalculateChangesChangeEventFromSyncApi',
+    'handleCalculateChangesChangeEventFromSyncer',
+    'handleTransactionEndingChangeEvent',
+    'handleTransactionCompleteChangeEvent'
+  ]
+};
+
+for (var eventType in chrome.sync.events) {
+  var events = chrome.sync.events[eventType];
+  for (var i = 0; i < events.length; ++i) {
+    var event = events[i];
+    chrome.sync[event] = new Event();
+  }
 }
 
-// Calls the function, assuming the last argument is a callback to be
-// called with the return value.
-AsyncFunction.prototype.call = function() {
-  var args = Array.prototype.slice.call(arguments);
-  this.callbacks_.push(args.pop());
-  chrome.send(this.name_, args);
+function makeSyncFunction(name) {
+  var callbacks = [];
+
+  // Calls the function, assuming the last argument is a callback to be
+  // called with the return value.
+  var fn = function() {
+    var args = Array.prototype.slice.call(arguments);
+    callbacks.push(args.pop());
+    chrome.send(name, args);
+  };
+
+  // Handle a reply, assuming that messages are processed in FIFO order.
+  // Called by SyncInternalsUI::HandleJsMessageReply().
+  fn.handleReply = function() {
+    var args = Array.prototype.slice.call(arguments);
+    // Remove the callback before we call it since the callback may
+    // throw.
+    var callback = callbacks.shift();
+    callback.apply(null, args);
+  };
+
+  return fn;
 }
 
-// Handle a reply, assuming that messages are processed in FIFO order.
-AsyncFunction.prototype.handleReply = function() {
-  var args = Array.prototype.slice.call(arguments);
-  // Remove the callback before we call it since the callback may
-  // throw.
-  var callback = this.callbacks_.shift();
-  callback.apply(null, args);
+var syncFunctions = [
+  // Sync service functions.
+  'getAboutInfo',
+
+  // Notification functions.
+  'getNotificationState',
+  'getNotificationInfo',
+
+  // Node lookup functions.
+  'getRootNode',
+  'getNodesById',
+  'getChildNodeIds',
+  'findNodesContainingString'
+];
+
+for (var i = 0; i < syncFunctions.length; ++i) {
+  var syncFunction = syncFunctions[i];
+  chrome.sync[syncFunction] = makeSyncFunction(syncFunction);
 }
 
-// Sync service functions.
-chrome.sync.getAboutInfo_ = new AsyncFunction('getAboutInfo');
-chrome.sync.getAboutInfo = function(callback) {
-  chrome.sync.getAboutInfo_.call(callback);
-}
+/**
+ * Returns an object which measures elapsed time.
+ */
+chrome.sync.makeTimer = function() {
+  var start = new Date();
 
-// Notification functions.
-chrome.sync.getNotificationState_ =
-    new AsyncFunction('getNotificationState');
-chrome.sync.getNotificationState = function(callback) {
-  chrome.sync.getNotificationState_.call(callback);
-}
-
-chrome.sync.getNotificationInfo_ =
-    new AsyncFunction('getNotificationInfo');
-chrome.sync.getNotificationInfo = function(callback) {
-  chrome.sync.getNotificationInfo_.call(callback);
-}
-
-// Node lookup functions.
-chrome.sync.getRootNode_ = new AsyncFunction('getRootNode');
-chrome.sync.getRootNode = function(callback) {
-  chrome.sync.getRootNode_.call(callback);
-}
-
-chrome.sync.getNodeById_ = new AsyncFunction('getNodeById');
-chrome.sync.getNodeById = function(id, callback) {
-  chrome.sync.getNodeById_.call(id, callback);
-}
+  return {
+    /**
+     * @return {number} The number of seconds since the timer was
+     * created.
+     */
+    get elapsedSeconds() {
+      return ((new Date()).getTime() - start.getTime()) / 1000.0;
+    }
+  };
+};
 
 })();
-
-// TODO(akalin): Rewrite the C++ side to not need the handlers below.
-
-// Sync service event handlers.
-
-function onSyncServiceStateChanged() {
-  chrome.sync.onSyncServiceStateChanged.dispatch_();
-}
-
-// Notification event handlers.
-
-function onSyncNotificationStateChange(notificationsEnabled) {
-  chrome.sync.onSyncNotificationStateChange.dispatch_(notificationsEnabled);
-}
-
-function onSyncIncomingNotification(changedTypes) {
-  chrome.sync.onSyncIncomingNotification.dispatch_(changedTypes);
-}
-
-// Sync manager event handlers.
-
-function onChangesApplied(modelType, changes) {
-  chrome.sync.onChangesApplied.dispatch_(modelType, changes);
-}
-
-function onChangesComplete(modelType) {
-  chrome.sync.onChangesComplete.dispatch_(modelType);
-}
-
-function onSyncCycleCompleted(snapshot) {
-  chrome.sync.onSyncCycleCompleted.dispatch_(snapshot);
-}
-
-function onAuthError(authError) {
-  chrome.sync.onAuthError.dispatch_(authError);
-}
-
-function onUpdatedToken(token) {
-  chrome.sync.onUpdatedToken.dispatch_(token);
-}
-
-function onPassphraseRequired(forDecryption) {
-  chrome.sync.onPassphraseRequired.dispatch_(forDecryption);
-}
-
-function onPassphraseAccepted(bootstrapToken) {
-  chrome.sync.onPassphraseAccepted.dispatch_(bootstrapToken);
-}
-
-function onEncryptionComplete(encrypted_types) {
-  chrome.sync.onEncryptionComplete.dispatch_(encrypted_types);
-}
-
-function onMigrationNeededForTypes(model_types) {
-  chrome.sync.onMigrationNeededForTypes.dispatch_(model_types);
-}
-
-function onInitializationComplete() {
-  chrome.sync.onInitializationComplete.dispatch_();
-}
-
-function onPaused() {
-  chrome.sync.onPaused.dispatch_();
-}
-
-function onResumed() {
-  chrome.sync.onResumed.dispatch_();
-}
-
-function onStopSyncingPermanently() {
-  chrome.sync.onStopSyncingPermanently.dispatch_();
-}
-
-function onClearServerDataSucceeded() {
-  chrome.sync.onClearServerDataSucceeded();
-}
-
-function onClearServerDataFailed() {
-  chrome.sync.onClearServerDataFailed();
-}
-
-// Function reply handlers.
-
-function onGetAboutInfoFinished(aboutInfo) {
-  chrome.sync.getAboutInfo_.handleReply(aboutInfo);
-}
-
-function onGetNotificationStateFinished(notificationState) {
-  chrome.sync.getNotificationState_.handleReply(notificationState);
-}
-
-function onGetRootNodeFinished(rootNode) {
-  chrome.sync.getRootNode_.handleReply(rootNode);
-}
-
-function onGetNodeByIdFinished(node) {
-  chrome.sync.getNodeById_.handleReply(node);
-}
-
-function onGetNotificationInfoFinished(notificationInfo) {
-  chrome.sync.getNotificationInfo_.handleReply(notificationInfo);
-}

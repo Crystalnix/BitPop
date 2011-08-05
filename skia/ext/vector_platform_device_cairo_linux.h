@@ -14,7 +14,7 @@
 
 namespace skia {
 
-class VectorPlatformDeviceCairoFactory : public SkDeviceFactory {
+class SK_API VectorPlatformDeviceCairoFactory : public SkDeviceFactory {
  public:
   static PlatformDevice* CreateDevice(cairo_t* context, int width, int height,
                                       bool isOpaque);
@@ -30,7 +30,7 @@ class VectorPlatformDeviceCairoFactory : public SkDeviceFactory {
 // cooresponding Cairo APIs and outputs to a Cairo surface. Please NOTE that
 // since it is completely vectorial, the bitmap content in it is thus
 // meaningless.
-class VectorPlatformDeviceCairo : public PlatformDevice {
+class SK_API VectorPlatformDeviceCairo : public PlatformDevice {
  public:
   virtual ~VectorPlatformDeviceCairo();
 
@@ -43,10 +43,8 @@ class VectorPlatformDeviceCairo : public PlatformDevice {
   // this class.
   static void ClearFontCache();
 
-  // Overridden from SkDevice (through PlatformDevice):
-  virtual SkDeviceFactory* getDeviceFactory();
-
-  // Overridden from PlatformDevice:
+  // Overridden from SkDevice
+  virtual uint32_t getDeviceCapabilities();
   virtual void drawPaint(const SkDraw& draw, const SkPaint& paint) OVERRIDE;
   virtual void drawPoints(const SkDraw& draw, SkCanvas::PointMode mode,
                           size_t count, const SkPoint[],
@@ -82,12 +80,16 @@ class VectorPlatformDeviceCairo : public PlatformDevice {
 
   virtual void setMatrixClip(const SkMatrix& transform, const SkRegion& region,
                              const SkClipStack&);
+
+  // Overridden from PlatformDevice
   virtual PlatformSurface BeginPlatformPaint();
-  virtual bool IsVectorial();
 
  protected:
   explicit VectorPlatformDeviceCairo(PlatformSurface context,
                                      const SkBitmap& bitmap);
+
+  // Override from SkDevice (through PlatformDevice).
+  virtual SkDeviceFactory* onNewDeviceFactory();
 
  private:
   // Apply paint's color in the context.

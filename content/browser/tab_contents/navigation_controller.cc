@@ -11,16 +11,14 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_about_handler.h"
 #include "chrome/browser/browser_url_handler.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_types.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/pref_names.h"
-#include "chrome/common/url_constants.h"
 #include "content/browser/child_process_security_policy.h"
 #include "content/browser/in_process_webkit/session_storage_namespace.h"
 #include "content/browser/site_instance.h"
 #include "content/browser/tab_contents/interstitial_page.h"
+#include "content/browser/tab_contents/navigation_details.h"
 #include "content/browser/tab_contents/navigation_entry.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/browser/tab_contents/tab_contents_delegate.h"
@@ -45,13 +43,13 @@ const int kInvalidateAllButShelves =
 void NotifyPrunedEntries(NavigationController* nav_controller,
                          bool from_front,
                          int count) {
-  NavigationController::PrunedDetails details;
+  content::PrunedDetails details;
   details.from_front = from_front;
   details.count = count;
   NotificationService::current()->Notify(
       NotificationType::NAV_LIST_PRUNED,
       Source<NavigationController>(nav_controller),
-      Details<NavigationController::PrunedDetails>(&details));
+      Details<content::PrunedDetails>(&details));
 }
 
 // Ensure the given NavigationEntry has a valid state, so that WebKit does not
@@ -233,7 +231,7 @@ NavigationEntry* NavigationController::CreateNavigationEntry(
   // used internally.
   GURL loaded_url(url);
   bool reverse_on_redirect = false;
-  BrowserURLHandler::RewriteURLIfNecessary(
+  BrowserURLHandler::GetInstance()->RewriteURLIfNecessary(
       &loaded_url, profile, &reverse_on_redirect);
 
   NavigationEntry* entry = new NavigationEntry(
@@ -467,7 +465,7 @@ void NavigationController::RemoveEntryAtIndex(int index,
 void NavigationController::UpdateVirtualURLToURL(
     NavigationEntry* entry, const GURL& new_url) {
   GURL new_virtual_url(new_url);
-  if (BrowserURLHandler::ReverseURLRewrite(
+  if (BrowserURLHandler::GetInstance()->ReverseURLRewrite(
           &new_virtual_url, entry->virtual_url(), profile_)) {
     entry->set_virtual_url(new_virtual_url);
   }
@@ -502,7 +500,7 @@ void NavigationController::DocumentLoadedInFrame() {
 bool NavigationController::RendererDidNavigate(
     const ViewHostMsg_FrameNavigate_Params& params,
     int extra_invalidate_flags,
-    LoadCommittedDetails* details) {
+    content::LoadCommittedDetails* details) {
 
   // Save the previous state before we clobber it.
   if (GetLastCommittedEntry()) {
@@ -715,6 +713,7 @@ void NavigationController::CreateNavigationEntriesFromTabNavigations(
 void NavigationController::RendererDidNavigateToNewPage(
     const ViewHostMsg_FrameNavigate_Params& params, bool* did_replace_entry) {
   NavigationEntry* new_entry;
+  bool update_virtual_url;
   if (pending_entry_) {
     // TODO(brettw) this assumes that the pending entry is appropriate for the
     // new page that was just loaded. I don't think this is necessarily the
@@ -725,12 +724,18 @@ void NavigationController::RendererDidNavigateToNewPage(
     // may have set the type to interstitial. Once we commit, however, the page
     // type must always be normal.
     new_entry->set_page_type(NORMAL_PAGE);
+    update_virtual_url = new_entry->update_virtual_url_with_url();
   } else {
     new_entry = new NavigationEntry;
+    // When navigating to a new page, give the browser URL handler a chance to
+    // update the virtual URL based on the new URL. For example, this is needed
+    // to show chrome://bookmarks/#1 when the bookmarks webui extension changes
+    // the URL.
+    update_virtual_url = true;
   }
 
   new_entry->set_url(params.url);
-  if (new_entry->update_virtual_url_with_url())
+  if (update_virtual_url)
     UpdateVirtualURLToURL(new_entry, params.url);
   new_entry->set_referrer(params.referrer);
   new_entry->set_page_id(params.page_id);
@@ -873,53 +878,6 @@ bool NavigationController::RendererDidNavigateAutoSubframe(
     return true;
   }
   return false;
-}
-
-// TODO(brettw) I think this function is unnecessary.
-void NavigationController::CommitPendingEntry() {
-  DiscardTransientEntry();
-
-  if (!pending_entry())
-    return;  // Nothing to do.
-
-  // Need to save the previous URL for the notification.
-  LoadCommittedDetails details;
-  if (GetLastCommittedEntry()) {
-    details.previous_url = GetLastCommittedEntry()->url();
-    details.previous_entry_index = last_committed_entry_index();
-  } else {
-    details.previous_entry_index = -1;
-  }
-
-  if (pending_entry_index_ >= 0) {
-    // This is a previous navigation (back/forward) that we're just now
-    // committing. Just mark it as committed.
-    details.type = NavigationType::EXISTING_PAGE;
-    int new_entry_index = pending_entry_index_;
-    DiscardNonCommittedEntriesInternal();
-
-    // Mark that entry as committed.
-    last_committed_entry_index_ = new_entry_index;
-  } else {
-    // This is a new navigation. It's easiest to just copy the entry and insert
-    // it new again, since InsertOrReplaceEntry expects to take ownership and
-    // also discard the pending entry. We also need to synthesize a page ID. We
-    // can only do this because this function will only be called by our custom
-    // TabContents types. For TabContents, the IDs are generated by the
-    // renderer, so we can't do this.
-    details.type = NavigationType::NEW_PAGE;
-    pending_entry_->set_page_id(tab_contents_->GetMaxPageID() + 1);
-    tab_contents_->UpdateMaxPageID(pending_entry_->page_id());
-    InsertOrReplaceEntry(new NavigationEntry(*pending_entry_), false);
-  }
-
-  // Broadcast the notification of the navigation.
-  details.entry = GetActiveEntry();
-  details.is_auto = false;
-  details.is_in_page = AreURLsInPageNavigation(details.previous_url,
-                                               details.entry->url());
-  details.is_main_frame = true;
-  NotifyNavigationEntryCommitted(&details, 0);
 }
 
 int NavigationController::GetIndexOfEntry(
@@ -1084,10 +1042,14 @@ void NavigationController::InsertOrReplaceEntry(NavigationEntry* entry,
   if (current_size > 0) {
     // Prune any entries which are in front of the current entry.
     // Also prune the current entry if we are to replace the current entry.
-    int prune_up_to = replace ? last_committed_entry_index_ - 1
-                              : last_committed_entry_index_;
+    // last_committed_entry_index_ must be updated here since calls to
+    // NotifyPrunedEntries() below may re-enter and we must make sure
+    // last_committed_entry_index_ is not left in an invalid state.
+    if (replace)
+      --last_committed_entry_index_;
+
     int num_pruned = 0;
-    while (prune_up_to < (current_size - 1)) {
+    while (last_committed_entry_index_ < (current_size - 1)) {
       num_pruned++;
       entries_.pop_back();
       current_size--;
@@ -1129,11 +1091,11 @@ void NavigationController::NavigateToPendingEntry(ReloadType reload_type) {
 }
 
 void NavigationController::NotifyNavigationEntryCommitted(
-    LoadCommittedDetails* details,
+    content::LoadCommittedDetails* details,
     int extra_invalidate_flags) {
   details->entry = GetActiveEntry();
   NotificationDetails notification_details =
-      Details<LoadCommittedDetails>(details);
+      Details<content::LoadCommittedDetails>(details);
 
   // We need to notify the ssl_manager_ before the tab_contents_ so the
   // location bar will have up-to-date information about the security style
@@ -1175,12 +1137,12 @@ void NavigationController::LoadIfNecessary() {
 
 void NavigationController::NotifyEntryChanged(const NavigationEntry* entry,
                                               int index) {
-  EntryChangedDetails det;
+  content::EntryChangedDetails det;
   det.changed_entry = entry;
   det.index = index;
   NotificationService::current()->Notify(NotificationType::NAV_ENTRY_CHANGED,
-                                         Source<NavigationController>(this),
-                                         Details<EntryChangedDetails>(&det));
+      Source<NavigationController>(this),
+      Details<content::EntryChangedDetails>(&det));
 }
 
 void NavigationController::FinishRestore(int selected_index,

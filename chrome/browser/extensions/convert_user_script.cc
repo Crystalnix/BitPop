@@ -10,10 +10,9 @@
 #include "base/base64.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/path_service.h"
+#include "base/scoped_temp_dir.h"
 #include "base/string_util.h"
-#include "crypto/sha2.h"
 #include "chrome/browser/extensions/user_script_master.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
@@ -21,9 +20,11 @@
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/user_script.h"
 #include "content/common/json_value_serializer.h"
+#include "crypto/sha2.h"
 #include "googleurl/src/gurl.h"
 
 namespace keys = extension_manifest_keys;
+namespace values = extension_manifest_values;
 
 scoped_refptr<Extension> ConvertUserScriptToExtension(
     const FilePath& user_script_path, const GURL& original_url,
@@ -125,6 +126,14 @@ scoped_refptr<Extension> ConvertUserScriptToExtension(
   content_script->Set(keys::kIncludeGlobs, includes);
   content_script->Set(keys::kExcludeGlobs, excludes);
   content_script->Set(keys::kJs, js_files);
+
+  if (script.run_location() == UserScript::DOCUMENT_START)
+    content_script->SetString(keys::kRunAt, values::kRunAtDocumentStart);
+  else if (script.run_location() == UserScript::DOCUMENT_END)
+    content_script->SetString(keys::kRunAt, values::kRunAtDocumentEnd);
+  else if (script.run_location() == UserScript::DOCUMENT_IDLE)
+    // This is the default, but store it just in case we change that.
+    content_script->SetString(keys::kRunAt, values::kRunAtDocumentIdle);
 
   ListValue* content_scripts = new ListValue();
   content_scripts->Append(content_script);

@@ -270,9 +270,8 @@ WebPluginDelegateImpl::WebPluginDelegateImpl(
       plugin_wnd_proc_(NULL),
       last_message_(0),
       is_calling_wndproc(false),
-      keyboard_layout_(NULL),
-      parent_thread_id_(0),
       dummy_window_for_activation_(NULL),
+      parent_proxy_window_(NULL),
       handle_event_message_filter_hook_(NULL),
       handle_event_pump_messages_event_(NULL),
       user_gesture_message_posted_(false),
@@ -300,6 +299,8 @@ WebPluginDelegateImpl::WebPluginDelegateImpl(
     quirks_ |= PLUGIN_QUIRK_PATCH_SETCURSOR;
     quirks_ |= PLUGIN_QUIRK_ALWAYS_NOTIFY_SUCCESS;
     quirks_ |= PLUGIN_QUIRK_HANDLE_MOUSE_CAPTURE;
+    if (filename == kBuiltinFlashPlugin)
+      quirks_ |= PLUGIN_QUIRK_REPARENT_IN_BROWSER;
   } else if (filename == kAcrobatReaderPlugin) {
     // Check for the version number above or equal 9.
     int major_version = GetPluginMajorVersion(plugin_info);
@@ -356,7 +357,11 @@ WebPluginDelegateImpl::WebPluginDelegateImpl(
 
 WebPluginDelegateImpl::~WebPluginDelegateImpl() {
   if (::IsWindow(dummy_window_for_activation_)) {
-    ::DestroyWindow(dummy_window_for_activation_);
+    // Sandboxed Flash stacks two dummy windows to prevent UIPI failures
+    if (::IsWindow(parent_proxy_window_))
+      ::DestroyWindow(parent_proxy_window_);
+    else
+      ::DestroyWindow(dummy_window_for_activation_);
   }
 
   DestroyInstance();
@@ -465,9 +470,9 @@ void WebPluginDelegateImpl::PlatformDestroyInstance() {
 void WebPluginDelegateImpl::Paint(WebKit::WebCanvas* canvas,
                                   const gfx::Rect& rect) {
   if (windowless_) {
-    HDC hdc = skia::BeginPlatformPaint(canvas);
+    skia::ScopedPlatformPaint scoped_platform_paint(canvas);
+    HDC hdc = scoped_platform_paint.GetPlatformSurface();
     WindowlessPaint(hdc, rect);
-    skia::EndPlatformPaint(canvas);
   }
 }
 
@@ -484,6 +489,9 @@ bool WebPluginDelegateImpl::WindowedCreatePlugin() {
 
   RegisterNativeWindowClass();
 
+  // UIPI requires reparenting in the (medium-integrity) browser process.
+  bool reparent_in_browser = (quirks_ & PLUGIN_QUIRK_REPARENT_IN_BROWSER) != 0;
+
   // The window will be sized and shown later.
   windowed_handle_ = CreateWindowEx(
       WS_EX_LEFT | WS_EX_LTRREADING | WS_EX_RIGHTSCROLLBAR,
@@ -494,14 +502,16 @@ bool WebPluginDelegateImpl::WindowedCreatePlugin() {
       0,
       0,
       0,
-      parent_,
+      reparent_in_browser ? NULL : parent_,
       0,
       GetModuleHandle(NULL),
       0);
   if (windowed_handle_ == 0)
     return false;
 
-  if (IsWindow(parent_)) {
+  if (reparent_in_browser) {
+    plugin_->ReparentPluginWindow(windowed_handle_, parent_);
+  } else if (IsWindow(parent_)) {
     // This is a tricky workaround for Issue 2673 in chromium "Flash: IME not
     // available". To use IMEs in this window, we have to make Windows attach
     // IMEs to this window (i.e. load IME DLLs, attach them to this process,
@@ -707,6 +717,30 @@ BOOL CALLBACK EnumFlashWindows(HWND window, LPARAM arg) {
 
 bool WebPluginDelegateImpl::CreateDummyWindowForActivation() {
   DCHECK(!dummy_window_for_activation_);
+
+  // Built-in Flash runs with UIPI, but in windowless mode Flash sometimes
+  // tries to attach windows to the parent (which fails under UIPI). To make
+  // it work we add an extra dummy parent in the low-integrity process.
+  if (quirks_ & PLUGIN_QUIRK_REPARENT_IN_BROWSER) {
+    parent_proxy_window_ = CreateWindowEx(
+      0,
+      L"Static",
+      kDummyActivationWindowName,
+      WS_POPUP,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      GetModuleHandle(NULL),
+      0);
+
+    if (parent_proxy_window_ == 0)
+      return false;
+    plugin_->ReparentPluginWindow(parent_proxy_window_, parent_);
+  }
+
   dummy_window_for_activation_ = CreateWindowEx(
     0,
     L"Static",
@@ -716,7 +750,7 @@ bool WebPluginDelegateImpl::CreateDummyWindowForActivation() {
     0,
     0,
     0,
-    parent_,
+    parent_proxy_window_ ? parent_proxy_window_ : parent_,
     0,
     GetModuleHandle(NULL),
     0);
@@ -1185,25 +1219,6 @@ bool WebPluginDelegateImpl::PlatformHandleInputEvent(
   NPEvent np_event;
   if (!NPEventFromWebInputEvent(event, &np_event)) {
     return false;
-  }
-
-  // Synchronize the keyboard layout with the one of the browser process. Flash
-  // uses the keyboard layout of this window to verify a WM_CHAR message is
-  // valid. That is, Flash discards a WM_CHAR message unless its character is
-  // the one translated with ToUnicode(). (Since a plug-in is running on a
-  // separate process from the browser process, we need to syncronize it
-  // manually.)
-  if (np_event.event == WM_CHAR) {
-    if (!keyboard_layout_)
-      keyboard_layout_ = GetKeyboardLayout(GetCurrentThreadId());
-    if (!parent_thread_id_)
-      parent_thread_id_ = GetWindowThreadProcessId(parent_, NULL);
-    HKL parent_layout = GetKeyboardLayout(parent_thread_id_);
-    if (keyboard_layout_ != parent_layout) {
-      std::wstring layout_name(base::StringPrintf(L"%08x", parent_layout));
-      LoadKeyboardLayout(layout_name.c_str(), KLF_ACTIVATE);
-      keyboard_layout_ = parent_layout;
-    }
   }
 
   HWND last_focus_window = NULL;

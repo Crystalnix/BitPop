@@ -8,15 +8,15 @@
 #include <string>
 
 #include "base/message_loop.h"
-#include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "chrome/common/net/gaia/gaia_auth_consumer.h"
 #include "chrome/common/net/gaia/gaia_auth_fetcher.h"
 #include "chrome/common/net/gaia/gaia_auth_fetcher_unittest.h"
 #include "chrome/common/net/gaia/google_service_auth_error.h"
 #include "chrome/common/net/http_return.h"
-#include "chrome/common/net/test_url_fetcher_factory.h"
-#include "chrome/common/net/url_fetcher.h"
 #include "chrome/test/testing_profile.h"
+#include "content/common/test_url_fetcher_factory.h"
+#include "content/common/url_fetcher.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_errors.h"
 #include "net/url_request/url_request_status.h"
@@ -53,7 +53,7 @@ void MockFetcher::Start() {
                                  url_,
                                  status,
                                  http_code,
-                                 ResponseCookies(),
+                                 net::ResponseCookies(),
                                  results_);
 }
 
@@ -102,7 +102,7 @@ class GaiaAuthFetcherTest : public testing::Test {
     EXPECT_EQ(captcha_token, out_captcha_token);
   }
 
-  ResponseCookies cookies_;
+  net::ResponseCookies cookies_;
   GURL client_login_source_;
   GURL issue_auth_token_source_;
   TestingProfile profile_;

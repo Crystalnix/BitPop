@@ -4,7 +4,6 @@
 
 #include "media/filters/ffmpeg_audio_decoder.h"
 
-#include "media/base/callback.h"
 #include "media/base/data_buffer.h"
 #include "media/base/limits.h"
 #include "media/ffmpeg/ffmpeg_common.h"
@@ -30,6 +29,7 @@ const size_t FFmpegAudioDecoder::kOutputBufferSize =
 FFmpegAudioDecoder::FFmpegAudioDecoder(MessageLoop* message_loop)
     : DecoderBase<AudioDecoder, Buffer>(message_loop),
       codec_context_(NULL),
+      config_(0, CHANNEL_LAYOUT_NONE, 0),
       estimated_next_timestamp_(kNoTimestamp) {
 }
 
@@ -39,7 +39,7 @@ FFmpegAudioDecoder::~FFmpegAudioDecoder() {
 void FFmpegAudioDecoder::DoInitialize(DemuxerStream* demuxer_stream,
                                       bool* success,
                                       Task* done_cb) {
-  AutoTaskRunner done_runner(done_cb);
+  base::ScopedTaskRunner done_runner(done_cb);
   *success = false;
 
   AVStream* av_stream = demuxer_stream->GetAVStream();
@@ -52,11 +52,13 @@ void FFmpegAudioDecoder::DoInitialize(DemuxerStream* demuxer_stream,
   int bps = av_get_bits_per_sample_fmt(codec_context_->sample_fmt);
   if (codec_context_->channels <= 0 ||
       codec_context_->channels > Limits::kMaxChannels ||
+      (codec_context_->channel_layout == 0 && codec_context_->channels > 2) ||
       bps <= 0 || bps > Limits::kMaxBitsPerSample ||
       codec_context_->sample_rate <= 0 ||
       codec_context_->sample_rate > Limits::kMaxSampleRate) {
     DLOG(WARNING) << "Invalid audio stream -"
         << " channels: " << codec_context_->channels
+        << " channel layout:" << codec_context_->channel_layout
         << " bps: " << bps
         << " sample rate: " << codec_context_->sample_rate;
     return;
@@ -68,17 +70,12 @@ void FFmpegAudioDecoder::DoInitialize(DemuxerStream* demuxer_stream,
     return;
   }
 
-  // When calling avcodec_find_decoder(), |codec_context_| might be altered by
-  // the decoder to give more accurate values of the output format of the
-  // decoder. So set the media format after a decoder is allocated.
-  // TODO(hclam): Reuse the information provided by the demuxer for now, we may
-  // need to wait until the first buffer is decoded to know the correct
-  // information.
-  media_format_.SetAsInteger(MediaFormat::kChannels, codec_context_->channels);
-  media_format_.SetAsInteger(MediaFormat::kSampleBits,
-      av_get_bits_per_sample_fmt(codec_context_->sample_fmt));
-  media_format_.SetAsInteger(MediaFormat::kSampleRate,
-      codec_context_->sample_rate);
+  config_.bits_per_channel =
+      av_get_bits_per_sample_fmt(codec_context_->sample_fmt);
+  config_.channel_layout =
+      ChannelLayoutToChromeChannelLayout(codec_context_->channel_layout,
+                                         codec_context_->channels);
+  config_.sample_rate = codec_context_->sample_rate;
 
   // Prepare the output buffer.
   output_buffer_.reset(static_cast<uint8*>(av_malloc(kOutputBufferSize)));
@@ -87,6 +84,14 @@ void FFmpegAudioDecoder::DoInitialize(DemuxerStream* demuxer_stream,
     return;
   }
   *success = true;
+}
+
+AudioDecoderConfig FFmpegAudioDecoder::config() {
+  return config_;
+}
+
+void FFmpegAudioDecoder::ProduceAudioSamples(scoped_refptr<Buffer> output) {
+  DecoderBase<AudioDecoder, Buffer>::PostReadTaskHack(output);
 }
 
 void FFmpegAudioDecoder::DoSeek(base::TimeDelta time, Task* done_cb) {

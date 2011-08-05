@@ -8,21 +8,16 @@
 
 using webkit_glue::PasswordForm;
 
-// TODO(rsimha): See http://crbug.com/78840.
-IN_PROC_BROWSER_TEST_F(SingleClientLivePasswordsSyncTest, FLAKY_Sanity) {
+IN_PROC_BROWSER_TEST_F(SingleClientLivePasswordsSyncTest, Sanity) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
   PasswordForm form = CreateTestPasswordForm(0);
   AddLogin(GetVerifierPasswordStore(), form);
-
-  std::vector<PasswordForm> verifier_forms;
-  GetLogins(GetVerifierPasswordStore(), verifier_forms);
-  EXPECT_EQ(1U, verifier_forms.size());
-
+  ASSERT_EQ(1, GetVerifierPasswordCount());
   AddLogin(GetPasswordStore(0), form);
-  ASSERT_TRUE(GetClient(0)->AwaitSyncCycleCompletion("Added a login."));
+  ASSERT_EQ(1, GetPasswordCount(0));
 
-  std::vector<PasswordForm> forms0;
-  GetLogins(GetPasswordStore(0), forms0);
-  ASSERT_TRUE(ContainsSamePasswordForms(verifier_forms, forms0));
+  ASSERT_TRUE(GetClient(0)->AwaitSyncCycleCompletion("Added a login."));
+  ASSERT_TRUE(ProfileContainsSamePasswordFormsAsVerifier(0));
+  ASSERT_EQ(1, GetPasswordCount(0));
 }

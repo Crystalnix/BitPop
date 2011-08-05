@@ -1,4 +1,4 @@
-# Copyright (c) 2009 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -28,8 +28,8 @@
           'nacl/nacl_main_platform_delegate_linux.cc',
           'nacl/nacl_main_platform_delegate_mac.mm',
           'nacl/nacl_main_platform_delegate_win.cc',
-          'nacl/nacl_thread.cc',
-          'nacl/nacl_thread.h',
+          'nacl/nacl_launcher_thread.cc',
+          'nacl/nacl_launcher_thread.h',
         ],
         # TODO(gregoryd): consider switching NaCl to use Chrome OS defines
         'conditions': [
@@ -53,9 +53,6 @@
   'targets': [
     {
       'target_name': 'nacl',
-      # The TLS (Thread Local Storage) access used by NaCl on x86-64
-      # on Linux/ELF can't be linked into a shared library, so we
-      # can't use '<(library)' here.  See http://crbug.com/35829.
       'type': 'static_library',
       'msvs_guid': '83E86DAF-5763-4711-AD34-5FDAE395560C',
       'variables': {
@@ -81,6 +78,28 @@
           '<@(nacl_defines)',
         ],
       },
+      'conditions': [
+        ['target_arch=="ia32"', {
+           'copies': [
+             {
+               'destination': '<(PRODUCT_DIR)',
+               'files': [
+                 '../native_client/irt_binaries/nacl_irt_x86_32.nexe',
+               ],
+             },
+           ],
+        }],
+        ['target_arch=="x64" or OS=="win"', {
+           'copies': [
+             {
+               'destination': '<(PRODUCT_DIR)',
+               'files': [
+                 '../native_client/irt_binaries/nacl_irt_x86_64.nexe',
+               ],
+             },
+           ],
+        }],
+      ],
     },
   ],
   'conditions': [
@@ -88,7 +107,7 @@
       'targets': [
         {
           'target_name': 'nacl_win64',
-          'type': '<(library)',
+          'type': 'static_library',
           'msvs_guid': '14135464-9FB9-42E3-99D8-791116FA1204',
           'variables': {
             'nacl_target': 1,

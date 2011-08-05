@@ -20,12 +20,6 @@ cr.define('ntp4', function() {
   var cardSlider;
 
   /**
-   * Template to use for creating new 'dot' elements
-   * @type {!Element|undefined}
-   */
-  var dotTemplate;
-
-  /**
    * The 'page-list' element.
    * @type {!Element|undefined}
    */
@@ -79,17 +73,11 @@ cr.define('ntp4', function() {
   var DEFAULT_TRANSITION_TIME = 500;
 
   /**
-   * All the Grabber objects currently in use on the page
-   * @type {Array.<Grabber>}
-   */
-  var grabbers = [];
-
-  /**
    * Invoked at startup once the DOM is available to initialize the app.
    */
   function initialize() {
     // Load the current theme colors.
-    themeChanged(false);
+    themeChanged();
 
     dotList = getRequiredElement('dot-list');
     pageList = getRequiredElement('page-list');
@@ -106,15 +94,7 @@ cr.define('ntp4', function() {
       e.preventDefault();
     }, true);
 
-    // Get the template elements and remove them from the DOM.  Things are
-    // simpler if we start with 0 pages and 0 apps and don't leave hidden
-    // template elements behind in the DOM.
     dots = dotList.getElementsByClassName('dot');
-    assert(dots.length == 1,
-           'Expected exactly one dot in the dots-list.');
-    dotTemplate = dots[0];
-    dotList.removeChild(dots[0]);
-
     tilePages = pageList.getElementsByClassName('tile-page');
     appsPages = pageList.getElementsByClassName('apps-page');
 
@@ -217,29 +197,13 @@ cr.define('ntp4', function() {
    *        applications.
    */
   function getAppsCallback(data) {
-    // Clean up any existing grabber objects - cancelling any outstanding drag.
-    // Ideally an async app update wouldn't disrupt an active drag but
-    // that would require us to re-use existing elements and detect how the apps
-    // have changed, which would be a lot of work.
-    // Note that we have to explicitly clean up the grabber objects so they stop
-    // listening to events and break the DOM<->JS cycles necessary to enable
-    // collection of all these objects.
-    grabbers.forEach(function(g) {
-      // Note that this may raise DRAG_END/RELEASE events to clean up an
-      // oustanding drag.
-      g.dispose();
-    });
-    assert(!draggingAppContainer && !draggingAppOriginalPosition &&
-           !draggingAppOriginalPage);
-    grabbers = [];
-
     // Clear any existing apps pages and dots.
     // TODO(rbyers): It might be nice to preserve animation of dots after an
     // uninstall. Could we re-use the existing page and dot elements?  It seems
     // unfortunate to have Chrome send us the entire apps list after an
     // uninstall.
-    for (var i = 0; i < appsPages.length; i++) {
-      var page = appsPages[i];
+    while (appsPages.length > 0) {
+      var page = appsPages[0];
       var dot = page.navigationDot;
 
       page.tearDown();
@@ -269,10 +233,6 @@ cr.define('ntp4', function() {
 
       appsPages[pageIndex].appendApp(app);
     }
-
-    // Add a couple blank apps pages for testing. TODO(estade): remove this.
-    appendTilePage(new ntp4.AppsPage('Foo'));
-    appendTilePage(new ntp4.AppsPage('Bar'));
 
     // Tell the slider about the pages
     updateSliderCards();
@@ -319,6 +279,10 @@ cr.define('ntp4', function() {
   function appsPrefChangeCallback(data) {
   }
 
+  function getCardSlider() {
+    return cardSlider;
+  }
+
   /**
    * Invoked whenever the pages in apps-page-list have changed so that
    * the Slider knows about the new elements.
@@ -344,29 +308,12 @@ cr.define('ntp4', function() {
     pageList.appendChild(page);
 
     // Make a deep copy of the dot template to add a new one.
-    var dotCount = dots.length;
-    var newDot = dotTemplate.cloneNode(true);
-    newDot.querySelector('span').textContent = page.pageName;
+    var newDot = new ntp4.NavDot(page);
     if (opt_animate)
       newDot.classList.add('new');
+
     dotList.appendChild(newDot);
     page.navigationDot = newDot;
-
-    // Add click handler to the dot to change the page.
-    // TODO(rbyers): Perhaps this should be TouchHandler.START_EVENT_ (so we
-    // don't rely on synthesized click events, and the change takes effect
-    // before releasing). However, click events seems to be synthesized for a
-    // region outside the border, and a 10px box is too small to require touch
-    // events to fall inside of. We could get around this by adding a box around
-    // the dot for accepting the touch events.
-    function switchPage(e) {
-      cardSlider.selectCard(dotCount, true);
-      e.stopPropagation();
-    }
-    newDot.addEventListener('click', switchPage);
-
-    // Change pages whenever an app is dragged over a dot.
-    newDot.addEventListener(Grabber.EventType.DRAG_ENTER, switchPage);
   }
   /**
    * Search an elements ancestor chain for the nearest element that is a member
@@ -462,8 +409,7 @@ cr.define('ntp4', function() {
         draggingAppContainer.appendChild(appBeingDragged);
 
       // If we care about the container's original position
-      if (draggingAppOriginalPage)
-      {
+      if (draggingAppOriginalPage) {
         // Then put the container back where it came from
         if (draggingAppOriginalPosition) {
           draggingAppOriginalPage.insertBefore(draggingAppContainer,
@@ -484,8 +430,7 @@ cr.define('ntp4', function() {
    * the rearrangement (but doesn't commit the change until the app is dropped).
    * @param {Grabber.Event} e The event from the Grabber indicating the drag.
    */
-  function appDragEnter(e)
-  {
+  function appDragEnter(e) {
     assert(draggingAppContainer, 'expected stored container');
     var sourceContainer = draggingAppContainer;
 
@@ -608,8 +553,7 @@ cr.define('ntp4', function() {
    * Invoked whenever some app is grabbed
    * @param {Grabber.Event} e The Grabber Grab event.
    */
-  function enterRearrangeMode(e)
-  {
+  function enterRearrangeMode(e) {
     // Stop the slider from sliding for this touch
     cardSlider.cancelTouch();
 
@@ -632,8 +576,7 @@ cr.define('ntp4', function() {
    * Invoked whenever some app is released
    * @param {Grabber.Event} e The Grabber RELEASE event.
    */
-  function leaveRearrangeMode(e)
-  {
+  function leaveRearrangeMode(e) {
     // Return the dot-list to normal
     getRequiredElement('footer').classList.remove('rearrange-mode');
 
@@ -672,10 +615,39 @@ cr.define('ntp4', function() {
     updateSliderCards();
   }
 
-  // TODO(estade): remove |hasAttribution|.
   // TODO(estade): rename newtab.css to new_tab_theme.css
   function themeChanged(hasAttribution) {
     $('themecss').href = 'chrome://theme/css/newtab.css?' + Date.now();
+    if (typeof hasAttribution != 'undefined')
+      document.documentElement.setAttribute('hasattribution', hasAttribution);
+    updateLogo();
+    updateAttribution();
+  }
+
+  /**
+   * Sets the proper image for the logo at the bottom left.
+   */
+  function updateLogo() {
+    var imageId = 'IDR_PRODUCT_LOGO';
+    if (document.documentElement.getAttribute('customlogo') == 'true')
+      imageId = 'IDR_CUSTOM_PRODUCT_LOGO';
+
+    $('logo-img').src = 'chrome://theme/' + imageId + '?' + Date.now();
+  }
+
+  /**
+   * Attributes the attribution image at the bottom left.
+   */
+  function updateAttribution() {
+    var attribution = $('attribution');
+    if (document.documentElement.getAttribute('hasattribution') == 'true') {
+      $('attribution-img').src =
+          'chrome://theme/IDR_THEME_NTP_ATTRIBUTION?' + Date.now();
+      attribution.hidden = false;
+    } else {
+      attribution.hidden = true;
+    }
+
   }
 
   function setRecentlyClosedTabs(dataItems) {
@@ -691,6 +663,7 @@ cr.define('ntp4', function() {
     assert: assert,
     appsPrefChangeCallback: appsPrefChangeCallback,
     getAppsCallback: getAppsCallback,
+    getCardSlider: getCardSlider,
     initialize: initialize,
     themeChanged: themeChanged,
     setRecentlyClosedTabs: setRecentlyClosedTabs,
@@ -706,6 +679,6 @@ var getAppsCallback = ntp4.getAppsCallback;
 var appsPrefChangeCallback = ntp4.appsPrefChangeCallback;
 var themeChanged = ntp4.themeChanged;
 var recentlyClosedTabs = ntp4.setRecentlyClosedTabs;
-var mostVisitedPages = ntp4.setMostVisitedPages;
+var setMostVisitedPages = ntp4.setMostVisitedPages;
 
 document.addEventListener('DOMContentLoaded', ntp4.initialize);

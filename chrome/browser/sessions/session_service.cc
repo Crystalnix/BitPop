@@ -28,7 +28,7 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/extensions/extension.h"
-#include "content/browser/tab_contents/navigation_controller.h"
+#include "content/browser/tab_contents/navigation_details.h"
 #include "content/browser/tab_contents/navigation_entry.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/common/notification_details.h"
@@ -352,8 +352,10 @@ void SessionService::UpdateTabNavigation(const SessionID& window_id,
                                          const SessionID& tab_id,
                                          int index,
                                          const NavigationEntry& entry) {
-  if (!ShouldTrackEntry(entry) || !ShouldTrackChangesToWindow(window_id))
+  if (!ShouldTrackEntry(entry.virtual_url()) ||
+      !ShouldTrackChangesToWindow(window_id)) {
     return;
+  }
 
   if (tab_to_available_range_.find(tab_id.id()) !=
       tab_to_available_range_.end()) {
@@ -545,7 +547,7 @@ void SessionService::Observe(NotificationType type,
     case NotificationType::NAV_LIST_PRUNED: {
       NavigationController* controller =
           Source<NavigationController>(source).ptr();
-      Details<NavigationController::PrunedDetails> pruned_details(details);
+      Details<content::PrunedDetails> pruned_details(details);
       if (pruned_details->from_front) {
         TabNavigationPathPrunedFromFront(controller->window_id(),
                                          controller->session_id(),
@@ -563,7 +565,7 @@ void SessionService::Observe(NotificationType type,
     case NotificationType::NAV_ENTRY_CHANGED: {
       NavigationController* controller =
           Source<NavigationController>(source).ptr();
-      Details<NavigationController::EntryChangedDetails> changed(details);
+      Details<content::EntryChangedDetails> changed(details);
       UpdateTabNavigation(controller->window_id(), controller->session_id(),
                           changed->index, *changed->changed_entry);
       break;
@@ -579,7 +581,7 @@ void SessionService::Observe(NotificationType type,
       UpdateTabNavigation(controller->window_id(), controller->session_id(),
                           current_entry_index,
                           *controller->GetEntryAtIndex(current_entry_index));
-      Details<NavigationController::LoadCommittedDetails> changed(details);
+      Details<content::LoadCommittedDetails> changed(details);
       if (changed->type == NavigationType::NEW_PAGE ||
         changed->type == NavigationType::EXISTING_PAGE) {
         RecordSessionUpdateHistogramData(NotificationType::NAV_ENTRY_COMMITTED,
@@ -1092,7 +1094,7 @@ void SessionService::BuildCommandsForTab(
     const NavigationEntry* entry = (i == pending_index) ?
         controller->pending_entry() : controller->GetEntryAtIndex(i);
     DCHECK(entry);
-    if (ShouldTrackEntry(*entry)) {
+    if (ShouldTrackEntry(entry->virtual_url())) {
       commands->push_back(
           CreateUpdateTabNavigationCommand(kCommandUpdateTabNavigation,
                                            controller->session_id().id(),
@@ -1308,42 +1310,31 @@ bool SessionService::ShouldTrackChangesToWindow(const SessionID& window_id) {
 }
 
 
+bool SessionService::should_track_changes_for_browser_type(Browser::Type type) {
+  return type == Browser::TYPE_TABBED ||
+        (type == Browser::TYPE_POPUP && browser_defaults::kRestorePopups);
+}
+
 SessionService::WindowType SessionService::WindowTypeForBrowserType(
     Browser::Type type) {
-  // We don't support masks here, only discrete types.
   switch (type) {
     case Browser::TYPE_POPUP:
       return TYPE_POPUP;
-    case Browser::TYPE_APP:
-      return TYPE_APP;
-    case Browser::TYPE_APP_POPUP:
-      return TYPE_APP_POPUP;
-    case Browser::TYPE_DEVTOOLS:
-      return TYPE_DEVTOOLS;
-    case Browser::TYPE_APP_PANEL:
-      return TYPE_APP_PANEL;
-    case Browser::TYPE_NORMAL:
+    case Browser::TYPE_TABBED:
+      return TYPE_TABBED;
     default:
-      return TYPE_NORMAL;
+      DCHECK(false);
+      return TYPE_TABBED;
   }
 }
 
-Browser::Type SessionService::BrowserTypeForWindowType(
-    SessionService::WindowType type) {
+Browser::Type SessionService::BrowserTypeForWindowType(WindowType type) {
   switch (type) {
     case TYPE_POPUP:
       return Browser::TYPE_POPUP;
-    case TYPE_APP:
-      return Browser::TYPE_APP;
-    case TYPE_APP_POPUP:
-      return Browser::TYPE_APP_POPUP;
-    case TYPE_DEVTOOLS:
-      return Browser::TYPE_DEVTOOLS;
-    case TYPE_APP_PANEL:
-      return Browser::TYPE_APP_PANEL;
-    case TYPE_NORMAL:
+    case TYPE_TABBED:
     default:
-      return Browser::TYPE_NORMAL;
+      return Browser::TYPE_TABBED;
   }
 }
 

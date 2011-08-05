@@ -59,11 +59,11 @@ cr.define('options', function() {
       list.autoExpands = true;
 
       list = $('phone-list');
-      options.autofillOptions.AutofillValuesList.decorate(list);
+      options.autofillOptions.AutofillPhoneValuesList.decorate(list);
       list.autoExpands = true;
 
       list = $('fax-list');
-      options.autofillOptions.AutofillValuesList.decorate(list);
+      options.autofillOptions.AutofillFaxValuesList.decorate(list);
       list.autoExpands = true;
 
       list = $('email-list');
@@ -199,11 +199,6 @@ cr.define('options', function() {
       // codes, so that we can sort and insert them in order.
       var countries = [];
       for (var countryCode in countryData) {
-        // We always want the default country to be at the top of the list, so
-        // we handle it separately.
-        if (countryCode == defaultCountryCode)
-          continue;
-
         var country = {
           countryCode: countryCode,
           name: countryData[countryCode]['name']
@@ -225,7 +220,11 @@ cr.define('options', function() {
         countryCode: defaultCountryCode,
         name: countryData[defaultCountryCode]['name']
       };
-      countries.unshift(emptyCountry, defaultCountry);
+      var separator = {
+        countryCode: '',
+        name: '---'
+      }
+      countries.unshift(emptyCountry, defaultCountry, separator);
 
       // Add the countries to the country <select> list.
       var countryList = $('country');
@@ -297,6 +296,16 @@ cr.define('options', function() {
 
   AutofillEditAddressOverlay.setTitle = function(title) {
     $('autofill-address-title').textContent = title;
+  };
+
+  AutofillEditAddressOverlay.setValidatedPhoneNumbers = function(numbers) {
+    AutofillEditAddressOverlay.getInstance().setMultiValueList_('phone-list',
+                                                                numbers);
+  };
+
+  AutofillEditAddressOverlay.setValidatedFaxNumbers = function(numbers) {
+    AutofillEditAddressOverlay.getInstance().setMultiValueList_('fax-list',
+                                                                numbers);
   };
 
   // Export

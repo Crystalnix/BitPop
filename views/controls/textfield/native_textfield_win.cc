@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/i18n/case_conversion.h"
 #include "base/i18n/rtl.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
@@ -188,12 +189,12 @@ string16 NativeTextfieldWin::GetText() const {
 }
 
 void NativeTextfieldWin::UpdateText() {
-  std::wstring text = textfield_->text();
+  string16 text = textfield_->text();
   // Adjusting the string direction before setting the text in order to make
   // sure both RTL and LTR strings are displayed properly.
   base::i18n::AdjustStringForLocaleDirection(&text);
   if (textfield_->style() & Textfield::STYLE_LOWERCASE)
-    text = l10n_util::ToLower(text);
+    text = base::i18n::ToLower(text);
   SetWindowText(text.c_str());
   UpdateAccessibleValue(text);
 }
@@ -904,11 +905,13 @@ void NativeTextfieldWin::OnPaste() {
   std::wstring clipboard_str;
   clipboard->ReadText(ui::Clipboard::BUFFER_STANDARD, &clipboard_str);
   if (!clipboard_str.empty()) {
-    std::wstring collapsed(CollapseWhitespace(clipboard_str, false));
+    string16 collapsed(CollapseWhitespace(clipboard_str, false));
     if (textfield_->style() & Textfield::STYLE_LOWERCASE)
-      collapsed = l10n_util::ToLower(collapsed);
-    // Force a Paste operation to trigger OnContentsChanged, even if identical
-    // contents are pasted into the text box.
+      collapsed = base::i18n::ToLower(collapsed);
+    // Force a Paste operation to trigger ContentsChanged, even if identical
+    // contents are pasted into the text box. See http://crbug.com/79002
+    ReplaceSel(L"", false);
+    textfield_->SyncText();
     text_before_change_.clear();
     ReplaceSel(collapsed.c_str(), true);
   }

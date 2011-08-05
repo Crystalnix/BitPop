@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,9 @@
 
 class UIPerfTest : public UITest {
  protected:
+  // Override UITestBase.
+  void SetLaunchSwitches();
+
   // Prints numerical information to stdout in a controlled format, for
   // post-processing. |measurement| is a description of the quantity being
   // measured, e.g. "vm_peak"; |modifier| is provided as a convenience and
@@ -42,7 +45,7 @@ class UIPerfTest : public UITest {
                    bool important);
 
   // Like PrintResult(), but prints a (mean, standard deviation) result pair.
-  // The |<values>| should be two comma-seaprated numbers, the mean and
+  // The |<values>| should be two comma-separated numbers, the mean and
   // standard deviation (or other error metric) of the measurement.
   void PrintResultMeanAndError(const std::string& measurement,
                                const std::string& modifier,

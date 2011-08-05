@@ -6,15 +6,16 @@
 
 #include "base/file_util.h"
 #include "base/json/json_reader.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
+#include "base/scoped_temp_dir.h"
 #include "base/values.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/common/chrome_paths.h"
 #include "content/browser/browser_thread.h"
 #include "content/common/json_value_serializer.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/color_utils.h"
 

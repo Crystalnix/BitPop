@@ -36,22 +36,19 @@ class MockRenderProcessHost : public RenderProcessHost {
   int bad_msg_count() const { return bad_msg_count_; }
 
   // RenderProcessHost implementation (public portion).
-  virtual bool Init(bool is_accessibility_enabled, bool is_extensions_process);
+  virtual void EnableSendQueue();
+  virtual bool Init(bool is_accessibility_enabled);
   virtual int GetNextRoutingID();
   virtual void CancelResourceRequests(int render_widget_id);
-  virtual void CrossSiteClosePageACK(const ViewMsg_ClosePage_Params& params);
+  virtual void CrossSiteSwapOutACK(const ViewMsg_SwapOut_Params& params);
   virtual bool WaitForUpdateMsg(int render_widget_id,
                                 const base::TimeDelta& max_delay,
                                 IPC::Message* msg);
   virtual void ReceivedBadMessage();
   virtual void WidgetRestored();
   virtual void WidgetHidden();
-  virtual void ViewCreated();
+  virtual int VisibleWidgetCount() const;
   virtual void AddWord(const string16& word);
-  virtual void SendVisitedLinkTable(base::SharedMemory* table_memory);
-  virtual void AddVisitedLinks(
-      const VisitedLinkCommon::Fingerprints& visited_links);
-  virtual void ResetVisitedLinks();
   virtual bool FastShutdownIfPossible();
   virtual bool SendWithTimeout(IPC::Message* msg, int timeout_ms);
   virtual base::ProcessHandle GetHandle();

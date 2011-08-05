@@ -14,15 +14,17 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/image.h"
 #include "views/controls/button/image_button.h"
 #include "views/controls/button/radio_button.h"
 #include "views/controls/image_view.h"
+#include "views/controls/link.h"
 #include "views/layout/grid_layout.h"
 #include "views/layout/layout_constants.h"
-#include "views/widget/root_view.h"
 #include "views/widget/widget.h"
-#include "ui/base/l10n/l10n_util.h"
 
 namespace {
 
@@ -60,22 +62,22 @@ TryChromeDialogView::Result TryChromeDialogView::ShowModal(
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
 
   views::ImageView* icon = new views::ImageView();
-  icon->SetImage(*rb.GetBitmapNamed(IDR_PRODUCT_ICON_32));
+  icon->SetImage(*rb.GetNativeImageNamed(IDR_PRODUCT_ICON_32));
   gfx::Size icon_size = icon->GetPreferredSize();
 
   // An approximate window size. After Layout() we'll get better bounds.
-  views::Widget::CreateParams params(views::Widget::CreateParams::TYPE_POPUP);
-  params.can_activate = true;
-  popup_ = views::Widget::CreateWidget(params);
+  popup_ = new views::Widget;
   if (!popup_) {
     NOTREACHED();
     return DIALOG_ERROR;
   }
 
-  gfx::Rect pos(310, 160);
-  popup_->Init(NULL, pos);
+  views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
+  params.can_activate = true;
+  params.bounds = gfx::Rect(310, 160);
+  popup_->Init(params);
 
-  views::RootView* root_view = popup_->GetRootView();
+  views::View* root_view = popup_->GetRootView();
   // The window color is a tiny bit off-white.
   root_view->set_background(
       views::Background::CreateSolidBackground(0xfc, 0xfc, 0xfc));
@@ -151,11 +153,11 @@ TryChromeDialogView::Result TryChromeDialogView::ShowModal(
   // The close button is custom.
   views::ImageButton* close_button = new views::ImageButton(this);
   close_button->SetImage(views::CustomButton::BS_NORMAL,
-                        rb.GetBitmapNamed(IDR_CLOSE_BAR));
+                         rb.GetNativeImageNamed(IDR_CLOSE_BAR));
   close_button->SetImage(views::CustomButton::BS_HOT,
-                        rb.GetBitmapNamed(IDR_CLOSE_BAR_H));
+                         rb.GetNativeImageNamed(IDR_CLOSE_BAR_H));
   close_button->SetImage(views::CustomButton::BS_PUSHED,
-                        rb.GetBitmapNamed(IDR_CLOSE_BAR_P));
+                         rb.GetNativeImageNamed(IDR_CLOSE_BAR_P));
   close_button->set_tag(BT_CLOSE_BUTTON);
   layout->AddView(close_button);
 
@@ -186,15 +188,15 @@ TryChromeDialogView::Result TryChromeDialogView::ShowModal(
   // Fifth row views.
   layout->StartRowWithPadding(0, 4, 0, 10);
   views::Link* link = new views::Link(why_this);
-  link->SetController(this);
+  link->set_listener(this);
   layout->AddView(link);
 
   // We resize the window according to the layout manager. This takes into
   // account the differences between XP and Vista fonts and buttons.
   layout->Layout(root_view);
   gfx::Size preferred = layout->GetPreferredSize(root_view);
-  pos = ComputeWindowPosition(preferred.width(), preferred.height(),
-                              base::i18n::IsRTL());
+  gfx::Rect pos = ComputeWindowPosition(preferred.width(), preferred.height(),
+                                        base::i18n::IsRTL());
   popup_->SetBounds(pos);
 
   // Carve the toast shape into the window.
@@ -255,6 +257,6 @@ void TryChromeDialogView::ButtonPressed(views::Button* sender,
   MessageLoop::current()->Quit();
 }
 
-void TryChromeDialogView::LinkActivated(views::Link* source, int event_flags) {
+void TryChromeDialogView::LinkClicked(views::Link* source, int event_flags) {
   ::ShellExecuteW(NULL, L"open", kHelpCenterUrl, NULL, NULL, SW_SHOW);
 }

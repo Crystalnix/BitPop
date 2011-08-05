@@ -5,6 +5,7 @@
 #ifndef BASE_MESSAGE_PUMP_GLIB_X_DISPATCH_H
 #define BASE_MESSAGE_PUMP_GLIB_X_DISPATCH_H
 
+#include "base/base_api.h"
 #include "base/message_pump.h"
 #include "base/message_pump_glib.h"
 
@@ -29,6 +30,15 @@ class MessagePumpGlibXDispatcher : public MessagePumpForUI::Dispatcher {
   // (i.e. not processed). EVENT_PROCESSED is returned if the event was
   // processed. The nested loop exits immediately if EVENT_QUIT is returned.
   virtual DispatchStatus DispatchX(XEvent* xevent) = 0;
+};
+
+class BASE_API MessagePumpXObserver : public MessagePumpForUI::Observer {
+ public:
+  // This method is called before processing an XEvent. If the method returns
+  // true, it indicates the event has already been handled, so the event is not
+  // processed any farther. If the method returns false, the event dispatching
+  // proceeds as normal.
+  virtual bool WillProcessXEvent(XEvent* xevent);
 };
 
 }  // namespace base

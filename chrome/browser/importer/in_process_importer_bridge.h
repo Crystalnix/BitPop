@@ -23,10 +23,9 @@ class InProcessImporterBridge : public ImporterBridge {
   InProcessImporterBridge(ProfileWriter* writer, ImporterHost* host);
 
   // Begin ImporterBridge implementation:
-  virtual void AddBookmarkEntries(
+  virtual void AddBookmarks(
       const std::vector<ProfileWriter::BookmarkEntry>& bookmarks,
-      const string16& first_folder_name,
-      int options) OVERRIDE;
+      const string16& first_folder_name) OVERRIDE;
 
   virtual void AddHomePage(const GURL &home_page) OVERRIDE;
 

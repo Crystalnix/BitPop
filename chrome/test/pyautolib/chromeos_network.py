@@ -12,7 +12,7 @@ import time
 
 from chromeos.power_strip import PowerStrip
 import pyauto
-
+import pyauto_errors
 
 class WifiPowerStrip(PowerStrip):
   """Manages the power state of wifi routers connected to a power strip.
@@ -201,7 +201,7 @@ class PyNetworkUITest(pyauto.PyUITest):
         # NetworkScan is only used in updating the list of networks so errors
         # thrown by it are not critical to the results of wifi tests that use
         # this method.
-        return True
+        return False
 
     return self.WaitUntil(_GotWifiNetwork, timeout=timeout, retry_sleep=1)
 
@@ -251,3 +251,14 @@ class PyNetworkUITest(pyauto.PyUITest):
 
     logging.debug('Connecting to router %s.' % router_name)
     return self.ConnectToWifiNetwork(service_path, passphrase)
+
+  def PowerDownAllRouters(self):
+    """Turns off all of the routers.
+
+    Convenience method that allows all subclasses to turn everything off and
+    start fresh.
+
+    """
+    if self._wifi_power_strip:
+      self._wifi_power_strip.TurnOffAllRouters()
+

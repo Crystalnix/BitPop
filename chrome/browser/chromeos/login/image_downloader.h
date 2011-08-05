@@ -11,7 +11,7 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/login/image_decoder.h"
-#include "chrome/common/net/url_fetcher.h"
+#include "content/common/url_fetcher.h"
 #include "googleurl/src/gurl.h"
 
 namespace chromeos {
@@ -25,7 +25,7 @@ class ImageDownloader : public URLFetcher::Delegate {
   ImageDownloader(ImageDecoder::Delegate* delegate,
                   const GURL& image_url,
                   const std::string& auth_token);
-  virtual ~ImageDownloader() {}
+  virtual ~ImageDownloader();
 
  private:
   // Overriden from URLFetcher::Delegate:
@@ -33,7 +33,7 @@ class ImageDownloader : public URLFetcher::Delegate {
                                   const GURL& url,
                                   const net::URLRequestStatus& status,
                                   int response_code,
-                                  const ResponseCookies& cookies,
+                                  const net::ResponseCookies& cookies,
                                   const std::string& data);
 
   ImageDecoder::Delegate* delegate_;

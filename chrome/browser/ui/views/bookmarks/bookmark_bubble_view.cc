@@ -11,11 +11,11 @@
 #include "chrome/browser/bookmarks/bookmark_editor.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/views/bubble/bubble.h"
+#include "content/browser/user_metrics.h"
 #include "content/common/notification_service.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -25,6 +25,8 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
 #include "views/controls/button/native_button.h"
+#include "views/controls/label.h"
+#include "views/controls/link.h"
 #include "views/controls/textfield/textfield.h"
 #include "views/events/event.h"
 #include "views/focus/focus_manager.h"
@@ -33,13 +35,8 @@
 #include "views/window/client_view.h"
 #include "views/window/window.h"
 
-using views::Combobox;
 using views::ColumnSet;
 using views::GridLayout;
-using views::Label;
-using views::Link;
-using views::NativeButton;
-using views::View;
 
 // Padding between "Title:" and the actual title.
 static const int kTitlePadding = 4;
@@ -146,7 +143,7 @@ void BookmarkBubbleView::BubbleShown() {
 
 bool BookmarkBubbleView::AcceleratorPressed(
     const views::Accelerator& accelerator) {
-  if (accelerator.GetKeyCode() != ui::VKEY_RETURN)
+  if (accelerator.key_code() != ui::VKEY_RETURN)
     return false;
 
   if (edit_button_->HasFocus())
@@ -156,8 +153,9 @@ bool BookmarkBubbleView::AcceleratorPressed(
   return true;
 }
 
-void BookmarkBubbleView::ViewHierarchyChanged(bool is_add, View* parent,
-                                              View* child) {
+void BookmarkBubbleView::ViewHierarchyChanged(bool is_add,
+                                              views::View* parent,
+                                              views::View* child) {
   if (is_add && child == this)
     Init();
 }
@@ -189,33 +187,30 @@ void BookmarkBubbleView::Init() {
     initialized = true;
   }
 
-  remove_link_ = new Link(UTF16ToWide(l10n_util::GetStringUTF16(
+  remove_link_ = new views::Link(UTF16ToWide(l10n_util::GetStringUTF16(
       IDS_BOOMARK_BUBBLE_REMOVE_BOOKMARK)));
-  remove_link_->SetController(this);
+  remove_link_->set_listener(this);
 
-  edit_button_ = new NativeButton(
+  edit_button_ = new views::NativeButton(
       this, UTF16ToWide(l10n_util::GetStringUTF16(IDS_BOOMARK_BUBBLE_OPTIONS)));
 
-  close_button_ =
-      new NativeButton(this, UTF16ToWide(l10n_util::GetStringUTF16(IDS_DONE)));
+  close_button_ = new views::NativeButton(
+      this, UTF16ToWide(l10n_util::GetStringUTF16(IDS_DONE)));
   close_button_->SetIsDefault(true);
 
-  Label* combobox_label = new Label(
+  views::Label* combobox_label = new views::Label(
       UTF16ToWide(l10n_util::GetStringUTF16(IDS_BOOMARK_BUBBLE_FOLDER_TEXT)));
 
-  parent_combobox_ = new Combobox(&parent_model_);
+  parent_combobox_ = new views::Combobox(&parent_model_);
   parent_combobox_->SetSelectedItem(parent_model_.node_parent_index());
   parent_combobox_->set_listener(this);
   parent_combobox_->SetAccessibleName(
       WideToUTF16Hack(combobox_label->GetText()));
-#if defined(TOUCH_UI)
-  // TODO(saintlou): This is a short term workaround for touch
-  parent_combobox_->SetEnabled(false);
-#endif
 
-  Label* title_label = new Label(UTF16ToWide(l10n_util::GetStringUTF16(
-      newly_bookmarked_ ? IDS_BOOMARK_BUBBLE_PAGE_BOOKMARKED :
-                          IDS_BOOMARK_BUBBLE_PAGE_BOOKMARK)));
+  views::Label* title_label = new views::Label(
+      UTF16ToWide(l10n_util::GetStringUTF16(
+          newly_bookmarked_ ? IDS_BOOMARK_BUBBLE_PAGE_BOOKMARKED :
+                              IDS_BOOMARK_BUBBLE_PAGE_BOOKMARK)));
   title_label->SetFont(
       ResourceBundle::GetSharedInstance().GetFont(ResourceBundle::MediumFont));
   title_label->SetColor(kTitleColor);
@@ -258,7 +253,7 @@ void BookmarkBubbleView::Init() {
 
   layout->AddPaddingRow(0, views::kRelatedControlSmallVerticalSpacing);
   layout->StartRow(0, 2);
-  layout->AddView(new Label(UTF16ToWide(
+  layout->AddView(new views::Label(UTF16ToWide(
       l10n_util::GetStringUTF16(IDS_BOOMARK_BUBBLE_TITLE_TEXT))));
   title_tf_ = new views::Textfield();
   title_tf_->SetText(GetTitle());
@@ -292,10 +287,9 @@ void BookmarkBubbleView::ButtonPressed(
   HandleButtonPressed(sender);
 }
 
-void BookmarkBubbleView::LinkActivated(Link* source, int event_flags) {
+void BookmarkBubbleView::LinkClicked(views::Link* source, int event_flags) {
   DCHECK(source == remove_link_);
-  UserMetrics::RecordAction(UserMetricsAction("BookmarkBubble_Unstar"),
-                            profile_);
+  UserMetrics::RecordAction(UserMetricsAction("BookmarkBubble_Unstar"));
 
   // Set this so we remove the bookmark after the window closes.
   remove_bookmark_ = true;
@@ -305,12 +299,12 @@ void BookmarkBubbleView::LinkActivated(Link* source, int event_flags) {
   Close();
 }
 
-void BookmarkBubbleView::ItemChanged(Combobox* combobox,
+void BookmarkBubbleView::ItemChanged(views::Combobox* combobox,
                                      int prev_index,
                                      int new_index) {
   if (new_index + 1 == parent_model_.GetItemCount()) {
     UserMetrics::RecordAction(
-              UserMetricsAction("BookmarkBubble_EditFromCombobox"), profile_);
+              UserMetricsAction("BookmarkBubble_EditFromCombobox"));
 
     ShowEditor();
     return;
@@ -352,13 +346,12 @@ std::wstring BookmarkBubbleView::accessible_name() {
 
 void BookmarkBubbleView::Close() {
   ApplyEdits();
-  static_cast<Bubble*>(GetWidget())->Close();
+  GetWidget()->Close();
 }
 
 void BookmarkBubbleView::HandleButtonPressed(views::Button* sender) {
   if (sender == edit_button_) {
-    UserMetrics::RecordAction(UserMetricsAction("BookmarkBubble_Edit"),
-                              profile_);
+    UserMetrics::RecordAction(UserMetricsAction("BookmarkBubble_Edit"));
     bubble_->set_fade_away_on_close(true);
     ShowEditor();
   } else {
@@ -371,17 +364,10 @@ void BookmarkBubbleView::HandleButtonPressed(views::Button* sender) {
 
 void BookmarkBubbleView::ShowEditor() {
 #if defined(TOUCH_UI)
-  // Close the Bubble
+  // TODO(saintlou): this brings up a modal window that can't be dismissed
+  // on touch and is tracked in chromium-os by crosbug.com/13899
+  bubble_->set_fade_away_on_close(true);
   Close();
-
-  // Open the Bookmark Manager
-  Browser* browser = BrowserList::GetLastActiveWithProfile(profile_);
-  DCHECK(browser);
-  if (browser)
-    browser->OpenBookmarkManager();
-  else
-    NOTREACHED();
-
 #else
   const BookmarkNode* node =
       profile_->GetBookmarkModel()->GetMostRecentlyAddedNodeForURL(url_);
@@ -392,16 +378,17 @@ void BookmarkBubbleView::ShowEditor() {
   HWND parent = GetAncestor(GetWidget()->GetNativeView(), GA_ROOTOWNER);
 
   // We're about to show the bookmark editor. When the bookmark editor closes
-  // we want the browser to become active. WidgetWin::Hide() does a hide in
-  // a such way that activation isn't changed, which means when we close
+  // we want the browser to become active. NativeWidgetWin::Hide() does a hide
+  // in a such way that activation isn't changed, which means when we close
   // Windows gets confused as to who it should give active status to. We
   // explicitly hide the bookmark bubble window in such a way that activation
   // status changes. That way, when the editor closes, activation is properly
   // restored to the browser.
   ShowWindow(GetWidget()->GetNativeView(), SW_HIDE);
-#else
+#elif defined(TOOLKIT_USES_GTK)
   gfx::NativeWindow parent = GTK_WINDOW(
-      static_cast<views::WidgetGtk*>(GetWidget())->GetTransientParent());
+      static_cast<views::NativeWidgetGtk*>(GetWidget()->native_widget())->
+          GetTransientParent());
 #endif
 
   // Even though we just hid the window, we need to invoke Close to schedule
@@ -427,8 +414,7 @@ void BookmarkBubbleView::ApplyEdits() {
     if (new_title != node->GetTitle()) {
       model->SetTitle(node, new_title);
       UserMetrics::RecordAction(
-          UserMetricsAction("BookmarkBubble_ChangeTitleInBubble"),
-          profile_);
+          UserMetricsAction("BookmarkBubble_ChangeTitleInBubble"));
     }
     // Last index means 'Choose another folder...'
     if (parent_combobox_->selected_item() <
@@ -437,7 +423,7 @@ void BookmarkBubbleView::ApplyEdits() {
           parent_model_.GetNodeAt(parent_combobox_->selected_item());
       if (new_parent != node->parent()) {
         UserMetrics::RecordAction(
-            UserMetricsAction("BookmarkBubble_ChangeParent"), profile_);
+            UserMetricsAction("BookmarkBubble_ChangeParent"));
         model->Move(node, new_parent, new_parent->child_count());
       }
     }

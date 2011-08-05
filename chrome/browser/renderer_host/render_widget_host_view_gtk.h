@@ -47,7 +47,7 @@ class RenderWidgetHostViewGtk : public RenderWidgetHostView,
                                 public ui::AnimationDelegate {
  public:
   explicit RenderWidgetHostViewGtk(RenderWidgetHost* widget);
-  ~RenderWidgetHostViewGtk();
+  virtual ~RenderWidgetHostViewGtk();
 
   // Initialize this object for use as a drawing area.
   void InitAsChild();
@@ -73,7 +73,8 @@ class RenderWidgetHostViewGtk : public RenderWidgetHostView,
   virtual gfx::Rect GetViewBounds() const;
   virtual void UpdateCursor(const WebCursor& cursor);
   virtual void SetIsLoading(bool is_loading);
-  virtual void ImeUpdateTextInputState(WebKit::WebTextInputType type,
+  virtual void ImeUpdateTextInputState(ui::TextInputType type,
+                                       bool can_compose_inline,
                                        const gfx::Rect& caret_rect);
   virtual void ImeCancelComposition();
   virtual void DidUpdateBackingStore(
@@ -84,7 +85,8 @@ class RenderWidgetHostViewGtk : public RenderWidgetHostView,
   virtual void Destroy();
   virtual void WillDestroyRenderWidget(RenderWidgetHost* rwh) {}
   virtual void SetTooltipText(const std::wstring& tooltip_text);
-  virtual void SelectionChanged(const std::string& text);
+  virtual void SelectionChanged(const std::string& text,
+                                const ui::Range& range);
   virtual void ShowingContextMenu(bool showing);
   virtual BackingStore* AllocBackingStore(const gfx::Size& size);
   virtual void SetBackground(const SkBitmap& background);

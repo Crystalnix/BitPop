@@ -6,25 +6,23 @@
 
 #include "base/auto_reset.h"
 #include "base/command_line.h"
+#include "base/debug/trace_event.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "chrome/browser/accessibility/browser_accessibility_state.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/render_messages.h"
-#include "chrome/common/spellcheck_messages.h"
-#include "content/browser/gpu_process_host.h"
+#include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/renderer_host/backing_store.h"
 #include "content/browser/renderer_host/backing_store_manager.h"
 #include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/renderer_host/render_widget_helper.h"
 #include "content/browser/renderer_host/render_widget_host_view.h"
-#include "content/common/gpu_messages.h"
+#include "content/browser/user_metrics.h"
+#include "content/common/gpu/gpu_messages.h"
 #include "content/common/native_web_keyboard_event.h"
 #include "content/common/notification_service.h"
 #include "content/common/result_codes.h"
 #include "content/common/view_messages.h"
-#include "gpu/common/gpu_trace_event.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCompositionUnderline.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "webkit/glue/webcursor.h"
@@ -32,11 +30,6 @@
 
 #if defined(TOOLKIT_VIEWS)
 #include "views/view.h"
-#endif
-
-#if defined (OS_MACOSX)
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/mac/WebScreenInfoFactory.h"
 #endif
 
 using base::Time;
@@ -48,11 +41,6 @@ using WebKit::WebKeyboardEvent;
 using WebKit::WebMouseEvent;
 using WebKit::WebMouseWheelEvent;
 using WebKit::WebTextDirection;
-
-#if defined (OS_MACOSX)
-using WebKit::WebScreenInfo;
-using WebKit::WebScreenInfoFactory;
-#endif
 
 // How long to (synchronously) wait for the renderer to respond with a
 // PaintRect message, when our backing-store is invalid, before giving up and
@@ -176,14 +164,18 @@ bool RenderWidgetHost::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetCursor, OnMsgSetCursor)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ImeUpdateTextInputState,
                         OnMsgImeUpdateTextInputState)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_ImeCompositionRangeChanged,
+                        OnMsgImeCompositionRangeChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ImeCancelComposition,
                         OnMsgImeCancelComposition)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidActivateAcceleratedCompositing,
                         OnMsgDidActivateAcceleratedCompositing)
-#if defined(OS_MACOSX)
+#if defined(OS_POSIX)
     IPC_MESSAGE_HANDLER(ViewHostMsg_GetScreenInfo, OnMsgGetScreenInfo)
     IPC_MESSAGE_HANDLER(ViewHostMsg_GetWindowRect, OnMsgGetWindowRect)
     IPC_MESSAGE_HANDLER(ViewHostMsg_GetRootWindowRect, OnMsgGetRootWindowRect)
+#endif
+#if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(ViewHostMsg_PluginFocusChanged,
                         OnMsgPluginFocusChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_StartPluginIme,
@@ -198,7 +190,8 @@ bool RenderWidgetHost::OnMessageReceived(const IPC::Message &msg) {
                         OnAcceleratedSurfaceSetTransportDIB)
     IPC_MESSAGE_HANDLER(ViewHostMsg_AcceleratedSurfaceBuffersSwapped,
                         OnAcceleratedSurfaceBuffersSwapped)
-#elif defined(OS_POSIX)
+#endif
+#if defined(TOOLKIT_USES_GTK)
     IPC_MESSAGE_HANDLER(ViewHostMsg_CreatePluginContainer,
                         OnMsgCreatePluginContainer)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DestroyPluginContainer,
@@ -454,14 +447,6 @@ void RenderWidgetHost::ScheduleComposite() {
     repaint_ack_pending_ = true;
     Send(new ViewMsg_Repaint(routing_id_, current_size_));
   }
-
-  // When we have asked the RenderWidget to resize, and we are still waiting on
-  // a response, block for a little while to see if we can't get a response.
-  // We always block on response because we do not have a backing store.
-  IPC::Message msg;
-  TimeDelta max_delay = TimeDelta::FromMilliseconds(kPaintMsgTimeoutMS);
-  if (process_->WaitForUpdateMsg(routing_id_, max_delay, &msg))
-    OnMessageReceived(msg);
 }
 
 void RenderWidgetHost::StartHangMonitorTimeout(TimeDelta delay) {
@@ -502,11 +487,8 @@ void RenderWidgetHost::StopHangMonitorTimeout() {
   // started again shortly, which happens to be the common use case.
 }
 
-void RenderWidgetHost::SystemThemeChanged() {
-  Send(new ViewMsg_ThemeChanged(routing_id_));
-}
-
 void RenderWidgetHost::ForwardMouseEvent(const WebMouseEvent& mouse_event) {
+  TRACE_EVENT0("renderer_host", "RenderWidgetHost::ForwardMouseEvent");
   if (ignore_input_events_ || process_->ignore_input_events())
     return;
 
@@ -532,6 +514,7 @@ void RenderWidgetHost::OnMouseActivate() {
 
 void RenderWidgetHost::ForwardWheelEvent(
     const WebMouseWheelEvent& wheel_event) {
+  TRACE_EVENT0("renderer_host", "RenderWidgetHost::ForwardWheelEvent");
   if (ignore_input_events_ || process_->ignore_input_events())
     return;
 
@@ -567,6 +550,7 @@ void RenderWidgetHost::ForwardWheelEvent(
 
 void RenderWidgetHost::ForwardKeyboardEvent(
     const NativeWebKeyboardEvent& key_event) {
+  TRACE_EVENT0("renderer_host", "RenderWidgetHost::ForwardKeyboardEvent");
   if (ignore_input_events_ || process_->ignore_input_events())
     return;
 
@@ -628,6 +612,8 @@ void RenderWidgetHost::ForwardKeyboardEvent(
 void RenderWidgetHost::ForwardInputEvent(const WebInputEvent& input_event,
                                          int event_size,
                                          bool is_keyboard_shortcut) {
+  TRACE_EVENT0("renderer_host", "RenderWidgetHost::ForwardInputEvent");
+
   if (!process_->HasConnection())
     return;
 
@@ -654,22 +640,10 @@ void RenderWidgetHost::ForwardInputEvent(const WebInputEvent& input_event,
   StartHangMonitorTimeout(TimeDelta::FromMilliseconds(kHungRendererDelayMs));
 }
 
-void RenderWidgetHost::ForwardEditCommand(const std::string& name,
-      const std::string& value) {
-  // We don't need an implementation of this function here since the
-  // only place we use this is for the case of dropdown menus and other
-  // edge cases for which edit commands don't make sense.
-}
-
-void RenderWidgetHost::ForwardEditCommandsForNextKeyEvent(
-    const EditCommands& edit_commands) {
-  // We don't need an implementation of this function here since this message is
-  // only handled by RenderView.
-}
-
 #if defined(TOUCH_UI)
 void RenderWidgetHost::ForwardTouchEvent(
     const WebKit::WebTouchEvent& touch_event) {
+  TRACE_EVENT0("renderer_host", "RenderWidgetHost::ForwardTouchEvent");
   ForwardInputEvent(touch_event, sizeof(WebKit::WebTouchEvent), false);
 }
 #endif
@@ -755,10 +729,6 @@ void RenderWidgetHost::ImeCancelComposition() {
             std::vector<WebKit::WebCompositionUnderline>(), 0, 0));
 }
 
-void RenderWidgetHost::SetActive(bool active) {
-  Send(new ViewMsg_SetActive(routing_id(), active));
-}
-
 void RenderWidgetHost::Destroy() {
   NotificationService::current()->Notify(
       NotificationType::RENDER_WIDGET_HOST_DESTROYED,
@@ -837,7 +807,7 @@ void RenderWidgetHost::OnMsgPaintAtSizeAck(int tag, const gfx::Size& size) {
 
 void RenderWidgetHost::OnMsgUpdateRect(
     const ViewHostMsg_UpdateRect_Params& params) {
-  GPU_TRACE_EVENT0("renderer_host", "RenderWidgetHost::OnMsgUpdateRect");
+  TRACE_EVENT0("renderer_host", "RenderWidgetHost::OnMsgUpdateRect");
   TimeTicks paint_start = TimeTicks::Now();
 
   NotificationService::current()->Notify(
@@ -955,6 +925,8 @@ void RenderWidgetHost::OnMsgUpdateRect(
 }
 
 void RenderWidgetHost::OnMsgInputEventAck(const IPC::Message& message) {
+  TRACE_EVENT0("renderer_host", "RenderWidgetHost::OnMsgInputEventAck");
+
   // Log the time delta for processing an input event.
   TimeDelta delta = TimeTicks::Now() - input_event_start_time_;
   UMA_HISTOGRAM_TIMES("MPArch.RWH_InputEventDelta", delta);
@@ -1025,10 +997,16 @@ void RenderWidgetHost::OnMsgSetCursor(const WebCursor& cursor) {
 }
 
 void RenderWidgetHost::OnMsgImeUpdateTextInputState(
-    WebKit::WebTextInputType type,
+    ui::TextInputType type,
+    bool can_compose_inline,
     const gfx::Rect& caret_rect) {
   if (view_)
-    view_->ImeUpdateTextInputState(type, caret_rect);
+    view_->ImeUpdateTextInputState(type, can_compose_inline, caret_rect);
+}
+
+void RenderWidgetHost::OnMsgImeCompositionRangeChanged(const ui::Range& range) {
+  if (view_)
+    view_->ImeCompositionRangeChanged(range);
 }
 
 void RenderWidgetHost::OnMsgImeCancelComposition() {
@@ -1052,120 +1030,6 @@ void RenderWidgetHost::OnMsgDidActivateAcceleratedCompositing(bool activated) {
     view_->AcceleratedCompositingActivated(activated);
 #endif
 }
-
-#if defined(OS_MACOSX)
-
-void RenderWidgetHost::OnMsgGetScreenInfo(gfx::NativeViewId view,
-                                          WebScreenInfo* results) {
-  gfx::NativeView native_view = view_ ? view_->GetNativeView() : NULL;
-  *results = WebScreenInfoFactory::screenInfo(native_view);
-}
-
-void RenderWidgetHost::OnMsgGetWindowRect(gfx::NativeViewId window_id,
-                                          gfx::Rect* results) {
-  if (view_) {
-    *results = view_->GetViewBounds();
-  }
-}
-
-void RenderWidgetHost::OnMsgGetRootWindowRect(gfx::NativeViewId window_id,
-                                              gfx::Rect* results) {
-  if (view_) {
-    *results = view_->GetRootWindowRect();
-  }
-}
-
-void RenderWidgetHost::OnMsgPluginFocusChanged(bool focused, int plugin_id) {
-  if (view_)
-    view_->PluginFocusChanged(focused, plugin_id);
-}
-
-void RenderWidgetHost::OnMsgStartPluginIme() {
-  if (view_)
-    view_->StartPluginIme();
-}
-
-void RenderWidgetHost::OnAllocateFakePluginWindowHandle(
-    bool opaque,
-    bool root,
-    gfx::PluginWindowHandle* id) {
-  // TODO(kbr): similar potential issue here as in OnMsgCreatePluginContainer.
-  // Possibly less of an issue because this is only used for the GPU plugin.
-  if (view_) {
-    *id = view_->AllocateFakePluginWindowHandle(opaque, root);
-  } else {
-    NOTIMPLEMENTED();
-  }
-}
-
-void RenderWidgetHost::OnDestroyFakePluginWindowHandle(
-    gfx::PluginWindowHandle id) {
-  if (view_) {
-    view_->DestroyFakePluginWindowHandle(id);
-  } else {
-    NOTIMPLEMENTED();
-  }
-}
-
-void RenderWidgetHost::OnAcceleratedSurfaceSetIOSurface(
-    gfx::PluginWindowHandle window,
-    int32 width,
-    int32 height,
-    uint64 mach_port) {
-  if (view_) {
-    view_->AcceleratedSurfaceSetIOSurface(window, width, height, mach_port);
-  }
-}
-
-void RenderWidgetHost::OnAcceleratedSurfaceSetTransportDIB(
-    gfx::PluginWindowHandle window,
-    int32 width,
-    int32 height,
-    TransportDIB::Handle transport_dib) {
-  if (view_) {
-    view_->AcceleratedSurfaceSetTransportDIB(window, width, height,
-                                             transport_dib);
-  }
-}
-
-void RenderWidgetHost::OnAcceleratedSurfaceBuffersSwapped(
-    gfx::PluginWindowHandle window, uint64 surface_id) {
-  if (view_) {
-    // This code path could be updated to implement flow control for
-    // updating of accelerated plugins as well. However, if we add support
-    // for composited plugins then this is not necessary.
-    view_->AcceleratedSurfaceBuffersSwapped(window, surface_id,
-                                            0, 0, 0, 0);
-  }
-}
-#elif defined(OS_POSIX)
-
-void RenderWidgetHost::OnMsgCreatePluginContainer(gfx::PluginWindowHandle id) {
-  // TODO(piman): view_ can only be NULL with delayed view creation in
-  // extensions (see ExtensionHost::CreateRenderViewSoon). Figure out how to
-  // support plugins in that case.
-  if (view_) {
-    view_->CreatePluginContainer(id);
-  } else {
-    deferred_plugin_handles_.push_back(id);
-  }
-}
-
-void RenderWidgetHost::OnMsgDestroyPluginContainer(gfx::PluginWindowHandle id) {
-  if (view_) {
-    view_->DestroyPluginContainer(id);
-  } else {
-    for (int i = 0;
-         i < static_cast<int>(deferred_plugin_handles_.size());
-         i++) {
-      if (deferred_plugin_handles_[i] == id) {
-        deferred_plugin_handles_.erase(deferred_plugin_handles_.begin() + i);
-        i--;
-      }
-    }
-  }
-}
-#endif
 
 void RenderWidgetHost::PaintBackingStoreRect(
     TransportDIB::Id bitmap,
@@ -1214,16 +1078,8 @@ void RenderWidgetHost::ScrollBackingStoreRect(int dx, int dy,
   backing_store->ScrollBackingStore(dx, dy, clip_rect, view_size);
 }
 
-void RenderWidgetHost::ToggleSpellPanel(bool is_currently_visible) {
-  Send(new SpellCheckMsg_ToggleSpellPanel(routing_id(), is_currently_visible));
-}
-
 void RenderWidgetHost::Replace(const string16& word) {
   Send(new ViewMsg_Replace(routing_id_, word));
-}
-
-void RenderWidgetHost::AdvanceToNextMisspelling() {
-  Send(new SpellCheckMsg_AdvanceToNextMisspelling(routing_id_));
 }
 
 void RenderWidgetHost::EnableRendererAccessibility() {
@@ -1241,18 +1097,6 @@ void RenderWidgetHost::EnableRendererAccessibility() {
     // Renderer accessibility wasn't enabled on process launch. Enable it now.
     Send(new ViewMsg_EnableAccessibility(routing_id()));
   }
-}
-
-void RenderWidgetHost::SetAccessibilityFocus(int acc_obj_id) {
-  Send(new ViewMsg_SetAccessibilityFocus(routing_id(), acc_obj_id));
-}
-
-void RenderWidgetHost::AccessibilityDoDefaultAction(int acc_obj_id) {
-  Send(new ViewMsg_AccessibilityDoDefaultAction(routing_id(), acc_obj_id));
-}
-
-void RenderWidgetHost::AccessibilityNotificationsAck() {
-  Send(new ViewMsg_AccessibilityNotifications_ACK(routing_id()));
 }
 
 void RenderWidgetHost::ProcessKeyboardEventAck(int type, bool processed) {

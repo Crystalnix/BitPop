@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -9,6 +9,7 @@
 #define CHROME_BROWSER_SYNC_ENGINE_CONFLICT_RESOLVER_H_
 #pragma once
 
+#include <map>
 #include <set>
 #include <string>
 
@@ -66,7 +67,8 @@ class ConflictResolver {
 
   ProcessSimpleConflictResult ProcessSimpleConflict(
       syncable::WriteTransaction* trans,
-      const syncable::Id& id);
+      const syncable::Id& id,
+      sessions::StatusController* status);
 
   bool ResolveSimpleConflicts(const syncable::ScopedDirLookup& dir,
                               sessions::StatusController* status);
@@ -84,12 +86,6 @@ class ConflictResolver {
 
   ConflictSetCountMap conflict_set_count_map_;
   SimpleConflictCountMap simple_conflict_count_map_;
-
-  // Contains the ids of uncommitted items that are children of entries merged
-  // in the previous cycle. This is used to speed up the merge resolution of
-  // deep trees. Used to happen in store refresh.
-  // TODO(chron): Can we get rid of this optimization?
-  std::set<syncable::Id> children_of_merged_dirs_;
 
   DISALLOW_COPY_AND_ASSIGN(ConflictResolver);
 };

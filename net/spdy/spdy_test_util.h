@@ -8,9 +8,11 @@
 
 #include "base/basictypes.h"
 #include "net/base/cert_verifier.h"
+#include "net/base/host_port_pair.h"
 #include "net/base/mock_host_resolver.h"
 #include "net/base/request_priority.h"
 #include "net/base/ssl_config_service_defaults.h"
+#include "net/base/sys_addrinfo.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_session.h"
@@ -20,6 +22,7 @@
 #include "net/socket/socket_test_util.h"
 #include "net/spdy/spdy_framer.h"
 #include "net/url_request/url_request_context.h"
+#include "net/url_request/url_request_context_storage.h"
 
 namespace net {
 
@@ -347,7 +350,7 @@ class SpdySessionDependencies {
   // NOTE: host_resolver must be ordered before http_auth_handler_factory.
   scoped_ptr<MockHostResolverBase> host_resolver;
   scoped_ptr<CertVerifier> cert_verifier;
-  scoped_refptr<ProxyService> proxy_service;
+  scoped_ptr<ProxyService> proxy_service;
   scoped_refptr<SSLConfigService> ssl_config_service;
   scoped_ptr<MockClientSocketFactory> socket_factory;
   scoped_ptr<DeterministicMockClientSocketFactory> deterministic_socket_factory;
@@ -365,9 +368,30 @@ class SpdyURLRequestContext : public URLRequestContext {
 
  private:
   MockClientSocketFactory socket_factory_;
+  net::URLRequestContextStorage storage_;
 };
 
 const SpdyHeaderInfo make_spdy_header(spdy::SpdyControlType type);
+
+class SpdySessionPoolPeer {
+ public:
+  explicit SpdySessionPoolPeer(SpdySessionPool* pool)
+      : pool_(pool) {}
+
+  void AddAlias(const addrinfo* address, const HostPortProxyPair& pair) {
+    pool_->AddAlias(address, pair);
+  }
+
+  void RemoveSpdySession(const scoped_refptr<SpdySession>& session) {
+    pool_->Remove(session);
+  }
+
+ private:
+  SpdySessionPool* const pool_;
+
+  DISALLOW_COPY_AND_ASSIGN(SpdySessionPoolPeer);
+};
+
 }  // namespace net
 
 #endif  // NET_SPDY_SPDY_TEST_UTIL_H_

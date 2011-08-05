@@ -34,12 +34,13 @@ class TransportSecurityState;
 class SSLConfigService;
 }
 
-namespace policy {
-class ProfilePolicyConnector;
-}
 
 namespace prerender {
 class PrerenderManager;
+}
+
+namespace quota {
+class QuotaManager;
 }
 
 namespace webkit_database {
@@ -84,10 +85,7 @@ class ProtocolHandlerRegistry;
 class SQLitePersistentCookieStore;
 class SSLConfigServiceManager;
 class SSLHostState;
-class SessionService;
 class SpellCheckHost;
-class StatusTray;
-class TabRestoreService;
 class TemplateURLFetcher;
 class TemplateURLModel;
 class TokenService;
@@ -164,6 +162,10 @@ class Profile {
   // yet been created.  If necessary, listen on the UI thread for
   // NOTIFY_DEFAULT_REQUEST_CONTEXT_AVAILABLE.
   static net::URLRequestContextGetter* GetDefaultRequestContext();
+
+  // Returns the name associated with this profile. This name is displayed in
+  // the browser frame.
+  virtual std::string GetProfileName() = 0;
 
   // Returns a unique Id that can be used to identify this profile at runtime.
   // This Id is not persistent and will not survive a restart of the browser.
@@ -294,6 +296,8 @@ class Profile {
   virtual WebDataService* GetWebDataServiceWithoutCreating() = 0;
 
   // Returns the PasswordStore for this profile. This is owned by the Profile.
+  // This may return NULL if the implementation is unable to create a
+  // password store (e.g. a corrupt database).
   virtual PasswordStore* GetPasswordStore(ServiceAccessType access) = 0;
 
   // Retrieves a pointer to the PrefService that manages the preferences
@@ -326,6 +330,8 @@ class Profile {
   // by the profile.
   virtual fileapi::FileSystemContext* GetFileSystemContext() = 0;
 
+  virtual quota::QuotaManager* GetQuotaManager() = 0;
+
   // Returns the BrowserSignin object assigned to this profile.
   virtual BrowserSignin* GetBrowserSignin() = 0;
 
@@ -334,13 +340,14 @@ class Profile {
   // happen on the UI thread.
   virtual net::URLRequestContextGetter* GetRequestContext() = 0;
 
-  // Returns the request context appropriate for the given app. If installed_app
-  // is null or installed_app->is_storage_isolated() returns false, this is
-  // equivalent to calling GetRequestContext().
+  // Returns the request context appropriate for the given renderer. If the
+  // renderer process doesn't have an assosicated installed app, or if the
+  // installed app's is_storage_isolated() returns false, this is equivalent to
+  // calling GetRequestContext().
   // TODO(creis): After isolated app storage is no longer an experimental
   // feature, consider making this the default contract for GetRequestContext.
-  virtual net::URLRequestContextGetter* GetRequestContextForPossibleApp(
-      const Extension* installed_app) = 0;
+  virtual net::URLRequestContextGetter* GetRequestContextForRenderProcess(
+      int renderer_child_id) = 0;
 
   // Returns the request context for media resources asociated with this
   // profile.
@@ -394,24 +401,6 @@ class Profile {
   // created the first time that this method is called.
   virtual FindBarState* GetFindBarState() = 0;
 
-  // Returns the session service for this profile. This may return NULL. If
-  // this profile supports a session service (it isn't incognito), and
-  // the session service hasn't yet been created, this forces creation of
-  // the session service.
-  //
-  // This returns NULL in two situations: the profile is incognito, or the
-  // session service has been explicitly shutdown (browser is exiting). Callers
-  // should always check the return value for NULL.
-  virtual SessionService* GetSessionService() = 0;
-
-  // If this profile has a session service, it is shut down. To properly record
-  // the current state this forces creation of the session service, then shuts
-  // it down.
-  virtual void ShutdownSessionService() = 0;
-
-  // Returns true if this profile has a session service.
-  virtual bool HasSessionService() const = 0;
-
   // Returns true if this profile has a profile sync service.
   virtual bool HasProfileSyncService() const = 0;
 
@@ -450,11 +439,6 @@ class Profile {
   // the user started chrome.
   virtual base::Time GetStartTime() const = 0;
 
-  // Returns the TabRestoreService. This returns NULL when incognito.
-  virtual TabRestoreService* GetTabRestoreService() = 0;
-
-  virtual void ResetTabRestoreService() = 0;
-
   // May return NULL.
   virtual SpellCheckHost* GetSpellCheckHost() = 0;
 
@@ -465,11 +449,6 @@ class Profile {
 
   // Returns the WebKitContext assigned to this profile.
   virtual WebKitContext* GetWebKitContext() = 0;
-
-  // Returns the StatusTray, which provides an API for displaying status icons
-  // in the system status tray. Returns NULL if status icons are not supported
-  // on this platform (or this is a unit test).
-  virtual StatusTray* GetStatusTray() = 0;
 
   // Marks the profile as cleanly shutdown.
   //
@@ -505,9 +484,6 @@ class Profile {
 
   // Returns the PromoCounter for Instant, or NULL if not applicable.
   virtual PromoCounter* GetInstantPromoCounter() = 0;
-
-  // Gets the policy connector associated with this profile.
-  virtual policy::ProfilePolicyConnector* GetPolicyConnector() = 0;
 
   // Returns the ChromeURLDataManager for this profile.
   virtual ChromeURLDataManager* GetChromeURLDataManager() = 0;

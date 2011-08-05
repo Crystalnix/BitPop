@@ -9,19 +9,25 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
+#include "chrome/browser/chromeos/cros/power_library.h"
 #include "net/base/network_change_notifier.h"
 
 namespace chromeos {
 
 class NetworkChangeNotifierChromeos
     : public net::NetworkChangeNotifier,
-      public chromeos::NetworkLibrary::NetworkManagerObserver,
-      public chromeos::NetworkLibrary::NetworkObserver {
+      public chromeos::PowerLibrary::Observer,
+      public chromeos::NetworkLibrary::NetworkObserver,
+      public chromeos::NetworkLibrary::NetworkManagerObserver {
  public:
   NetworkChangeNotifierChromeos();
   virtual ~NetworkChangeNotifierChromeos();
 
  private:
+  // PowerLibrary::Observer overrides.
+  virtual void PowerChanged(PowerLibrary* obj) OVERRIDE;
+  virtual void SystemResumed() OVERRIDE;
+
   // NetworkChangeNotifier overrides.
   virtual bool IsCurrentlyOffline() const OVERRIDE;
 
@@ -37,8 +43,8 @@ class NetworkChangeNotifierChromeos
 
   // True if we previously had an active network around.
   bool has_active_network_;
-  // Current active network's connectivity state.
-  chromeos::ConnectivityState connectivity_state_;
+  // Current active network's connection state.
+  chromeos::ConnectionState connection_state_;
   // Current active network's service path.
   std::string service_path_;
   // Current active network's IP address.

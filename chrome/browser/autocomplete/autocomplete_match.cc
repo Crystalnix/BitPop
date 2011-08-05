@@ -117,6 +117,7 @@ void AutocompleteMatch::ClassifyMatchInString(
                            text.length(), style, classification);
 }
 
+// static
 void AutocompleteMatch::ClassifyLocationInString(
     size_t match_location,
     size_t match_length,
@@ -163,7 +164,7 @@ void AutocompleteMatch::ValidateClassifications(
     const string16& text,
     const ACMatchClassifications& classifications) const {
   if (text.empty()) {
-    DCHECK(classifications.size() == 0);
+    DCHECK(classifications.empty());
     return;
   }
 

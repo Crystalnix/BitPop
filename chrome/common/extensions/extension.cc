@@ -111,6 +111,7 @@ const char kOmniboxModuleName[] = "omnibox";
 const char kPageActionModuleName[] = "pageAction";
 const char kPageActionsModuleName[] = "pageActions";
 const char kTestModuleName[] = "test";
+const char kTypesModuleName[] = "types";
 
 // Names of modules that can be used without listing it in the permissions
 // section of the manifest.
@@ -123,7 +124,8 @@ const char* kNonPermissionModuleNames[] = {
   kOmniboxModuleName,
   kPageActionModuleName,
   kPageActionsModuleName,
-  kTestModuleName
+  kTestModuleName,
+  kTypesModuleName
 };
 const size_t kNumNonPermissionModuleNames =
     arraysize(kNonPermissionModuleNames);
@@ -263,10 +265,13 @@ const int Extension::kSidebarIconMaxSize = 16;
 // Explicit permissions -- permission declaration required.
 const char Extension::kBackgroundPermission[] = "background";
 const char Extension::kBookmarkPermission[] = "bookmarks";
+const char Extension::kClipboardReadPermission[] = "clipboardRead";
+const char Extension::kClipboardWritePermission[] = "clipboardWrite";
 const char Extension::kContextMenusPermission[] = "contextMenus";
 const char Extension::kContentSettingsPermission[] = "contentSettings";
 const char Extension::kCookiePermission[] = "cookies";
-const char Extension::kChromeosInfoPrivatePermissions[] = "chromeosInfoPrivate";
+const char Extension::kChromePrivatePermission[] = "chromePrivate";
+const char Extension::kChromeosInfoPrivatePermission[] = "chromeosInfoPrivate";
 const char Extension::kDebuggerPermission[] = "debugger";
 const char Extension::kExperimentalPermission[] = "experimental";
 const char Extension::kFileBrowserHandlerPermission[] = "fileBrowserHandler";
@@ -275,41 +280,51 @@ const char Extension::kGeolocationPermission[] = "geolocation";
 const char Extension::kHistoryPermission[] = "history";
 const char Extension::kIdlePermission[] = "idle";
 const char Extension::kManagementPermission[] = "management";
+const char Extension::kMediaPlayerPrivatePermission[] = "mediaPlayerPrivate";
 const char Extension::kNotificationPermission[] = "notifications";
 const char Extension::kProxyPermission[] = "proxy";
 const char Extension::kTabPermission[] = "tabs";
 const char Extension::kUnlimitedStoragePermission[] = "unlimitedStorage";
 const char Extension::kWebstorePrivatePermission[] = "webstorePrivate";
+const char Extension::kWebSocketProxyPrivatePermission[] =
+    "webSocketProxyPrivate";
 
 // In general, all permissions should have an install message.
 // See ExtensionsTest.PermissionMessages for an explanation of each
 // exception.
 const Extension::Permission Extension::kPermissions[] = {
-  { kBackgroundPermission,           PermissionMessage::ID_NONE },
-  { kBookmarkPermission,             PermissionMessage::ID_BOOKMARKS },
-  { kChromeosInfoPrivatePermissions, PermissionMessage::ID_NONE },
-  { kContentSettingsPermission,      PermissionMessage::ID_NONE },
-  { kContextMenusPermission,         PermissionMessage::ID_NONE },
-  { kCookiePermission,               PermissionMessage::ID_NONE },
-  { kDebuggerPermission,             PermissionMessage::ID_DEBUGGER },
-  { kExperimentalPermission,         PermissionMessage::ID_NONE },
-  { kFileBrowserHandlerPermission,   PermissionMessage::ID_NONE },
-  { kFileBrowserPrivatePermission,   PermissionMessage::ID_NONE },
-  { kGeolocationPermission,          PermissionMessage::ID_GEOLOCATION },
-  { kIdlePermission,                 PermissionMessage::ID_NONE },
-  { kHistoryPermission,              PermissionMessage::ID_BROWSING_HISTORY },
-  { kManagementPermission,           PermissionMessage::ID_MANAGEMENT },
-  { kNotificationPermission,         PermissionMessage::ID_NONE },
-  { kProxyPermission,                PermissionMessage::ID_NONE },
-  { kTabPermission,                  PermissionMessage::ID_TABS },
-  { kUnlimitedStoragePermission,     PermissionMessage::ID_NONE },
-  { kWebstorePrivatePermission,      PermissionMessage::ID_NONE }
+  { kBackgroundPermission,            PermissionMessage::ID_NONE },
+  { kBookmarkPermission,              PermissionMessage::ID_BOOKMARKS },
+  { kChromePrivatePermission,         PermissionMessage::ID_NONE },
+  { kChromeosInfoPrivatePermission,   PermissionMessage::ID_NONE },
+  { kClipboardReadPermission,         PermissionMessage::ID_CLIPBOARD },
+  { kClipboardWritePermission,        PermissionMessage::ID_NONE },
+  { kContentSettingsPermission,       PermissionMessage::ID_NONE },
+  { kContextMenusPermission,          PermissionMessage::ID_NONE },
+  { kCookiePermission,                PermissionMessage::ID_NONE },
+  { kDebuggerPermission,              PermissionMessage::ID_DEBUGGER },
+  { kExperimentalPermission,          PermissionMessage::ID_NONE },
+  { kFileBrowserHandlerPermission,    PermissionMessage::ID_NONE },
+  { kFileBrowserPrivatePermission,    PermissionMessage::ID_NONE },
+  { kGeolocationPermission,           PermissionMessage::ID_GEOLOCATION },
+  { kHistoryPermission,               PermissionMessage::ID_BROWSING_HISTORY },
+  { kIdlePermission,                  PermissionMessage::ID_NONE },
+  { kManagementPermission,            PermissionMessage::ID_MANAGEMENT },
+  { kMediaPlayerPrivatePermission,    PermissionMessage::ID_NONE },
+  { kNotificationPermission,          PermissionMessage::ID_NONE },
+  { kProxyPermission,                 PermissionMessage::ID_NONE },
+  { kTabPermission,                   PermissionMessage::ID_TABS },
+  { kUnlimitedStoragePermission,      PermissionMessage::ID_NONE },
+  { kWebSocketProxyPrivatePermission, PermissionMessage::ID_NONE },
+  { kWebstorePrivatePermission,       PermissionMessage::ID_NONE },
 };
-const size_t Extension::kNumPermissions =
-    arraysize(Extension::kPermissions);
+const size_t Extension::kNumPermissions = arraysize(Extension::kPermissions);
 
 const char* const Extension::kHostedAppPermissionNames[] = {
   Extension::kBackgroundPermission,
+  Extension::kChromePrivatePermission,
+  Extension::kClipboardReadPermission,
+  Extension::kClipboardWritePermission,
   Extension::kGeolocationPermission,
   Extension::kNotificationPermission,
   Extension::kUnlimitedStoragePermission,
@@ -321,7 +336,8 @@ const size_t Extension::kNumHostedAppPermissions =
 const char* const Extension::kComponentPrivatePermissionNames[] = {
     Extension::kFileBrowserPrivatePermission,
     Extension::kWebstorePrivatePermission,
-    Extension::kChromeosInfoPrivatePermissions,
+    Extension::kMediaPlayerPrivatePermission,
+    Extension::kChromeosInfoPrivatePermission,
 };
 const size_t Extension::kNumComponentPrivatePermissions =
     arraysize(Extension::kComponentPrivatePermissionNames);
@@ -409,7 +425,8 @@ const int Extension::PermissionMessage::kMessageIds[] = {
   IDS_EXTENSION_PROMPT_WARNING_3_HOSTS,
   IDS_EXTENSION_PROMPT_WARNING_4_OR_MORE_HOSTS,
   IDS_EXTENSION_PROMPT_WARNING_ALL_HOSTS,
-  IDS_EXTENSION_PROMPT_WARNING_FULL_ACCESS
+  IDS_EXTENSION_PROMPT_WARNING_FULL_ACCESS,
+  IDS_EXTENSION_PROMPT_WARNING_CLIPBOARD
 };
 
 //
@@ -556,7 +573,8 @@ static bool RcdBetterThan(const std::string& a, const std::string& b) {
 
 // static
 std::vector<std::string> Extension::GetDistinctHosts(
-    const URLPatternList& host_patterns, bool include_rcd) {
+    const URLPatternList& host_patterns,
+    bool include_rcd) {
   // Use a vector to preserve order (also faster than a map on small sets).
   // Each item is a host split into two parts: host without RCDs and
   // current best RCD.
@@ -744,7 +762,7 @@ bool Extension::LoadUserScriptHelper(const DictionaryValue* content_script,
     result->set_match_all_frames(all_frames);
   }
 
-  // matches
+  // matches (required)
   ListValue* matches = NULL;
   if (!content_script->GetList(keys::kMatches, &matches)) {
     *error = ExtensionErrorUtils::FormatErrorMessage(errors::kInvalidMatches,
@@ -792,6 +810,44 @@ bool Extension::LoadUserScriptHelper(const DictionaryValue* content_script,
     }
 
     result->add_url_pattern(pattern);
+  }
+
+  // exclude_matches
+  if (content_script->HasKey(keys::kExcludeMatches)) {  // optional
+    ListValue* exclude_matches = NULL;
+    if (!content_script->GetList(keys::kExcludeMatches, &exclude_matches)) {
+      *error = ExtensionErrorUtils::FormatErrorMessage(
+          errors::kInvalidExcludeMatches,
+          base::IntToString(definition_index));
+      return false;
+    }
+
+    for (size_t j = 0; j < exclude_matches->GetSize(); ++j) {
+      std::string match_str;
+      if (!exclude_matches->GetString(j, &match_str)) {
+        *error = ExtensionErrorUtils::FormatErrorMessage(
+            errors::kInvalidExcludeMatch,
+            base::IntToString(definition_index),
+            base::IntToString(j),
+            errors::kExpectString);
+        return false;
+      }
+
+      URLPattern pattern(UserScript::kValidUserScriptSchemes);
+      if (CanExecuteScriptEverywhere())
+        pattern.set_valid_schemes(URLPattern::SCHEME_ALL);
+      URLPattern::ParseResult parse_result = pattern.Parse(match_str,
+                                                           parse_strictness);
+      if (parse_result != URLPattern::PARSE_SUCCESS) {
+        *error = ExtensionErrorUtils::FormatErrorMessage(
+            errors::kInvalidExcludeMatch,
+            base::IntToString(definition_index), base::IntToString(j),
+            URLPattern::GetParseResultString(parse_result));
+        return false;
+      }
+
+      result->add_exclude_url_pattern(pattern);
+    }
   }
 
   // include/exclude globs (mostly for Greasemonkey compatibility)
@@ -1013,7 +1069,7 @@ ExtensionAction* Extension::LoadExtensionActionHelper(
       result->SetPopupUrl(ExtensionAction::kDefaultTabId, url);
     } else {
       DCHECK(!result->HasPopup(ExtensionAction::kDefaultTabId))
-          << "Shouldn't be posible for the popup to be set.";
+          << "Shouldn't be possible for the popup to be set.";
     }
   }
 
@@ -1170,7 +1226,7 @@ bool Extension::LoadIsApp(const DictionaryValue* manifest,
 
 bool Extension::LoadExtent(const DictionaryValue* manifest,
                            const char* key,
-                           ExtensionExtent* extent,
+                           URLPatternSet* extent,
                            const char* list_error,
                            const char* value_error,
                            URLPattern::ParseOption parse_strictness,
@@ -1558,7 +1614,7 @@ bool Extension::FormatPEMForFileOutput(const std::string& input,
 // static
 bool Extension::IsPrivilegeIncrease(const bool granted_full_access,
                                     const std::set<std::string>& granted_apis,
-                                    const ExtensionExtent& granted_extent,
+                                    const URLPatternSet& granted_extent,
                                     const Extension* new_extension) {
   // If the extension had native code access, we don't need to go any further.
   // Things can't get any worse.
@@ -1575,7 +1631,7 @@ bool Extension::IsPrivilegeIncrease(const bool granted_full_access,
     if (new_extension->HasEffectiveAccessToAllHosts())
       return true;
 
-    const ExtensionExtent new_extent =
+    const URLPatternSet new_extent =
         new_extension->GetEffectiveHostPermissions();
 
     if (IsElevatedHostList(granted_extent.patterns(), new_extent.patterns()))
@@ -1741,7 +1797,9 @@ bool Extension::InitFromValue(const DictionaryValue& source, int flags,
       return false;
     }
     homepage_url_ = GURL(tmp);
-    if (!homepage_url_.is_valid()) {
+    if (!homepage_url_.is_valid() ||
+        (!homepage_url_.SchemeIs("http") &&
+            !homepage_url_.SchemeIs("https"))) {
       *error = ExtensionErrorUtils::FormatErrorMessage(
           errors::kInvalidHomepageURL, tmp);
       return false;
@@ -1877,16 +1935,15 @@ bool Extension::InitFromValue(const DictionaryValue& source, int flags,
            iter != colors_value->end_keys(); ++iter) {
         ListValue* color_list = NULL;
         double alpha = 0.0;
-        int alpha_int = 0;
         int color = 0;
         // The color must be a list
         if (!colors_value->GetListWithoutPathExpansion(*iter, &color_list) ||
             // And either 3 items (RGB) or 4 (RGBA)
             ((color_list->GetSize() != 3) &&
              ((color_list->GetSize() != 4) ||
-              // For RGBA, the fourth item must be a real or int alpha value
-              (!color_list->GetDouble(3, &alpha) &&
-               !color_list->GetInteger(3, &alpha_int)))) ||
+              // For RGBA, the fourth item must be a real or int alpha value.
+              // Note that GetDouble() can get an integer value.
+              !color_list->GetDouble(3, &alpha))) ||
             // For both RGB and RGBA, the first three items must be ints (R,G,B)
             !color_list->GetInteger(0, &color) ||
             !color_list->GetInteger(1, &color) ||
@@ -1905,12 +1962,11 @@ bool Extension::InitFromValue(const DictionaryValue& source, int flags,
            iter != tints_value->end_keys(); ++iter) {
         ListValue* tint_list = NULL;
         double v = 0.0;
-        int vi = 0;
         if (!tints_value->GetListWithoutPathExpansion(*iter, &tint_list) ||
             tint_list->GetSize() != 3 ||
-            !(tint_list->GetDouble(0, &v) || tint_list->GetInteger(0, &vi)) ||
-            !(tint_list->GetDouble(1, &v) || tint_list->GetInteger(1, &vi)) ||
-            !(tint_list->GetDouble(2, &v) || tint_list->GetInteger(2, &vi))) {
+            !tint_list->GetDouble(0, &v) ||
+            !tint_list->GetDouble(1, &v) ||
+            !tint_list->GetDouble(2, &v)) {
           *error = errors::kInvalidThemeTints;
           return false;
         }
@@ -2374,6 +2430,27 @@ bool Extension::InitFromValue(const DictionaryValue& source, int flags,
     }
   }
 
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableExperimentalExtensionApis) &&
+      source.HasKey(keys::kContentSecurityPolicy)) {
+    std::string content_security_policy;
+    if (!source.GetString(keys::kContentSecurityPolicy,
+                          &content_security_policy)) {
+      *error = errors::kInvalidContentSecurityPolicy;
+      return false;
+    }
+    // We block these characters to prevent HTTP header injection when
+    // representing the content security policy as an HTTP header.
+    const char kBadCSPCharacters[] = {'\r', '\n', '\0'};
+    if (content_security_policy.find_first_of(kBadCSPCharacters, 0,
+                                              arraysize(kBadCSPCharacters)) !=
+        std::string::npos) {
+      *error = errors::kInvalidContentSecurityPolicy;
+      return false;
+    }
+    content_security_policy_ = content_security_policy;
+  }
+
   // Initialize devtools page url (optional).
   if (source.HasKey(keys::kDevToolsPage)) {
     std::string devtools_str;
@@ -2716,7 +2793,7 @@ bool Extension::HasHostPermission(const GURL& url) const {
         location() != Extension::COMPONENT)
       return false;
 
-    if (host->MatchesUrl(url))
+    if (host->MatchesURL(url))
       return true;
   }
   return false;
@@ -2740,15 +2817,14 @@ void Extension::InitEffectiveHostPermissions() {
   for (UserScriptList::const_iterator content_script =
            content_scripts().begin();
        content_script != content_scripts().end(); ++content_script) {
-    UserScript::PatternList::const_iterator pattern =
+    URLPatternList::const_iterator pattern =
         content_script->url_patterns().begin();
     for (; pattern != content_script->url_patterns().end(); ++pattern)
       effective_host_permissions_.AddPattern(*pattern);
   }
 }
 
-bool Extension::IsComponentOnlyPermission
-    (const std::string& permission) const {
+bool Extension::IsComponentOnlyPermission(const std::string& permission) const {
   if (location() == Extension::COMPONENT)
     return true;
 
@@ -2798,12 +2874,12 @@ bool Extension::CanExecuteScriptOnPage(const GURL& page_url,
 
   // If a script is specified, use its matches.
   if (script)
-    return script->MatchesUrl(page_url);
+    return script->MatchesURL(page_url);
 
   // Otherwise, see if this extension has permission to execute script
   // programmatically on pages.
   for (size_t i = 0; i < host_permissions_.size(); ++i) {
-    if (host_permissions_[i].MatchesUrl(page_url))
+    if (host_permissions_[i].MatchesURL(page_url))
       return true;
   }
 
@@ -2817,7 +2893,7 @@ bool Extension::CanExecuteScriptOnPage(const GURL& page_url,
 
 // static
 bool Extension::HasEffectiveAccessToAllHosts(
-    const ExtensionExtent& effective_host_permissions,
+    const URLPatternSet& effective_host_permissions,
     const std::set<std::string>& api_permissions) {
   const URLPatternList patterns = effective_host_permissions.patterns();
   for (URLPatternList::const_iterator host = patterns.begin();
@@ -2909,7 +2985,7 @@ bool Extension::OverlapsWithOrigin(const GURL& origin) const {
   origin_only_pattern.set_host(origin.host());
   origin_only_pattern.SetPath("/*");
 
-  ExtensionExtent origin_only_pattern_list;
+  URLPatternSet origin_only_pattern_list;
   origin_only_pattern_list.AddPattern(origin_only_pattern);
 
   return web_extent().OverlapsWith(origin_only_pattern_list);

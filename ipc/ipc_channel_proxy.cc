@@ -4,7 +4,6 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_message_utils.h"
@@ -60,12 +59,15 @@ void ChannelProxy::MessageFilter::OnDestruct() const {
 //------------------------------------------------------------------------------
 
 ChannelProxy::Context::Context(Channel::Listener* listener,
-                               MessageLoop* ipc_message_loop)
-    : listener_message_loop_(MessageLoop::current()),
+                               base::MessageLoopProxy* ipc_message_loop)
+    : listener_message_loop_(base::MessageLoopProxy::CreateForCurrentThread()),
       listener_(listener),
       ipc_message_loop_(ipc_message_loop),
       peer_pid_(0),
       channel_connected_called_(false) {
+}
+
+ChannelProxy::Context::~Context() {
 }
 
 void ChannelProxy::Context::CreateChannel(const IPC::ChannelHandle& handle,
@@ -280,17 +282,19 @@ void ChannelProxy::Context::OnDispatchError() {
 ChannelProxy::ChannelProxy(const IPC::ChannelHandle& channel_handle,
                            Channel::Mode mode,
                            Channel::Listener* listener,
-                           MessageLoop* ipc_thread)
-    : context_(new Context(listener, ipc_thread)) {
+                           base::MessageLoopProxy* ipc_thread)
+    : context_(new Context(listener, ipc_thread)),
+      outgoing_message_filter_(NULL) {
   Init(channel_handle, mode, ipc_thread, true);
 }
 
 ChannelProxy::ChannelProxy(const IPC::ChannelHandle& channel_handle,
                            Channel::Mode mode,
-                           MessageLoop* ipc_thread,
+                           base::MessageLoopProxy* ipc_thread,
                            Context* context,
                            bool create_pipe_now)
-    : context_(context) {
+    : context_(context),
+      outgoing_message_filter_(NULL) {
   Init(channel_handle, mode, ipc_thread, create_pipe_now);
 }
 
@@ -299,7 +303,8 @@ ChannelProxy::~ChannelProxy() {
 }
 
 void ChannelProxy::Init(const IPC::ChannelHandle& channel_handle,
-                        Channel::Mode mode, MessageLoop* ipc_thread_loop,
+                        Channel::Mode mode,
+                        base::MessageLoopProxy* ipc_thread_loop,
                         bool create_pipe_now) {
 #if defined(OS_POSIX)
   // When we are creating a server on POSIX, we need its file descriptor
@@ -340,6 +345,9 @@ void ChannelProxy::Close() {
 }
 
 bool ChannelProxy::Send(Message* message) {
+  if (outgoing_message_filter())
+    message = outgoing_message_filter()->Rewrite(message);
+
 #ifdef IPC_MESSAGE_LOG_ENABLED
   Logging::GetInstance()->OnSendMessage(message, context_->channel_id());
 #endif

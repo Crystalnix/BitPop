@@ -93,7 +93,7 @@ static const VersionRangeDefinition kQuicktimeVersionRange[] = {
     { "", "", "7.6.9", true }
 };
 static const VersionRangeDefinition kJavaVersionRange[] = {
-    { "0", "7", "6.0.240", true }  // "240" is not a typo.
+    { "0", "7", "6.0.260", true }  // "260" is not a typo.
 };
 // This is up to date with
 // http://www.adobe.com/support/security/bulletins/apsb11-08.html
@@ -135,14 +135,19 @@ static const PluginGroupDefinition kGroupDefinitions[] = {
     NULL, 0, "" },
 };
 
-#else
+#elif defined(OS_CHROMEOS)
+// ChromeOS generally has (autoupdated) system plug-ins and no user-installable
+// plug-ins.
+static const PluginGroupDefinition kGroupDefinitions[] = { };
+
+#else  // Most importantly, covers desktop Linux.
 static const VersionRangeDefinition kJavaVersionRange[] = {
-    { "0", "1.7", "1.6.0.24", true }
+    { "0", "1.7", "1.6.0.26", true }
 };
 
 static const VersionRangeDefinition kRedhatIcedTeaVersionRange[] = {
-    { "0", "1.9", "1.8.7", true },
-    { "1.9", "1.10", "1.9.7", true },
+    { "0", "1.9", "1.8.8", true },
+    { "1.9", "1.10", "1.9.8", true },
 };
 
 static const PluginGroupDefinition kGroupDefinitions[] = {
@@ -236,6 +241,8 @@ void PluginList::RegisterInternalPlugin(const FilePath& filename,
 
   base::AutoLock lock(lock_);
   internal_plugins_.push_back(plugin);
+  if (filename.value() == kDefaultPluginLibraryName)
+    default_plugin_enabled_ = true;
 }
 
 void PluginList::UnregisterInternalPlugin(const FilePath& path) {
@@ -318,7 +325,8 @@ PluginList::PluginList()
       plugins_need_refresh_(false),
       disable_outdated_plugins_(false),
       group_definitions_(kGroupDefinitions),
-      num_group_definitions_(ARRAYSIZE_UNSAFE(kGroupDefinitions)) {
+      num_group_definitions_(ARRAYSIZE_UNSAFE(kGroupDefinitions)),
+      default_plugin_enabled_(false) {
   PlatformInit();
   AddHardcodedPluginGroups(&plugin_groups_);
 }
@@ -387,7 +395,7 @@ void PluginList::LoadPluginsInternal(ScopedVector<PluginGroup>* plugin_groups) {
 #endif
 
   // Load the default plugin last.
-  if (webkit_glue::IsDefaultPluginEnabled())
+  if (default_plugin_enabled_)
     LoadPlugin(FilePath(kDefaultPluginLibraryName), plugin_groups);
 }
 

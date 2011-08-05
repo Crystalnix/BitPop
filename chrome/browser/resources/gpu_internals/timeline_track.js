@@ -11,18 +11,36 @@
 cr.define('gpu', function() {
 
   const palletteBase = [
-    {r: 0x45, g: 0x85, b: 0xaa},
-    {r: 0xdc, g: 0x73, b: 0xa8},
-    {r: 0x77, g: 0xb6, b: 0x94},
-    {r: 0x23, g: 0xae, b: 0x6e},
-    {r: 0x76, g: 0x5d, b: 0x9e},
-    {r: 0x48, g: 0xd8, b: 0xfb},
-    {r: 0xa9, g: 0xd7, b: 0x93},
-    {r: 0x7c, g: 0x2d, b: 0x52},
-    {r: 0x69, g: 0xc2, b: 0x75},
-    {r: 0x76, g: 0xcf, b: 0xee},
-    {r: 0x3d, g: 0x85, b: 0xd1},
-    {r: 0x71, g: 0x0b, b: 0x54}];
+    {r: 138, g: 113, b: 152},
+    {r: 175, g: 112, b: 133},
+    {r: 127, g: 135, b: 225},
+    {r: 93, g: 81, b: 137},
+    {r: 116, g: 143, b: 119},
+    {r: 178, g: 214, b: 122},
+    {r: 87, g: 109, b: 147},
+    {r: 119, g: 155, b: 95},
+    {r: 114, g: 180, b: 160},
+    {r: 132, g: 85, b: 103},
+    {r: 157, g: 210, b: 150},
+    {r: 148, g: 94, b: 86},
+    {r: 164, g: 108, b: 138},
+    {r: 139, g: 191, b: 150},
+    {r: 110, g: 99, b: 145},
+    {r: 80, g: 129, b: 109},
+    {r: 125, g: 140, b: 149},
+    {r: 93, g: 124, b: 132},
+    {r: 140, g: 85, b: 140},
+    {r: 104, g: 163, b: 162},
+    {r: 132, g: 141, b: 178},
+    {r: 131, g: 105, b: 147},
+    {r: 135, g: 183, b: 98},
+    {r: 152, g: 134, b: 177},
+    {r: 141, g: 188, b: 141},
+    {r: 133, g: 160, b: 210},
+    {r: 126, g: 186, b: 148},
+    {r: 112, g: 198, b: 205},
+    {r: 180, g: 122, b: 195},
+    {r: 203, g: 144, b: 152}];
 
   function brighten(c) {
     return {r: Math.min(255, c.r + Math.floor(c.r * 0.45)),
@@ -46,6 +64,17 @@ cr.define('gpu', function() {
       textWidthMap[text] = w;
     }
     return w;
+  }
+
+  function addTrack(thisTrack, slices) {
+    var track = new TimelineSliceTrack();
+
+    track.heading = '';
+    track.slices = slices;
+    track.viewport = thisTrack.viewport_;
+
+    thisTrack.tracks_.push(track);
+    thisTrack.appendChild(track);
   }
 
   /**
@@ -96,19 +125,15 @@ cr.define('gpu', function() {
       this.textContent = '';
       this.tracks_ = [];
       if (this.thread_) {
+        for (var srI = 0; srI < this.thread_.nonNestedSubRows.length; ++srI) {
+          addTrack(this, this.thread_.nonNestedSubRows[srI]);
+        }
         for (var srI = 0; srI < this.thread_.subRows.length; ++srI) {
-          var track = new TimelineSliceTrack();
-
-          if (srI == 0)
-            track.heading = this.thread_.parent.pid + ': ' +
-                this.thread_.tid + ': ';
-          else
-            track.heading = '';
-          track.slices = this.thread_.subRows[srI];
-          track.viewport = this.viewport_;
-
-          this.tracks_.push(track);
-          this.appendChild(track);
+          addTrack(this, this.thread_.subRows[srI]);
+        }
+        if (this.tracks_.length > 0) {
+          this.tracks_[0].heading = this.thread_.parent.pid + ': ' +
+              this.thread_.tid + ': ';
         }
       }
     },
@@ -124,9 +149,9 @@ cr.define('gpu', function() {
      */
     pick: function(wX, wY, onHitCallback) {
       for (var i = 0; i < this.tracks_.length; i++) {
-        var track = this.tracks_[i];
-        if (wY >= track.offsetTop && wY < track.offsetTop + track.offsetHeight)
-          return track.pick(wX, onHitCallback);
+        var trackClientRect = this.tracks_[i].getBoundingClientRect();
+        if (wY >= trackClientRect.top && wY < trackClientRect.bottom)
+          return this.tracks_[i].pick(wX, onHitCallback);
       }
       return false;
     },
@@ -146,9 +171,9 @@ cr.define('gpu', function() {
      */
     pickRange: function(loWX, hiWX, loY, hiY, onHitCallback) {
       for (var i = 0; i < this.tracks_.length; i++) {
-        var a = Math.max(loY, this.tracks_[i].offsetTop);
-        var b = Math.min(hiY, this.tracks_[i].offsetTop +
-                         this.tracks_[i].offsetHeight);
+        var trackClientRect = this.tracks_[i].getBoundingClientRect();
+        var a = Math.max(loY, trackClientRect.top);
+        var b = Math.min(hiY, trackClientRect.bottom);
         if (a <= b)
           this.tracks_[i].pickRange(loWX, hiWX, loY, hiY, onHitCallback);
       }
@@ -225,7 +250,26 @@ cr.define('gpu', function() {
       var vp = this.viewport_;
       var pixWidth = vp.xViewVectorToWorld(1);
       var viewLWorld = vp.xViewToWorld(0);
-      var viewRWorld = vp.xViewToWorld(this.width);
+      var viewRWorld = vp.xViewToWorld(canvasW);
+
+      // Draw grid without a transform because the scale
+      // affects line width.
+      if (vp.gridEnabled) {
+        var x = vp.gridTimebase;
+        ctx.beginPath();
+        while (x < viewRWorld) {
+          if (x >= viewLWorld) {
+            // Do conversion to viewspace here rather than on
+            // x to avoid precision issues.
+            var vx = vp.xWorldToView(x);
+            ctx.moveTo(vx, 0);
+            ctx.lineTo(vx, canvasH);
+          }
+          x += vp.gridStep;
+        }
+        ctx.strokeStyle = 'rgba(255,0,0,0.25)';
+        ctx.stroke();
+      }
 
       // begin rendering in world space
       ctx.save();
@@ -282,7 +326,8 @@ cr.define('gpu', function() {
      * @return {boolean} true if a slice was found, otherwise false.
      */
     pick: function(wX, wY, onHitCallback) {
-      if (wY < this.offsetTop || wY >= this.offsetTop + this.offsetHeight)
+      var clientRect = this.getBoundingClientRect();
+      if (wY < clientRect.top || wY >= clientRect.bottom)
         return false;
       var x = gpu.findLowIndexInSortedIntervals(this.slices_,
           function(x) { return x.start; },
@@ -309,13 +354,15 @@ cr.define('gpu', function() {
      *     intersecting the interval.
      */
     pickRange: function(loWX, hiWX, loY, hiY, onHitCallback) {
-      var a = Math.max(loY, this.offsetTop);
-      var b = Math.min(hiY, this.offsetTop + this.offsetHeight);
+      var clientRect = this.getBoundingClientRect();
+      var a = Math.max(loY, clientRect.top);
+      var b = Math.min(hiY, clientRect.bottom);
       if (a > b)
         return;
 
+      var that = this;
       function onPickHit(slice) {
-        onHitCallback('slice', this, slice);
+        onHitCallback('slice', that, slice);
       }
       gpu.iterateOverIntersectingIntervals(this.slices_,
           function(x) { return x.start; },

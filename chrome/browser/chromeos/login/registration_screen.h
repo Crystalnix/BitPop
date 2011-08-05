@@ -22,9 +22,10 @@ class URLRequestJob;
 class GURL;
 class Profile;
 class SiteContents;
-class WizardScreenDelegate;
 
 namespace chromeos {
+
+class ViewScreenDelegate;
 
 // Class that renders host registration page.
 class RegistrationDomView : public WebPageDomView {
@@ -34,11 +35,7 @@ class RegistrationDomView : public WebPageDomView {
  protected:
   // Overriden from DOMView:
   virtual TabContents* CreateTabContents(Profile* profile,
-                                         SiteInstance* instance) {
-    return new WizardWebPageViewTabContents(profile,
-                                            instance,
-                                            page_delegate_);
-  }
+                                         SiteInstance* instance);
 
   DISALLOW_COPY_AND_ASSIGN(RegistrationDomView);
 };
@@ -49,7 +46,7 @@ class RegistrationView : public WebPageView {
   RegistrationView() : dom_view_(new RegistrationDomView()) {}
 
  protected:
-  virtual WebPageDomView* dom_view() { return dom_view_; }
+  virtual WebPageDomView* dom_view();
 
  private:
   // View that renders page.
@@ -67,7 +64,7 @@ class RegistrationScreen : public ViewScreen<RegistrationView>,
                            public WebPageScreen,
                            public WebPageDelegate {
  public:
-  explicit RegistrationScreen(WizardScreenDelegate* delegate);
+  explicit RegistrationScreen(ViewScreenDelegate* delegate);
 
   // WebPageDelegate implementation:
   virtual void OnPageLoaded();

@@ -11,7 +11,6 @@
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
-#include "chrome/browser/history/query_parser.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
 #include "googleurl/src/url_util.h"
@@ -52,13 +51,15 @@ bool CompareMatchRelevance(const MatchReference& a, const MatchReference& b) {
 using history::HistoryDatabase;
 
 HistoryContentsProvider::HistoryContentsProvider(ACProviderListener* listener,
-                                                 Profile* profile)
+                                                 Profile* profile,
+                                                 bool body_only)
     : HistoryProvider(listener, profile, "HistoryContents"),
       star_title_count_(0),
       star_contents_count_(0),
       title_count_(0),
       contents_count_(0),
       input_type_(AutocompleteInput::INVALID),
+      body_only_(body_only),
       trim_http_(false),
       have_results_(false) {
 }
@@ -138,6 +139,7 @@ void HistoryContentsProvider::Start(const AutocompleteInput& input,
       done_ = false;
 
       history::QueryOptions options;
+      options.body_only = body_only_;
       options.SetRecentDayRange(kDaysToSearch);
       options.max_count = kMaxMatches;
       history->QueryHistory(input.text(), options,
@@ -200,15 +202,14 @@ void HistoryContentsProvider::ConvertResults() {
   }
 }
 
-static bool MatchInTitle(const history::URLResult& result) {
-  return !result.title_match_positions().empty();
+// TODO(mrossetti): Remove MatchInTitle once body_only_ becomes permanent.
+bool HistoryContentsProvider::MatchInTitle(const history::URLResult& result) {
+  return !body_only_ && !result.title_match_positions().empty();
 }
 
 AutocompleteMatch HistoryContentsProvider::ResultToMatch(
     const history::URLResult& result,
     int score) {
-  // TODO(sky): if matched title highlight matching words in title.
-  // Also show star in popup.
   AutocompleteMatch match(this, score, true, MatchInTitle(result) ?
       AutocompleteMatch::HISTORY_TITLE : AutocompleteMatch::HISTORY_BODY);
   match.contents = StringForURLDisplay(result.url(), true, trim_http_);
@@ -246,7 +247,7 @@ void HistoryContentsProvider::ClassifyDescription(
       offset = i->second;
     }
   }
-  if (offset != result.title().size()) {
+  if (offset != result.title().length()) {
     match->description_class.push_back(
         ACMatchClassification(offset, ACMatchClassification::NONE));
   }

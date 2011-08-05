@@ -5,15 +5,10 @@
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 
 #include "base/memory/singleton.h"
-#include "chrome/common/render_messages.h"
 #include "content/common/renderer_preferences.h"
 #include "googleurl/src/gurl.h"
 #include "ui/gfx/rect.h"
 #include "webkit/glue/webpreferences.h"
-
-#if defined(TOOLKIT_USES_GTK)
-#include "chrome/browser/ui/gtk/gtk_util.h"
-#endif
 
 RenderViewHostDelegate::View* RenderViewHostDelegate::GetViewDelegate() {
   return NULL;
@@ -24,23 +19,8 @@ RenderViewHostDelegate::GetRendererManagementDelegate() {
   return NULL;
 }
 
-RenderViewHostDelegate::ContentSettings*
-RenderViewHostDelegate::GetContentSettingsDelegate() {
-  return NULL;
-}
-
 RenderViewHostDelegate::BookmarkDrag*
 RenderViewHostDelegate::GetBookmarkDragDelegate() {
-  return NULL;
-}
-
-RenderViewHostDelegate::SSL*
-RenderViewHostDelegate::GetSSLDelegate() {
-  return NULL;
-}
-
-AutomationResourceRoutingDelegate*
-RenderViewHostDelegate::GetAutomationResourceRoutingDelegate() {
   return NULL;
 }
 
@@ -58,10 +38,6 @@ TabContents* RenderViewHostDelegate::GetAsTabContents() {
 
 BackgroundContents* RenderViewHostDelegate::GetAsBackgroundContents() {
   return NULL;
-}
-
-GURL RenderViewHostDelegate::GetAlternateErrorPageURL() const {
-  return GURL();
 }
 
 WebPreferences RenderViewHostDelegate::GetWebkitPrefs() {

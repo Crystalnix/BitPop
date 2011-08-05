@@ -14,18 +14,14 @@
 #include "base/threading/thread.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/browser_process.h"
-#include "chrome/browser/plugin_updater.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/default_plugin.h"
-#include "chrome/common/logging_chrome.h"
-#include "chrome/common/render_messages.h"
 #include "content/browser/browser_thread.h"
+#include "content/browser/content_browser_client.h"
 #include "content/browser/ppapi_plugin_process_host.h"
 #include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/renderer_host/render_view_host.h"
+#include "content/browser/resource_context.h"
 #include "content/common/notification_service.h"
 #include "content/common/notification_type.h"
 #include "content/common/pepper_plugin_registry.h"
@@ -35,11 +31,7 @@
 #include "webkit/plugins/npapi/plugin_list.h"
 #include "webkit/plugins/npapi/webplugininfo.h"
 
-#if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/plugin_selection_policy.h"
-#endif
-
-#if defined(OS_LINUX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
 using ::base::files::FilePathWatcher;
 #endif
 
@@ -53,9 +45,7 @@ static void NotifyPluginsOfActivation() {
     plugin->OnAppActivation();
   }
 }
-#endif
-
-#if defined(OS_LINUX)
+#elif defined(OS_POSIX)
 // Delegate class for monitoring directories.
 class PluginDirWatcherDelegate : public FilePathWatcher::Delegate {
   virtual void OnFilePathChanged(const FilePath& path) OVERRIDE {
@@ -72,22 +62,13 @@ class PluginDirWatcherDelegate : public FilePathWatcher::Delegate {
 #endif
 
 // static
-void PluginService::InitGlobalInstance(Profile* profile) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  // We first group the plugins and then figure out which groups to
-  // enable or disable.
-  PluginUpdater::GetInstance()->UpdatePluginGroupsStateFromPrefs(profile);
-}
-
-// static
 PluginService* PluginService::GetInstance() {
   return Singleton<PluginService>::get();
 }
 
 PluginService::PluginService()
-    : main_message_loop_(MessageLoop::current()),
-      ui_locale_(g_browser_process->GetApplicationLocale()) {
+    : ui_locale_(
+          content::GetContentClient()->browser()->GetApplicationLocale()) {
   RegisterPepperPlugins();
 
   // Load any specified on the command line as well.
@@ -99,38 +80,32 @@ PluginService::PluginService()
   if (!path.empty())
     webkit::npapi::PluginList::Singleton()->AddExtraPluginDir(path);
 
-  chrome::RegisterInternalDefaultPlugin();
-
-  // Register the internal Flash and PDF, if available.
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableInternalFlash) &&
-      PathService::Get(chrome::FILE_FLASH_PLUGIN, &path)) {
-    webkit::npapi::PluginList::Singleton()->AddExtraPluginPath(path);
-  }
-
-#if defined(OS_CHROMEOS)
-  plugin_selection_policy_ = new chromeos::PluginSelectionPolicy;
-  plugin_selection_policy_->StartInit();
-#endif
-
   // Start watching for changes in the plugin list. This means watching
   // for changes in the Windows registry keys and on both Windows and POSIX
   // watch for changes in the paths that are expected to contain plugins.
 #if defined(OS_WIN)
-  hkcu_key_.Create(
-      HKEY_CURRENT_USER, webkit::npapi::kRegistryMozillaPlugins, KEY_NOTIFY);
-  hklm_key_.Create(
-      HKEY_LOCAL_MACHINE, webkit::npapi::kRegistryMozillaPlugins, KEY_NOTIFY);
-  if (hkcu_key_.StartWatching() == ERROR_SUCCESS) {
-    hkcu_event_.reset(new base::WaitableEvent(hkcu_key_.watch_event()));
-    hkcu_watcher_.StartWatching(hkcu_event_.get(), this);
+  if (hkcu_key_.Create(HKEY_CURRENT_USER,
+                       webkit::npapi::kRegistryMozillaPlugins,
+                       KEY_NOTIFY) == ERROR_SUCCESS) {
+    if (hkcu_key_.StartWatching() == ERROR_SUCCESS) {
+      hkcu_event_.reset(new base::WaitableEvent(hkcu_key_.watch_event()));
+      hkcu_watcher_.StartWatching(hkcu_event_.get(), this);
+    }
   }
-
-  if (hklm_key_.StartWatching() == ERROR_SUCCESS) {
-    hklm_event_.reset(new base::WaitableEvent(hklm_key_.watch_event()));
-    hklm_watcher_.StartWatching(hklm_event_.get(), this);
+  if (hklm_key_.Create(HKEY_LOCAL_MACHINE,
+                       webkit::npapi::kRegistryMozillaPlugins,
+                       KEY_NOTIFY) == ERROR_SUCCESS) {
+    if (hklm_key_.StartWatching() == ERROR_SUCCESS) {
+      hklm_event_.reset(new base::WaitableEvent(hklm_key_.watch_event()));
+      hklm_watcher_.StartWatching(hklm_event_.get(), this);
+    }
   }
-#elif defined(OS_POSIX) && !defined(OS_MACOSX)
+#elif defined(OS_MACOSX)
+  // We need to know when the browser comes forward so we can bring modal plugin
+  // windows forward too.
+  registrar_.Add(this, NotificationType::APP_ACTIVATED,
+                 NotificationService::AllSources());
+#elif defined(OS_POSIX)
   // Also find plugins in a user-specific plugins dir,
   // e.g. ~/.config/chromium/Plugins.
   FilePath user_data_dir;
@@ -138,12 +113,11 @@ PluginService::PluginService()
     webkit::npapi::PluginList::Singleton()->AddExtraPluginDir(
         user_data_dir.Append("Plugins"));
   }
-#endif
+
 // The FilePathWatcher produces too many false positives on MacOS (access time
 // updates?) which will lead to enforcing updates of the plugins way too often.
 // On ChromeOS the user can't install plugins anyway and on Windows all
 // important plugins register themselves in the registry so no need to do that.
-#if defined(OS_LINUX)
   file_watcher_delegate_ = new PluginDirWatcherDelegate();
   // Get the list of all paths for registering the FilePathWatchers
   // that will track and if needed reload the list of plugins on runtime.
@@ -168,12 +142,6 @@ PluginService::PluginService()
             watcher, plugin_dirs[i], file_watcher_delegate_));
     file_watchers_.push_back(watcher);
   }
-#endif
-#if defined(OS_MACOSX)
-  // We need to know when the browser comes forward so we can bring modal plugin
-  // windows forward too.
-  registrar_.Add(this, NotificationType::APP_ACTIVATED,
-                 NotificationService::AllSources());
 #endif
   registrar_.Add(this, NotificationType::PLUGIN_ENABLE_STATUS_CHANGED,
                  NotificationService::AllSources());
@@ -268,7 +236,8 @@ PluginProcessHost* PluginService::FindOrStartNpapiPluginProcess(
 }
 
 PpapiPluginProcessHost* PluginService::FindOrStartPpapiPluginProcess(
-    const FilePath& plugin_path) {
+    const FilePath& plugin_path,
+    PpapiPluginProcessHost::Client* client) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
   PpapiPluginProcessHost* plugin_host = FindPpapiPluginProcess(plugin_path);
@@ -281,7 +250,8 @@ PpapiPluginProcessHost* PluginService::FindOrStartPpapiPluginProcess(
     return NULL;
 
   // This plugin isn't loaded by any plugin process, so create a new process.
-  scoped_ptr<PpapiPluginProcessHost> new_host(new PpapiPluginProcessHost);
+  scoped_ptr<PpapiPluginProcessHost> new_host(new PpapiPluginProcessHost(
+      client->GetResourceContext()->host_resolver()));
   if (!new_host->Init(*info)) {
     NOTREACHED();  // Init is not expected to fail.
     return NULL;
@@ -321,8 +291,8 @@ void PluginService::OpenChannelToNpapiPlugin(
     const GURL& url,
     const std::string& mime_type,
     PluginProcessHost::Client* client) {
-  // The PluginList::GetFirstAllowedPluginInfo may need to load the
-  // plugins.  Don't do it on the IO thread.
+  // The PluginList::GetPluginInfo may need to load the plugins.  Don't do it on
+  // the IO thread.
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
       NewRunnableMethod(
@@ -333,7 +303,8 @@ void PluginService::OpenChannelToNpapiPlugin(
 void PluginService::OpenChannelToPpapiPlugin(
     const FilePath& path,
     PpapiPluginProcessHost::Client* client) {
-  PpapiPluginProcessHost* plugin_host = FindOrStartPpapiPluginProcess(path);
+  PpapiPluginProcessHost* plugin_host = FindOrStartPpapiPluginProcess(
+      path, client);
   if (plugin_host)
     plugin_host->OpenChannelToPlugin(client);
   else  // Send error.
@@ -358,7 +329,7 @@ void PluginService::GetAllowedPluginForOpenChannelToPlugin(
     PluginProcessHost::Client* client) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   webkit::npapi::WebPluginInfo info;
-  bool found = GetFirstAllowedPluginInfo(
+  bool found = GetPluginInfo(
       render_process_id, render_view_id, url, mime_type, &info, NULL);
   FilePath plugin_path;
   if (found && webkit::npapi::IsPluginEnabled(info))
@@ -384,34 +355,16 @@ void PluginService::FinishOpenChannelToPlugin(
     client->OnError();
 }
 
-bool PluginService::GetFirstAllowedPluginInfo(
-    int render_process_id,
-    int render_view_id,
-    const GURL& url,
-    const std::string& mime_type,
-    webkit::npapi::WebPluginInfo* info,
-    std::string* actual_mime_type) {
+bool PluginService::GetPluginInfo(int render_process_id,
+                                  int render_view_id,
+                                  const GURL& url,
+                                  const std::string& mime_type,
+                                  webkit::npapi::WebPluginInfo* info,
+                                  std::string* actual_mime_type) {
   // GetPluginInfoArray may need to load the plugins, so we need to be
   // on the FILE thread.
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   bool allow_wildcard = true;
-#if defined(OS_CHROMEOS)
-  std::vector<webkit::npapi::WebPluginInfo> info_array;
-  std::vector<std::string> actual_mime_types;
-  webkit::npapi::PluginList::Singleton()->GetPluginInfoArray(
-      url, mime_type, allow_wildcard, &info_array, &actual_mime_types);
-
-  // Now we filter by the plugin selection policy.
-  int allowed_index = plugin_selection_policy_->FindFirstAllowed(url,
-                                                                 info_array);
-  if (!info_array.empty() && allowed_index >= 0) {
-    *info = info_array[allowed_index];
-    if (actual_mime_type)
-      *actual_mime_type = actual_mime_types[allowed_index];
-    return true;
-  }
-  return false;
-#else
   {
     base::AutoLock auto_lock(overridden_plugins_lock_);
     for (size_t i = 0; i < overridden_plugins_.size(); ++i) {
@@ -427,7 +380,6 @@ bool PluginService::GetFirstAllowedPluginInfo(
   }
   return webkit::npapi::PluginList::Singleton()->GetPluginInfo(
       url, mime_type, allow_wildcard, info, actual_mime_type);
-#endif
 }
 
 void PluginService::OnWaitableEventSignaled(
@@ -541,7 +493,7 @@ PepperPluginInfo* PluginService::GetRegisteredPpapiPluginInfo(
   return info;
 }
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
 // static
 void PluginService::RegisterFilePathWatcher(
     FilePathWatcher *watcher,

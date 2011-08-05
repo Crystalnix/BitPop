@@ -11,9 +11,9 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
-#include "chrome/common/net/url_fetcher.h"
 #include "content/common/notification_observer.h"
 #include "content/common/notification_registrar.h"
+#include "content/common/url_fetcher.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/network_change_notifier.h"
 
@@ -110,7 +110,7 @@ class GoogleURLTracker : public URLFetcher::Delegate,
                                   const GURL& url,
                                   const net::URLRequestStatus& status,
                                   int response_code,
-                                  const ResponseCookies& cookies,
+                                  const net::ResponseCookies& cookies,
                                   const std::string& data);
 
   // NotificationObserver
@@ -168,9 +168,8 @@ class GoogleURLTrackerInfoBarDelegate : public ConfirmInfoBarDelegate {
                                   const GURL& new_google_url);
 
   // ConfirmInfoBarDelegate:
-  virtual bool Accept();
-  virtual bool Cancel();
-  virtual void InfoBarClosed();
+  virtual bool Accept() OVERRIDE;
+  virtual bool Cancel() OVERRIDE;
 
  protected:
   virtual ~GoogleURLTrackerInfoBarDelegate();
@@ -180,8 +179,8 @@ class GoogleURLTrackerInfoBarDelegate : public ConfirmInfoBarDelegate {
 
  private:
   // ConfirmInfoBarDelegate:
-  virtual string16 GetMessageText() const;
-  virtual string16 GetButtonLabel(InfoBarButton button) const;
+  virtual string16 GetMessageText() const OVERRIDE;
+  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(GoogleURLTrackerInfoBarDelegate);
 };

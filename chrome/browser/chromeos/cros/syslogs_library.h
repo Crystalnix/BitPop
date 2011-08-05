@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_CHROMEOS_CROS_SYSLOGS_LIBRARY_H_
 #pragma once
 
+#include "base/callback_old.h"
 #include "base/memory/singleton.h"
 #include "content/browser/cancelable_request.h"
 #include "third_party/cros/chromeos_syslogs.h"
@@ -20,6 +21,13 @@ class SyslogsLibrary : public CancelableRequestProvider {
   typedef Callback2<LogDictionaryType*,
                     std::string*>::Type ReadCompleteCallback;
 
+  enum Context {
+    SYSLOGS_FEEDBACK,
+    SYSLOGS_SYSINFO,
+    SYSLOGS_NETWORK,
+    SYSLOGS_DEFAULT
+  };
+
   SyslogsLibrary() {}
   virtual ~SyslogsLibrary() {}
 
@@ -29,7 +37,8 @@ class SyslogsLibrary : public CancelableRequestProvider {
   // Returns the request handle. Call CancelRequest(Handle) to cancel
   // the request before the callback gets called.
   virtual Handle RequestSyslogs(
-      bool compress_logs, bool feedback_context,
+      bool compress_logs,
+      Context context,
       CancelableRequestConsumerBase* consumer,
       ReadCompleteCallback* callback) = 0;
 

@@ -26,8 +26,7 @@ class SlideAnimation;
 class TouchBrowserFrameView : public OpaqueBrowserFrameView,
                               public views::FocusChangeListener,
                               public TabStripModelObserver,
-                              public ui::AnimationDelegate,
-                              public NotificationObserver {
+                              public ui::AnimationDelegate {
  public:
   enum VirtualKeyboardType {
     NONE,
@@ -35,9 +34,15 @@ class TouchBrowserFrameView : public OpaqueBrowserFrameView,
     URL,
   };
 
+  // Internal class name.
+  static const char kViewClassName[];
+
   // Constructs a non-client view for an BrowserFrame.
   TouchBrowserFrameView(BrowserFrame* frame, BrowserView* browser_view);
   virtual ~TouchBrowserFrameView();
+
+  // Overriden from Views.
+  virtual std::string GetClassName() const OVERRIDE;
 
   // Overridden from OpaqueBrowserFrameView
   virtual void Layout();
@@ -60,10 +65,10 @@ class TouchBrowserFrameView : public OpaqueBrowserFrameView,
   virtual bool HitTest(const gfx::Point& point) const OVERRIDE;
 
   // Overrridden from TabStripModelObserver.
-  virtual void TabSelectedAt(TabContentsWrapper* old_contents,
-                             TabContentsWrapper* new_contents,
-                             int index,
-                             bool user_gesture);
+  virtual void ActiveTabChanged(TabContentsWrapper* old_contents,
+                                TabContentsWrapper* new_contents,
+                                int index,
+                                bool user_gesture);
 
   // Overridden from NotificationObserver.
   virtual void Observe(NotificationType type,

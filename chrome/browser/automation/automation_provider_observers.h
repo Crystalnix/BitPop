@@ -15,12 +15,14 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/synchronization/waitable_event.h"
 #include "chrome/browser/automation/automation_provider_json.h"
 #include "chrome/browser/automation/automation_tab_helper.h"
 #include "chrome/browser/bookmarks/bookmark_model_observer.h"
 #include "chrome/browser/browsing_data_remover.h"
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/cros/network_library.h"
+#include "chrome/browser/chromeos/login/login_status_consumer.h"
 #endif  // defined(OS_CHROMEOS)
 #include "chrome/browser/download/download_item.h"
 #include "chrome/browser/download/download_manager.h"
@@ -28,6 +30,7 @@
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/importer/importer_data_types.h"
 #include "chrome/browser/importer/importer_progress_observer.h"
+#include "chrome/browser/password_manager/password_store_change.h"
 #include "chrome/browser/password_manager/password_store_consumer.h"
 #include "chrome/browser/search_engines/template_url_model_observer.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
@@ -50,6 +53,12 @@ class RenderViewHost;
 class SavePackage;
 class TabContents;
 class TranslateInfoBarDelegate;
+
+#if defined(OS_CHROMEOS)
+namespace chromeos {
+  class ExistingUserController;
+}
+#endif  // defined(OS_CHROMEOS)
 
 namespace history {
 class TopSites;
@@ -714,24 +723,34 @@ class InfoBarCountObserver : public NotificationObserver {
 };
 
 #if defined(OS_CHROMEOS)
-// Collects LOGIN_USER_CHANGED notifications and returns
-// whether authentication succeeded to the automation provider.
-class LoginManagerObserver : public NotificationObserver {
+class LoginObserver : public chromeos::LoginStatusConsumer,
+                      public NotificationObserver {
  public:
-  LoginManagerObserver(AutomationProvider* automation,
-                       IPC::Message* reply_message);
-  virtual ~LoginManagerObserver();
+  LoginObserver(chromeos::ExistingUserController* controller,
+                AutomationProvider* automation,
+                IPC::Message* reply_message);
 
-  // NotificationObserver interface.
-  virtual void Observe(NotificationType type, const NotificationSource& source,
-                       const NotificationDetails& details);
+  virtual ~LoginObserver();
+
+  virtual void OnLoginFailure(const chromeos::LoginFailure& error);
+
+  virtual void OnLoginSuccess(
+      const std::string& username,
+      const std::string& password,
+      const GaiaAuthConsumer::ClientLoginResult& credentials,
+      bool pending_requests);
+
+  virtual void Observe(NotificationType type,
+               const NotificationSource& source,
+               const NotificationDetails& details);
 
  private:
+  chromeos::ExistingUserController* controller_;
   NotificationRegistrar registrar_;
   base::WeakPtr<AutomationProvider> automation_;
   scoped_ptr<IPC::Message> reply_message_;
 
-  DISALLOW_COPY_AND_ASSIGN(LoginManagerObserver);
+  DISALLOW_COPY_AND_ASSIGN(LoginObserver);
 };
 
 // Collects SCREEN_LOCK_STATE_CHANGED notifications and returns
@@ -749,13 +768,37 @@ class ScreenLockUnlockObserver : public NotificationObserver {
   virtual void Observe(NotificationType type, const NotificationSource& source,
                        const NotificationDetails& details);
 
+ protected:
+  base::WeakPtr<AutomationProvider> automation_;
+  scoped_ptr<IPC::Message> reply_message_;
+
  private:
   NotificationRegistrar registrar_;
-  AutomationProvider* automation_;
-  IPC::Message* reply_message_;
   bool lock_screen_;
 
   DISALLOW_COPY_AND_ASSIGN(ScreenLockUnlockObserver);
+};
+
+// Watches SCREEN_LOCK_STATE_CHANGED notifications like the
+// ScreenLockUnlockObserver, but additionally adds itself as an observer
+// to a screen locker in order to monitor unlock failure cases.
+class ScreenUnlockObserver : public ScreenLockUnlockObserver,
+                             public chromeos::LoginStatusConsumer {
+ public:
+  ScreenUnlockObserver(AutomationProvider* automation,
+                       IPC::Message* reply_message);
+  virtual ~ScreenUnlockObserver();
+
+  virtual void OnLoginFailure(const chromeos::LoginFailure& error);
+
+  virtual void OnLoginSuccess(
+      const std::string& username,
+      const std::string& password,
+      const GaiaAuthConsumer::ClientLoginResult& credentials,
+      bool pending_requests) {}
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ScreenUnlockObserver);
 };
 
 class NetworkScanObserver
@@ -842,26 +885,28 @@ class AutomationProviderBookmarkModelObserver : BookmarkModelObserver {
                                           BookmarkModel* model);
   virtual ~AutomationProviderBookmarkModelObserver();
 
-  virtual void Loaded(BookmarkModel* model);
-  virtual void BookmarkModelBeingDeleted(BookmarkModel* model);
+  // BookmarkModelObserver:
+  virtual void Loaded(BookmarkModel* model) OVERRIDE;
+  virtual void BookmarkModelBeingDeleted(BookmarkModel* model) OVERRIDE;
   virtual void BookmarkNodeMoved(BookmarkModel* model,
                                  const BookmarkNode* old_parent,
                                  int old_index,
                                  const BookmarkNode* new_parent,
-                                 int new_index) {}
+                                 int new_index) OVERRIDE {}
   virtual void BookmarkNodeAdded(BookmarkModel* model,
                                  const BookmarkNode* parent,
-                                 int index) {}
+                                 int index) OVERRIDE {}
   virtual void BookmarkNodeRemoved(BookmarkModel* model,
                                    const BookmarkNode* parent,
                                    int old_index,
-                                   const BookmarkNode* node) {}
+                                   const BookmarkNode* node) OVERRIDE {}
   virtual void BookmarkNodeChanged(BookmarkModel* model,
-                                   const BookmarkNode* node) {}
-  virtual void BookmarkNodeFaviconLoaded(BookmarkModel* model,
-                                         const BookmarkNode* node) {}
-  virtual void BookmarkNodeChildrenReordered(BookmarkModel* model,
-                                             const BookmarkNode* node) {}
+                                   const BookmarkNode* node) OVERRIDE {}
+  virtual void BookmarkNodeFaviconChanged(BookmarkModel* model,
+                                          const BookmarkNode* node) OVERRIDE {}
+  virtual void BookmarkNodeChildrenReordered(
+      BookmarkModel* model,
+      const BookmarkNode* node) OVERRIDE {}
 
  private:
   // Reply to the automation message with the given success value,
@@ -1016,6 +1061,56 @@ class AutomationProviderGetPasswordsObserver : public PasswordStoreConsumer {
   scoped_ptr<IPC::Message> reply_message_;
 };
 
+// Observes when login entries stored in the password store are changed.  The
+// notifications are sent on the DB thread, the thread that interacts with the
+// web database.
+class PasswordStoreLoginsChangedObserver
+    : public base::RefCountedThreadSafe<
+          PasswordStoreLoginsChangedObserver,
+          BrowserThread::DeleteOnUIThread>,
+      public NotificationObserver {
+ public:
+  PasswordStoreLoginsChangedObserver(AutomationProvider* automation,
+                                     IPC::Message* reply_message,
+                                     PasswordStoreChange::Type expected_type,
+                                     const std::string& result_key);
+  virtual ~PasswordStoreLoginsChangedObserver();
+
+  // Schedules a task on the DB thread to register the appropriate observers.
+  virtual void Init();
+
+  // NotificationObserver interface.
+  virtual void Observe(NotificationType type,
+                       const NotificationSource& source,
+                       const NotificationDetails& details);
+
+ private:
+  friend struct BrowserThread::DeleteOnThread<BrowserThread::UI>;
+  friend class DeleteTask<PasswordStoreLoginsChangedObserver>;
+
+  // Registers the appropriate observers.  Called on the DB thread.
+  void RegisterObserversTask();
+
+  // Sends the |reply_message_| to |automation_| indicating we're done.  Called
+  // on the UI thread.
+  void IndicateDone();
+
+  // Sends an error reply to |automation_|.  Called on the UI thread.
+  void IndicateError(const std::string& error);
+
+  base::WeakPtr<AutomationProvider> automation_;
+  scoped_ptr<IPC::Message> reply_message_;
+  NotificationRegistrar registrar_;
+  PasswordStoreChange::Type expected_type_;
+  std::string result_key_;
+
+  // Used to ensure that the UI thread waits for the DB thread to finish
+  // registering observers before proceeding.
+  base::WaitableEvent done_event_;
+
+  DISALLOW_COPY_AND_ASSIGN(PasswordStoreLoginsChangedObserver);
+};
+
 // Allows the automation provider to wait for clearing browser data to finish.
 class AutomationProviderBrowsingDataObserver
     : public BrowsingDataRemover::Observer {
@@ -1163,7 +1258,7 @@ class AppLaunchObserver : public NotificationObserver {
 };
 
 // Allows automation provider to wait until the autocomplete edit
-// has received focus
+// has received focus.
 class AutocompleteEditFocusedObserver : public NotificationObserver {
  public:
   AutocompleteEditFocusedObserver(AutomationProvider* automation,
@@ -1184,6 +1279,81 @@ class AutocompleteEditFocusedObserver : public NotificationObserver {
   DISALLOW_COPY_AND_ASSIGN(AutocompleteEditFocusedObserver);
 };
 
+// Observes when Autofill information is displayed in the renderer.  This can
+// happen in two different ways: (1) a popup containing Autofill suggestions
+// has been shown in the renderer; (2) a webpage form is filled or previewed
+// with Autofill suggestions.  A constructor argument specifies the appropriate
+// notification to wait for.
+class AutofillDisplayedObserver : public NotificationObserver {
+ public:
+  AutofillDisplayedObserver(NotificationType notification,
+                            RenderViewHost* render_view_host,
+                            AutomationProvider* automation,
+                            IPC::Message* reply_message);
+  virtual ~AutofillDisplayedObserver();
+
+  // NotificationObserver interface.
+  virtual void Observe(NotificationType type,
+                       const NotificationSource& source,
+                       const NotificationDetails& details);
+
+ private:
+  NotificationType notification_;
+  RenderViewHost* render_view_host_;
+  base::WeakPtr<AutomationProvider> automation_;
+  scoped_ptr<IPC::Message> reply_message_;
+  NotificationRegistrar registrar_;
+
+  DISALLOW_COPY_AND_ASSIGN(AutofillDisplayedObserver);
+};
+
+// Observes when a specified number of autofill profiles and credit cards have
+// been changed in the WebDataService.  The notifications are sent on the DB
+// thread, the thread that interacts with the database.
+class AutofillChangedObserver
+    : public base::RefCountedThreadSafe<
+          AutofillChangedObserver,
+          BrowserThread::DeleteOnUIThread>,
+      public NotificationObserver {
+ public:
+  AutofillChangedObserver(AutomationProvider* automation,
+                          IPC::Message* reply_message,
+                          int num_profiles,
+                          int num_credit_cards);
+  virtual ~AutofillChangedObserver();
+
+  // Schedules a task on the DB thread to register the appropriate observers.
+  virtual void Init();
+
+  // NotificationObserver interface.
+  virtual void Observe(NotificationType type,
+                       const NotificationSource& source,
+                       const NotificationDetails& details);
+
+ private:
+  friend struct BrowserThread::DeleteOnThread<BrowserThread::UI>;
+  friend class DeleteTask<AutofillChangedObserver>;
+
+  // Registers the appropriate observers.  Called on the DB thread.
+  void RegisterObserversTask();
+
+  // Sends the |reply_message_| to |automation_| indicating we're done.  Called
+  // on the UI thread.
+  void IndicateDone();
+
+  base::WeakPtr<AutomationProvider> automation_;
+  scoped_ptr<IPC::Message> reply_message_;
+  NotificationRegistrar registrar_;
+  int num_profiles_;
+  int num_credit_cards_;
+
+  // Used to ensure that the UI thread waits for the DB thread to finish
+  // registering observers before proceeding.
+  base::WaitableEvent done_event_;
+
+  DISALLOW_COPY_AND_ASSIGN(AutofillChangedObserver);
+};
+
 // Allows the automation provider to wait until all the notification
 // processes are ready.
 class GetActiveNotificationsObserver : public NotificationObserver {
@@ -1197,27 +1367,40 @@ class GetActiveNotificationsObserver : public NotificationObserver {
                        const NotificationDetails& details);
 
  private:
+  // Sends a message via the |AutomationProvider|. |automation_| must be valid.
+  // Deletes itself after the message is sent.
   void SendMessage();
 
-  AutomationJSONReply reply_;
   NotificationRegistrar registrar_;
+  base::WeakPtr<AutomationProvider> automation_;
+  scoped_ptr<IPC::Message> reply_message_;
 
   DISALLOW_COPY_AND_ASSIGN(GetActiveNotificationsObserver);
 };
 
 // Allows the automation provider to wait for a given number of
 // notification balloons.
-class OnNotificationBalloonCountObserver {
+class OnNotificationBalloonCountObserver : public NotificationObserver {
  public:
   OnNotificationBalloonCountObserver(AutomationProvider* provider,
                                      IPC::Message* reply_message,
-                                     BalloonCollection* collection,
                                      int count);
+  virtual ~OnNotificationBalloonCountObserver();
 
-  void OnBalloonCollectionChanged();
+  // Sends an automation reply message if |automation_| is still valid and the
+  // number of ready balloons matches the desired count. Deletes itself if the
+  // message is sent or if |automation_| is invalid.
+  void CheckBalloonCount();
+
+  virtual void Observe(NotificationType type,
+                       const NotificationSource& source,
+                       const NotificationDetails& details);
 
  private:
-  AutomationJSONReply reply_;
+  NotificationRegistrar registrar_;
+  base::WeakPtr<AutomationProvider> automation_;
+  scoped_ptr<IPC::Message> reply_message_;
+
   BalloonCollection* collection_;
   int count_;
 
@@ -1244,13 +1427,13 @@ class RendererProcessClosedObserver : public NotificationObserver {
   DISALLOW_COPY_AND_ASSIGN(RendererProcessClosedObserver);
 };
 
-// Allows the automation provider to wait for acknowledgement that a input
-// event has been handled.
+// Allows the automation provider to wait for acknowledgement that a certain
+// type and number of input events has been processed by the renderer.
 class InputEventAckNotificationObserver : public NotificationObserver {
  public:
   InputEventAckNotificationObserver(AutomationProvider* automation,
                                     IPC::Message* reply_message,
-                                    int event_type);
+                                    int event_type, int count);
   virtual ~InputEventAckNotificationObserver();
 
   virtual void Observe(NotificationType type,
@@ -1262,6 +1445,7 @@ class InputEventAckNotificationObserver : public NotificationObserver {
   base::WeakPtr<AutomationProvider> automation_;
   scoped_ptr<IPC::Message> reply_message_;
   int event_type_;
+  int count_;
 
   DISALLOW_COPY_AND_ASSIGN(InputEventAckNotificationObserver);
 };

@@ -23,7 +23,6 @@
 #include "views/painter.h"
 #include "views/screen.h"
 #include "views/widget/widget.h"
-#include "views/widget/widget_gtk.h"
 
 namespace chromeos {
 
@@ -103,14 +102,15 @@ void ThrobberHostView::StartThrobber() {
   views::SmoothedThrobber* throbber = CreateDefaultSmoothedThrobber();
   throbber->set_stop_delay_ms(0);
   gfx::Rect throbber_bounds = CalculateThrobberBounds(throbber);
-
-  views::Widget::CreateParams params(views::Widget::CreateParams::TYPE_POPUP);
-  params.transparent = true;
-  throbber_widget_ = views::Widget::CreateWidget(params);
-  static_cast<views::WidgetGtk*>(throbber_widget_)->make_transient_to_parent();
-
   throbber_bounds.Offset(host_view_->GetScreenBounds().origin());
-  throbber_widget_->Init(host_gtk_window, throbber_bounds);
+
+  throbber_widget_ = new views::Widget;
+
+  views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
+  params.transparent = true;
+  params.bounds = throbber_bounds;
+  params.parent = host_gtk_window;
+  throbber_widget_->Init(params);
   throbber_widget_->SetContentsView(throbber);
   // This keeps the window from flashing at startup.
   gdk_window_set_back_pixmap(

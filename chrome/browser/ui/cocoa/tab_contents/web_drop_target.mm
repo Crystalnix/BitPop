@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include "base/sys_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "chrome/browser/bookmarks/bookmark_pasteboard_helper_mac.h"
+#include "chrome/browser/ui/cocoa/drag_util.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #import "third_party/mozilla/NSPasteboard+Utils.h"
@@ -65,7 +66,7 @@ using WebKit::WebDragOperationsMask;
   return tabContents_->showing_interstitial_page();
 }
 
-// Messages to send during the tracking of a drag, ususally upon recieving
+// Messages to send during the tracking of a drag, usually upon receiving
 // calls from the view system. Communicates the drag messages to WebCore.
 
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)info
@@ -80,7 +81,7 @@ using WebKit::WebDragOperationsMask;
     return NSDragOperationNone;
   }
 
-  // If the tab is showing the boomark manager, send BookmarkDrag events
+  // If the tab is showing the bookmark manager, send BookmarkDrag events
   RenderViewHostDelegate::BookmarkDrag* dragDelegate =
       tabContents_->GetBookmarkDragDelegate();
   BookmarkNodeData dragData;
@@ -141,7 +142,7 @@ using WebKit::WebDragOperationsMask;
       gfx::Point(screenPoint.x, screenPoint.y),
       static_cast<WebDragOperationsMask>(mask));
 
-  // If the tab is showing the boomark manager, send BookmarkDrag events
+  // If the tab is showing the bookmark manager, send BookmarkDrag events
   RenderViewHostDelegate::BookmarkDrag* dragDelegate =
       tabContents_->GetBookmarkDragDelegate();
   BookmarkNodeData dragData;
@@ -160,10 +161,7 @@ using WebKit::WebDragOperationsMask;
     NSPasteboard* pboard = [info draggingPasteboard];
     if ([pboard containsURLData]) {
       GURL url;
-      [self populateURL:&url
-          andTitle:NULL
-          fromPasteboard:pboard
-          convertingFilenames:YES];
+      drag_util::PopulateURLAndTitleFromPasteBoard(&url, NULL, pboard, YES);
       tabContents_->OpenURL(url, GURL(), CURRENT_TAB,
                             PageTransition::AUTO_BOOKMARK);
       return YES;
@@ -171,7 +169,7 @@ using WebKit::WebDragOperationsMask;
     return NO;
   }
 
-  // If the tab is showing the boomark manager, send BookmarkDrag events
+  // If the tab is showing the bookmark manager, send BookmarkDrag events
   RenderViewHostDelegate::BookmarkDrag* dragDelegate =
       tabContents_->GetBookmarkDragDelegate();
   BookmarkNodeData dragData;
@@ -192,46 +190,6 @@ using WebKit::WebDragOperationsMask;
   return YES;
 }
 
-// Populate the |url| and |title| with URL data in |pboard|. There may be more
-// than one, but we only handle dropping the first. |url| must not be |NULL|;
-// |title| is an optional parameter. Returns |YES| if URL data was obtained from
-// the pasteboard, |NO| otherwise. If |convertFilenames| is |YES|, the function
-// will also attempt to convert filenames in |pboard| to file URLs.
-- (BOOL)populateURL:(GURL*)url
-    andTitle:(string16*)title
-    fromPasteboard:(NSPasteboard*)pboard
-    convertingFilenames:(BOOL)convertFilenames {
-  DCHECK(url);
-  DCHECK(title);
-
-  // Bail out early if there's no URL data.
-  if (![pboard containsURLData])
-    return NO;
-
-  // |-getURLs:andTitles:convertingFilenames:| will already validate URIs so we
-  // don't need to again. The arrays returned are both of NSString's.
-  NSArray* urls = nil;
-  NSArray* titles = nil;
-  [pboard getURLs:&urls andTitles:&titles convertingFilenames:convertFilenames];
-  DCHECK_EQ([urls count], [titles count]);
-  // It's possible that no URLs were actually provided!
-  if (![urls count])
-    return NO;
-  NSString* urlString = [urls objectAtIndex:0];
-  if ([urlString length]) {
-    // Check again just to make sure to not assign NULL into a std::string,
-    // which throws an exception.
-    const char* utf8Url = [urlString UTF8String];
-    if (utf8Url) {
-      *url = GURL(utf8Url);
-      // Extra paranoia check.
-      if (title && [titles count])
-        *title = base::SysNSStringToUTF16([titles objectAtIndex:0]);
-    }
-  }
-  return YES;
-}
-
 // Given |data|, which should not be nil, fill it in using the contents of the
 // given pasteboard.
 - (void)populateWebDropData:(WebDropData*)data
@@ -242,10 +200,10 @@ using WebKit::WebDragOperationsMask;
 
   // Get URL if possible. To avoid exposing file system paths to web content,
   // filenames in the drag are not converted to file URLs.
-  [self populateURL:&data->url
-      andTitle:&data->url_title
-      fromPasteboard:pboard
-      convertingFilenames:NO];
+  drag_util::PopulateURLAndTitleFromPasteBoard(&data->url,
+                                               &data->url_title,
+                                               pboard,
+                                               NO);
 
   // Get plain text.
   if ([types containsObject:NSStringPboardType]) {

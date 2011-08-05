@@ -21,6 +21,7 @@ const int kPacketHeaderSize = sizeof(uint16);
 P2PSocketHostTcp::P2PSocketHostTcp(IPC::Message::Sender* message_sender,
                                    int routing_id, int id)
     : P2PSocketHost(message_sender, routing_id, id),
+      authorized_(false),
       ALLOW_THIS_IN_INITIALIZER_LIST(
           connect_callback_(this, &P2PSocketHostTcp::OnConnected)),
       ALLOW_THIS_IN_INITIALIZER_LIST(
@@ -37,7 +38,7 @@ P2PSocketHostTcp::~P2PSocketHostTcp() {
 }
 
 bool P2PSocketHostTcp::InitAccepted(const net::IPEndPoint& remote_address,
-                                    net::ClientSocket* socket) {
+                                    net::StreamSocket* socket) {
   DCHECK(socket);
   DCHECK_EQ(state_, STATE_UNINITIALIZED);
 
@@ -54,9 +55,16 @@ bool P2PSocketHostTcp::Init(const net::IPEndPoint& local_address,
 
   remote_address_ = remote_address;
   state_ = STATE_CONNECTING;
-  socket_.reset(new net::TCPClientSocket(
-      net::AddressList(remote_address.address(), remote_address.port(), false),
+  scoped_ptr<net::TCPClientSocket> tcp_socket(new net::TCPClientSocket(
+      net::AddressList::CreateFromIPAddress(
+          remote_address.address(), remote_address.port()),
       NULL, net::NetLog::Source()));
+  if (tcp_socket->Bind(local_address) != net::OK) {
+    OnError();
+    return false;
+  }
+  socket_.reset(tcp_socket.release());
+
   int result = socket_->Connect(&connect_callback_);
   if (result != net::ERR_IO_PENDING) {
     OnConnected(result);

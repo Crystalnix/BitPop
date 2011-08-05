@@ -9,7 +9,7 @@
 #include <set>
 
 #include "base/hash_tables.h"
-#include "base/memory/scoped_ptr.h"
+#include "base/memory/ref_counted.h"
 #include "third_party/angle/include/GLSLANG/ShaderLang.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebGraphicsContext3D.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
@@ -19,6 +19,7 @@
 #endif
 namespace gfx {
 class GLContext;
+class GLSurface;
 }
 
 using WebKit::WGC3Dchar;
@@ -93,6 +94,8 @@ class WebGraphicsContext3DInProcessImpl : public WebGraphicsContext3D {
   virtual void getChildToParentLatchCHROMIUM(WGC3Duint* latch_id);
   virtual void waitLatchCHROMIUM(WGC3Duint latch_id);
   virtual void setLatchCHROMIUM(WGC3Duint latch_id);
+
+  virtual void rateLimitOffscreenContextCHROMIUM() { }
 
   virtual WebString getRequestableExtensionsCHROMIUM();
   virtual void requestExtensionCHROMIUM(const char*);
@@ -465,7 +468,8 @@ class WebGraphicsContext3DInProcessImpl : public WebGraphicsContext3D {
   std::list<WGC3Denum> synthetic_errors_list_;
   std::set<WGC3Denum> synthetic_errors_set_;
 
-  scoped_ptr<gfx::GLContext> gl_context_;
+  scoped_refptr<gfx::GLContext> gl_context_;
+  scoped_refptr<gfx::GLSurface> gl_surface_;
 
   ShaderSourceMap shader_source_map_;
 
@@ -477,4 +481,3 @@ class WebGraphicsContext3DInProcessImpl : public WebGraphicsContext3D {
 }  // namespace webkit
 
 #endif  // WEBKIT_GPU_WEBGRAPHICSCONTEXT3D_IN_PROCESS_IMPL_H_
-

@@ -34,6 +34,9 @@ cr.define('gpu', function() {
   function TimelineViewport() {
     this.scaleX_ = 1;
     this.panX_ = 0;
+    this.gridTimebase_ = 0;
+    this.gridStep_ = 1000 / 60;
+    this.gridEnabled_ = false;
   }
 
   TimelineViewport.prototype = {
@@ -101,6 +104,32 @@ cr.define('gpu', function() {
       this.panX = (viewX / this.scaleX_) - worldX;
     },
 
+    get gridEnabled() {
+      return this.gridEnabled_;
+    },
+
+    set gridEnabled(enabled) {
+      if (this.gridEnabled_ == enabled)
+        return;
+      this.gridEnabled_ = enabled && true;
+      cr.dispatchSimpleEvent(this, 'change');
+    },
+
+    get gridTimebase() {
+      return this.gridTimebase_;
+    },
+
+    set gridTimebase(timebase) {
+      if (this.gridTimebase_ == timebase)
+        return;
+      this.gridTimebase_ = timebase;
+      cr.dispatchSimpleEvent(this, 'change');
+    },
+
+    get gridStep() {
+      return this.gridStep_;
+    },
+
     applyTransformToCanavs: function(ctx) {
       ctx.transform(this.scaleX_, 0, 0, 1, this.panX_ * this.scaleX_, 0);
     }
@@ -127,7 +156,8 @@ cr.define('gpu', function() {
       this.needsViewportReset_ = false;
 
       this.viewport_ = new TimelineViewport();
-      this.viewport_.addEventListener('change', this.invalidate.bind(this));
+      this.viewport_.addEventListener('change',
+                                      this.viewportChange_.bind(this));
 
       this.invalidatePending_ = false;
 
@@ -153,9 +183,10 @@ cr.define('gpu', function() {
       }.bind(this), 250);
 
       document.addEventListener('keypress', this.onKeypress_.bind(this));
-      this.addEventListener('mousedown', this.onMouseDown_.bind(this));
-      this.addEventListener('mousemove', this.onMouseMove_.bind(this));
-      this.addEventListener('mouseup', this.onMouseUp_.bind(this));
+      document.addEventListener('mousedown', this.onMouseDown_.bind(this));
+      document.addEventListener('mousemove', this.onMouseMove_.bind(this));
+      document.addEventListener('mouseup', this.onMouseUp_.bind(this));
+
       this.lastMouseViewPos_ = {x: 0, y: 0};
 
       this.selection_ = [];
@@ -186,6 +217,10 @@ cr.define('gpu', function() {
       }
 
       this.needsViewportReset_ = true;
+    },
+
+    viewportChange_: function() {
+      this.invalidate();
     },
 
     invalidate: function() {
@@ -255,6 +290,12 @@ cr.define('gpu', function() {
             vp.scaleX = vp.scaleX / 1.5;
             vp.xPanWorldPosToViewPos(curCenterW, curMouseV, viewWidth);
             break;
+          case 103:  // g
+            this.onGridToggle_(true);
+            break;
+          case 71:  // G
+            this.onGridToggle_(false);
+            break;
           case 87:  // W
             curMouseV = this.lastMouseViewPos_.x;
             curCenterW = vp.xViewToWorld(curMouseV);
@@ -287,7 +328,8 @@ cr.define('gpu', function() {
       return 'Keyboard shortcuts:\n' +
           ' w/s   : Zoom in/out\n' +
           ' a/d   : Pan left/right\n' +
-          ' e     : Center on mouse';
+          ' e     : Center on mouse' +
+          ' g/G   : Shows grid at the start/end of the selected task';
     },
 
     get selection() {
@@ -300,11 +342,13 @@ cr.define('gpu', function() {
     },
 
     showDragBox_: function() {
-      this.dragBox_.hidden = false;
     },
 
     hideDragBox_: function() {
-      this.dragBox_.hidden = true;
+      this.dragBox_.style.left = '-1000px';
+      this.dragBox_.style.top = '-1000px';
+      this.dragBox_.style.width = 0;
+      this.dragBox_.style.height = 0;
     },
 
     setDragBoxPosition_: function(eDown, eCur) {
@@ -331,12 +375,36 @@ cr.define('gpu', function() {
       this.dispatchEvent(e);
     },
 
+    onGridToggle_: function(left) {
+      var tb;
+      if (left)
+        tb = Math.min.apply(Math, this.selection_.map(
+            function(x) { return x.slice.start; }));
+      else
+        tb = Math.max.apply(Math, this.selection_.map(
+            function(x) { return x.slice.end; }));
+
+      // Shift the timebase left until its just left of minTimestamp.
+      var numInterfvalsSinceStart = Math.ceil((tb - this.model_.minTimestamp) /
+          this.viewport_.gridStep_);
+      this.viewport_.gridTimebase = tb -
+          (numInterfvalsSinceStart + 1) * this.viewport_.gridStep_;
+      this.viewport_.gridEnabled = true;
+    },
+
     onMouseDown_: function(e) {
+      if (e.clientX < this.offsetLeft ||
+          e.clientX >= this.offsetLeft + this.offsetWidth ||
+          e.clientY < this.offsetTop ||
+          e.clientY >= this.offsetTop + this.offsetHeight)
+        return;
+
       var canv = this.firstCanvas;
       var pos = {
         x: e.clientX - canv.offsetLeft,
         y: e.clientY - canv.offsetTop
       };
+
       var wX = this.viewport_.xViewToWorld(pos.x);
 
       // Update the drag box position
@@ -387,6 +455,7 @@ cr.define('gpu', function() {
         for (i = 0; i < this.selection_.length; ++i) {
           this.selection_[i].slice.selected = false;
         }
+
         // Figure out what has been hit.
         var selection = [];
         function addHit(type, track, slice) {
@@ -396,8 +465,9 @@ cr.define('gpu', function() {
           var track = this.tracks_.children[i];
 
           // Only check tracks that insersect the rect.
-          var a = Math.max(loY, track.offsetTop);
-          var b = Math.min(hiY, track.offsetTop + track.offsetHeight);
+          var trackClientRect = track.getBoundingClientRect();
+          var a = Math.max(loY, trackClientRect.top);
+          var b = Math.min(hiY, trackClientRect.bottom);
           if (a <= b) {
             track.pickRange(loWX, hiWX, loY, hiY, addHit);
           }

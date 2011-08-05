@@ -10,6 +10,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "chrome/browser/policy/configuration_policy_provider.h"
+#include "chrome/browser/profiles/profile_keyed_service.h"
 
 class Profile;
 
@@ -22,10 +23,14 @@ class UserPolicyIdentityStrategy;
 // profile. Since the subsystem owns the policy provider, it's vital that it
 // gets initialized before the profile's prefs and destroyed after the prefs
 // are gone.
-class ProfilePolicyConnector {
+class ProfilePolicyConnector : public ProfileKeyedService {
  public:
   explicit ProfilePolicyConnector(Profile* profile);
-  ~ProfilePolicyConnector();
+  virtual ~ProfilePolicyConnector();
+
+  // Schedules initialization of the policy backend service if the service is
+  // already constructed.
+  void ScheduleServiceInitialization(int64 delay_milliseconds);
 
   // Initializes the context. Should be called only after the profile's request
   // context is up.
@@ -33,7 +38,11 @@ class ProfilePolicyConnector {
 
   // Shuts the context down. This must be called before the networking
   // infrastructure in the profile goes away.
-  void Shutdown();
+  //
+  // TODO(jknotten): this will be called by ProfileDependencyManager --
+  // ensure that it is dependent on the right services. See comment
+  // in ProfilePolicyConnectorFactory::ProfilePolicyConnectorFactory.
+  virtual void Shutdown() OVERRIDE;
 
   ConfigurationPolicyProvider* GetManagedCloudProvider();
   ConfigurationPolicyProvider* GetRecommendedCloudProvider();

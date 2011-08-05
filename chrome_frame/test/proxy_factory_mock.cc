@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 #include "base/synchronization/waitable_event.h"
+#include "chrome_frame/crash_reporting/crash_metrics.h"
 #include "chrome_frame/test/proxy_factory_mock.h"
 
 #define GMOCK_MUTANT_INCLUDE_LATE_OBJECT_BINDING
@@ -13,6 +14,8 @@ using testing::_;
 DISABLE_RUNNABLE_METHOD_REFCOUNT(MockProxyFactory);
 
 TEST(ProxyFactoryTest, CreateDestroy) {
+  CrashMetricsReporter::GetInstance()->set_active(true);
+
   ProxyFactory f;
   LaunchDelegateMock d;
   EXPECT_CALL(d, LaunchComplete(testing::NotNull(), testing::_)).Times(1);
@@ -31,6 +34,7 @@ TEST(ProxyFactoryTest, CreateDestroy) {
 }
 
 TEST(ProxyFactoryTest, CreateSameProfile) {
+  CrashMetricsReporter::GetInstance()->set_active(true);
   ProxyFactory f;
   LaunchDelegateMock d;
   LaunchDelegateMock d2;
@@ -57,6 +61,7 @@ TEST(ProxyFactoryTest, CreateSameProfile) {
 }
 
 TEST(ProxyFactoryTest, CreateDifferentProfiles) {
+  CrashMetricsReporter::GetInstance()->set_active(true);
   ProxyFactory f;
   LaunchDelegateMock d;
   EXPECT_CALL(d, LaunchComplete(testing::NotNull(), testing::_)).Times(2);
@@ -86,7 +91,10 @@ TEST(ProxyFactoryTest, CreateDifferentProfiles) {
   f.ReleaseAutomationServer(i1, &d);
 }
 
-TEST(ProxyFactoryTest, FastCreateDestroy) {
+// This test has been disabled because it crashes randomly on the builders.
+// http://code.google.com/p/chromium/issues/detail?id=81039
+TEST(ProxyFactoryTest, DISABLED_FastCreateDestroy) {
+  CrashMetricsReporter::GetInstance()->set_active(true);
   ProxyFactory f;
   LaunchDelegateMock* d1 = new LaunchDelegateMock();
   LaunchDelegateMock* d2 = new LaunchDelegateMock();

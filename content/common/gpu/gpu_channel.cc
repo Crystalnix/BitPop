@@ -9,16 +9,18 @@
 #include "content/common/gpu/gpu_channel.h"
 
 #include "base/command_line.h"
+#include "base/debug/trace_event.h"
 #include "base/process_util.h"
 #include "base/string_util.h"
 #include "content/common/child_process.h"
 #include "content/common/content_client.h"
 #include "content/common/content_switches.h"
-#include "content/common/gpu_messages.h"
 #include "content/common/gpu/gpu_channel_manager.h"
+#include "content/common/gpu/gpu_messages.h"
 #include "content/common/gpu/gpu_video_service.h"
 #include "content/common/gpu/transport_texture.h"
- 
+#include "ui/gfx/gl/gl_surface.h"
+
 #if defined(OS_POSIX)
 #include "ipc/ipc_channel_posix.h"
 #endif
@@ -108,6 +110,9 @@ void GpuChannel::OnChannelConnected(int32 peer_pid) {
 }
 
 bool GpuChannel::Send(IPC::Message* message) {
+  // The GPU process must never send a synchronous IPC message to the renderer
+  // process. This could result in deadlock.
+  DCHECK(!message->is_sync());
   if (log_messages_) {
     VLOG(1) << "sending message @" << message << " on channel @" << this
             << " with type " << message->type();
@@ -123,6 +128,25 @@ bool GpuChannel::Send(IPC::Message* message) {
 
 void GpuChannel::LoseAllContexts() {
   gpu_channel_manager_->LoseAllContexts();
+}
+
+void GpuChannel::DestroySoon() {
+  MessageLoop::current()->PostTask(
+      FROM_HERE, NewRunnableMethod(this,
+          &GpuChannel::OnDestroy));
+}
+
+void GpuChannel::OnDestroy() {
+  TRACE_EVENT0("gpu", "GpuChannel::OnDestroy");
+  gpu_channel_manager_->RemoveChannel(renderer_id_);
+}
+
+gfx::GLSurface* GpuChannel::LookupSurface(int surface_id) {
+  GpuSurfaceStub *surface_stub = surfaces_.Lookup(surface_id);
+  if (!surface_stub)
+    return NULL;
+
+  return surface_stub->surface();
 }
 
 void GpuChannel::CreateViewCommandBuffer(
@@ -184,6 +208,9 @@ bool GpuChannel::OnControlMessageReceived(const IPC::Message& msg) {
         OnCreateOffscreenCommandBuffer)
     IPC_MESSAGE_HANDLER(GpuChannelMsg_DestroyCommandBuffer,
         OnDestroyCommandBuffer)
+    IPC_MESSAGE_HANDLER(GpuChannelMsg_CreateOffscreenSurface,
+                        OnCreateOffscreenSurface)
+    IPC_MESSAGE_HANDLER(GpuChannelMsg_DestroySurface, OnDestroySurface)
     IPC_MESSAGE_HANDLER(GpuChannelMsg_CreateVideoDecoder,
         OnCreateVideoDecoder)
     IPC_MESSAGE_HANDLER(GpuChannelMsg_DestroyVideoDecoder,
@@ -236,6 +263,8 @@ void GpuChannel::OnCreateOffscreenCommandBuffer(
       0, 0, watchdog_));
   router_.AddRoute(*route_id, stub.get());
   stubs_.AddWithID(stub.release(), *route_id);
+  TRACE_EVENT1("gpu", "GpuChannel::OnCreateOffscreenCommandBuffer",
+               "route_id", route_id);
 #else
   *route_id = MSG_ROUTING_NONE;
 #endif
@@ -243,15 +272,52 @@ void GpuChannel::OnCreateOffscreenCommandBuffer(
 
 void GpuChannel::OnDestroyCommandBuffer(int32 route_id) {
 #if defined(ENABLE_GPU)
+  TRACE_EVENT1("gpu", "GpuChannel::OnDestroyCommandBuffer",
+               "route_id", route_id);
   if (router_.ResolveRoute(route_id)) {
+    GpuCommandBufferStub* stub = stubs_.Lookup(route_id);
+    // In case the renderer is currently blocked waiting for a sync reply from
+    // the stub, allow the stub to clean up and unblock pending messages here:
+    if (stub != NULL)
+      stub->CommandBufferWasDestroyed();
     router_.RemoveRoute(route_id);
     stubs_.Remove(route_id);
   }
 #endif
 }
 
-void GpuChannel::OnCreateVideoDecoder(int32 context_route_id,
-							int32 decoder_host_id) {
+void GpuChannel::OnCreateOffscreenSurface(const gfx::Size& size,
+                                          int* route_id) {
+  *route_id = MSG_ROUTING_NONE;
+
+#if defined(ENABLE_GPU)
+  scoped_refptr<gfx::GLSurface> surface(
+       gfx::GLSurface::CreateOffscreenGLSurface(size));
+  if (!surface.get())
+    return;
+
+  *route_id = GenerateRouteID();
+
+  scoped_ptr<GpuSurfaceStub> stub (new GpuSurfaceStub(this,
+                                                      *route_id,
+                                                      surface.release()));
+
+  router_.AddRoute(*route_id, stub.get());
+  surfaces_.AddWithID(stub.release(), *route_id);
+#endif
+}
+
+void GpuChannel::OnDestroySurface(int route_id) {
+#if defined(ENABLE_GPU)
+  if (router_.ResolveRoute(route_id)) {
+    router_.RemoveRoute(route_id);
+    surfaces_.Remove(route_id);
+  }
+#endif
+}
+
+void GpuChannel::OnCreateVideoDecoder(
+    int32 decoder_host_id, const std::vector<uint32>& configs) {
 // TODO(cevans): do NOT re-enable this until GpuVideoService has been checked
 // for integer overflows, including the classic "width * height" overflow.
 #if 0
@@ -262,16 +328,11 @@ void GpuChannel::OnCreateVideoDecoder(int32 context_route_id,
     return;
   }
 
-  // The context ID corresponds to the command buffer used.
-  GpuCommandBufferStub* stub = stubs_.Lookup(context_route_id);
   int32 decoder_id = GenerateRouteID();
 
-  // TODO(hclam): Need to be careful about the lifetime of the command buffer
-  // decoder.
   bool ret = service->CreateVideoDecoder(
-      this, &router_, decoder_host_id, decoder_id,
-      stub->scheduler()->decoder());
-  DCHECK(ret) << "Failed to create a GpuVideoDecoder";
+      this, &router_, decoder_host_id, decoder_id, configs);
+  DCHECK(ret) << "Failed to create a GpuVideoDecodeAccelerator";
 #endif
 }
 
@@ -290,7 +351,7 @@ void GpuChannel::OnCreateTransportTexture(int32 context_route_id,
  #if defined(ENABLE_GPU)
    GpuCommandBufferStub* stub = stubs_.Lookup(context_route_id);
    int32 route_id = GenerateRouteID();
- 
+
    scoped_ptr<TransportTexture> transport(
        new TransportTexture(this, channel_.get(), stub->scheduler()->decoder(),
                             host_id, route_id));
@@ -303,7 +364,7 @@ void GpuChannel::OnCreateTransportTexture(int32 context_route_id,
  #endif
  }
 
-bool GpuChannel::Init(MessageLoop* io_message_loop,
+bool GpuChannel::Init(base::MessageLoopProxy* io_message_loop,
                       base::WaitableEvent* shutdown_event) {
   // Check whether we're already initialized.
   if (channel_.get())

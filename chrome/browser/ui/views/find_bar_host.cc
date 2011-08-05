@@ -15,6 +15,7 @@
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/browser/tab_contents/tab_contents_view.h"
+#include "content/common/view_messages.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "views/focus/external_focus_tracker.h"
 #include "views/focus/view_storage.h"
@@ -36,7 +37,8 @@ FindBar* CreateFindBar(BrowserView* browser_view) {
 FindBarHost::FindBarHost(BrowserView* browser_view)
     : DropdownBarHost(browser_view),
       find_bar_controller_(NULL) {
-  Init(new FindBarView(this));
+  FindBarView* find_bar_view = new FindBarView(this);
+  Init(find_bar_view, find_bar_view);
 }
 
 FindBarHost::~FindBarHost() {
@@ -72,7 +74,8 @@ bool FindBarHost::MaybeForwardKeyEventToWebpage(
 
   // Make sure we don't have a text field element interfering with keyboard
   // input. Otherwise Up and Down arrow key strokes get eaten. "Nom Nom Nom".
-  render_view_host->ClearFocusedNode();
+  render_view_host->Send(
+      new ViewMsg_ClearFocusedNode(render_view_host->routing_id()));
   NativeWebKeyboardEvent event = GetKeyboardEvent(contents->tab_contents(),
                                                   key_event);
   render_view_host->ForwardKeyboardEvent(event);
@@ -169,7 +172,7 @@ FindBarTesting* FindBarHost::GetFindBarTesting() {
 // FindBarWin, views::AcceleratorTarget implementation:
 
 bool FindBarHost::AcceleratorPressed(const views::Accelerator& accelerator) {
-  ui::KeyboardCode key = accelerator.GetKeyCode();
+  ui::KeyboardCode key = accelerator.key_code();
   if (key == ui::VKEY_RETURN && accelerator.IsCtrlDown()) {
     // Ctrl+Enter closes the Find session and navigates any link that is active.
     find_bar_controller_->EndFindSession(FindBarController::kActivateSelection);
@@ -224,6 +227,11 @@ string16 FindBarHost::GetFindSelectedText() {
 
 string16 FindBarHost::GetMatchCountText() {
   return find_bar_view()->GetMatchCountText();
+}
+
+int FindBarHost::GetWidth() {
+  NOTIMPLEMENTED();
+  return 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

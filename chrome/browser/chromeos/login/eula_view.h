@@ -6,13 +6,11 @@
 #define CHROME_BROWSER_CHROMEOS_LOGIN_EULA_VIEW_H_
 #pragma once
 
-#include "base/memory/ref_counted.h"
 #include "chrome/browser/chromeos/login/message_bubble.h"
-#include "chrome/browser/chromeos/login/view_screen.h"
 #include "content/browser/tab_contents/tab_contents_delegate.h"
 #include "ui/gfx/native_widget_types.h"
 #include "views/controls/button/button.h"
-#include "views/controls/link.h"
+#include "views/controls/link_listener.h"
 #include "views/view.h"
 
 namespace views {
@@ -29,7 +27,7 @@ class DOMView;
 namespace chromeos {
 
 class HelpAppLauncher;
-class MetricsCrosSettingsProvider;
+class ViewsEulaScreenActor;
 
 // Delegate for TabContents that will show EULA.
 // Blocks context menu and other actions.
@@ -55,17 +53,13 @@ class EULATabContentsDelegate : public TabContentsDelegate {
   virtual void DeactivateContents(TabContents* contents) {}
   virtual void LoadingStateChanged(TabContents* source) {}
   virtual void CloseContents(TabContents* source) {}
-  virtual bool IsPopup(TabContents* source) { return false; }
+  virtual bool IsPopup(TabContents* source);
   virtual void UpdateTargetURL(TabContents* source, const GURL& url) {}
   virtual bool ShouldAddNavigationToHistory(
       const history::HistoryAddPageArgs& add_page_args,
-      NavigationType::Type navigation_type) {
-    return false;
-  }
+      NavigationType::Type navigation_type);
   virtual void MoveContents(TabContents* source, const gfx::Rect& pos) {}
-  virtual bool HandleContextMenu(const ContextMenuParams& params) {
-    return true;
-  }
+  virtual bool HandleContextMenu(const ContextMenuParams& params);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(EULATabContentsDelegate);
@@ -74,11 +68,11 @@ class EULATabContentsDelegate : public TabContentsDelegate {
 class EulaView
     : public views::View,
       public views::ButtonListener,
-      public views::LinkController,
+      public views::LinkListener,
       public MessageBubbleDelegate,
       public EULATabContentsDelegate {
  public:
-  explicit EulaView(chromeos::ScreenObserver* observer);
+  explicit EulaView(ViewsEulaScreenActor* actor);
   virtual ~EulaView();
 
   // Initialize view controls and layout.
@@ -87,6 +81,9 @@ class EulaView
   // Update strings from the resources. Executed on language change.
   void UpdateLocalizedStrings();
 
+  // Returns the state of usage stats checkbox.
+  bool IsUsageStatsChecked() const;
+
  protected:
   // views::View implementation.
   virtual void OnLocaleChanged();
@@ -94,13 +91,12 @@ class EulaView
   // views::ButtonListener implementation.
   virtual void ButtonPressed(views::Button* sender, const views::Event& event);
 
-  // views::LinkController implementation.
-  void LinkActivated(views::Link* source, int event_flags);
+  // views::LinkListener implementation.
+  virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
 
  private:
   // views::View implementation.
-  virtual bool SkipDefaultKeyEventProcessing(const views::KeyEvent& e) {
-    return true; }
+  virtual bool SkipDefaultKeyEventProcessing(const views::KeyEvent& e);
   virtual bool OnKeyPressed(const views::KeyEvent& e);
 
   // TabContentsDelegate implementation.
@@ -115,12 +111,10 @@ class EulaView
                     const GURL& eula_url);
 
   // Overridden from views::BubbleDelegate.
-  virtual void BubbleClosing(Bubble* bubble, bool closed_by_escape) {
-    bubble_ = NULL;
-  }
-  virtual bool CloseOnEscape() { return true; }
-  virtual bool FadeInOnShow() { return false; }
-  virtual void OnHelpLinkActivated() {}
+  virtual void BubbleClosing(Bubble* bubble, bool closed_by_escape);
+  virtual bool CloseOnEscape();
+  virtual bool FadeInOnShow();
+  virtual void OnLinkActivated(size_t index);
 
   // Dialog controls.
   views::Label* google_eula_label_;
@@ -133,7 +127,7 @@ class EulaView
   views::NativeButton* back_button_;
   views::NativeButton* continue_button_;
 
-  chromeos::ScreenObserver* observer_;
+  ViewsEulaScreenActor* actor_;
 
   // URL of the OEM EULA page (on disk).
   GURL oem_eula_page_;
@@ -145,23 +139,7 @@ class EulaView
   // it will be deleted on bubble closing.
   MessageBubble* bubble_;
 
-  // TPM password local storage. By convention, we clear the password
-  // from TPM as soon as we read it. We store it here locally until
-  // EULA screen is closed.
-  // TODO(glotov): Sanitize memory used to store password when
-  // it's destroyed.
-  std::string tpm_password_;
-
   DISALLOW_COPY_AND_ASSIGN(EulaView);
-};
-
-class EulaScreen : public DefaultViewScreen<EulaView> {
- public:
-  explicit EulaScreen(WizardScreenDelegate* delegate)
-      : DefaultViewScreen<EulaView>(delegate) {
-  }
- private:
-  DISALLOW_COPY_AND_ASSIGN(EulaScreen);
 };
 
 }  // namespace chromeos

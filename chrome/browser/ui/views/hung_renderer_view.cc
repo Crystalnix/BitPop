@@ -6,6 +6,7 @@
 
 #include "base/i18n/rtl.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/chrome_constants.h"
@@ -55,7 +56,7 @@ class HungPagesTableModel : public views::GroupTableModel {
   virtual void GetGroupRangeForItem(int item, views::GroupRange* range);
 
  private:
-  typedef std::vector<TabContents*> TabContentsVector;
+  typedef std::vector<TabContentsWrapper*> TabContentsVector;
   TabContentsVector tab_contentses_;
 
   ui::TableModelObserver* observer_;
@@ -77,7 +78,7 @@ void HungPagesTableModel::InitForTabContents(TabContents* hung_contents) {
   for (TabContentsIterator it; !it.done(); ++it) {
     if (it->tab_contents()->GetRenderProcessHost() ==
         hung_contents->GetRenderProcessHost())
-      tab_contentses_.push_back((*it)->tab_contents());
+      tab_contentses_.push_back(*it);
   }
   // The world is different.
   if (observer_)
@@ -93,7 +94,7 @@ int HungPagesTableModel::RowCount() {
 
 string16 HungPagesTableModel::GetText(int row, int column_id) {
   DCHECK(row >= 0 && row < RowCount());
-  string16 title = tab_contentses_[row]->GetTitle();
+  string16 title = tab_contentses_[row]->tab_contents()->GetTitle();
   if (title.empty())
     title = TabContentsWrapper::GetDefaultTitle();
   // TODO(xji): Consider adding a special case if the title text is a URL,
@@ -105,7 +106,7 @@ string16 HungPagesTableModel::GetText(int row, int column_id) {
 
 SkBitmap HungPagesTableModel::GetIcon(int row) {
   DCHECK(row >= 0 && row < RowCount());
-  return tab_contentses_.at(row)->GetFavicon();
+  return tab_contentses_.at(row)->favicon_tab_helper()->GetFavicon();
 }
 
 void HungPagesTableModel::SetObserver(ui::TableModelObserver* observer) {
@@ -245,7 +246,11 @@ void HungRendererDialogView::ShowForTabContents(TabContents* contents) {
     volatile TabContents* this_contents = contents_;
 
     gfx::Rect bounds = GetDisplayBounds(contents);
-    window()->SetWindowBounds(bounds, frame_hwnd);
+    views::Widget* insert_after =
+        views::Widget::GetWidgetForNativeView(frame_hwnd);
+    window()->SetBoundsConstrained(bounds, insert_after);
+    if (insert_after)
+      window()->MoveAboveWidget(insert_after);
 
     // We only do this if the window isn't active (i.e. hasn't been shown yet,
     // or is currently shown but deactivated for another TabContents). This is
@@ -262,7 +267,7 @@ void HungRendererDialogView::EndForTabContents(TabContents* contents) {
   DCHECK(contents);
   if (contents_ && contents_->GetRenderProcessHost() ==
       contents->GetRenderProcessHost()) {
-    window()->CloseWindow();
+    window()->Close();
     // Since we're closing, we no longer need this TabContents.
     contents_ = NULL;
   }

@@ -49,6 +49,7 @@ WebPreferences::WebPreferences()
       remote_fonts_enabled(true),
       javascript_can_access_clipboard(false),
       xss_auditor_enabled(false),
+      dns_prefetching_enabled(true),
       local_storage_enabled(false),
       databases_enabled(false),
       application_cache_enabled(false),
@@ -77,7 +78,9 @@ WebPreferences::WebPreferences()
       accelerated_plugins_enabled(false),
       memory_info_enabled(false),
       interactive_form_validation_enabled(true),
-      fullscreen_enabled(false) {
+      fullscreen_enabled(false),
+      allow_displaying_insecure_content(true),
+      allow_running_insecure_content(false) {
 }
 
 WebPreferences::~WebPreferences() {
@@ -118,6 +121,7 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setDownloadableBinaryFontsEnabled(remote_fonts_enabled);
   settings->setJavaScriptCanAccessClipboard(javascript_can_access_clipboard);
   settings->setXSSAuditorEnabled(xss_auditor_enabled);
+  settings->setDNSPrefetchingEnabled(dns_prefetching_enabled);
   settings->setLocalStorageEnabled(local_storage_enabled);
   WebRuntimeFeatures::enableDatabase(
       WebRuntimeFeatures::isDatabaseEnabled() || databases_enabled);
@@ -223,4 +227,6 @@ void WebPreferences::Apply(WebView* web_view) const {
       interactive_form_validation_enabled);
 
   settings->setFullScreenEnabled(fullscreen_enabled);
+  settings->setAllowDisplayOfInsecureContent(allow_displaying_insecure_content);
+  settings->setAllowRunningOfInsecureContent(allow_running_insecure_content);
 }

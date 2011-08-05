@@ -27,28 +27,28 @@ class VectorPlatformDeviceSkiaFactory : public SkDeviceFactory {
   virtual SkDevice* newDevice(SkCanvas* notUsed, SkBitmap::Config config,
                               int width, int height, bool isOpaque,
                               bool isForLayer);
+ private:
+  SkPDFDeviceFactory factory_;
 };
 
 class VectorPlatformDeviceSkia : public PlatformDevice {
  public:
-  SK_API VectorPlatformDeviceSkia(int width,
-                                  int height,
-                                  const SkMatrix& initialTransform);
-  ~VectorPlatformDeviceSkia();
+  SK_API VectorPlatformDeviceSkia(SkPDFDevice* pdf_device);
+  virtual ~VectorPlatformDeviceSkia();
 
   SkPDFDevice* PdfDevice() { return pdf_device_.get(); }
 
   // PlatformDevice methods.
-  virtual bool IsVectorial();
   virtual bool IsNativeFontRenderingAllowed();
 
   virtual PlatformSurface BeginPlatformPaint();
   virtual void EndPlatformPaint();
+#if defined(OS_WIN)
+  virtual void DrawToNativeContext(HDC dc, int x, int y, const RECT* src_rect);
+#endif
 
   // SkDevice methods.
-  virtual SkDeviceFactory* getDeviceFactory();
   virtual uint32_t getDeviceCapabilities();
-
   virtual int width() const;
   virtual int height() const;
   virtual void setMatrixClip(const SkMatrix& matrix, const SkRegion& region,
@@ -84,9 +84,9 @@ class VectorPlatformDeviceSkia : public PlatformDevice {
   virtual void drawDevice(const SkDraw& draw, SkDevice*, int x, int y,
                           const SkPaint&);
 
-#if defined(OS_WIN)
-  virtual void drawToHDC(HDC dc, int x, int y, const RECT* src_rect);
-#endif
+ protected:
+  // Override from SkDevice (through PlatformDevice).
+  virtual SkDeviceFactory* onNewDeviceFactory();
 
  private:
   SkRefPtr<SkPDFDevice> pdf_device_;

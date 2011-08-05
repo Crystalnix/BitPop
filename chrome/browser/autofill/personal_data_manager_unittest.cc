@@ -26,7 +26,6 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/glue/form_data.h"
-#include "webkit/glue/form_data.h"
 
 using webkit_glue::FormData;
 
@@ -40,7 +39,7 @@ class PersonalDataLoadedObserverMock : public PersonalDataManager::Observer {
   PersonalDataLoadedObserverMock() {}
   virtual ~PersonalDataLoadedObserverMock() {}
 
-  MOCK_METHOD0(OnPersonalDataLoaded, void());
+  MOCK_METHOD0(OnPersonalDataChanged, void());
 };
 
 class PersonalDataManagerTest : public testing::Test {
@@ -74,6 +73,11 @@ class PersonalDataManagerTest : public testing::Test {
     personal_data_ = new PersonalDataManager();
     personal_data_->Init(profile_.get());
     personal_data_->SetObserver(&personal_data_observer_);
+
+    // Verify that the web database has been updated and the notification sent.
+    EXPECT_CALL(personal_data_observer_,
+                OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
+    MessageLoop::current()->Run();
   }
 
   ScopedTestingBrowserProcess browser_process_;
@@ -87,8 +91,58 @@ class PersonalDataManagerTest : public testing::Test {
   PersonalDataLoadedObserverMock personal_data_observer_;
 };
 
-// TODO(jhawkins): Test SetProfiles w/out a WebDataService in the profile.
-TEST_F(PersonalDataManagerTest, SetProfiles) {
+TEST_F(PersonalDataManagerTest, AddProfile) {
+  AutofillProfile profile0;
+  autofill_test::SetProfileInfo(&profile0,
+      "John", "Mitchell", "Smith",
+      "j@s.com", "Acme Inc.", "1 Main", "Apt A", "San Francisco", "CA",
+      "94102", "USA", "4158889999", "4152223333");
+
+  // Add profile0 to the database.
+  personal_data_->AddProfile(profile0);
+
+  // Reload the database.
+  ResetPersonalDataManager();
+
+  // Verify the addition.
+  const std::vector<AutofillProfile*>& results1 = personal_data_->profiles();
+  ASSERT_EQ(1U, results1.size());
+  EXPECT_EQ(0, profile0.CompareMulti(*results1[0]));
+
+  // Add profile with identical values.  Duplicates should not get saved.
+  AutofillProfile profile0a = profile0;
+  profile0a.set_guid(guid::GenerateGUID());
+  personal_data_->AddProfile(profile0a);
+
+  // Reload the database.
+  ResetPersonalDataManager();
+
+  // Verify the non-addition.
+  const std::vector<AutofillProfile*>& results2 = personal_data_->profiles();
+  ASSERT_EQ(1U, results2.size());
+  EXPECT_EQ(0, profile0.CompareMulti(*results2[0]));
+
+  // New profile with different email.
+  AutofillProfile profile1 = profile0;
+  profile1.set_guid(guid::GenerateGUID());
+  profile1.SetInfo(EMAIL_ADDRESS, ASCIIToUTF16("john@smith.com"));
+
+  // Add the different profile.  This should save as a separate profile.
+  // Note that if this same profile was "merged" it would collapse to one
+  // profile with a multi-valued entry for email.
+  personal_data_->AddProfile(profile1);
+
+  // Reload the database.
+  ResetPersonalDataManager();
+
+  // Verify the addition.
+  const std::vector<AutofillProfile*>& results3 = personal_data_->profiles();
+  ASSERT_EQ(2U, results3.size());
+  EXPECT_EQ(0, profile0.CompareMulti(*results3[0]));
+  EXPECT_EQ(0, profile1.CompareMulti(*results3[1]));
+}
+
+TEST_F(PersonalDataManagerTest, AddUpdateRemoveProfiles) {
   AutofillProfile profile0;
   autofill_test::SetProfileInfo(&profile0,
       "Marion", "Mitchell", "Morrison",
@@ -107,129 +161,104 @@ TEST_F(PersonalDataManagerTest, SetProfiles) {
       "joewayne@me.xyz", "Fox", "1212 Center.", "Bld. 5", "Orlando", "FL",
       "32801", "US", "19482937549", "13502849239");
 
-  // This will verify that the web database has been loaded and the notification
-  // sent out.
-  EXPECT_CALL(personal_data_observer_,
-              OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
-  // The message loop will exit when the mock observer is notified.
-  MessageLoop::current()->Run();
-
   // Add two test profiles to the database.
-  std::vector<AutofillProfile> update;
-  update.push_back(profile0);
-  update.push_back(profile1);
-  personal_data_->SetProfiles(&update);
+  personal_data_->AddProfile(profile0);
+  personal_data_->AddProfile(profile1);
+
+  // Verify that the web database has been updated and the notification sent.
+  EXPECT_CALL(personal_data_observer_,
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
+  MessageLoop::current()->Run();
 
   const std::vector<AutofillProfile*>& results1 = personal_data_->profiles();
   ASSERT_EQ(2U, results1.size());
-  EXPECT_EQ(0, profile0.Compare(*results1.at(0)));
-  EXPECT_EQ(0, profile1.Compare(*results1.at(1)));
+  EXPECT_EQ(0, profile0.Compare(*results1[0]));
+  EXPECT_EQ(0, profile1.Compare(*results1[1]));
 
-  // Three operations in one:
-  //  - Update profile0
-  //  - Remove profile1
-  //  - Add profile2
+  // Update, remove, and add.
   profile0.SetInfo(NAME_FIRST, ASCIIToUTF16("John"));
-  update.clear();
-  update.push_back(profile0);
-  update.push_back(profile2);
-  personal_data_->SetProfiles(&update);
+  personal_data_->UpdateProfile(profile0);
+  personal_data_->RemoveProfile(profile1.guid());
+  personal_data_->AddProfile(profile2);
+
+  // Verify that the web database has been updated and the notification sent.
+  EXPECT_CALL(personal_data_observer_,
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
+  MessageLoop::current()->Run();
 
   const std::vector<AutofillProfile*>& results2 = personal_data_->profiles();
   ASSERT_EQ(2U, results2.size());
-  EXPECT_EQ(0, profile0.Compare(*results2.at(0)));
-  EXPECT_EQ(0, profile2.Compare(*results2.at(1)));
+  EXPECT_EQ(0, profile0.Compare(*results2[0]));
+  EXPECT_EQ(0, profile2.Compare(*results2[1]));
 
   // Reset the PersonalDataManager.  This tests that the personal data was saved
   // to the web database, and that we can load the profiles from the web
   // database.
   ResetPersonalDataManager();
 
-  // This will verify that the web database has been loaded and the notification
-  // sent out.
-  EXPECT_CALL(personal_data_observer_,
-              OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
-  // The message loop will exit when the PersonalDataLoadedObserver is notified.
-  MessageLoop::current()->Run();
-
   // Verify that we've loaded the profiles from the web database.
   const std::vector<AutofillProfile*>& results3 = personal_data_->profiles();
   ASSERT_EQ(2U, results3.size());
-  EXPECT_EQ(0, profile0.Compare(*results3.at(0)));
-  EXPECT_EQ(0, profile2.Compare(*results3.at(1)));
+  EXPECT_EQ(0, profile0.Compare(*results3[0]));
+  EXPECT_EQ(0, profile2.Compare(*results3[1]));
 }
 
-// TODO(jhawkins): Test SetCreditCards w/out a WebDataService in the profile.
-TEST_F(PersonalDataManagerTest, SetCreditCards) {
-  CreditCard creditcard0;
-  autofill_test::SetCreditCardInfo(&creditcard0,
+TEST_F(PersonalDataManagerTest, AddUpdateRemoveCreditCards) {
+  CreditCard credit_card0;
+  autofill_test::SetCreditCardInfo(&credit_card0,
       "John Dillinger", "423456789012" /* Visa */, "01", "2010");
 
-  CreditCard creditcard1;
-  autofill_test::SetCreditCardInfo(&creditcard1,
+  CreditCard credit_card1;
+  autofill_test::SetCreditCardInfo(&credit_card1,
       "Bonnie Parker", "518765432109" /* Mastercard */, "12", "2012");
 
-  CreditCard creditcard2;
-  autofill_test::SetCreditCardInfo(&creditcard2,
+  CreditCard credit_card2;
+  autofill_test::SetCreditCardInfo(&credit_card2,
       "Clyde Barrow", "347666888555" /* American Express */, "04", "2015");
 
-  // This will verify that the web database has been loaded and the notification
-  // sent out.
-  EXPECT_CALL(personal_data_observer_,
-              OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
-  // The message loop will exit when the mock observer is notified.
-  MessageLoop::current()->Run();
-
   // Add two test credit cards to the database.
-  std::vector<CreditCard> update;
-  update.push_back(creditcard0);
-  update.push_back(creditcard1);
-  personal_data_->SetCreditCards(&update);
+  personal_data_->AddCreditCard(credit_card0);
+  personal_data_->AddCreditCard(credit_card1);
+
+  // Verify that the web database has been updated and the notification sent.
+  EXPECT_CALL(personal_data_observer_,
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
+  MessageLoop::current()->Run();
 
   const std::vector<CreditCard*>& results1 = personal_data_->credit_cards();
   ASSERT_EQ(2U, results1.size());
-  EXPECT_EQ(0, creditcard0.Compare(*results1.at(0)));
-  EXPECT_EQ(0, creditcard1.Compare(*results1.at(1)));
+  EXPECT_EQ(0, credit_card0.Compare(*results1[0]));
+  EXPECT_EQ(0, credit_card1.Compare(*results1[1]));
 
-  // Three operations in one:
-  //  - Update creditcard0
-  //  - Remove creditcard1
-  //  - Add creditcard2
-  creditcard0.SetInfo(CREDIT_CARD_NAME, ASCIIToUTF16("Joe"));
-  update.clear();
-  update.push_back(creditcard0);
-  update.push_back(creditcard2);
-  personal_data_->SetCreditCards(&update);
+  // Update, remove, and add.
+  credit_card0.SetInfo(CREDIT_CARD_NAME, ASCIIToUTF16("Joe"));
+  personal_data_->UpdateCreditCard(credit_card0);
+  personal_data_->RemoveCreditCard(credit_card1.guid());
+  personal_data_->AddCreditCard(credit_card2);
+
+  // Verify that the web database has been updated and the notification sent.
+  EXPECT_CALL(personal_data_observer_,
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
+  MessageLoop::current()->Run();
 
   const std::vector<CreditCard*>& results2 = personal_data_->credit_cards();
   ASSERT_EQ(2U, results2.size());
-  EXPECT_EQ(creditcard0, *results2.at(0));
-  EXPECT_EQ(creditcard2, *results2.at(1));
+  EXPECT_EQ(credit_card0, *results2[0]);
+  EXPECT_EQ(credit_card2, *results2[1]);
 
   // Reset the PersonalDataManager.  This tests that the personal data was saved
   // to the web database, and that we can load the credit cards from the web
   // database.
   ResetPersonalDataManager();
 
-  // This will verify that the web database has been loaded and the notification
-  // sent out.
-  EXPECT_CALL(personal_data_observer_,
-              OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
-  // The message loop will exit when the PersonalDataLoadedObserver is notified.
-  MessageLoop::current()->Run();
-
   // Verify that we've loaded the credit cards from the web database.
   const std::vector<CreditCard*>& results3 = personal_data_->credit_cards();
   ASSERT_EQ(2U, results3.size());
-  EXPECT_EQ(creditcard0, *results3.at(0));
-  EXPECT_EQ(creditcard2, *results3.at(1));
+  EXPECT_EQ(credit_card0, *results3[0]);
+  EXPECT_EQ(credit_card2, *results3[1]);
 }
 
-TEST_F(PersonalDataManagerTest, SetProfilesAndCreditCards) {
+TEST_F(PersonalDataManagerTest, AddProfilesAndCreditCards) {
   AutofillProfile profile0;
   autofill_test::SetProfileInfo(&profile0,
       "Marion", "Mitchell", "Morrison",
@@ -242,100 +271,84 @@ TEST_F(PersonalDataManagerTest, SetProfilesAndCreditCards) {
       "joewayne@me.xyz", "Fox", "903 Apple Ct.", NULL, "Orlando", "FL", "32801",
       "US", "19482937549", "13502849239");
 
-  CreditCard creditcard0;
-  autofill_test::SetCreditCardInfo(&creditcard0,
+  CreditCard credit_card0;
+  autofill_test::SetCreditCardInfo(&credit_card0,
       "John Dillinger", "423456789012" /* Visa */, "01", "2010");
 
-  CreditCard creditcard1;
-  autofill_test::SetCreditCardInfo(&creditcard1,
+  CreditCard credit_card1;
+  autofill_test::SetCreditCardInfo(&credit_card1,
       "Bonnie Parker", "518765432109" /* Mastercard */, "12", "2012");
 
-  // This will verify that the web database has been loaded and the notification
-  // sent out.
-  EXPECT_CALL(
-      personal_data_observer_,
-      OnPersonalDataLoaded()).Times(2).WillRepeatedly(QuitUIMessageLoop());
-
-  // The message loop will exit when the mock observer is notified.
-  MessageLoop::current()->Run();
-
   // Add two test profiles to the database.
-  std::vector<AutofillProfile> update;
-  update.push_back(profile0);
-  update.push_back(profile1);
-  personal_data_->SetProfiles(&update);
+  personal_data_->AddProfile(profile0);
+  personal_data_->AddProfile(profile1);
+
+  // Verify that the web database has been updated and the notification sent.
+  EXPECT_CALL(personal_data_observer_,
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
+  MessageLoop::current()->Run();
 
   const std::vector<AutofillProfile*>& results1 = personal_data_->profiles();
   ASSERT_EQ(2U, results1.size());
-  EXPECT_EQ(0, profile0.Compare(*results1.at(0)));
-  EXPECT_EQ(0, profile1.Compare(*results1.at(1)));
-
-  MessageLoop::current()->Run();
+  EXPECT_EQ(0, profile0.Compare(*results1[0]));
+  EXPECT_EQ(0, profile1.Compare(*results1[1]));
 
   // Add two test credit cards to the database.
-  std::vector<CreditCard> update_cc;
-  update_cc.push_back(creditcard0);
-  update_cc.push_back(creditcard1);
-  personal_data_->SetCreditCards(&update_cc);
+  personal_data_->AddCreditCard(credit_card0);
+  personal_data_->AddCreditCard(credit_card1);
 
+  // Verify that the web database has been updated and the notification sent.
+  EXPECT_CALL(personal_data_observer_,
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
+  MessageLoop::current()->Run();
 
   const std::vector<CreditCard*>& results2 = personal_data_->credit_cards();
   ASSERT_EQ(2U, results2.size());
-  EXPECT_EQ(creditcard0, *results2.at(0));
-  EXPECT_EQ(creditcard1, *results2.at(1));
+  EXPECT_EQ(credit_card0, *results2[0]);
+  EXPECT_EQ(credit_card1, *results2[1]);
 
   // Determine uniqueness by inserting all of the GUIDs into a set and verifying
   // the size of the set matches the number of GUIDs.
   std::set<std::string> guids;
   guids.insert(profile0.guid());
   guids.insert(profile1.guid());
-  guids.insert(creditcard0.guid());
-  guids.insert(creditcard1.guid());
+  guids.insert(credit_card0.guid());
+  guids.insert(credit_card1.guid());
   EXPECT_EQ(4U, guids.size());
 }
 
-// Test care for 50047. Makes sure that unique_ids_ is populated correctly on
-// load.
+// Test for http://crbug.com/50047. Makes sure that guids are populated
+// correctly on load.
 TEST_F(PersonalDataManagerTest, PopulateUniqueIDsOnLoad) {
   AutofillProfile profile0;
   autofill_test::SetProfileInfo(&profile0,
       "y", "", "", "", "", "", "", "", "", "", "", "", "");
 
-  // This will verify that the web database has been loaded and the notification
-  // sent out.
-  EXPECT_CALL(personal_data_observer_,
-              OnPersonalDataLoaded()).WillRepeatedly(QuitUIMessageLoop());
-
-  // The message loop will exit when the mock observer is notified.
-  MessageLoop::current()->Run();
-
   // Add the profile0 to the db.
-  std::vector<AutofillProfile> update;
-  update.push_back(profile0);
-  personal_data_->SetProfiles(&update);
+  personal_data_->AddProfile(profile0);
 
-  // Reset the PersonalDataManager. This recreates PersonalDataManager, which
-  // should populate unique_ids_.
-  ResetPersonalDataManager();
-
-  // The message loop will exit when the PersonalDataLoadedObserver is notified.
+  // Verify that the web database has been updated and the notification sent.
+  EXPECT_CALL(personal_data_observer_,
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   // Verify that we've loaded the profiles from the web database.
   const std::vector<AutofillProfile*>& results2 = personal_data_->profiles();
   ASSERT_EQ(1U, results2.size());
+  EXPECT_EQ(0, profile0.Compare(*results2[0]));
 
   // Add a new profile.
   AutofillProfile profile1;
   autofill_test::SetProfileInfo(&profile1,
-      "y", "", "", "", "", "", "", "", "", "", "", "", "");
-  update.clear();
-  update.push_back(*results2[0]);
-  update.push_back(profile1);
-  personal_data_->SetProfiles(&update);
+      "z", "", "", "", "", "", "", "", "", "", "", "", "");
+  personal_data_->AddProfile(profile1);
 
-  // Make sure the two profiles have different ids (and neither equal to 0,
-  // which is an invalid id).
+  // Verify that the web database has been updated and the notification sent.
+  EXPECT_CALL(personal_data_observer_,
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
+  MessageLoop::current()->Run();
+
+  // Make sure the two profiles have different GUIDs, both valid.
   const std::vector<AutofillProfile*>& results3 = personal_data_->profiles();
   ASSERT_EQ(2U, results3.size());
   EXPECT_NE(results3[0]->guid(), results3[1]->guid());
@@ -348,35 +361,15 @@ TEST_F(PersonalDataManagerTest, SetEmptyProfile) {
   autofill_test::SetProfileInfo(&profile0,
       "", "", "", "", "", "", "", "", "", "", "", "", "");
 
-  // This will verify that the web database has been loaded and the notification
-  // sent out.
-  EXPECT_CALL(personal_data_observer_,
-              OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
-  // The message loop will exit when the mock observer is notified.
-  MessageLoop::current()->Run();
-
   // Add the empty profile to the database.
-  std::vector<AutofillProfile> update;
-  update.push_back(profile0);
-  personal_data_->SetProfiles(&update);
+  personal_data_->AddProfile(profile0);
 
-  // Check the local store of profiles, not yet saved to the web database.
-  const std::vector<AutofillProfile*>& results1 = personal_data_->profiles();
-  ASSERT_EQ(0U, results1.size());
+  // Note: no refresh here.
 
   // Reset the PersonalDataManager.  This tests that the personal data was saved
   // to the web database, and that we can load the profiles from the web
   // database.
   ResetPersonalDataManager();
-
-  // This will verify that the web database has been loaded and the notification
-  // sent out.
-  EXPECT_CALL(personal_data_observer_,
-              OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
-  // The message loop will exit when the PersonalDataLoadedObserver is notified.
-  MessageLoop::current()->Run();
 
   // Verify that we've loaded the profiles from the web database.
   const std::vector<AutofillProfile*>& results2 = personal_data_->profiles();
@@ -384,38 +377,18 @@ TEST_F(PersonalDataManagerTest, SetEmptyProfile) {
 }
 
 TEST_F(PersonalDataManagerTest, SetEmptyCreditCard) {
-  CreditCard creditcard0;
-  autofill_test::SetCreditCardInfo(&creditcard0, "", "", "", "");
-
-  // This will verify that the web database has been loaded and the notification
-  // sent out.
-  EXPECT_CALL(personal_data_observer_,
-              OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
-  // The message loop will exit when the mock observer is notified.
-  MessageLoop::current()->Run();
+  CreditCard credit_card0;
+  autofill_test::SetCreditCardInfo(&credit_card0, "", "", "", "");
 
   // Add the empty credit card to the database.
-  std::vector<CreditCard> update;
-  update.push_back(creditcard0);
-  personal_data_->SetCreditCards(&update);
+  personal_data_->AddCreditCard(credit_card0);
 
-  // Check the local store of credit cards, not yet saved to the web database.
-  const std::vector<CreditCard*>& results1 = personal_data_->credit_cards();
-  ASSERT_EQ(0U, results1.size());
+  // Note: no refresh here.
 
   // Reset the PersonalDataManager.  This tests that the personal data was saved
   // to the web database, and that we can load the credit cards from the web
   // database.
   ResetPersonalDataManager();
-
-  // This will verify that the web database has been loaded and the notification
-  // sent out.
-  EXPECT_CALL(personal_data_observer_,
-              OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
-  // The message loop will exit when the PersonalDataLoadedObserver is notified.
-  MessageLoop::current()->Run();
 
   // Verify that we've loaded the credit cards from the web database.
   const std::vector<CreditCard*>& results2 = personal_data_->credit_cards();
@@ -435,16 +408,9 @@ TEST_F(PersonalDataManagerTest, Refresh) {
       "joewayne@me.xyz", "Fox", "903 Apple Ct.", NULL, "Orlando", "FL", "32801",
       "US", "19482937549", "13502849239");
 
-  EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
-  MessageLoop::current()->Run();
-
   // Add the test profiles to the database.
-  std::vector<AutofillProfile> update;
-  update.push_back(profile0);
-  update.push_back(profile1);
-  personal_data_->SetProfiles(&update);
+  personal_data_->AddProfile(profile0);
+  personal_data_->AddProfile(profile1);
 
   // Labels depend on other profiles in the list - update labels manually.
   std::vector<AutofillProfile *> profile_pointers;
@@ -452,16 +418,15 @@ TEST_F(PersonalDataManagerTest, Refresh) {
   profile_pointers.push_back(&profile1);
   AutofillProfile::AdjustInferredLabels(&profile_pointers);
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   const std::vector<AutofillProfile*>& results1 = personal_data_->profiles();
   ASSERT_EQ(2U, results1.size());
-  EXPECT_EQ(profile0, *results1.at(0));
-  EXPECT_EQ(profile1, *results1.at(1));
+  EXPECT_EQ(profile0, *results1[0]);
+  EXPECT_EQ(profile1, *results1[1]);
 
   AutofillProfile profile2;
   autofill_test::SetProfileInfo(&profile2,
@@ -479,17 +444,16 @@ TEST_F(PersonalDataManagerTest, Refresh) {
 
   personal_data_->Refresh();
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-    OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   const std::vector<AutofillProfile*>& results2 = personal_data_->profiles();
   ASSERT_EQ(3U, results2.size());
-  EXPECT_EQ(profile0, *results2.at(0));
-  EXPECT_EQ(profile1, *results2.at(1));
-  EXPECT_EQ(profile2, *results2.at(2));
+  EXPECT_EQ(profile0, *results2[0]);
+  EXPECT_EQ(profile1, *results2[1]);
+  EXPECT_EQ(profile2, *results2[2]);
 
   wds->RemoveAutofillProfile(profile1.guid());
   wds->RemoveAutofillProfile(profile2.guid());
@@ -500,21 +464,18 @@ TEST_F(PersonalDataManagerTest, Refresh) {
   // removed a profile from the browser.  In this edge case, we will end up
   // in a consistent state by dropping the write).
   profile2.SetInfo(NAME_FIRST, ASCIIToUTF16("Jo"));
-  update.clear();
-  update.push_back(profile0);
-  update.push_back(profile1);
-  update.push_back(profile2);
-  personal_data_->SetProfiles(&update);
+  personal_data_->UpdateProfile(profile0);
+  personal_data_->AddProfile(profile1);
+  personal_data_->AddProfile(profile2);
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   const std::vector<AutofillProfile*>& results3 = personal_data_->profiles();
   ASSERT_EQ(1U, results3.size());
-  EXPECT_EQ(profile0, *results2.at(0));
+  EXPECT_EQ(profile0, *results2[0]);
 }
 
 TEST_F(PersonalDataManagerTest, ImportFormData) {
@@ -543,16 +504,14 @@ TEST_F(PersonalDataManagerTest, ImportFormData) {
   form.fields.push_back(field);
   FormStructure form_structure(form);
   form_structure.DetermineHeuristicTypes();
-  std::vector<const FormStructure*> forms;
-  forms.push_back(&form_structure);
   const CreditCard* imported_credit_card;
-  EXPECT_TRUE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_TRUE(personal_data_->ImportFormData(form_structure,
+                                             &imported_credit_card));
   ASSERT_FALSE(imported_credit_card);
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   AutofillProfile expected;
@@ -590,17 +549,10 @@ TEST_F(PersonalDataManagerTest, ImportFormDataBadEmail) {
   form.fields.push_back(field);
   FormStructure form_structure(form);
   form_structure.DetermineHeuristicTypes();
-  std::vector<const FormStructure*> forms;
-  forms.push_back(&form_structure);
   const CreditCard* imported_credit_card;
-  EXPECT_FALSE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_FALSE(personal_data_->ImportFormData(form_structure,
+                                              &imported_credit_card));
   ASSERT_EQ(static_cast<CreditCard*>(NULL), imported_credit_card);
-
-  // Wait for the refresh.
-  EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
-  MessageLoop::current()->Run();
 
   const std::vector<AutofillProfile*>& results = personal_data_->profiles();
   ASSERT_EQ(0U, results.size());
@@ -620,17 +572,10 @@ TEST_F(PersonalDataManagerTest, ImportFormDataNotEnoughFilledFields) {
   form.fields.push_back(field);
   FormStructure form_structure(form);
   form_structure.DetermineHeuristicTypes();
-  std::vector<const FormStructure*> forms;
-  forms.push_back(&form_structure);
   const CreditCard* imported_credit_card;
-  EXPECT_FALSE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_FALSE(personal_data_->ImportFormData(form_structure,
+                                              &imported_credit_card));
   ASSERT_FALSE(imported_credit_card);
-
-  // Wait for the refresh.
-  EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
-  MessageLoop::current()->Run();
 
   const std::vector<AutofillProfile*>& profiles = personal_data_->profiles();
   ASSERT_EQ(0U, profiles.size());
@@ -673,16 +618,14 @@ TEST_F(PersonalDataManagerTest, ImportPhoneNumberSplitAcrossMultipleFields) {
   form.fields.push_back(field);
   FormStructure form_structure(form);
   form_structure.DetermineHeuristicTypes();
-  std::vector<const FormStructure*> forms;
-  forms.push_back(&form_structure);
   const CreditCard* imported_credit_card;
-  EXPECT_TRUE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_TRUE(personal_data_->ImportFormData(form_structure,
+                                             &imported_credit_card));
   ASSERT_FALSE(imported_credit_card);
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   AutofillProfile expected;
@@ -708,36 +651,18 @@ TEST_F(PersonalDataManagerTest, SetUniqueCreditCardLabels) {
   CreditCard credit_card5;
   credit_card5.SetInfo(CREDIT_CARD_NAME, ASCIIToUTF16("Dio"));
 
-  // This will verify that the web database has been loaded and the notification
-  // sent out.
-  EXPECT_CALL(personal_data_observer_,
-              OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
-  // The message loop will exit when the mock observer is notified.
-  MessageLoop::current()->Run();
-
   // Add the test credit cards to the database.
-  std::vector<CreditCard> update;
-  update.push_back(credit_card0);
-  update.push_back(credit_card1);
-  update.push_back(credit_card2);
-  update.push_back(credit_card3);
-  update.push_back(credit_card4);
-  update.push_back(credit_card5);
-  personal_data_->SetCreditCards(&update);
+  personal_data_->AddCreditCard(credit_card0);
+  personal_data_->AddCreditCard(credit_card1);
+  personal_data_->AddCreditCard(credit_card2);
+  personal_data_->AddCreditCard(credit_card3);
+  personal_data_->AddCreditCard(credit_card4);
+  personal_data_->AddCreditCard(credit_card5);
 
   // Reset the PersonalDataManager.  This tests that the personal data was saved
   // to the web database, and that we can load the credit cards from the web
   // database.
   ResetPersonalDataManager();
-
-  // This will verify that the web database has been loaded and the notification
-  // sent out.
-  EXPECT_CALL(personal_data_observer_,
-              OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
-  // The message loop will exit when the mock observer is notified.
-  MessageLoop::current()->Run();
 
   const std::vector<CreditCard*>& results = personal_data_->credit_cards();
   ASSERT_EQ(6U, results.size());
@@ -776,16 +701,14 @@ TEST_F(PersonalDataManagerTest, AggregateTwoDifferentProfiles) {
 
   FormStructure form_structure1(form1);
   form_structure1.DetermineHeuristicTypes();
-  std::vector<const FormStructure*> forms;
-  forms.push_back(&form_structure1);
   const CreditCard* imported_credit_card;
-  EXPECT_TRUE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_TRUE(personal_data_->ImportFormData(form_structure1,
+                                             &imported_credit_card));
   ASSERT_FALSE(imported_credit_card);
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   AutofillProfile expected;
@@ -822,15 +745,13 @@ TEST_F(PersonalDataManagerTest, AggregateTwoDifferentProfiles) {
 
   FormStructure form_structure2(form2);
   form_structure2.DetermineHeuristicTypes();
-  forms.clear();
-  forms.push_back(&form_structure2);
-  EXPECT_TRUE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_TRUE(personal_data_->ImportFormData(form_structure2,
+                                             &imported_credit_card));
   ASSERT_FALSE(imported_credit_card);
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   const std::vector<AutofillProfile*>& results2 = personal_data_->profiles();
@@ -871,16 +792,14 @@ TEST_F(PersonalDataManagerTest, AggregateTwoProfilesWithMultiValue) {
 
   FormStructure form_structure1(form1);
   form_structure1.DetermineHeuristicTypes();
-  std::vector<const FormStructure*> forms;
-  forms.push_back(&form_structure1);
   const CreditCard* imported_credit_card;
-  EXPECT_TRUE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_TRUE(personal_data_->ImportFormData(form_structure1,
+                                             &imported_credit_card));
   ASSERT_FALSE(imported_credit_card);
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   AutofillProfile expected;
@@ -917,15 +836,13 @@ TEST_F(PersonalDataManagerTest, AggregateTwoProfilesWithMultiValue) {
 
   FormStructure form_structure2(form2);
   form_structure2.DetermineHeuristicTypes();
-  forms.clear();
-  forms.push_back(&form_structure2);
-  EXPECT_TRUE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_TRUE(personal_data_->ImportFormData(form_structure2,
+                                             &imported_credit_card));
   ASSERT_FALSE(imported_credit_card);
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   const std::vector<AutofillProfile*>& results2 = personal_data_->profiles();
@@ -972,27 +889,25 @@ TEST_F(PersonalDataManagerTest, AggregateSameProfileWithConflict) {
   form1.fields.push_back(field);
   // Phone gets updated.
   autofill_test::CreateTestFormField(
-      "Phone:", "phone", "4445556666", "text", &field);
+      "Phone:", "phone", "6505556666", "text", &field);
   form1.fields.push_back(field);
 
   FormStructure form_structure1(form1);
   form_structure1.DetermineHeuristicTypes();
-  std::vector<const FormStructure*> forms;
-  forms.push_back(&form_structure1);
   const CreditCard* imported_credit_card;
-  EXPECT_TRUE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_TRUE(personal_data_->ImportFormData(form_structure1,
+                                             &imported_credit_card));
   ASSERT_FALSE(imported_credit_card);
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   AutofillProfile expected;
   autofill_test::SetProfileInfo(&expected, "George", NULL,
       "Washington", "theprez@gmail.com", NULL, "1600 Pennsylvania Avenue",
-      "Suite A", "San Francisco", "California", "94102", NULL, "4445556666",
+      "Suite A", "San Francisco", "California", "94102", NULL, "4085556666",
       NULL);
   const std::vector<AutofillProfile*>& results1 = personal_data_->profiles();
   ASSERT_EQ(1U, results1.size());
@@ -1030,20 +945,18 @@ TEST_F(PersonalDataManagerTest, AggregateSameProfileWithConflict) {
   form2.fields.push_back(field);
   // Phone gets updated.
   autofill_test::CreateTestFormField(
-      "Phone:", "phone", "1231231234", "text", &field);
+      "Phone:", "phone", "6502231234", "text", &field);
   form2.fields.push_back(field);
 
   FormStructure form_structure2(form2);
   form_structure2.DetermineHeuristicTypes();
-  forms.clear();
-  forms.push_back(&form_structure2);
-  EXPECT_TRUE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_TRUE(personal_data_->ImportFormData(form_structure2,
+                                             &imported_credit_card));
   ASSERT_FALSE(imported_credit_card);
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   const std::vector<AutofillProfile*>& results2 = personal_data_->profiles();
@@ -1051,7 +964,7 @@ TEST_F(PersonalDataManagerTest, AggregateSameProfileWithConflict) {
   // Add multi-valued phone number to expectation.  Also, country gets added.
   std::vector<string16> values;
   expected.GetMultiInfo(PHONE_HOME_WHOLE_NUMBER, &values);
-  values.push_back(ASCIIToUTF16("1231231234"));
+  values.push_back(ASCIIToUTF16("6502231234"));
   expected.SetMultiInfo(PHONE_HOME_WHOLE_NUMBER, values);
   expected.SetInfo(ADDRESS_HOME_COUNTRY, ASCIIToUTF16("United States"));
   ASSERT_EQ(1U, results2.size());
@@ -1082,16 +995,14 @@ TEST_F(PersonalDataManagerTest, AggregateProfileWithMissingInfoInOld) {
 
   FormStructure form_structure1(form1);
   form_structure1.DetermineHeuristicTypes();
-  std::vector<const FormStructure*> forms;
-  forms.push_back(&form_structure1);
   const CreditCard* imported_credit_card;
-  EXPECT_TRUE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_TRUE(personal_data_->ImportFormData(form_structure1,
+                                             &imported_credit_card));
   ASSERT_FALSE(imported_credit_card);
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   AutofillProfile expected;
@@ -1128,15 +1039,13 @@ TEST_F(PersonalDataManagerTest, AggregateProfileWithMissingInfoInOld) {
 
   FormStructure form_structure2(form2);
   form_structure2.DetermineHeuristicTypes();
-  forms.clear();
-  forms.push_back(&form_structure2);
-  EXPECT_TRUE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_TRUE(personal_data_->ImportFormData(form_structure2,
+                                             &imported_credit_card));
   ASSERT_FALSE(imported_credit_card);
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   const std::vector<AutofillProfile*>& results2 = personal_data_->profiles();
@@ -1179,16 +1088,14 @@ TEST_F(PersonalDataManagerTest, AggregateProfileWithMissingInfoInNew) {
 
   FormStructure form_structure1(form1);
   form_structure1.DetermineHeuristicTypes();
-  std::vector<const FormStructure*> forms;
-  forms.push_back(&form_structure1);
   const CreditCard* imported_credit_card;
-  EXPECT_TRUE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_TRUE(personal_data_->ImportFormData(form_structure1,
+                                             &imported_credit_card));
   ASSERT_FALSE(imported_credit_card);
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   AutofillProfile expected;
@@ -1226,15 +1133,13 @@ TEST_F(PersonalDataManagerTest, AggregateProfileWithMissingInfoInNew) {
 
   FormStructure form_structure2(form2);
   form_structure2.DetermineHeuristicTypes();
-  forms.clear();
-  forms.push_back(&form_structure2);
-  EXPECT_TRUE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_TRUE(personal_data_->ImportFormData(form_structure2,
+                                             &imported_credit_card));
   ASSERT_FALSE(imported_credit_card);
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   const std::vector<AutofillProfile*>& results2 = personal_data_->profiles();
@@ -1268,24 +1173,18 @@ TEST_F(PersonalDataManagerTest, AggregateProfileWithInsufficientAddress) {
 
   FormStructure form_structure1(form1);
   form_structure1.DetermineHeuristicTypes();
-  std::vector<const FormStructure*> forms;
-  forms.push_back(&form_structure1);
   const CreditCard* imported_credit_card;
-  EXPECT_FALSE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_FALSE(personal_data_->ImportFormData(form_structure1,
+                                              &imported_credit_card));
   ASSERT_FALSE(imported_credit_card);
 
-  // Wait for the refresh.
-  EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
-  MessageLoop::current()->Run();
+  // Note: no refresh here.
 
   const std::vector<AutofillProfile*>& profiles = personal_data_->profiles();
   ASSERT_EQ(0U, profiles.size());
   const std::vector<CreditCard*>& credit_cards = personal_data_->credit_cards();
   ASSERT_EQ(0U, credit_cards.size());
 }
-
 
 TEST_F(PersonalDataManagerTest, AggregateTwoDifferentCreditCards) {
   FormData form1;
@@ -1307,18 +1206,16 @@ TEST_F(PersonalDataManagerTest, AggregateTwoDifferentCreditCards) {
 
   FormStructure form_structure1(form1);
   form_structure1.DetermineHeuristicTypes();
-  std::vector<const FormStructure*> forms;
-  forms.push_back(&form_structure1);
   const CreditCard* imported_credit_card;
-  EXPECT_TRUE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_TRUE(personal_data_->ImportFormData(form_structure1,
+                                             &imported_credit_card));
   ASSERT_TRUE(imported_credit_card);
   personal_data_->SaveImportedCreditCard(*imported_credit_card);
   delete imported_credit_card;
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   CreditCard expected;
@@ -1345,17 +1242,15 @@ TEST_F(PersonalDataManagerTest, AggregateTwoDifferentCreditCards) {
 
   FormStructure form_structure2(form2);
   form_structure2.DetermineHeuristicTypes();
-  forms.clear();
-  forms.push_back(&form_structure2);
-  EXPECT_TRUE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_TRUE(personal_data_->ImportFormData(form_structure2,
+                                             &imported_credit_card));
   ASSERT_TRUE(imported_credit_card);
   personal_data_->SaveImportedCreditCard(*imported_credit_card);
   delete imported_credit_card;
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   CreditCard expected2;
@@ -1387,18 +1282,16 @@ TEST_F(PersonalDataManagerTest, AggregateInvalidCreditCard) {
 
   FormStructure form_structure1(form1);
   form_structure1.DetermineHeuristicTypes();
-  std::vector<const FormStructure*> forms;
-  forms.push_back(&form_structure1);
   const CreditCard* imported_credit_card;
-  EXPECT_TRUE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_TRUE(personal_data_->ImportFormData(form_structure1,
+                                             &imported_credit_card));
   ASSERT_TRUE(imported_credit_card);
   personal_data_->SaveImportedCreditCard(*imported_credit_card);
   delete imported_credit_card;
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   CreditCard expected;
@@ -1425,9 +1318,8 @@ TEST_F(PersonalDataManagerTest, AggregateInvalidCreditCard) {
 
   FormStructure form_structure2(form2);
   form_structure2.DetermineHeuristicTypes();
-  forms.clear();
-  forms.push_back(&form_structure2);
-  EXPECT_FALSE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_FALSE(personal_data_->ImportFormData(form_structure2,
+                                              &imported_credit_card));
   ASSERT_FALSE(imported_credit_card);
 
   // Note: no refresh here.
@@ -1457,18 +1349,16 @@ TEST_F(PersonalDataManagerTest, AggregateSameCreditCardWithConflict) {
 
   FormStructure form_structure1(form1);
   form_structure1.DetermineHeuristicTypes();
-  std::vector<const FormStructure*> forms;
-  forms.push_back(&form_structure1);
   const CreditCard* imported_credit_card;
-  EXPECT_TRUE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_TRUE(personal_data_->ImportFormData(form_structure1,
+                                             &imported_credit_card));
   ASSERT_TRUE(imported_credit_card);
   personal_data_->SaveImportedCreditCard(*imported_credit_card);
   delete imported_credit_card;
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   CreditCard expected;
@@ -1496,17 +1386,15 @@ TEST_F(PersonalDataManagerTest, AggregateSameCreditCardWithConflict) {
 
   FormStructure form_structure2(form2);
   form_structure2.DetermineHeuristicTypes();
-  forms.clear();
-  forms.push_back(&form_structure2);
-  EXPECT_TRUE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_TRUE(personal_data_->ImportFormData(form_structure2,
+                                             &imported_credit_card));
   ASSERT_TRUE(imported_credit_card);
   personal_data_->SaveImportedCreditCard(*imported_credit_card);
   delete imported_credit_card;
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   // Expect that the newer information is saved.  In this case the year is
@@ -1539,18 +1427,16 @@ TEST_F(PersonalDataManagerTest, AggregateEmptyCreditCardWithConflict) {
 
   FormStructure form_structure1(form1);
   form_structure1.DetermineHeuristicTypes();
-  std::vector<const FormStructure*> forms;
-  forms.push_back(&form_structure1);
   const CreditCard* imported_credit_card;
-  EXPECT_TRUE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_TRUE(personal_data_->ImportFormData(form_structure1,
+                                             &imported_credit_card));
   ASSERT_TRUE(imported_credit_card);
   personal_data_->SaveImportedCreditCard(*imported_credit_card);
   delete imported_credit_card;
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   CreditCard expected;
@@ -1574,9 +1460,8 @@ TEST_F(PersonalDataManagerTest, AggregateEmptyCreditCardWithConflict) {
 
   FormStructure form_structure2(form2);
   form_structure2.DetermineHeuristicTypes();
-  forms.clear();
-  forms.push_back(&form_structure2);
-  EXPECT_FALSE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_FALSE(personal_data_->ImportFormData(form_structure2,
+                                              &imported_credit_card));
   EXPECT_FALSE(imported_credit_card);
 
   // Note: no refresh here.
@@ -1610,18 +1495,16 @@ TEST_F(PersonalDataManagerTest, AggregateCreditCardWithMissingInfoInNew) {
 
   FormStructure form_structure1(form1);
   form_structure1.DetermineHeuristicTypes();
-  std::vector<const FormStructure*> forms;
-  forms.push_back(&form_structure1);
   const CreditCard* imported_credit_card;
-  EXPECT_TRUE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_TRUE(personal_data_->ImportFormData(form_structure1,
+                                             &imported_credit_card));
   ASSERT_TRUE(imported_credit_card);
   personal_data_->SaveImportedCreditCard(*imported_credit_card);
   delete imported_credit_card;
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   CreditCard expected;
@@ -1647,9 +1530,8 @@ TEST_F(PersonalDataManagerTest, AggregateCreditCardWithMissingInfoInNew) {
 
   FormStructure form_structure2(form2);
   form_structure2.DetermineHeuristicTypes();
-  forms.clear();
-  forms.push_back(&form_structure2);
-  EXPECT_FALSE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_FALSE(personal_data_->ImportFormData(form_structure2,
+                                              &imported_credit_card));
   ASSERT_FALSE(imported_credit_card);
 
   // Note: no refresh here.
@@ -1681,18 +1563,16 @@ TEST_F(PersonalDataManagerTest, AggregateCreditCardWithMissingInfoInOld) {
 
   FormStructure form_structure1(form1);
   form_structure1.DetermineHeuristicTypes();
-  std::vector<const FormStructure*> forms;
-  forms.push_back(&form_structure1);
   const CreditCard* imported_credit_card;
-  EXPECT_TRUE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_TRUE(personal_data_->ImportFormData(form_structure1,
+                                             &imported_credit_card));
   ASSERT_TRUE(imported_credit_card);
   personal_data_->SaveImportedCreditCard(*imported_credit_card);
   delete imported_credit_card;
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   CreditCard expected;
@@ -1720,17 +1600,15 @@ TEST_F(PersonalDataManagerTest, AggregateCreditCardWithMissingInfoInOld) {
 
   FormStructure form_structure2(form2);
   form_structure2.DetermineHeuristicTypes();
-  forms.clear();
-  forms.push_back(&form_structure2);
-  EXPECT_TRUE(personal_data_->ImportFormData(forms, &imported_credit_card));
+  EXPECT_TRUE(personal_data_->ImportFormData(form_structure2,
+                                             &imported_credit_card));
   ASSERT_TRUE(imported_credit_card);
   personal_data_->SaveImportedCreditCard(*imported_credit_card);
   delete imported_credit_card;
 
-  // Wait for the refresh.
+  // Verify that the web database has been updated and the notification sent.
   EXPECT_CALL(personal_data_observer_,
-      OnPersonalDataLoaded()).WillOnce(QuitUIMessageLoop());
-
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
   MessageLoop::current()->Run();
 
   // Expect that the newer information is saved.  In this case the year is
@@ -1741,4 +1619,134 @@ TEST_F(PersonalDataManagerTest, AggregateCreditCardWithMissingInfoInOld) {
   const std::vector<CreditCard*>& results2 = personal_data_->credit_cards();
   ASSERT_EQ(1U, results2.size());
   EXPECT_EQ(0, expected2.Compare(*results2[0]));
+}
+
+TEST_F(PersonalDataManagerTest, GetNonEmptyTypes) {
+  // Check that there are no available types with no profiles stored.
+  FieldTypeSet non_empty_types;
+  personal_data_->GetNonEmptyTypes(&non_empty_types);
+  EXPECT_EQ(0U, non_empty_types.size());
+
+  // Test with one profile stored.
+  AutofillProfile profile0;
+  autofill_test::SetProfileInfo(&profile0,
+      "Marion", NULL, "Morrison",
+      "johnwayne@me.xyz", NULL, "123 Zoo St.", NULL, "Hollywood", "CA",
+      "91601", "US", "14155678910", NULL);
+
+  personal_data_->AddProfile(profile0);
+
+  // Verify that the web database has been updated and the notification sent.
+  EXPECT_CALL(personal_data_observer_,
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
+  MessageLoop::current()->Run();
+
+  personal_data_->GetNonEmptyTypes(&non_empty_types);
+  EXPECT_EQ(14U, non_empty_types.size());
+  EXPECT_TRUE(non_empty_types.count(NAME_FIRST));
+  EXPECT_TRUE(non_empty_types.count(NAME_LAST));
+  EXPECT_TRUE(non_empty_types.count(NAME_FULL));
+  EXPECT_TRUE(non_empty_types.count(EMAIL_ADDRESS));
+  EXPECT_TRUE(non_empty_types.count(ADDRESS_HOME_LINE1));
+  EXPECT_TRUE(non_empty_types.count(ADDRESS_HOME_CITY));
+  EXPECT_TRUE(non_empty_types.count(ADDRESS_HOME_STATE));
+  EXPECT_TRUE(non_empty_types.count(ADDRESS_HOME_ZIP));
+  EXPECT_TRUE(non_empty_types.count(ADDRESS_HOME_COUNTRY));
+  EXPECT_TRUE(non_empty_types.count(PHONE_HOME_NUMBER));
+  EXPECT_TRUE(non_empty_types.count(PHONE_HOME_COUNTRY_CODE));
+  EXPECT_TRUE(non_empty_types.count(PHONE_HOME_CITY_CODE));
+  EXPECT_TRUE(non_empty_types.count(PHONE_HOME_CITY_AND_NUMBER));
+  EXPECT_TRUE(non_empty_types.count(PHONE_HOME_WHOLE_NUMBER));
+
+  // Test with multiple profiles stored.
+  AutofillProfile profile1;
+  autofill_test::SetProfileInfo(&profile1,
+      "Josephine", "Alicia", "Saenz",
+      "joewayne@me.xyz", "Fox", "903 Apple Ct.", NULL, "Orlando", "FL", "32801",
+      "US", "16502937549", "14082849239");
+
+  AutofillProfile profile2;
+  autofill_test::SetProfileInfo(&profile2,
+      "Josephine", "Alicia", "Saenz",
+      "joewayne@me.xyz", "Fox", "1212 Center.", "Bld. 5", "Orlando", "FL",
+      "32801", "US", "16502937549", "14152849239");
+
+  personal_data_->AddProfile(profile1);
+  personal_data_->AddProfile(profile2);
+
+  // Verify that the web database has been updated and the notification sent.
+  EXPECT_CALL(personal_data_observer_,
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
+  MessageLoop::current()->Run();
+
+  personal_data_->GetNonEmptyTypes(&non_empty_types);
+  EXPECT_EQ(23U, non_empty_types.size());
+  EXPECT_TRUE(non_empty_types.count(NAME_FIRST));
+  EXPECT_TRUE(non_empty_types.count(NAME_MIDDLE));
+  EXPECT_TRUE(non_empty_types.count(NAME_MIDDLE_INITIAL));
+  EXPECT_TRUE(non_empty_types.count(NAME_LAST));
+  EXPECT_TRUE(non_empty_types.count(NAME_FULL));
+  EXPECT_TRUE(non_empty_types.count(EMAIL_ADDRESS));
+  EXPECT_TRUE(non_empty_types.count(COMPANY_NAME));
+  EXPECT_TRUE(non_empty_types.count(ADDRESS_HOME_LINE1));
+  EXPECT_TRUE(non_empty_types.count(ADDRESS_HOME_LINE2));
+  EXPECT_TRUE(non_empty_types.count(ADDRESS_HOME_CITY));
+  EXPECT_TRUE(non_empty_types.count(ADDRESS_HOME_STATE));
+  EXPECT_TRUE(non_empty_types.count(ADDRESS_HOME_ZIP));
+  EXPECT_TRUE(non_empty_types.count(ADDRESS_HOME_COUNTRY));
+  EXPECT_TRUE(non_empty_types.count(PHONE_HOME_NUMBER));
+  EXPECT_TRUE(non_empty_types.count(PHONE_HOME_CITY_CODE));
+  EXPECT_TRUE(non_empty_types.count(PHONE_HOME_COUNTRY_CODE));
+  EXPECT_TRUE(non_empty_types.count(PHONE_HOME_CITY_AND_NUMBER));
+  EXPECT_TRUE(non_empty_types.count(PHONE_HOME_WHOLE_NUMBER));
+  EXPECT_TRUE(non_empty_types.count(PHONE_FAX_NUMBER));
+  EXPECT_TRUE(non_empty_types.count(PHONE_FAX_CITY_CODE));
+  EXPECT_TRUE(non_empty_types.count(PHONE_FAX_COUNTRY_CODE));
+  EXPECT_TRUE(non_empty_types.count(PHONE_FAX_CITY_AND_NUMBER));
+  EXPECT_TRUE(non_empty_types.count(PHONE_FAX_WHOLE_NUMBER));
+
+  // Test with credit card information also stored.
+  CreditCard credit_card;
+  autofill_test::SetCreditCardInfo(&credit_card,
+                                   "John Dillinger", "423456789012" /* Visa */,
+                                   "01", "2010");
+  personal_data_->AddCreditCard(credit_card);
+
+  // Verify that the web database has been updated and the notification sent.
+  EXPECT_CALL(personal_data_observer_,
+              OnPersonalDataChanged()).WillOnce(QuitUIMessageLoop());
+  MessageLoop::current()->Run();
+
+  personal_data_->GetNonEmptyTypes(&non_empty_types);
+  EXPECT_EQ(30U, non_empty_types.size());
+  EXPECT_TRUE(non_empty_types.count(NAME_FIRST));
+  EXPECT_TRUE(non_empty_types.count(NAME_MIDDLE));
+  EXPECT_TRUE(non_empty_types.count(NAME_MIDDLE_INITIAL));
+  EXPECT_TRUE(non_empty_types.count(NAME_LAST));
+  EXPECT_TRUE(non_empty_types.count(NAME_FULL));
+  EXPECT_TRUE(non_empty_types.count(EMAIL_ADDRESS));
+  EXPECT_TRUE(non_empty_types.count(COMPANY_NAME));
+  EXPECT_TRUE(non_empty_types.count(ADDRESS_HOME_LINE1));
+  EXPECT_TRUE(non_empty_types.count(ADDRESS_HOME_LINE2));
+  EXPECT_TRUE(non_empty_types.count(ADDRESS_HOME_CITY));
+  EXPECT_TRUE(non_empty_types.count(ADDRESS_HOME_STATE));
+  EXPECT_TRUE(non_empty_types.count(ADDRESS_HOME_ZIP));
+  EXPECT_TRUE(non_empty_types.count(ADDRESS_HOME_COUNTRY));
+  EXPECT_TRUE(non_empty_types.count(PHONE_HOME_NUMBER));
+  EXPECT_TRUE(non_empty_types.count(PHONE_HOME_CITY_CODE));
+  EXPECT_TRUE(non_empty_types.count(PHONE_HOME_COUNTRY_CODE));
+  EXPECT_TRUE(non_empty_types.count(PHONE_HOME_CITY_AND_NUMBER));
+  EXPECT_TRUE(non_empty_types.count(PHONE_HOME_WHOLE_NUMBER));
+  EXPECT_TRUE(non_empty_types.count(PHONE_FAX_NUMBER));
+  EXPECT_TRUE(non_empty_types.count(PHONE_FAX_CITY_CODE));
+  EXPECT_TRUE(non_empty_types.count(PHONE_FAX_COUNTRY_CODE));
+  EXPECT_TRUE(non_empty_types.count(PHONE_FAX_CITY_AND_NUMBER));
+  EXPECT_TRUE(non_empty_types.count(PHONE_FAX_WHOLE_NUMBER));
+  EXPECT_TRUE(non_empty_types.count(CREDIT_CARD_NAME));
+  EXPECT_TRUE(non_empty_types.count(CREDIT_CARD_NUMBER));
+  EXPECT_TRUE(non_empty_types.count(CREDIT_CARD_EXP_MONTH));
+  EXPECT_TRUE(non_empty_types.count(CREDIT_CARD_EXP_2_DIGIT_YEAR));
+  EXPECT_TRUE(non_empty_types.count(CREDIT_CARD_EXP_4_DIGIT_YEAR));
+  EXPECT_TRUE(non_empty_types.count(CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR));
+  EXPECT_TRUE(non_empty_types.count(CREDIT_CARD_EXP_DATE_4_DIGIT_YEAR));
 }

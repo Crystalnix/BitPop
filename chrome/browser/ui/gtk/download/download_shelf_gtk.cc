@@ -20,9 +20,11 @@
 #include "content/common/notification_service.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/gtk_util.h"
+#include "ui/gfx/image.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
@@ -128,7 +130,7 @@ DownloadShelfGtk::DownloadShelfGtk(Browser* browser, GtkWidget* parent)
 
   // Make the download arrow icon.
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  GdkPixbuf* download_pixbuf = rb.GetPixbufNamed(IDR_DOWNLOADS_FAVICON);
+  GdkPixbuf* download_pixbuf = rb.GetNativeImageNamed(IDR_DOWNLOADS_FAVICON);
   GtkWidget* download_image = gtk_image_new_from_pixbuf(download_pixbuf);
 
   // Pack the link and the icon in outer hbox.
@@ -231,7 +233,8 @@ void DownloadShelfGtk::Observe(NotificationType type,
     gtk_widget_modify_bg(top_border_, GTK_STATE_NORMAL, &color);
 
     gtk_chrome_link_button_set_use_gtk_theme(
-        GTK_CHROME_LINK_BUTTON(link_button_), theme_service_->UseGtkTheme());
+        GTK_CHROME_LINK_BUTTON(link_button_),
+        theme_service_->UsingNativeTheme());
 
     // When using a non-standard, non-gtk theme, we make the link color match
     // the bookmark text color. Otherwise, standard link blue can look very

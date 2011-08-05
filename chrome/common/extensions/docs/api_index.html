@@ -342,7 +342,7 @@ Here are the supported chrome.* APIs:
 </p>
 
 <ul>
-  <li><a href="bookmarks.html" js="">bookmarks</a></li><li><a href="browserAction.html" js="">browserAction</a></li><li><a href="contextMenus.html" js="">contextMenus</a></li><li><a href="cookies.html" js="">cookies</a></li><li><a href="extension.html" js="">extension</a></li><li><a href="history.html" js="">history</a></li><li><a href="i18n.html" js="">i18n</a></li><li><a href="idle.html" js="">idle</a></li><li><a href="management.html" js="">management</a></li><li><a href="omnibox.html" js="">omnibox</a></li><li><a href="pageAction.html" js="">pageAction</a></li><li><a href="tabs.html" js="">tabs</a></li><li><a href="windows.html" js="">windows</a></li>
+  <li><a href="bookmarks.html" js="">bookmarks</a></li><li><a href="browserAction.html" js="">browserAction</a></li><li><a href="contextMenus.html" js="">contextMenus</a></li><li><a href="cookies.html" js="">cookies</a></li><li><a href="extension.html" js="">extension</a></li><li><a href="fileBrowserHandler.html" js="">fileBrowserHandler</a></li><li><a href="history.html" js="">history</a></li><li><a href="i18n.html" js="">i18n</a></li><li><a href="idle.html" js="">idle</a></li><li><a href="management.html" js="">management</a></li><li><a href="omnibox.html" js="">omnibox</a></li><li><a href="pageAction.html" js="">pageAction</a></li><li><a href="proxy.html" js="">proxy</a></li><li><a href="tabs.html" js="">tabs</a></li><li><a href="types.html" js="">types</a></li><li><a href="windows.html" js="">windows</a></li>
 </ul>
 
 <h2 id="experimental">Experimental APIs</h2>
@@ -481,7 +481,7 @@ For more information, watch this video:
 
               <div class="summary">
                 <!-- Note: intentionally longer 80 columns -->
-                <span class="subdued">chrome.bookmarks</span><span>onEvent</span><span class="subdued">.addListener</span>(function(<span>Type param1, Type param2</span>) <span class="subdued">{...}</span>);
+                <span class="subdued">chrome.bookmarks</span><span>onEvent</span><span class="subdued">.addListener</span>(function(<span>Type param1, Type param2</span>) <span class="subdued">{...}</span><span>, Type opt_param1, Type opt_param2</span>));
               </div>
 
               <div class="description">
@@ -490,9 +490,9 @@ For more information, watch this video:
                   A description from the json schema def of the event goes here.
                 </p>
 
-                <!-- PARAMETERS -->
+                <!-- LISTENER PARAMETERS -->
                 <div>
-                  <h4>Parameters</h4>
+                  <h4>Listener parameters</h4>
                   <dl>
                     <div>
                       <div>
@@ -500,8 +500,28 @@ For more information, watch this video:
                     </div>
                   </dl>
                 </div>
-              </div> <!-- /decription -->
 
+                <!-- EXTRA PARAMETERS -->
+                <div>
+                  <h4>Extra parameters to addListener</h4>
+                  <dl>
+                    <div>
+                      <div>
+                      </div>
+                    </div>
+                  </dl>
+                </div>
+
+                <!-- LISTENER RETURN VALUE -->
+                <h4>Listener returns</h4>
+                <dl>
+                  <div>
+                    <div>
+                    </div>
+                  </div>
+                </dl>
+
+              </div> <!-- /description -->
             </div> <!-- /apiItem -->
 
           </div> <!-- /apiGroup -->

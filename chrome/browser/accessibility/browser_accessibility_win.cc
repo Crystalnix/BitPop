@@ -640,6 +640,10 @@ STDMETHODIMP BrowserAccessibilityWin::get_text(
 
   const string16& text_str = TextForIAccessibleText();
 
+  // Handle special text offsets.
+  HandleSpecialTextOffset(text_str, &start_offset);
+  HandleSpecialTextOffset(text_str, &end_offset);
+
   // The spec allows the arguments to be reversed.
   if (start_offset > end_offset) {
     LONG tmp = start_offset;
@@ -1147,6 +1151,13 @@ void BrowserAccessibilityWin::Initialize() {
   // announce the name.
   if (name_.empty() && HasAttribute(WebAccessibility::ATTR_DESCRIPTION))
     GetAttribute(WebAccessibility::ATTR_DESCRIPTION, &name_);
+
+  // If this doesn't have a value and is linked then set its value to the url
+  // attribute. This allows screen readers to read an empty link's destination.
+  if (value_.empty() && (ia_state_ & STATE_SYSTEM_LINKED) &&
+      HasAttribute(WebAccessibility::ATTR_URL)) {
+    GetAttribute(WebAccessibility::ATTR_URL, &value_);
+  }
 }
 
 void BrowserAccessibilityWin::NativeAddReference() {
@@ -1205,6 +1216,15 @@ const string16& BrowserAccessibilityWin::TextForIAccessibleText() {
   }
 }
 
+void BrowserAccessibilityWin::HandleSpecialTextOffset(
+    const string16& text, LONG* offset) {
+  if (*offset == IA2_TEXT_OFFSET_LENGTH) {
+    *offset = static_cast<LONG>(text.size());
+  } else if (*offset == IA2_TEXT_OFFSET_CARET) {
+    get_caretOffset(offset);
+  }
+}
+
 LONG BrowserAccessibilityWin::FindBoundary(
     const string16& text,
     IA2TextBoundaryType boundary,
@@ -1216,11 +1236,7 @@ LONG BrowserAccessibilityWin::FindBoundary(
          start_offset == IA2_TEXT_OFFSET_CARET);
   DCHECK(direction == 1 || direction == -1);
 
-  if (start_offset == IA2_TEXT_OFFSET_LENGTH) {
-    start_offset = text_size;
-  } else if (start_offset == IA2_TEXT_OFFSET_CARET) {
-    get_caretOffset(&start_offset);
-  }
+  HandleSpecialTextOffset(text, &start_offset);
 
   if (boundary == IA2_TEXT_BOUNDARY_CHAR) {
     if (direction == 1 && start_offset < text_size)

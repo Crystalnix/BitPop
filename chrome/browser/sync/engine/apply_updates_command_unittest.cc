@@ -5,11 +5,12 @@
 #include <string>
 
 #include "base/format_macros.h"
-#include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "chrome/browser/sync/engine/apply_updates_command.h"
 #include "chrome/browser/sync/engine/syncer.h"
 #include "chrome/browser/sync/engine/syncer_util.h"
 #include "chrome/browser/sync/protocol/bookmark_specifics.pb.h"
+#include "chrome/browser/sync/protocol/password_specifics.pb.h"
 #include "chrome/browser/sync/sessions/sync_session.h"
 #include "chrome/browser/sync/syncable/directory_manager.h"
 #include "chrome/browser/sync/syncable/nigori_util.h"
@@ -24,7 +25,6 @@ namespace browser_sync {
 using sessions::SyncSession;
 using std::string;
 using syncable::Entry;
-using syncable::GetEncryptedDataTypes;
 using syncable::Id;
 using syncable::MutableEntry;
 using syncable::ReadTransaction;
@@ -258,13 +258,22 @@ TEST_F(ApplyUpdatesCommandTest, UndecryptablePassword) {
   apply_updates_command_.ExecuteImpl(session());
 
   sessions::StatusController* status = session()->status_controller();
-  sessions::ScopedModelSafeGroupRestriction r(status, GROUP_PASSIVE);
-  EXPECT_EQ(1, status->update_progress().AppliedUpdatesSize())
-      << "All updates should have been attempted";
-  EXPECT_EQ(1, status->conflict_progress().ConflictingItemsSize())
-      << "The updates that can't be decrypted should be in conflict";
-  EXPECT_EQ(0, status->update_progress().SuccessfullyAppliedUpdateCount())
-      << "No update that can't be decrypted should be applied";
+  EXPECT_TRUE(status->HasConflictingUpdates())
+    << "Updates that can't be decrypted should trigger the syncer to have "
+    << "conflicting updates.";
+  {
+    sessions::ScopedModelSafeGroupRestriction r(status, GROUP_PASSIVE);
+    EXPECT_EQ(1, status->update_progress().AppliedUpdatesSize())
+        << "All updates should have been attempted";
+    EXPECT_EQ(0, status->conflict_progress().ConflictingItemsSize())
+        << "The updates that can't be decrypted should not be in regular "
+        << "conflict";
+    EXPECT_EQ(1, status->conflict_progress().NonblockingConflictingItemsSize())
+        << "The updates that can't be decrypted should be in nonblocking "
+        << "conflict";
+    EXPECT_EQ(0, status->update_progress().SuccessfullyAppliedUpdateCount())
+        << "No update that can't be decrypted should be applied";
+  }
 }
 
 TEST_F(ApplyUpdatesCommandTest, SomeUndecryptablePassword) {
@@ -306,13 +315,22 @@ TEST_F(ApplyUpdatesCommandTest, SomeUndecryptablePassword) {
   apply_updates_command_.ExecuteImpl(session());
 
   sessions::StatusController* status = session()->status_controller();
-  sessions::ScopedModelSafeGroupRestriction r(status, GROUP_PASSIVE);
-  EXPECT_EQ(2, status->update_progress().AppliedUpdatesSize())
-      << "All updates should have been attempted";
-  EXPECT_EQ(1, status->conflict_progress().ConflictingItemsSize())
-      << "The decryptable password update should be applied";
-  EXPECT_EQ(1, status->update_progress().SuccessfullyAppliedUpdateCount())
-      << "The undecryptable password update shouldn't be applied";
+  EXPECT_TRUE(status->HasConflictingUpdates())
+    << "Updates that can't be decrypted should trigger the syncer to have "
+    << "conflicting updates.";
+  {
+    sessions::ScopedModelSafeGroupRestriction r(status, GROUP_PASSIVE);
+    EXPECT_EQ(2, status->update_progress().AppliedUpdatesSize())
+        << "All updates should have been attempted";
+    EXPECT_EQ(0, status->conflict_progress().ConflictingItemsSize())
+        << "The updates that can't be decrypted should not be in regular "
+        << "conflict";
+    EXPECT_EQ(1, status->conflict_progress().NonblockingConflictingItemsSize())
+        << "The updates that can't be decrypted should be in nonblocking "
+        << "conflict";
+    EXPECT_EQ(1, status->update_progress().SuccessfullyAppliedUpdateCount())
+        << "The undecryptable password update shouldn't be applied";
+  }
 }
 
 TEST_F(ApplyUpdatesCommandTest, NigoriUpdate) {
@@ -320,13 +338,14 @@ TEST_F(ApplyUpdatesCommandTest, NigoriUpdate) {
   // know it's safe.
   Cryptographer* cryptographer;
   syncable::ModelTypeSet encrypted_types;
+  encrypted_types.insert(syncable::PASSWORDS);
   {
     ScopedDirLookup dir(syncdb()->manager(), syncdb()->name());
     ASSERT_TRUE(dir.good());
     ReadTransaction trans(dir, __FILE__, __LINE__);
-    EXPECT_EQ(encrypted_types, GetEncryptedDataTypes(&trans));
     cryptographer =
         session()->context()->directory_manager()->GetCryptographer(&trans);
+    EXPECT_EQ(encrypted_types, cryptographer->GetEncryptedTypes());
   }
 
   // Nigori node updates should update the Cryptographer.
@@ -364,15 +383,17 @@ TEST_F(ApplyUpdatesCommandTest, EncryptUnsyncedChanges) {
   // know it's safe.
   Cryptographer* cryptographer;
   syncable::ModelTypeSet encrypted_types;
+  encrypted_types.insert(syncable::PASSWORDS);
   {
     ScopedDirLookup dir(syncdb()->manager(), syncdb()->name());
     ASSERT_TRUE(dir.good());
     ReadTransaction trans(dir, __FILE__, __LINE__);
-    EXPECT_EQ(encrypted_types, GetEncryptedDataTypes(&trans));
     cryptographer =
         session()->context()->directory_manager()->GetCryptographer(&trans);
+    EXPECT_EQ(encrypted_types, cryptographer->GetEncryptedTypes());
 
-    // With empty encrypted_types, this should be true.
+
+    // With default encrypted_types, this should be true.
     EXPECT_TRUE(VerifyUnsyncedChangesAreEncrypted(&trans, encrypted_types));
 
     Syncer::UnsyncedMetaHandles handles;
@@ -390,13 +411,13 @@ TEST_F(ApplyUpdatesCommandTest, EncryptUnsyncedChanges) {
   size_t batch_s = 5;
   for (i = 0; i < batch_s; ++i) {
     CreateUnsyncedItem(id_factory_.NewLocalId(), folder_id,
-                       StringPrintf("Item %"PRIuS"", i), false,
+                       base::StringPrintf("Item %"PRIuS"", i), false,
                        syncable::BOOKMARKS, NULL);
   }
   // Next five items are children of the root.
   for (; i < 2*batch_s; ++i) {
     CreateUnsyncedItem(id_factory_.NewLocalId(), id_factory_.root(),
-                       StringPrintf("Item %"PRIuS"", i), false,
+                       base::StringPrintf("Item %"PRIuS"", i), false,
                        syncable::BOOKMARKS, NULL);
   }
 
@@ -432,7 +453,9 @@ TEST_F(ApplyUpdatesCommandTest, EncryptUnsyncedChanges) {
   EXPECT_EQ(1, status->update_progress().AppliedUpdatesSize())
       << "All updates should have been attempted";
   EXPECT_EQ(0, status->conflict_progress().ConflictingItemsSize())
-      << "The nigori update shouldn't be in conflict";
+      << "No updates should be in conflict";
+  EXPECT_EQ(0, status->conflict_progress().NonblockingConflictingItemsSize())
+      << "No updates should be in conflict";
   EXPECT_EQ(1, status->update_progress().SuccessfullyAppliedUpdateCount())
       << "The nigori update should be applied";
   EXPECT_FALSE(cryptographer->has_pending_keys());
@@ -444,7 +467,7 @@ TEST_F(ApplyUpdatesCommandTest, EncryptUnsyncedChanges) {
 
     // If ProcessUnsyncedChangesForEncryption worked, all our unsynced changes
     // should be encrypted now.
-    EXPECT_EQ(encrypted_types, GetEncryptedDataTypes(&trans));
+    EXPECT_EQ(encrypted_types, cryptographer->GetEncryptedTypes());
     EXPECT_TRUE(VerifyUnsyncedChangesAreEncrypted(&trans, encrypted_types));
 
     Syncer::UnsyncedMetaHandles handles;
@@ -458,15 +481,17 @@ TEST_F(ApplyUpdatesCommandTest, CannotEncryptUnsyncedChanges) {
   // know it's safe.
   Cryptographer* cryptographer;
   syncable::ModelTypeSet encrypted_types;
+  encrypted_types.insert(syncable::PASSWORDS);
   {
     ScopedDirLookup dir(syncdb()->manager(), syncdb()->name());
     ASSERT_TRUE(dir.good());
     ReadTransaction trans(dir, __FILE__, __LINE__);
-    EXPECT_EQ(encrypted_types, GetEncryptedDataTypes(&trans));
     cryptographer =
         session()->context()->directory_manager()->GetCryptographer(&trans);
+    EXPECT_EQ(encrypted_types, cryptographer->GetEncryptedTypes());
 
-    // With empty encrypted_types, this should be true.
+
+    // With default encrypted_types, this should be true.
     EXPECT_TRUE(VerifyUnsyncedChangesAreEncrypted(&trans, encrypted_types));
 
     Syncer::UnsyncedMetaHandles handles;
@@ -484,13 +509,13 @@ TEST_F(ApplyUpdatesCommandTest, CannotEncryptUnsyncedChanges) {
   size_t batch_s = 5;
   for (i = 0; i < batch_s; ++i) {
     CreateUnsyncedItem(id_factory_.NewLocalId(), folder_id,
-                       StringPrintf("Item %"PRIuS"", i), false,
+                       base::StringPrintf("Item %"PRIuS"", i), false,
                        syncable::BOOKMARKS, NULL);
   }
   // Next five items are children of the root.
   for (; i < 2*batch_s; ++i) {
     CreateUnsyncedItem(id_factory_.NewLocalId(), id_factory_.root(),
-                       StringPrintf("Item %"PRIuS"", i), false,
+                       base::StringPrintf("Item %"PRIuS"", i), false,
                        syncable::BOOKMARKS, NULL);
   }
 
@@ -526,8 +551,12 @@ TEST_F(ApplyUpdatesCommandTest, CannotEncryptUnsyncedChanges) {
   sessions::ScopedModelSafeGroupRestriction r(status, GROUP_PASSIVE);
   EXPECT_EQ(1, status->update_progress().AppliedUpdatesSize())
       << "All updates should have been attempted";
-  EXPECT_EQ(1, status->conflict_progress().ConflictingItemsSize())
-      << "The unsynced chnages trigger a conflict with the nigori update.";
+  EXPECT_EQ(0, status->conflict_progress().ConflictingItemsSize())
+      << "The unsynced changes don't trigger a blocking conflict with the "
+      << "nigori update.";
+  EXPECT_EQ(1, status->conflict_progress().NonblockingConflictingItemsSize())
+      << "The unsynced changes trigger a non-blocking conflict with the "
+      << "nigori update.";
   EXPECT_EQ(0, status->update_progress().SuccessfullyAppliedUpdateCount())
       << "The nigori update should not be applied";
   EXPECT_FALSE(cryptographer->is_ready());
@@ -542,7 +571,9 @@ TEST_F(ApplyUpdatesCommandTest, CannotEncryptUnsyncedChanges) {
     // changes.
     EXPECT_FALSE(VerifyUnsyncedChangesAreEncrypted(&trans, encrypted_types));
     encrypted_types.clear();
-    EXPECT_EQ(encrypted_types, GetEncryptedDataTypes(&trans));
+    encrypted_types.insert(syncable::PASSWORDS);
+    encrypted_types.insert(syncable::BOOKMARKS);
+    EXPECT_EQ(encrypted_types, cryptographer->GetEncryptedTypes());
 
     Syncer::UnsyncedMetaHandles handles;
     SyncerUtil::GetUnsyncedEntries(&trans, &handles);

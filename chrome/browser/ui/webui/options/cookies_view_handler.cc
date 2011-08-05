@@ -8,6 +8,7 @@
 #include "base/values.h"
 #include "chrome/browser/browsing_data_appcache_helper.h"
 #include "chrome/browser/browsing_data_database_helper.h"
+#include "chrome/browser/browsing_data_file_system_helper.h"
 #include "chrome/browser/browsing_data_indexed_db_helper.h"
 #include "chrome/browser/browsing_data_local_storage_helper.h"
 #include "chrome/browser/profiles/profile.h"
@@ -55,9 +56,16 @@ void CookiesViewHandler::GetLocalizedValues(
     { "cookie_database_storage", IDS_COOKIES_DATABASE_STORAGE },
     { "cookie_indexed_db", IDS_COOKIES_INDEXED_DB },
     { "cookie_local_storage", IDS_COOKIES_LOCAL_STORAGE },
-    { "cookie_session_storage", IDS_COOKIES_SESSION_STORAGE },
+    { "cookie_app_cache", IDS_COOKIES_APPLICATION_CACHE },
+    { "search_cookies", IDS_COOKIES_SEARCH_COOKIES },
     { "remove_cookie", IDS_COOKIES_REMOVE_LABEL },
     { "remove_all_cookie", IDS_COOKIES_REMOVE_ALL_LABEL },
+    { "cookie_file_system", IDS_COOKIES_FILE_SYSTEM },
+    { "label_file_system_origin", IDS_COOKIES_LOCAL_STORAGE_ORIGIN_LABEL },
+    { "label_file_system_temporary_usage",
+      IDS_COOKIES_FILE_SYSTEM_TEMPORARY_USAGE_LABEL },
+    { "label_file_system_persistent_usage",
+      IDS_COOKIES_FILE_SYSTEM_PERSISTENT_USAGE_LABEL }
   };
 
   RegisterStrings(localized_strings, resources, arraysize(resources));
@@ -141,6 +149,7 @@ void CookiesViewHandler::EnsureCookiesTreeModelCreated() {
         NULL,
         new BrowsingDataAppCacheHelper(profile),
         BrowsingDataIndexedDBHelper::Create(profile),
+        BrowsingDataFileSystemHelper::Create(profile),
         false));
     cookies_tree_model_->AddCookiesTreeObserver(this);
   }
@@ -148,7 +157,7 @@ void CookiesViewHandler::EnsureCookiesTreeModelCreated() {
 
 void CookiesViewHandler::UpdateSearchResults(const ListValue* args) {
   std::string query;
-  if (!args->GetString(0, &query)){
+  if (!args->GetString(0, &query)) {
     return;
   }
 
@@ -164,7 +173,7 @@ void CookiesViewHandler::RemoveAll(const ListValue* args) {
 
 void CookiesViewHandler::Remove(const ListValue* args) {
   std::string node_path;
-  if (!args->GetString(0, &node_path)){
+  if (!args->GetString(0, &node_path)) {
     return;
   }
 
@@ -178,7 +187,7 @@ void CookiesViewHandler::Remove(const ListValue* args) {
 
 void CookiesViewHandler::LoadChildren(const ListValue* args) {
   std::string node_path;
-  if (!args->GetString(0, &node_path)){
+  if (!args->GetString(0, &node_path)) {
     return;
   }
 

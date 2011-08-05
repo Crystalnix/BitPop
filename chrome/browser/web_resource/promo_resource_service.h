@@ -6,6 +6,9 @@
 #define CHROME_BROWSER_WEB_RESOURCE_PROMO_RESOURCE_SERVICE_H_
 #pragma once
 
+#include <string>
+
+#include "chrome/browser/platform_util.h"
 #include "chrome/browser/web_resource/web_resource_service.h"
 
 namespace PromoResourceServiceUtil {
@@ -29,7 +32,8 @@ class PrefService;
 class PromoResourceService
     : public WebResourceService {
  public:
-  static bool IsBuildTargeted(const std::string& channel, int builds_targeted);
+  static bool IsBuildTargeted(platform_util::Channel channel,
+                              int builds_targeted);
 
   static void RegisterPrefs(PrefService* local_state);
 
@@ -44,6 +48,8 @@ class PromoResourceService
   FRIEND_TEST_ALL_PREFIXES(PromoResourceServiceTest, UnpackLogoSignal);
   FRIEND_TEST_ALL_PREFIXES(PromoResourceServiceTest, UnpackPromoSignal);
   FRIEND_TEST_ALL_PREFIXES(PromoResourceServiceTest, UnpackWebStoreSignal);
+  FRIEND_TEST_ALL_PREFIXES(
+      PromoResourceServiceTest, UnpackPartialWebStoreSignal);
 
   // Identifies types of Chrome builds for promo targeting.
   enum BuildType {
@@ -80,7 +86,7 @@ class PromoResourceService
   void ScheduleNotificationOnInit();
 
   // Overrides the current Chrome release channel for testing purposes.
-  void set_channel(const char* channel) { channel_ = channel; }
+  void set_channel(platform_util::Channel channel) { channel_ = channel; }
 
   virtual void Unpack(const DictionaryValue& parsed_json);
 
@@ -160,7 +166,7 @@ class PromoResourceService
   //     "answers": [
   //       {
   //         "answer_id": "1143011",
-  //         "name": "webstore_promo:15",
+  //         "name": "webstore_promo:15:",
   //         "question": "Browse thousands of apps and games for Chrome.",
   //         "inproduct_target": "Visit the Chrome Web Store",
   //         "inproduct": "https://chrome.google.com/webstore?hl=en",
@@ -178,7 +184,9 @@ class PromoResourceService
   //   tooltip: the text for the "hide this" link on the promo
   //   name: starts with "webstore_promo" to identify the signal. the second
   //         part contains the release channels targeted (bitwise or of
-  //         BuildTypes)
+  //         BuildTypes). The third part is optional and specifies the URL of
+  //         the logo image. In the example above, the URL is empty so the
+  //         default webstore logo will be used.
   //   answer_id: the promo's id
   void UnpackWebStoreSignal(const DictionaryValue& parsed_json);
 
@@ -187,7 +195,7 @@ class PromoResourceService
   DictionaryValue* web_resource_cache_;
 
   // Overrides the current Chrome release channel for testing purposes.
-  const char* channel_;
+  platform_util::Channel channel_;
 
   DISALLOW_COPY_AND_ASSIGN(PromoResourceService);
 };

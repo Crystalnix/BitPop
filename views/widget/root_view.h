@@ -20,6 +20,10 @@ class Widget;
 class GestureManager;
 #endif
 
+// This is a views-internal API and should not be used externally.
+// Widget exposes this object as a View*.
+namespace internal {
+
 ////////////////////////////////////////////////////////////////////////////////
 // RootView class
 //
@@ -34,9 +38,7 @@ class GestureManager;
 //  initialized to attach the contents view to the RootView.
 //  TODO(beng): Enforce no other callers to AddChildView/tree functions by
 //              overriding those methods as private here.
-//  TODO(beng): Move to internal namespace and remove accessors from
-//              View/Widget.
-//  TODO(beng): Clean up API further, make WidgetImpl a friend.
+//  TODO(beng): Clean up API further, make Widget a friend.
 //
 class RootView : public View,
                  public FocusTraversable {
@@ -61,8 +63,8 @@ class RootView : public View,
 
   // Process a key event. Send the event to the focused view and up the focus
   // path, and finally to the default keyboard handler, until someone consumes
-  // it.  Returns whether anyone consumed the event.
-  bool ProcessKeyEvent(const KeyEvent& event);
+  // it. Returns whether anyone consumed the event.
+  bool OnKeyEvent(const KeyEvent& event);
 
 #if defined(TOUCH_UI) && defined(UNIT_TEST)
   // For unit testing purposes, we use this method to set a mock
@@ -113,16 +115,14 @@ class RootView : public View,
   virtual void SetMouseHandler(View* new_mouse_handler) OVERRIDE;
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
 
-#if defined(TOUCH_UI)
-  static void SetKeepMouseCursor(bool keep);
-  static bool GetKeepMouseCursor();
-#endif
-
  protected:
   // Overridden from View:
   virtual void ViewHierarchyChanged(bool is_add, View* parent,
                                     View* child) OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  virtual bool ShouldPaintToTexture() const OVERRIDE;
+  virtual const ui::Compositor* GetCompositor() const OVERRIDE;
+  virtual ui::Compositor* GetCompositor() OVERRIDE;
 
  private:
   friend class View;
@@ -133,13 +133,6 @@ class RootView : public View,
   // with synthetic events as necessary.
   friend class GestureManager;
 #endif
-
-  // Coordinate conversion -----------------------------------------------------
-
-  // Convert a point to our current mouse handler. Returns false if the
-  // mouse handler is not connected to a Widget. In that case, the
-  // conversion cannot take place and |p| is unchanged
-  bool ConvertPointToMouseHandler(const gfx::Point& l, gfx::Point* p);
 
   // Input ---------------------------------------------------------------------
 
@@ -174,7 +167,7 @@ class RootView : public View,
   // a double-click lands on the same view as its single-click part.
   View* last_click_handler_;
 
-  // true if mouse_handler_ has been explicitly set
+  // true if mouse_pressed_handler_ has been explicitly set
   bool explicit_mouse_handler_;
 
   // Last position/flag of a mouse press/drag. Used if capture stops and we need
@@ -213,6 +206,8 @@ class RootView : public View,
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(RootView);
 };
+
+}  // namespace internal
 }  // namespace views
 
 #endif  // VIEWS_WIDGET_ROOT_VIEW_H_

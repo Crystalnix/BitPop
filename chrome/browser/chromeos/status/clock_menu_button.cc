@@ -19,7 +19,19 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
+#include "views/widget/widget.h"
+#include "views/window/window.h"
 #include "unicode/datefmt.h"
+
+namespace {
+
+// views::MenuItemView item ids
+enum {
+  CLOCK_DISPLAY_ITEM,
+  CLOCK_OPEN_OPTIONS_ITEM
+};
+
+}  // namespace
 
 namespace chromeos {
 
@@ -76,35 +88,14 @@ void ClockMenuButton::UpdateText() {
   const bool use_24hour_clock =
       host_->GetProfile() &&
       host_->GetProfile()->GetPrefs()->GetBoolean(prefs::kUse24HourClock);
-  if (use_24hour_clock) {
-    SetText(UTF16ToWide(base::TimeFormatTimeOfDayWithHourClockType(
-        time, base::k24HourClock)));
-  } else {
-    // Remove the am/pm field if it's present.
-    scoped_ptr<icu::DateFormat> formatter(
-        icu::DateFormat::createTimeInstance(icu::DateFormat::kShort));
-    icu::UnicodeString time_string;
-    icu::FieldPosition ampm_field(icu::DateFormat::kAmPmField);
-    formatter->format(
-        static_cast<UDate>(time.ToDoubleT() * 1000), time_string, ampm_field);
-    int ampm_length = ampm_field.getEndIndex() - ampm_field.getBeginIndex();
-    if (ampm_length) {
-      int begin = ampm_field.getBeginIndex();
-      // Doesn't include any spacing before the field.
-      if (begin)
-        begin--;
-      time_string.removeBetween(begin, ampm_field.getEndIndex());
-    }
-    string16 time_string16 =
-        string16(time_string.getBuffer(),
-                 static_cast<size_t>(time_string.length()));
-    SetText(UTF16ToWide(time_string16));
-  }
+  SetText(UTF16ToWide(base::TimeFormatTimeOfDayWithHourClockType(
+      time,
+      use_24hour_clock ? base::k24HourClock : base::k12HourClock,
+      base::kDropAmPm)));
   SetTooltipText(UTF16ToWide(base::TimeFormatShortDate(time)));
   SchedulePaint();
 }
 
-////////////////////////////////////////////////////////////////////////////////
 // ClockMenuButton, NotificationObserver implementation:
 
 void ClockMenuButton::Observe(NotificationType type,
@@ -118,69 +109,92 @@ void ClockMenuButton::Observe(NotificationType type,
   }
 }
 
-
-////////////////////////////////////////////////////////////////////////////////
-// ClockMenuButton, ui::MenuModel implementation:
-
-int ClockMenuButton::GetItemCount() const {
-  // If options dialog is unavailable, don't count a separator and configure
-  // menu item.
-  return host_->ShouldOpenButtonOptions(this) ? 3 : 1;
+// ClockMenuButton, views::MenuDelegate implementation:
+std::wstring ClockMenuButton::GetLabel(int id) const {
+  DCHECK_EQ(CLOCK_DISPLAY_ITEM, id);
+  const string16 label = base::TimeFormatFriendlyDate(base::Time::Now());
+  return UTF16ToWide(label);
 }
 
-ui::MenuModel::ItemType ClockMenuButton::GetTypeAt(int index) const {
-  // There's a separator between the current date and the menu item to open
-  // the options menu.
-  return index == 1 ? ui::MenuModel::TYPE_SEPARATOR:
-                      ui::MenuModel::TYPE_COMMAND;
+bool ClockMenuButton::IsCommandEnabled(int id) const {
+  DCHECK(id == CLOCK_DISPLAY_ITEM || id == CLOCK_OPEN_OPTIONS_ITEM);
+  return id == CLOCK_OPEN_OPTIONS_ITEM;
 }
 
-string16 ClockMenuButton::GetLabelAt(int index) const {
-  if (index == 0)
-    return base::TimeFormatFriendlyDate(base::Time::Now());
-  return l10n_util::GetStringUTF16(IDS_STATUSBAR_CLOCK_OPEN_OPTIONS_DIALOG);
-}
-
-bool ClockMenuButton::IsEnabledAt(int index) const {
-  // The 1st item is the current date, which is disabled.
-  return index != 0;
-}
-
-void ClockMenuButton::ActivatedAt(int index) {
+void ClockMenuButton::ExecuteCommand(int id) {
+  DCHECK_EQ(CLOCK_OPEN_OPTIONS_ITEM, id);
   host_->OpenButtonOptions(this);
 }
 
-///////////////////////////////////////////////////////////////////////////////
 // ClockMenuButton, PowerLibrary::Observer implementation:
 
 void ClockMenuButton::SystemResumed() {
   UpdateText();
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// ClockMenuButton, SystemAccess::Observer implementation:
+// ClockMenuButton, SystemLibrary::Observer implementation:
 
 void ClockMenuButton::TimezoneChanged(const icu::TimeZone& timezone) {
   UpdateText();
 }
 
-////////////////////////////////////////////////////////////////////////////////
+int ClockMenuButton::horizontal_padding() {
+  return 3;
+}
+
 // ClockMenuButton, views::ViewMenuDelegate implementation:
 
 void ClockMenuButton::RunMenu(views::View* source, const gfx::Point& pt) {
-  if (!clock_menu_.get())
-    clock_menu_.reset(new views::Menu2(this));
-  else
-    clock_menu_->Rebuild();
-  clock_menu_->UpdateStates();
-  clock_menu_->RunMenuAt(pt, views::Menu2::ALIGN_TOPRIGHT);
+  // View passed in must be a views::MenuButton, i.e. the ClockMenuButton.
+  DCHECK_EQ(source, this);
+
+  EnsureMenu();
+
+  // TODO(rhashimoto): Remove this workaround when WebUI provides a
+  // top-level widget on the ChromeOS login screen that is a window.
+  // The current BackgroundView class for the ChromeOS login screen
+  // creates a owning Widget that has a native GtkWindow but is not a
+  // Window.  This makes it impossible to get the NativeWindow via
+  // the views API.  This workaround casts the top-level NativeWidget
+  // to a NativeWindow that we can pass to MenuItemView::RunMenuAt().
+  gfx::NativeWindow window = GTK_WINDOW(source->GetWidget()->GetNativeView());
+
+  gfx::Point screen_loc;
+  views::View::ConvertPointToScreen(source, &screen_loc);
+  gfx::Rect bounds(screen_loc, source->size());
+  menu_->RunMenuAt(
+      window,
+      this,
+      bounds,
+      views::MenuItemView::TOPRIGHT,
+      true);
 }
 
-////////////////////////////////////////////////////////////////////////////////
 // ClockMenuButton, views::View implementation:
 
 void ClockMenuButton::OnLocaleChanged() {
   UpdateText();
+}
+
+void ClockMenuButton::EnsureMenu() {
+  if (!menu_.get()) {
+    menu_.reset(new views::MenuItemView(this));
+
+    // Text for this item will be set by GetLabel().
+    menu_->AppendDelegateMenuItem(CLOCK_DISPLAY_ITEM);
+
+    // If options dialog is unavailable, don't show a separator and configure
+    // menu item.
+    if (host_->ShouldOpenButtonOptions(this)) {
+      menu_->AppendSeparator();
+
+      const string16 clock_open_options_label =
+          l10n_util::GetStringUTF16(IDS_STATUSBAR_CLOCK_OPEN_OPTIONS_DIALOG);
+      menu_->AppendMenuItemWithLabel(
+          CLOCK_OPEN_OPTIONS_ITEM,
+          UTF16ToWide(clock_open_options_label));
+    }
+  }
 }
 
 }  // namespace chromeos

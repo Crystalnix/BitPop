@@ -14,7 +14,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/net/url_fetcher.h"
 #include "net/url_request/url_request_status.h"
 
 namespace chromeos {
@@ -27,6 +26,16 @@ CookieFetcher::CookieFetcher(Profile* profile) : profile_(profile) {
       new IssueResponseHandler(profile_->GetRequestContext()));
 }
 
+CookieFetcher::CookieFetcher(Profile* profile,
+                             AuthResponseHandler* cl_handler,
+                             AuthResponseHandler* i_handler)
+    : profile_(profile),
+      client_login_handler_(cl_handler),
+      issue_handler_(i_handler) {
+}
+
+CookieFetcher::~CookieFetcher() {}
+
 void CookieFetcher::AttemptFetch(const std::string& credentials) {
   VLOG(1) << "Getting auth token...";
   fetcher_.reset(client_login_handler_->Handle(credentials, this));
@@ -36,7 +45,7 @@ void CookieFetcher::OnURLFetchComplete(const URLFetcher* source,
                                        const GURL& url,
                                        const net::URLRequestStatus& status,
                                        int response_code,
-                                       const ResponseCookies& cookies,
+                                       const net::ResponseCookies& cookies,
                                        const std::string& data) {
   if (status.is_success() && response_code == kHttpSuccess) {
     if (issue_handler_->CanHandle(url)) {

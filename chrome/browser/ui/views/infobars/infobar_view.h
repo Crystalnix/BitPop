@@ -7,9 +7,9 @@
 #pragma once
 
 #include "base/task.h"
-#include "chrome/browser/ui/views/infobars/infobar.h"
+#include "chrome/browser/tab_contents/infobar.h"
+#include "chrome/browser/tab_contents/infobar_container.h"
 #include "chrome/browser/ui/views/infobars/infobar_background.h"
-#include "chrome/browser/ui/views/infobars/infobar_container.h"
 #include "views/controls/button/button.h"
 #include "views/focus/focus_manager.h"
 
@@ -21,7 +21,7 @@ class ImageButton;
 class ImageView;
 class Label;
 class Link;
-class LinkController;
+class LinkListener;
 class MenuButton;
 class TextButton;
 class ViewMenuDelegate;
@@ -32,7 +32,7 @@ class InfoBarView : public InfoBar,
                     public views::ButtonListener,
                     public views::FocusChangeListener {
  public:
-  explicit InfoBarView(InfoBarDelegate* delegate);
+  InfoBarView(TabContentsWrapper* owner, InfoBarDelegate* delegate);
 
   SkPath* fill_path() const { return fill_path_.get(); }
   SkPath* stroke_path() const { return stroke_path_.get(); }
@@ -48,7 +48,7 @@ class InfoBarView : public InfoBar,
 
   // Creates a link with the appropriate font and color for an infobar.
   static views::Link* CreateLink(const string16& text,
-                                 views::LinkController* controller,
+                                 views::LinkListener* listener,
                                  const SkColor& background_color);
 
   // Creates a menu button with an infobar-specific appearance.

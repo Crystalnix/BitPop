@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "chrome/browser/autofill/personal_data_manager.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
 
@@ -25,8 +26,7 @@ class AutofillOptionsHandler : public OptionsPageUIHandler,
   virtual void RegisterMessages();
 
   // PersonalDataManager::Observer implementation.
-  virtual void OnPersonalDataLoaded();
-  virtual void OnPersonalDataChanged();
+  virtual void OnPersonalDataChanged() OVERRIDE;
 
  private:
   // Loads the strings for the address and credit card overlays.
@@ -67,6 +67,13 @@ class AutofillOptionsHandler : public OptionsPageUIHandler,
   // |args| - an array containing the GUID of the credit card followed by the
   // credit card data.
   void SetCreditCard(const ListValue* args);
+
+  // Validates a list of phone/fax numbers.  The resulting validated list of
+  // numbers is then sent back to the WebUI.
+  // |args| - an array containing the index of the modified or added number, the
+  // array of numbers, and the country code string set on the profile.
+  void ValidatePhoneNumbers(const ListValue* args);
+  void ValidateFaxNumbers(const ListValue* args);
 
   // The personal data manager, used to load Autofill profiles and credit cards.
   // Unowned pointer, may not be NULL.

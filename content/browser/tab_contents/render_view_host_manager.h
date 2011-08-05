@@ -10,7 +10,9 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
+#include "content/common/notification_observer.h"
 #include "content/common/notification_registrar.h"
+#include "content/browser/site_instance.h"
 
 class WebUI;
 class InterstitialPage;
@@ -19,13 +21,13 @@ class NavigationEntry;
 class Profile;
 class RenderWidgetHostView;
 class RenderViewHost;
-class SiteInstance;
 
 // Manages RenderViewHosts for a TabContents. Normally there is only one and
 // it is easy to do. But we can also have transitions of processes (and hence
 // RenderViewHosts) that can get complex.
 class RenderViewHostManager
-    : public RenderViewHostDelegate::RendererManagement {
+    : public RenderViewHostDelegate::RendererManagement,
+      public NotificationObserver {
  public:
   // Functions implemented by our owner that we need.
   //
@@ -171,6 +173,11 @@ class RenderViewHostManager
                                    int new_request_id);
   virtual void OnCrossSiteNavigationCanceled();
 
+  // NotificationObserver implementation.
+  virtual void Observe(NotificationType type,
+                       const NotificationSource& source,
+                       const NotificationDetails& details);
+
   // Called when a RenderViewHost is about to be deleted.
   void RenderViewDeleted(RenderViewHost* rvh);
 
@@ -178,6 +185,10 @@ class RenderViewHostManager
   // current RenderViewHost.  The current RVH will be shutdown and ultimately
   // deleted.
   void SwapInRenderViewHost(RenderViewHost* rvh);
+
+  // Returns whether the given RenderViewHost is on the list of swapped out
+  // RenderViewHosts.
+  bool IsSwappedOut(RenderViewHost* rvh);
 
  private:
   friend class TestTabContents;
@@ -224,6 +235,10 @@ class RenderViewHostManager
 
   RenderViewHost* UpdateRendererStateForNavigate(const NavigationEntry& entry);
 
+  // Called when a renderer process is starting to close.  We should not
+  // schedule new navigations in its swapped out RenderViewHosts after this.
+  void RendererProcessClosing(RenderProcessHost* render_process_host);
+
   // Our delegate, not owned by us. Guaranteed non-NULL.
   Delegate* delegate_;
 
@@ -253,6 +268,10 @@ class RenderViewHostManager
   // will be a pending Web UI associated with the navigation.
   RenderViewHost* pending_render_view_host_;
   scoped_ptr<WebUI> pending_web_ui_;
+
+  // A map of site instance ID to swapped out RenderViewHosts.
+  typedef base::hash_map<int32, RenderViewHost*> RenderViewHostMap;
+  RenderViewHostMap swapped_out_hosts_;
 
   // The intersitial page currently shown if any, not own by this class
   // (the InterstitialPage is self-owned, it deletes itself when hidden).

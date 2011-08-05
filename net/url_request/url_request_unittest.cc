@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <string>
 
+#include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/file_util.h"
 #include "base/format_macros.h"
 #include "base/message_loop.h"
@@ -23,7 +25,6 @@
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "net/base/cookie_monster.h"
-#include "net/base/cookie_policy.h"
 #include "net/base/load_flags.h"
 #include "net/base/mock_host_resolver.h"
 #include "net/base/net_errors.h"
@@ -50,13 +51,6 @@
 #include "testing/platform_test.h"
 
 using base::Time;
-
-// We don't need a refcount because we are guaranteed the test will not proceed
-// until its task is run.
-namespace net {
-class BlockingNetworkDelegate;
-}  // namespace net
-DISABLE_RUNNABLE_METHOD_REFCOUNT(net::BlockingNetworkDelegate);
 
 namespace net {
 
@@ -127,7 +121,9 @@ void CheckSSLInfo(const SSLInfo& ssl_info) {
 // them.
 class BlockingNetworkDelegate : public TestNetworkDelegate {
  public:
-  BlockingNetworkDelegate() : callback_retval_(net::OK) {}
+  BlockingNetworkDelegate()
+      : callback_retval_(net::OK),
+        ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)) {}
 
   void set_callback_retval(int retval) { callback_retval_ = retval; }
   void set_redirect_url(const GURL& url) { redirect_url_ = url; }
@@ -137,13 +133,19 @@ class BlockingNetworkDelegate : public TestNetworkDelegate {
   virtual int OnBeforeURLRequest(net::URLRequest* request,
                                  net::CompletionCallback* callback,
                                  GURL* new_url) {
+    if (redirect_url_ == request->url()) {
+      // We've already seen this request and redirected elsewhere.
+      return net::OK;
+    }
+
     TestNetworkDelegate::OnBeforeURLRequest(request, callback, new_url);
 
     if (!redirect_url_.is_empty())
       *new_url = redirect_url_;
-    MessageLoop::current()->PostTask(FROM_HERE,
-        NewRunnableMethod(this, &BlockingNetworkDelegate::DoCallback,
-                          callback));
+    MessageLoop::current()->PostTask(
+        FROM_HERE,
+        method_factory_.NewRunnableMethod(&BlockingNetworkDelegate::DoCallback,
+                                          callback));
     return net::ERR_IO_PENDING;
   }
 
@@ -153,6 +155,7 @@ class BlockingNetworkDelegate : public TestNetworkDelegate {
 
   int callback_retval_;
   GURL redirect_url_;
+  ScopedRunnableMethodFactory<BlockingNetworkDelegate> method_factory_;
 };
 
 // Inherit PlatformTest since we require the autorelease pool on Mac OS X.f
@@ -423,6 +426,53 @@ TEST_F(URLRequestTestHTTP, GetTest) {
               r.GetSocketAddress().host());
     EXPECT_EQ(test_server_.host_port_pair().port(),
               r.GetSocketAddress().port());
+  }
+}
+
+TEST_F(URLRequestTestHTTP, GetZippedTest) {
+  ASSERT_TRUE(test_server_.Start());
+
+  // Parameter that specifies the Content-Length field in the response:
+  // C - Compressed length.
+  // U - Uncompressed length.
+  // L - Large length (larger than both C & U).
+  // M - Medium length (between C & U).
+  // S - Small length (smaller than both C & U).
+  const char test_parameters[] = "CULMS";
+  const int num_tests = arraysize(test_parameters)- 1;  // Skip NULL.
+  // C & U should be OK.
+  // L & M are larger than the data sent, and show an error.
+  // S has too little data, but we seem to accept it.
+  const bool test_expect_success[num_tests] =
+      { true, true, false, false, true };
+
+  for (int i = 0; i < num_tests ; i++) {
+    TestDelegate d;
+    {
+      std::string test_file =
+          base::StringPrintf("compressedfiles/BullRunSpeech.txt?%c",
+                             test_parameters[i]);
+      TestURLRequest r(test_server_.GetURL(test_file), &d);
+
+      r.Start();
+      EXPECT_TRUE(r.is_pending());
+
+      MessageLoop::current()->Run();
+
+      EXPECT_EQ(1, d.response_started_count());
+      EXPECT_FALSE(d.received_data_before_response());
+      VLOG(1) << " Received " << d.bytes_received() << " bytes"
+              << " status = " << r.status().status()
+              << " os_error = " << r.status().os_error();
+      if (test_expect_success[i]) {
+        EXPECT_EQ(URLRequestStatus::SUCCESS, r.status().status())
+            << " Parameter = \"" << test_file << "\"";
+      } else {
+        EXPECT_EQ(URLRequestStatus::FAILED, r.status().status());
+        EXPECT_EQ(-100, r.status().os_error())
+            << " Parameter = \"" << test_file << "\"";
+      }
+    }
   }
 }
 
@@ -1650,10 +1700,8 @@ TEST_F(URLRequestTest, DoNotSendCookies_ViaPolicy) {
 
   // Verify that the cookie isn't sent.
   {
-    TestCookiePolicy cookie_policy(TestCookiePolicy::NO_GET_COOKIES);
-    context->set_cookie_policy(&cookie_policy);
-
     TestDelegate d;
+    d.set_cookie_options(TestDelegate::NO_GET_COOKIES);
     TestURLRequest req(test_server.GetURL("echoheader?Cookie"), &d);
     req.set_context(context);
     req.Start();
@@ -1661,8 +1709,6 @@ TEST_F(URLRequestTest, DoNotSendCookies_ViaPolicy) {
 
     EXPECT_TRUE(d.data_received().find("Cookie: CookieToNotSend=1")
                 == std::string::npos);
-
-    context->set_cookie_policy(NULL);
 
     EXPECT_EQ(1, d.blocked_get_cookies_count());
     EXPECT_EQ(0, d.blocked_set_cookie_count());
@@ -1690,18 +1736,14 @@ TEST_F(URLRequestTest, DoNotSaveCookies_ViaPolicy) {
 
   // Try to set-up another cookie and update the previous cookie.
   {
-    TestCookiePolicy cookie_policy(TestCookiePolicy::NO_SET_COOKIE);
-    context->set_cookie_policy(&cookie_policy);
-
     TestDelegate d;
+    d.set_cookie_options(TestDelegate::NO_SET_COOKIE);
     URLRequest req(test_server.GetURL(
         "set-cookie?CookieToNotSave=1&CookieToNotUpdate=1"), &d);
     req.set_context(context);
     req.Start();
 
     MessageLoop::current()->Run();
-
-    context->set_cookie_policy(NULL);
 
     EXPECT_EQ(0, d.blocked_get_cookies_count());
     EXPECT_EQ(2, d.blocked_set_cookie_count());
@@ -1781,10 +1823,8 @@ TEST_F(URLRequestTest, DoNotSendCookies_ViaPolicy_Async) {
 
   // Verify that the cookie isn't sent.
   {
-    TestCookiePolicy cookie_policy(TestCookiePolicy::NO_GET_COOKIES);
-    context->set_cookie_policy(&cookie_policy);
-
     TestDelegate d;
+    d.set_cookie_options(TestDelegate::NO_GET_COOKIES);
     TestURLRequest req(test_server.GetURL("echoheader?Cookie"), &d);
     req.set_context(context);
     req.Start();
@@ -1792,8 +1832,6 @@ TEST_F(URLRequestTest, DoNotSendCookies_ViaPolicy_Async) {
 
     EXPECT_TRUE(d.data_received().find("Cookie: CookieToNotSend=1")
                 == std::string::npos);
-
-    context->set_cookie_policy(NULL);
 
     EXPECT_EQ(1, d.blocked_get_cookies_count());
     EXPECT_EQ(0, d.blocked_set_cookie_count());
@@ -1821,18 +1859,14 @@ TEST_F(URLRequestTest, DoNotSaveCookies_ViaPolicy_Async) {
 
   // Try to set-up another cookie and update the previous cookie.
   {
-    TestCookiePolicy cookie_policy(TestCookiePolicy::NO_SET_COOKIE);
-    context->set_cookie_policy(&cookie_policy);
-
     TestDelegate d;
+    d.set_cookie_options(TestDelegate::NO_SET_COOKIE);
     URLRequest req(test_server.GetURL(
         "set-cookie?CookieToNotSave=1&CookieToNotUpdate=1"), &d);
     req.set_context(context);
     req.Start();
 
     MessageLoop::current()->Run();
-
-    context->set_cookie_policy(NULL);
 
     EXPECT_EQ(0, d.blocked_get_cookies_count());
     EXPECT_EQ(2, d.blocked_set_cookie_count());
@@ -1862,12 +1896,10 @@ TEST_F(URLRequestTest, CookiePolicy_ForceSession) {
 
   scoped_refptr<TestURLRequestContext> context(new TestURLRequestContext());
 
-  TestCookiePolicy cookie_policy(TestCookiePolicy::FORCE_SESSION);
-  context->set_cookie_policy(&cookie_policy);
-
   // Set up a cookie.
   {
     TestDelegate d;
+    d.set_cookie_options(TestDelegate::FORCE_SESSION);
     URLRequest req(test_server.GetURL(
         "set-cookie?A=1;expires=\"Fri, 05 Feb 2010 23:42:01 GMT\""), &d);
     req.set_context(context);
@@ -1884,8 +1916,6 @@ TEST_F(URLRequestTest, CookiePolicy_ForceSession) {
       context->cookie_store()->GetCookieMonster()->GetAllCookies();
   EXPECT_EQ(1U, cookies.size());
   EXPECT_FALSE(cookies[0].IsPersistent());
-
-  context->set_cookie_policy(NULL);
 }
 
 // In this test, we do a POST which the server will 302 redirect.

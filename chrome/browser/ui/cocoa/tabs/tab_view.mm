@@ -15,7 +15,9 @@
 #import "chrome/browser/ui/cocoa/view_id_util.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
 namespace {
 
@@ -257,11 +259,6 @@ const CGFloat kRapidCloseDist = 2.5;
       return;
     }
   }
-
-  // Fire the action to select the tab.
-  if ([[controller_ target] respondsToSelector:[controller_ action]])
-    [[controller_ target] performSelector:[controller_ action]
-                               withObject:self];
 
   [self resetDragControllers];
 
@@ -546,7 +543,7 @@ const CGFloat kRapidCloseDist = 2.5;
 
     // Compute where placeholder should go and insert it into the
     // destination tab strip.
-    TabView* draggedTabView = (TabView*)[draggedController_ selectedTabView];
+    TabView* draggedTabView = (TabView*)[draggedController_ activeTabView];
     NSRect tabFrame = [draggedTabView frame];
     tabFrame.origin = [dragWindow_ convertBaseToScreen:tabFrame.origin];
     tabFrame.origin = [[targetController_ window]
@@ -573,6 +570,11 @@ const CGFloat kRapidCloseDist = 2.5;
   // The drag/click is done. If the user dragged the mouse, finalize the drag
   // and clean up.
 
+  // Fire the action to select the tab.
+  if ([[controller_ target] respondsToSelector:[controller_ action]])
+    [[controller_ target] performSelector:[controller_ action]
+                               withObject:self];
+
   // Special-case this to keep the logic below simpler.
   if (moveWindowOnDrag_)
     return;
@@ -596,13 +598,13 @@ const CGFloat kRapidCloseDist = 2.5;
       // Move tab to new location.
       DCHECK([sourceController_ numberOfTabs]);
       TabWindowController* dropController = sourceController_;
-      [dropController moveTabView:[dropController selectedTabView]
+      [dropController moveTabView:[dropController activeTabView]
                    fromController:nil];
     }
   } else if (targetController_) {
     // Move between windows. If |targetController_| is nil, we're not dropping
     // into any existing window.
-    NSView* draggedTabView = [draggedController_ selectedTabView];
+    NSView* draggedTabView = [draggedController_ activeTabView];
     [targetController_ moveTabView:draggedTabView
                     fromController:draggedController_];
     // Force redraw to avoid flashes of old content before returning to event
@@ -651,7 +653,7 @@ const CGFloat kRapidCloseDist = 2.5;
   const CGFloat lineWidth = [self cr_lineWidth];
 
   NSGraphicsContext* context = [NSGraphicsContext currentContext];
-  [context saveGraphicsState];
+  gfx::ScopedNSGraphicsContextSaveGState scopedGState(context);
 
   ThemeService* themeProvider =
       static_cast<ThemeService*>([[self window] themeProvider]);
@@ -700,7 +702,7 @@ const CGFloat kRapidCloseDist = 2.5;
   CGFloat alertAlpha = [self alertAlpha];
   if (selected || hoverAlpha > 0 || alertAlpha > 0) {
     // Draw the selected background / glow overlay.
-    [context saveGraphicsState];
+    gfx::ScopedNSGraphicsContextSaveGState drawHoverState(context);
     CGContextRef cgContext = static_cast<CGContextRef>([context graphicsPort]);
     CGContextBeginTransparencyLayer(cgContext, 0);
     if (!selected) {
@@ -711,9 +713,10 @@ const CGFloat kRapidCloseDist = 2.5;
       CGContextSetAlpha(cgContext, backgroundAlpha);
     }
     [path addClip];
-    [context saveGraphicsState];
-    [super drawBackground];
-    [context restoreGraphicsState];
+    {
+      gfx::ScopedNSGraphicsContextSaveGState drawBackgroundState(context);
+      [super drawBackgroundWithOpaque:NO];
+    }
 
     // Draw a mouse hover gradient for the default themes.
     if (!selected && hoverAlpha > 0) {
@@ -737,7 +740,6 @@ const CGFloat kRapidCloseDist = 2.5;
     }
 
     CGContextEndTransparencyLayer(cgContext);
-    [context restoreGraphicsState];
   }
 
   BOOL active = [[self window] isKeyWindow] || [[self window] isMainWindow];
@@ -767,15 +769,16 @@ const CGFloat kRapidCloseDist = 2.5;
   [context restoreGraphicsState];
 
   // Draw the top stroke.
-  [context saveGraphicsState];
-  [borderColor set];
-  [path setLineWidth:lineWidth];
-  [path stroke];
-  [context restoreGraphicsState];
+  {
+    gfx::ScopedNSGraphicsContextSaveGState drawBorderState(context);
+    [borderColor set];
+    [path setLineWidth:lineWidth];
+    [path stroke];
+  }
 
   // Mimic the tab strip's bottom border, which consists of a dark border
   // and light highlight.
-  if (!selected) {
+  if (![controller_ active]) {
     [path addClip];
     NSRect borderRect = rect;
     borderRect.origin.y = lineWidth;
@@ -787,8 +790,6 @@ const CGFloat kRapidCloseDist = 2.5;
     [highlightColor set];
     NSRectFillUsingOperation(borderRect, NSCompositeSourceOver);
   }
-
-  [context restoreGraphicsState];
 }
 
 - (void)viewDidMoveToWindow {

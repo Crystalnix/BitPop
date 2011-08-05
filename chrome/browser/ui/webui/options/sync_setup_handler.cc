@@ -11,6 +11,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/sync_setup_flow.h"
+#include "chrome/common/url_constants.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
@@ -121,6 +122,10 @@ bool GetConfiguration(const std::string& json, SyncConfiguration* config) {
     config->data_types.insert(syncable::APPS);
 
   // Encryption settings.
+  if (!result->GetBoolean("encryptAllData", &config->encrypt_all))
+    return false;
+
+  // Passphrase settings.
   if (!result->GetBoolean("usePassphrase", &config->use_secondary_passphrase))
     return false;
   if (config->use_secondary_passphrase &&
@@ -139,18 +144,6 @@ bool GetPassphrase(const std::string& json, std::string* passphrase) {
   return result->GetString("passphrase", passphrase);
 }
 
-bool GetFirstPassphrase(const std::string& json,
-                        std::string* option,
-                        std::string* passphrase) {
-  scoped_ptr<Value> parsed_value(base::JSONReader::Read(json, false));
-  if (!parsed_value.get() || !parsed_value->IsType(Value::TYPE_DICTIONARY))
-    return false;
-
-  DictionaryValue* result = static_cast<DictionaryValue*>(parsed_value.get());
-  return result->GetString("option", option) &&
-         result->GetString("passphrase", passphrase);
-}
-
 }  // namespace
 
 SyncSetupHandler::SyncSetupHandler() : flow_(NULL) {
@@ -163,20 +156,20 @@ void SyncSetupHandler::GetLocalizedValues(DictionaryValue* localized_strings) {
   DCHECK(localized_strings);
 
   localized_strings->SetString(
-      "invalidpasswordhelpurl",
+      "invalidPasswordHelpURL",
       google_util::StringAppendGoogleLocaleParam(kInvalidPasswordHelpUrl));
   localized_strings->SetString(
-      "cannotaccessaccounturl",
+      "cannotAccessAccountURL",
       google_util::StringAppendGoogleLocaleParam(kCanNotAccessAccountUrl));
   localized_strings->SetString(
-      "createnewaccounturl",
+      "createNewAccountURL",
       google_util::StringAppendGoogleLocaleParam(kCreateNewAccountUrl));
   localized_strings->SetString(
       "introduction",
       GetStringFUTF16(IDS_SYNC_LOGIN_INTRODUCTION,
                       GetStringUTF16(IDS_PRODUCT_NAME)));
   localized_strings->SetString(
-      "choosedatatypesinstructions",
+      "chooseDataTypesInstructions",
       GetStringFUTF16(IDS_SYNC_CHOOSE_DATATYPES_INSTRUCTIONS,
                       GetStringUTF16(IDS_PRODUCT_NAME)));
   localized_strings->SetString(
@@ -184,7 +177,7 @@ void SyncSetupHandler::GetLocalizedValues(DictionaryValue* localized_strings) {
       GetStringFUTF16(IDS_SYNC_ENCRYPTION_INSTRUCTIONS,
                       GetStringUTF16(IDS_PRODUCT_NAME)));
   localized_strings->SetString(
-      "encryptionhelpurl",
+      "encryptionHelpURL",
       google_util::StringAppendGoogleLocaleParam(kEncryptionHelpUrl));
   localized_strings->SetString(
       "passphraseEncryptionMessage",
@@ -194,41 +187,37 @@ void SyncSetupHandler::GetLocalizedValues(DictionaryValue* localized_strings) {
   static OptionsStringResource resources[] = {
     { "syncSetupOverlayTitle", IDS_SYNC_SETUP_TITLE },
     { "syncSetupConfigureTitle", IDS_SYNC_SETUP_CONFIGURE_TITLE },
-    { "signinprefix", IDS_SYNC_LOGIN_SIGNIN_PREFIX },
-    { "signinsuffix", IDS_SYNC_LOGIN_SIGNIN_SUFFIX },
-    { "cannotbeblank", IDS_SYNC_CANNOT_BE_BLANK },
-    { "emaillabel", IDS_SYNC_LOGIN_EMAIL },
-    { "passwordlabel", IDS_SYNC_LOGIN_PASSWORD },
-    { "invalidcredentials", IDS_SYNC_INVALID_USER_CREDENTIALS },
+    { "signinPrefix", IDS_SYNC_LOGIN_SIGNIN_PREFIX },
+    { "signinSuffix", IDS_SYNC_LOGIN_SIGNIN_SUFFIX },
+    { "cannotBeBlank", IDS_SYNC_CANNOT_BE_BLANK },
+    { "emailLabel", IDS_SYNC_LOGIN_EMAIL },
+    { "passwordLabel", IDS_SYNC_LOGIN_PASSWORD },
+    { "invalidCredentials", IDS_SYNC_INVALID_USER_CREDENTIALS },
     { "signin", IDS_SYNC_SIGNIN },
-    { "couldnotconnect", IDS_SYNC_LOGIN_COULD_NOT_CONNECT },
-    { "cannotaccessaccount", IDS_SYNC_CANNOT_ACCESS_ACCOUNT },
-    { "createaccount", IDS_SYNC_CREATE_ACCOUNT },
+    { "couldNotConnect", IDS_SYNC_LOGIN_COULD_NOT_CONNECT },
+    { "cannotAccessAccount", IDS_SYNC_CANNOT_ACCESS_ACCOUNT },
+    { "createAccount", IDS_SYNC_CREATE_ACCOUNT },
     { "cancel", IDS_CANCEL },
-    { "settingup", IDS_SYNC_LOGIN_SETTING_UP },
-    { "settingupsync", IDS_SYNC_LOGIN_SETTING_UP_SYNC },
-    { "errorsigningin", IDS_SYNC_ERROR_SIGNING_IN },
-    { "captchainstructions", IDS_SYNC_GAIA_CAPTCHA_INSTRUCTIONS },
-    { "invalidaccesscode", IDS_SYNC_INVALID_ACCESS_CODE_LABEL },
-    { "enteraccesscode", IDS_SYNC_ENTER_ACCESS_CODE_LABEL },
-    { "getaccesscodehelp", IDS_SYNC_ACCESS_CODE_HELP_LABEL },
-    { "getaccesscodeurl", IDS_SYNC_GET_ACCESS_CODE_URL },
-    { "dataTypes", IDS_SYNC_DATA_TYPES_TAB_NAME },
-    { "encryption", IDS_SYNC_ENCRYPTION_TAB_NAME },
-    { "choosedatatypesheader", IDS_SYNC_CHOOSE_DATATYPES_HEADER },
-    { "keepeverythingsynced", IDS_SYNC_EVERYTHING },
-    { "choosedatatypes", IDS_SYNC_CHOOSE_DATATYPES },
+    { "settingUp", IDS_SYNC_LOGIN_SETTING_UP },
+    { "errorSigningIn", IDS_SYNC_ERROR_SIGNING_IN },
+    { "captchaInstructions", IDS_SYNC_GAIA_CAPTCHA_INSTRUCTIONS },
+    { "invalidAccessCode", IDS_SYNC_INVALID_ACCESS_CODE_LABEL },
+    { "enterAccessCode", IDS_SYNC_ENTER_ACCESS_CODE_LABEL },
+    { "getAccessCodeHelp", IDS_SYNC_ACCESS_CODE_HELP_LABEL },
+    { "getAccessCodeURL", IDS_SYNC_GET_ACCESS_CODE_URL },
+    { "keepEverythingSynced", IDS_SYNC_EVERYTHING },
+    { "chooseDataTypes", IDS_SYNC_CHOOSE_DATATYPES },
     { "bookmarks", IDS_SYNC_DATATYPE_BOOKMARKS },
     { "preferences", IDS_SYNC_DATATYPE_PREFERENCES },
     { "autofill", IDS_SYNC_DATATYPE_AUTOFILL },
     { "themes", IDS_SYNC_DATATYPE_THEMES },
     { "passwords", IDS_SYNC_DATATYPE_PASSWORDS },
     { "extensions", IDS_SYNC_DATATYPE_EXTENSIONS },
-    { "typedurls", IDS_SYNC_DATATYPE_TYPED_URLS },
+    { "typedURLs", IDS_SYNC_DATATYPE_TYPED_URLS },
     { "apps", IDS_SYNC_DATATYPE_APPS },
-    { "foreignsessions", IDS_SYNC_DATATYPE_SESSIONS },
-    { "synczerodatatypeserror", IDS_SYNC_ZERO_DATA_TYPES_ERROR },
-    { "abortederror", IDS_SYNC_SETUP_ABORTED_BY_PENDING_CLEAR },
+    { "foreignSessions", IDS_SYNC_DATATYPE_SESSIONS },
+    { "syncZeroDataTypesError", IDS_SYNC_ZERO_DATA_TYPES_ERROR },
+    { "abortedError", IDS_SYNC_SETUP_ABORTED_BY_PENDING_CLEAR },
     { "encryptAllLabel", IDS_SYNC_ENCRYPT_ALL_LABEL },
     { "googleOption", IDS_SYNC_PASSPHRASE_OPT_GOOGLE },
     { "explicitOption", IDS_SYNC_PASSPHRASE_OPT_EXPLICIT },
@@ -239,14 +228,7 @@ void SyncSetupHandler::GetLocalizedValues(DictionaryValue* localized_strings) {
     { "emptyErrorMessage", IDS_SYNC_EMPTY_PASSPHRASE_ERROR },
     { "mismatchErrorMessage", IDS_SYNC_PASSPHRASE_MISMATCH_ERROR },
     { "passphraseWarning", IDS_SYNC_PASSPHRASE_WARNING },
-    { "cleardata", IDS_SYNC_CLEAR_DATA_FOR_PASSPHRASE },
-    { "cleardatalink", IDS_SYNC_CLEAR_DATA_LINK },
-    { "settingup", IDS_SYNC_LOGIN_SETTING_UP },
-    { "success", IDS_SYNC_SUCCESS },
-    { "firsttimesummary", IDS_SYNC_SETUP_FIRST_TIME_ALL_DONE },
-    { "okay", IDS_SYNC_SETUP_OK_BUTTON_LABEL },
-    { "enterPassphraseTitle", IDS_SYNC_ENTER_PASSPHRASE_TITLE },
-    { "firstPassphraseTitle", IDS_SYNC_FIRST_PASSPHRASE_TITLE },
+    { "clearDataLink", IDS_SYNC_CLEAR_DATA_LINK },
     { "customizeLinkLabel", IDS_SYNC_CUSTOMIZE_LINK_LABEL },
     { "confirmSyncPreferences", IDS_SYNC_CONFIRM_SYNC_PREFERENCES },
     { "syncEverything", IDS_SYNC_SYNC_EVERYTHING },
@@ -260,7 +242,6 @@ void SyncSetupHandler::GetLocalizedValues(DictionaryValue* localized_strings) {
     { "incorrectPassphrase", IDS_SYNC_INCORRECT_PASSPHRASE },
     { "passphraseRecover", IDS_SYNC_PASSPHRASE_RECOVER },
     { "passphraseWarning", IDS_SYNC_PASSPHRASE_WARNING },
-    { "cleardatalink", IDS_SYNC_CLEAR_DATA_LINK },
     { "cancelWarningHeader", IDS_SYNC_PASSPHRASE_CANCEL_WARNING_HEADER },
     { "cancelWarning", IDS_SYNC_PASSPHRASE_CANCEL_WARNING },
     { "yes", IDS_SYNC_PASSPHRASE_CANCEL_YES },
@@ -268,6 +249,9 @@ void SyncSetupHandler::GetLocalizedValues(DictionaryValue* localized_strings) {
     { "sectionExplicitMessagePrefix", IDS_SYNC_PASSPHRASE_MSG_EXPLICIT_PREFIX },
     { "sectionExplicitMessagePostfix",
         IDS_SYNC_PASSPHRASE_MSG_EXPLICIT_POSTFIX },
+    { "encryptedDataTypesTitle", IDS_SYNC_ENCRYPTION_DATA_TYPES_TITLE },
+    { "encryptSensitiveOption", IDS_SYNC_ENCRYPT_SENSITIVE_DATA },
+    { "encryptAllOption", IDS_SYNC_ENCRYPT_ALL_DATA },
   };
 
   RegisterStrings(localized_strings, resources, arraysize(resources));
@@ -277,25 +261,20 @@ void SyncSetupHandler::Initialize() {
 }
 
 void SyncSetupHandler::RegisterMessages() {
-  web_ui_->RegisterMessageCallback("didShowPage",
-      NewCallback(this, &SyncSetupHandler::OnDidShowPage));
-  web_ui_->RegisterMessageCallback("didClosePage",
+  web_ui_->RegisterMessageCallback("SyncSetupDidClosePage",
       NewCallback(this, &SyncSetupHandler::OnDidClosePage));
-  web_ui_->RegisterMessageCallback("SubmitAuth",
+  web_ui_->RegisterMessageCallback("SyncSetupSubmitAuth",
       NewCallback(this, &SyncSetupHandler::HandleSubmitAuth));
-  web_ui_->RegisterMessageCallback("Configure",
+  web_ui_->RegisterMessageCallback("SyncSetupConfigure",
       NewCallback(this, &SyncSetupHandler::HandleConfigure));
-  web_ui_->RegisterMessageCallback("Passphrase",
+  web_ui_->RegisterMessageCallback("SyncSetupPassphrase",
       NewCallback(this, &SyncSetupHandler::HandlePassphraseEntry));
-  web_ui_->RegisterMessageCallback("PassphraseCancel",
+  web_ui_->RegisterMessageCallback("SyncSetupPassphraseCancel",
       NewCallback(this, &SyncSetupHandler::HandlePassphraseCancel));
-  web_ui_->RegisterMessageCallback("FirstPassphrase",
-      NewCallback(this, &SyncSetupHandler::HandleFirstPassphrase));
-  web_ui_->RegisterMessageCallback("GoToDashboard",
-      NewCallback(this, &SyncSetupHandler::HandleGoToDashboard));
+  web_ui_->RegisterMessageCallback("SyncSetupAttachHandler",
+      NewCallback(this, &SyncSetupHandler::HandleAttachHandler));
 }
 
-// Called by SyncSetupFlow::Advance.
 void SyncSetupHandler::ShowGaiaLogin(const DictionaryValue& args) {
   StringValue page("login");
   web_ui_->CallJavascriptFunction(
@@ -310,7 +289,6 @@ void SyncSetupHandler::ShowGaiaSuccessAndSettingUp() {
   web_ui_->CallJavascriptFunction("SyncSetupOverlay.showSuccessAndSettingUp");
 }
 
-// Called by SyncSetupFlow::Advance.
 void SyncSetupHandler::ShowConfigure(const DictionaryValue& args) {
   StringValue page("configure");
   web_ui_->CallJavascriptFunction(
@@ -321,12 +299,6 @@ void SyncSetupHandler::ShowPassphraseEntry(const DictionaryValue& args) {
   StringValue page("passphrase");
   web_ui_->CallJavascriptFunction(
       "SyncSetupOverlay.showSyncSetupPage", page, args);
-}
-
-void SyncSetupHandler::ShowFirstPassphrase(const DictionaryValue& args) {
-  // TODO(jhawkins): Remove this logic in SyncSetupFlow. It will never be
-  // reached.
-  NOTREACHED();
 }
 
 void SyncSetupHandler::ShowSettingUp() {
@@ -341,20 +313,8 @@ void SyncSetupHandler::ShowSetupDone(const std::wstring& user) {
       "SyncSetupOverlay.showSyncSetupPage", page);
 }
 
-void SyncSetupHandler::ShowFirstTimeDone(const std::wstring& user) {
-  // TODO(jhawkins): Remove this from Sync since it's not called anymore.
-  NOTREACHED();
-}
-
-void SyncSetupHandler::OnDidShowPage(const ListValue* args) {
-  DCHECK(web_ui_);
-
-  ProfileSyncService* sync_service =
-      web_ui_->GetProfile()->GetProfileSyncService();
-  if (!sync_service)
-    return;
-
-  flow_ = sync_service->get_wizard().AttachSyncSetupHandler(this);
+void SyncSetupHandler::SetFlow(SyncSetupFlow* flow) {
+  flow_ = flow;
 }
 
 void SyncSetupHandler::OnDidClosePage(const ListValue* args) {
@@ -435,28 +395,34 @@ void SyncSetupHandler::HandlePassphraseCancel(const ListValue* args) {
   flow_->OnPassphraseCancel();
 }
 
-void SyncSetupHandler::HandleFirstPassphrase(const ListValue* args) {
-  std::string json;
-  if (!args->GetString(0, &json)) {
-    NOTREACHED() << "Could not read JSON argument";
-    return;
-  }
-  if (json.empty())
-    return;
+void SyncSetupHandler::HandleAttachHandler(const ListValue* args) {
+  DCHECK(web_ui_);
 
-  std::string option;
-  std::string passphrase;
-  if (!GetFirstPassphrase(json, &option, &passphrase)) {
-    // Page sent result which couldn't be parsed.  Programming error.
-    NOTREACHED();
+  ProfileSyncService* sync_service =
+      web_ui_->GetProfile()->GetProfileSyncService();
+  if (!sync_service) {
+    // If there's no sync service, the user tried to manually invoke a syncSetup
+    // URL, but sync features are disabled.  We need to close the overlay for
+    // this (rare) case.
+    web_ui_->CallJavascriptFunction("OptionsPage.closeOverlay");
     return;
   }
 
-  DCHECK(flow_);
-  flow_->OnFirstPassphraseEntry(option, passphrase);
+  if (sync_service->get_wizard().IsVisible()) {
+    // The wizard and setup flow have been configured, all we need to do is
+    // attach the handler if we haven't already done so.
+    if (!flow_)
+      flow_ = sync_service->get_wizard().AttachSyncSetupHandler(this);
+    return;
+  }
+
+  // The user is trying to manually load a syncSetup URL.  We should bring up
+  // either a login or a configure flow based on the state of sync.
+  if (sync_service->HasSyncSetupCompleted()) {
+    sync_service->ShowConfigure(web_ui_, false);
+  } else {
+    sync_service->ShowLoginDialog(web_ui_);
+    ProfileSyncService::SyncEvent(ProfileSyncService::START_FROM_URL);
+  }
 }
 
-void SyncSetupHandler::HandleGoToDashboard(const ListValue* args) {
-  DCHECK(flow_);
-  flow_->OnGoToDashboard();
-}

@@ -9,7 +9,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_temp_dir.h"
+#include "base/scoped_temp_dir.h"
 #include "content/common/page_transition_types.h"
 #include "net/test/test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -21,6 +21,10 @@
 class Browser;
 class CommandLine;
 class Profile;
+
+namespace content {
+class ContentRendererClient;
+}
 
 namespace net {
 class RuleBasedHostResolverProc;
@@ -189,6 +193,9 @@ class InProcessBrowserTest : public testing::Test {
   // Testing server, started on demand.
   scoped_ptr<net::TestServer> test_server_;
 
+  // ContentRendererClient when running in single-process mode.
+  scoped_ptr<content::ContentRendererClient> single_process_renderer_client_;
+
   // Whether this test requires the browser windows to be shown (interactive
   // tests for example need the windows shown).
   bool show_window_;
@@ -214,10 +221,13 @@ class InProcessBrowserTest : public testing::Test {
   DISALLOW_COPY_AND_ASSIGN(InProcessBrowserTest);
 };
 
-// We only want to use IN_PROC_BROWSER_TEST in binaries which will properly
-// isolate each test case. Otherwise hard-to-debug, possibly intermittent
-// crashes caused by carrying state in singletons are very likely.
-#if defined(ALLOW_IN_PROC_BROWSER_TEST)
+// We only want to use InProcessBrowserTest in test targets which properly
+// isolate each test case by running each test in a separate process.
+// This way if a test hangs the test launcher can reliably terminate it.
+//
+// InProcessBrowserTest cannot be run more than once in the same address space
+// anyway - otherwise the second test crashes.
+#if defined(HAS_OUT_OF_PROC_TEST_RUNNER)
 
 #define IN_PROC_BROWSER_TEST_(test_case_name, test_name, parent_class,\
                               parent_id)\
@@ -248,6 +258,34 @@ void GTEST_TEST_CLASS_NAME_(test_case_name, test_name)::RunTestOnMainThread()
   IN_PROC_BROWSER_TEST_(test_fixture, test_name, test_fixture,\
                     ::testing::internal::GetTypeId<test_fixture>())
 
-#endif  // defined(ALLOW_IN_PROC_BROWSER_TEST)
+#define IN_PROC_BROWSER_TEST_P(test_case_name, test_name) \
+  class GTEST_TEST_CLASS_NAME_(test_case_name, test_name) \
+      : public test_case_name { \
+   public: \
+    GTEST_TEST_CLASS_NAME_(test_case_name, test_name)() {} \
+   protected: \
+    virtual void RunTestOnMainThread(); \
+   private: \
+    virtual void TestBody() {} \
+    static int AddToRegistry() { \
+      ::testing::UnitTest::GetInstance()->parameterized_test_registry(). \
+          GetTestCasePatternHolder<test_case_name>(\
+              #test_case_name, __FILE__, __LINE__)->AddTestPattern(\
+                  #test_case_name, \
+                  #test_name, \
+                  new ::testing::internal::TestMetaFactory< \
+                      GTEST_TEST_CLASS_NAME_(test_case_name, test_name)>()); \
+      return 0; \
+    } \
+    static int gtest_registering_dummy_; \
+    GTEST_DISALLOW_COPY_AND_ASSIGN_(\
+        GTEST_TEST_CLASS_NAME_(test_case_name, test_name)); \
+  }; \
+  int GTEST_TEST_CLASS_NAME_(test_case_name, \
+                             test_name)::gtest_registering_dummy_ = \
+      GTEST_TEST_CLASS_NAME_(test_case_name, test_name)::AddToRegistry(); \
+  void GTEST_TEST_CLASS_NAME_(test_case_name, test_name)::RunTestOnMainThread()
+
+#endif  // defined(HAS_OUT_OF_PROC_TEST_RUNNER)
 
 #endif  // CHROME_TEST_IN_PROCESS_BROWSER_TEST_H_

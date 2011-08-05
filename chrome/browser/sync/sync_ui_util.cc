@@ -11,9 +11,10 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_service.h"
+#include "chrome/browser/sync/protocol/proto_enum_conversions.h"
+#include "chrome/browser/sync/sessions/session_state.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/options/options_window.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/net/gaia/google_service_auth_error.h"
 #include "chrome/common/url_constants.h"
@@ -104,7 +105,7 @@ MessageType GetStatusInfo(ProfileSyncService* service,
 
     // Either show auth error information with a link to re-login, auth in prog,
     // or note that everything is OK with the last synced time.
-    if (status.authenticated && !service->observed_passphrase_required()) {
+    if (status.authenticated && !service->IsPassphraseRequired()) {
       // Everything is peachy.
       if (status_label) {
         status_label->assign(GetSyncedStateStatusLabel(service));
@@ -116,8 +117,8 @@ MessageType GetStatusInfo(ProfileSyncService* service,
           l10n_util::GetStringUTF16(IDS_SYNC_AUTHENTICATING_LABEL));
       }
       result_type = PRE_SYNCED;
-    } else if (service->observed_passphrase_required()) {
-      if (service->passphrase_required_for_decryption()) {
+    } else if (service->IsPassphraseRequired()) {
+      if (service->IsPassphraseRequiredForDecryption()) {
         // NOT first machine.
         // Show a link ("needs attention"), but still indicate the
         // current synced status.  Return SYNC_PROMO so that
@@ -188,8 +189,8 @@ MessageType GetStatusInfoForNewTabPage(ProfileSyncService* service,
   DCHECK(link_label);
 
   if (service->HasSyncSetupCompleted() &&
-      service->observed_passphrase_required()) {
-    if (!service->passphrase_required_for_decryption()) {
+      service->IsPassphraseRequired()) {
+    if (service->passphrase_required_reason() == sync_api::REASON_ENCRYPTION) {
       // First machine migrating to passwords.  Show as a promotion.
       if (status_label && link_label) {
         status_label->assign(
@@ -244,7 +245,7 @@ bool ShouldShowSyncErrorButton(ProfileSyncService* service) {
          ((!service->IsManaged() &&
            service->HasSyncSetupCompleted()) &&
          (GetStatus(service) == sync_ui_util::SYNC_ERROR ||
-          service->observed_passphrase_required()));
+          service->IsPassphraseRequired()));
 }
 
 string16 GetSyncMenuLabel(ProfileSyncService* service) {
@@ -290,6 +291,14 @@ void AddBoolSyncDetail(ListValue* details,
   details->Append(val);
 }
 
+void AddStringSyncDetails(ListValue* details, const std::string& stat_name,
+                          const std::string& stat_value) {
+  DictionaryValue* val = new DictionaryValue;
+  val->SetString("stat_name", stat_name);
+  val->SetString("stat_value", stat_value);
+  details->Append(val);
+}
+
 void AddIntSyncDetail(ListValue* details, const std::string& stat_name,
                       int64 stat_value) {
   DictionaryValue* val = new DictionaryValue;
@@ -327,7 +336,7 @@ std::string MakeSyncAuthErrorText(
 void ConstructAboutInformation(ProfileSyncService* service,
                                DictionaryValue* strings) {
   CHECK(strings);
-  if (!service || !service->HasSyncSetupCompleted()) {
+  if (!service) {
     strings->SetString("summary", "SYNC DISABLED");
   } else {
     sync_api::SyncManager::Status full_status(
@@ -348,6 +357,10 @@ void ConstructAboutInformation(ProfileSyncService* service,
 
     ListValue* details = new ListValue();
     strings->Set("details", details);
+    sync_ui_util::AddBoolSyncDetail(details, "Sync Initialized",
+                                    service->sync_initialized());
+    sync_ui_util::AddBoolSyncDetail(details, "Sync Setup Has Completed",
+                                    service->HasSyncSetupCompleted());
     sync_ui_util::AddBoolSyncDetail(details,
                                     "Server Up",
                                     full_status.server_up);
@@ -364,14 +377,20 @@ void ConstructAboutInformation(ProfileSyncService* service,
                                    "Notifications Received",
                                    full_status.notifications_received);
     sync_ui_util::AddIntSyncDetail(details,
-                                   "Notifications Sent",
-                                   full_status.notifications_sent);
+                                   "Notifiable Commits",
+                                   full_status.notifiable_commits);
     sync_ui_util::AddIntSyncDetail(details,
                                    "Unsynced Count",
                                    full_status.unsynced_count);
     sync_ui_util::AddIntSyncDetail(details,
                                    "Conflicting Count",
                                    full_status.conflicting_count);
+    sync_ui_util::AddIntSyncDetail(details,
+                                   "Local Overwrites",
+                                   full_status.num_local_overwrites_total);
+    sync_ui_util::AddIntSyncDetail(details,
+                                   "Server Overwrites",
+                                   full_status.num_server_overwrites_total);
     sync_ui_util::AddBoolSyncDetail(details, "Syncing", full_status.syncing);
     sync_ui_util::AddBoolSyncDetail(details,
                                     "Initial Sync Ended",
@@ -394,18 +413,55 @@ void ConstructAboutInformation(ProfileSyncService* service,
     sync_ui_util::AddIntSyncDetail(details,
                                    "Max Consecutive Errors",
                                    full_status.max_consecutive_errors);
+    sync_ui_util::AddIntSyncDetail(details,
+                                   "Empty GetUpdates",
+                                   full_status.empty_get_updates);
+    sync_ui_util::AddIntSyncDetail(details,
+                                   "Nonempty GetUpdates",
+                                   full_status.nonempty_get_updates);
+    sync_ui_util::AddIntSyncDetail(details,
+                                   "Useless Sync Cycles",
+                                   full_status.useless_sync_cycles);
+    sync_ui_util::AddIntSyncDetail(details,
+                                   "Useful Sync Cycles",
+                                   full_status.useful_sync_cycles);
+
+    const browser_sync::sessions::SyncSessionSnapshot* snapshot =
+        service->sync_initialized() ?
+        service->GetLastSessionSnapshot() : NULL;
+
+    // |snapshot| could be NULL if sync is not yet initialized.
+    if (snapshot) {
+      sync_ui_util::AddIntSyncDetail(details, "Download Count (This Session)",
+          snapshot->syncer_status.num_updates_downloaded_total);
+      sync_ui_util::AddIntSyncDetail(details, "Commit Count (This Session)",
+          snapshot->syncer_status.num_successful_commits);
+      sync_ui_util::AddStringSyncDetails(details, "Last Sync Source",
+          browser_sync::GetUpdatesSourceString(
+          snapshot->source.updates_source));
+
+      // Print the count of entries from snapshot. Warning: This might be
+      // slightly out of date if there are client side changes that are yet
+      // unsynced  However if we query the latest count here we will
+      // have to hold the transaction which means we cannot display this page
+      // when syncing.
+      sync_ui_util::AddIntSyncDetail(details, "Entries" ,
+                                     snapshot->num_entries);
+      sync_ui_util::AddBoolSyncDetail(details, "Throttled",
+                                      snapshot->is_silenced);
+    }
 
     if (service->unrecoverable_error_detected()) {
       strings->Set("unrecoverable_error_detected", new FundamentalValue(true));
-      strings->SetString("unrecoverable_error_message",
-                         service->unrecoverable_error_message());
       tracked_objects::Location loc(service->unrecoverable_error_location());
       std::string location_str;
       loc.Write(true, true, &location_str);
-      strings->SetString("unrecoverable_error_location", location_str);
-    } else if (!service->sync_initialized()) {
-      strings->SetString("summary", "Sync not yet initialized");
-    } else {
+      std::string unrecoverable_error_message =
+          "Unrecoverable error detected at " + location_str +
+          ": " + service->unrecoverable_error_message();
+      strings->SetString("unrecoverable_error_message",
+                         unrecoverable_error_message);
+    } else if (service->sync_initialized()) {
       browser_sync::ModelSafeRoutingInfo routes;
       service->GetModelSafeRoutingInfo(&routes);
       ListValue* routing_info = new ListValue();

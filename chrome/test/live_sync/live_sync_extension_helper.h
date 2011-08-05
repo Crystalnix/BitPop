@@ -20,6 +20,10 @@ class Profile;
 
 class LiveSyncExtensionHelper {
  public:
+  enum ExtensionState { DISABLED, PENDING, ENABLED };
+
+  typedef std::map<std::string, ExtensionState> ExtensionStateMap;
+
   LiveSyncExtensionHelper();
   ~LiveSyncExtensionHelper();
 
@@ -34,6 +38,9 @@ class LiveSyncExtensionHelper {
   void InstallExtension(
       Profile* profile, const std::string& name, Extension::Type type);
 
+  // Uninstalls the extension with the given name from |profile|.
+  void UninstallExtension(Profile* profile, const std::string& name);
+
   // Returns true iff the extension with the given id is pending
   // install in |profile|.
   bool IsExtensionPendingInstallForSync(
@@ -42,6 +49,10 @@ class LiveSyncExtensionHelper {
   // Installs all extensions pending sync in |profile| of the given
   // type.
   void InstallExtensionsPendingForSync(Profile* profile, Extension::Type type);
+
+  // Returns a map from |profile|'s installed extensions to their
+  // state.
+  ExtensionStateMap GetExtensionStates(Profile* profile) const;
 
  private:
   typedef std::map<std::string, scoped_refptr<Extension> > ExtensionNameMap;

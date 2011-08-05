@@ -5,6 +5,7 @@
 
 .app {
   position: absolute;
+  text-align: center;
 }
 
 .app span {
@@ -49,4 +50,19 @@
      element flys back, so we want a large value that will stay large until
      its almost home.  */
   z-index: 100;
+}
+
+/* Link (bookmark) tiles. */
+.link {
+  display: -webkit-box;
+  position: absolute;
+  -webkit-box-orient: vertical;
+}
+
+.link > * {
+  -webkit-box-flex: 1;
+}
+
+.link span {
+  display: block;
 }

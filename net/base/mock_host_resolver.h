@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "net/base/host_resolver_impl.h"
 #include "net/base/host_resolver_proc.h"
+#include "net/base/net_api.h"
 
 namespace net {
 
@@ -37,7 +38,7 @@ class RuleBasedHostResolverProc;
 // re-map one hostname to another as well.
 
 // Base class shared by MockHostResolver and MockCachingHostResolver.
-class MockHostResolverBase : public HostResolver {
+class NET_TEST MockHostResolverBase : public HostResolver {
  public:
   virtual ~MockHostResolverBase();
 
@@ -94,14 +95,14 @@ class MockHostResolver : public MockHostResolverBase {
 class MockCachingHostResolver : public MockHostResolverBase {
  public:
   MockCachingHostResolver() : MockHostResolverBase(true /*use_caching*/) {}
-  ~MockCachingHostResolver() {}
+  virtual ~MockCachingHostResolver() {}
 };
 
 // RuleBasedHostResolverProc applies a set of rules to map a host string to
 // a replacement host string. It then uses the system host resolver to return
 // a socket address. Generally the replacement should be an IPv4 literal so
 // there is no network dependency.
-class RuleBasedHostResolverProc : public HostResolverProc {
+class NET_TEST RuleBasedHostResolverProc : public HostResolverProc {
  public:
   explicit RuleBasedHostResolverProc(HostResolverProc* previous);
 
@@ -146,13 +147,13 @@ class RuleBasedHostResolverProc : public HostResolverProc {
   struct Rule;
   typedef std::list<Rule> RuleList;
 
-  ~RuleBasedHostResolverProc();
+  virtual ~RuleBasedHostResolverProc();
 
   RuleList rules_;
 };
 
 // Using WaitingHostResolverProc you can simulate very long lookups.
-class WaitingHostResolverProc : public HostResolverProc {
+class NET_TEST WaitingHostResolverProc : public HostResolverProc {
  public:
   explicit WaitingHostResolverProc(HostResolverProc* previous);
 
@@ -180,7 +181,7 @@ class WaitingHostResolverProc : public HostResolverProc {
 //
 // NOTE: Only use this as a catch-all safety net. Individual tests should use
 // MockHostResolver.
-class ScopedDefaultHostResolverProc {
+class NET_TEST ScopedDefaultHostResolverProc {
  public:
   ScopedDefaultHostResolverProc();
   explicit ScopedDefaultHostResolverProc(HostResolverProc* proc);

@@ -15,23 +15,21 @@
 #include "chrome/browser/download/download_manager.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_setup_flow.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_url.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/remoting/setup_flow.h"
 #include "chrome/browser/service/service_process_control.h"
 #include "chrome/browser/service/service_process_control_manager.h"
 #include "chrome/browser/ui/options/options_util.h"
-#include "chrome/browser/ui/options/options_window.h"
 #include "chrome/browser/ui/webui/options/options_managed_banner_handler.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/browser/tab_contents/tab_contents_view.h"
+#include "content/browser/user_metrics.h"
 #include "content/common/notification_details.h"
 #include "content/common/notification_type.h"
 #include "grit/chromium_strings.h"
@@ -150,27 +148,27 @@ void AdvancedOptionsHandler::GetLocalizedValues(
       IDS_OPTIONS_IMPROVE_BROWSING_EXPERIENCE },
     { "disableWebServices",
       IDS_OPTIONS_DISABLE_WEB_SERVICES },
-#if !defined(OS_CHROMEOS)
+    { "cloudPrintOptionsStaticLabel",
+      IDS_CLOUD_PRINT_SETUP_DIALOG_TITLE },
+    { "cloudPrintProxyEnabledManageButton",
+      IDS_OPTIONS_CLOUD_PRINT_PROXY_ENABLED_MANAGE_BUTTON },
     { "advancedSectionTitleCloudPrint",
       IDS_OPTIONS_ADVANCED_SECTION_TITLE_CLOUD_PRINT },
+#if !defined(OS_CHROMEOS)
     { "cloudPrintProxyDisabledLabel",
       IDS_OPTIONS_CLOUD_PRINT_PROXY_DISABLED_LABEL },
     { "cloudPrintProxyDisabledButton",
       IDS_OPTIONS_CLOUD_PRINT_PROXY_DISABLED_BUTTON },
     { "cloudPrintProxyEnabledButton",
       IDS_OPTIONS_CLOUD_PRINT_PROXY_ENABLED_BUTTON },
-    { "cloudPrintProxyEnabledManageButton",
-      IDS_OPTIONS_CLOUD_PRINT_PROXY_ENABLED_MANAGE_BUTTON },
     { "cloudPrintProxyEnablingButton",
       IDS_OPTIONS_CLOUD_PRINT_PROXY_ENABLING_BUTTON },
 #endif
-#if defined(ENABLE_REMOTING)
-    { "advancedSectionTitleRemoting",
-      IDS_OPTIONS_ADVANCED_SECTION_TITLE_REMOTING },
-    { "remotingSetupButton",
-      IDS_OPTIONS_REMOTING_SETUP_BUTTON },
-    { "remotingStopButton",
-      IDS_OPTIONS_REMOTING_STOP_BUTTON },
+#if !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
+    { "advancedSectionTitleBackground",
+      IDS_OPTIONS_ADVANCED_SECTION_TITLE_BACKGROUND },
+    { "backgroundModeCheckbox",
+      IDS_OPTIONS_BACKGROUND_ENABLE_BACKGROUND_MODE },
 #endif
   };
 
@@ -201,12 +199,8 @@ void AdvancedOptionsHandler::Initialize() {
     RemoveCloudPrintProxySection();
   }
 #endif
-#if defined(ENABLE_REMOTING) && !defined(OS_CHROMEOS)
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableRemoting)) {
-    RemoveRemotingSection();
-  } else {
-    remoting_options_handler_.Init(web_ui_);
-  }
+#if !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
+  SetupBackgroundModeSettings();
 #endif
 
   banner_handler_.reset(
@@ -237,9 +231,17 @@ WebUIMessageHandler* AdvancedOptionsHandler::Attach(WebUI* web_ui) {
   tls1_enabled_.Init(prefs::kTLS1Enabled, g_browser_process->local_state(),
                      this);
 
+#if !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
+  background_mode_enabled_.Init(prefs::kBackgroundModeEnabled,
+                                g_browser_process->local_state(),
+                                this);
+#endif
+
   default_download_location_.Init(prefs::kDownloadDefaultDirectory,
                                   prefs, this);
   ask_for_save_location_.Init(prefs::kPromptForDownload, prefs, this);
+  allow_file_selection_dialogs_.Init(prefs::kAllowFileSelectionDialogs,
+                                     g_browser_process->local_state(), this);
   auto_open_files_.Init(prefs::kDownloadExtensionsToOpen, prefs, this);
   default_font_size_.Init(prefs::kWebKitDefaultFontSize, prefs, this);
   proxy_prefs_.reset(
@@ -273,6 +275,9 @@ void AdvancedOptionsHandler::RegisterMessages() {
       NewCallback(this,
                   &AdvancedOptionsHandler::ShowManageSSLCertificates));
 #endif
+  web_ui_->RegisterMessageCallback("showCloudPrintManagePage",
+      NewCallback(this,
+                  &AdvancedOptionsHandler::ShowCloudPrintManagePage));
 #if !defined(OS_CHROMEOS)
   if (cloud_print_proxy_ui_enabled_) {
     web_ui_->RegisterMessageCallback("showCloudPrintSetupDialog",
@@ -281,21 +286,10 @@ void AdvancedOptionsHandler::RegisterMessages() {
     web_ui_->RegisterMessageCallback("disableCloudPrintProxy",
         NewCallback(this,
                     &AdvancedOptionsHandler::HandleDisableCloudPrintProxy));
-    web_ui_->RegisterMessageCallback("showCloudPrintManagePage",
-        NewCallback(this,
-                    &AdvancedOptionsHandler::ShowCloudPrintManagePage));
   }
   web_ui_->RegisterMessageCallback("showNetworkProxySettings",
       NewCallback(this,
                   &AdvancedOptionsHandler::ShowNetworkProxySettings));
-#endif
-#if defined(ENABLE_REMOTING) && !defined(OS_CHROMEOS)
-  web_ui_->RegisterMessageCallback("showRemotingSetupDialog",
-      NewCallback(this,
-                  &AdvancedOptionsHandler::ShowRemotingSetupDialog));
-  web_ui_->RegisterMessageCallback("disableRemoting",
-      NewCallback(this,
-                  &AdvancedOptionsHandler::DisableRemoting));
 #endif
   web_ui_->RegisterMessageCallback("checkRevocationCheckboxAction",
       NewCallback(this,
@@ -306,6 +300,11 @@ void AdvancedOptionsHandler::RegisterMessages() {
   web_ui_->RegisterMessageCallback("useTLS1CheckboxAction",
       NewCallback(this,
                   &AdvancedOptionsHandler::HandleUseTLS1Checkbox));
+#if !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
+  web_ui_->RegisterMessageCallback("backgroundModeAction",
+      NewCallback(this,
+                  &AdvancedOptionsHandler::HandleBackgroundModeCheckbox));
+#endif
 }
 
 void AdvancedOptionsHandler::Observe(NotificationType type,
@@ -314,7 +313,8 @@ void AdvancedOptionsHandler::Observe(NotificationType type,
   if (type == NotificationType::PREF_CHANGED) {
     std::string* pref_name = Details<std::string>(details).ptr();
     if ((*pref_name == prefs::kDownloadDefaultDirectory) ||
-        (*pref_name == prefs::kPromptForDownload)) {
+        (*pref_name == prefs::kPromptForDownload) ||
+        (*pref_name == prefs::kAllowFileSelectionDialogs)) {
       SetupDownloadLocationPath();
       SetupPromptForDownload();
     } else if (*pref_name == prefs::kDownloadExtensionsToOpen) {
@@ -329,6 +329,10 @@ void AdvancedOptionsHandler::Observe(NotificationType type,
 #endif
     } else if (*pref_name == prefs::kWebKitDefaultFontSize) {
       SetupFontSizeLabel();
+#if !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
+    } else if (*pref_name == prefs::kBackgroundModeEnabled) {
+      SetupBackgroundModeSettings();
+#endif
     }
   }
 }
@@ -426,6 +430,24 @@ void AdvancedOptionsHandler::HandleUseTLS1Checkbox(const ListValue* args) {
   tls1_enabled_.SetValue(enabled);
 }
 
+#if !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
+void AdvancedOptionsHandler::HandleBackgroundModeCheckbox(
+    const ListValue* args) {
+  std::string checked_str = UTF16ToUTF8(ExtractStringValue(args));
+  bool enabled = checked_str == "true";
+  std::string metric = enabled ? "Options_BackgroundMode_Enable" :
+                                 "Options_BackgroundMode_Disable";
+  UserMetricsRecordAction(UserMetricsAction(metric.c_str()));
+  background_mode_enabled_.SetValue(enabled);
+}
+
+void AdvancedOptionsHandler::SetupBackgroundModeSettings() {
+    FundamentalValue checked(background_mode_enabled_.GetValue());
+    web_ui_->CallJavascriptFunction(
+        "options.AdvancedOptions.SetBackgroundModeCheckboxState", checked);
+}
+#endif
+
 #if !defined(OS_CHROMEOS)
 void AdvancedOptionsHandler::ShowNetworkProxySettings(const ListValue* args) {
   UserMetricsRecordAction(UserMetricsAction("Options_ShowProxySettings"));
@@ -440,6 +462,14 @@ void AdvancedOptionsHandler::ShowManageSSLCertificates(const ListValue* args) {
 }
 #endif
 
+void AdvancedOptionsHandler::ShowCloudPrintManagePage(const ListValue* args) {
+  UserMetricsRecordAction(UserMetricsAction("Options_ManageCloudPrinters"));
+  // Open a new tab in the current window for the management page.
+  web_ui_->tab_contents()->OpenURL(
+      CloudPrintURL(web_ui_->GetProfile()).GetCloudPrintServiceManageURL(),
+      GURL(), NEW_FOREGROUND_TAB, PageTransition::LINK);
+}
+
 #if !defined(OS_CHROMEOS)
 void AdvancedOptionsHandler::ShowCloudPrintSetupDialog(const ListValue* args) {
   UserMetricsRecordAction(UserMetricsAction("Options_EnableCloudPrintProxy"));
@@ -453,14 +483,6 @@ void AdvancedOptionsHandler::HandleDisableCloudPrintProxy(
     const ListValue* args) {
   UserMetricsRecordAction(UserMetricsAction("Options_DisableCloudPrintProxy"));
   web_ui_->GetProfile()->GetCloudPrintProxyService()->DisableForUser();
-}
-
-void AdvancedOptionsHandler::ShowCloudPrintManagePage(const ListValue* args) {
-  UserMetricsRecordAction(UserMetricsAction("Options_ManageCloudPrinters"));
-  // Open a new tab in the current window for the management page.
-  web_ui_->tab_contents()->OpenURL(
-      CloudPrintURL(web_ui_->GetProfile()).GetCloudPrintServiceManageURL(),
-      GURL(), NEW_FOREGROUND_TAB, PageTransition::LINK);
 }
 
 void AdvancedOptionsHandler::RefreshCloudPrintStatusFromService() {
@@ -512,26 +534,6 @@ void AdvancedOptionsHandler::RemoveCloudPrintProxySection() {
 
 #endif
 
-#if defined(ENABLE_REMOTING) && !defined(OS_CHROMEOS)
-void AdvancedOptionsHandler::RemoveRemotingSection() {
-  web_ui_->CallJavascriptFunction(
-      "options.AdvancedOptions.RemoveRemotingSection");
-}
-
-void AdvancedOptionsHandler::ShowRemotingSetupDialog(const ListValue* args) {
-  remoting::SetupFlow::OpenSetupDialog(web_ui_->GetProfile());
-}
-
-void AdvancedOptionsHandler::DisableRemoting(const ListValue* args) {
-  ServiceProcessControl* process_control =
-      ServiceProcessControlManager::GetInstance()->GetProcessControl(
-          web_ui_->GetProfile());
-  if (!process_control || !process_control->is_connected())
-    return;
-  process_control->DisableRemotingHost();
-}
-#endif
-
 void AdvancedOptionsHandler::SetupMetricsReportingCheckbox() {
 #if defined(GOOGLE_CHROME_BUILD) && !defined(OS_CHROMEOS)
   FundamentalValue checked(enable_metrics_recording_.GetValue());
@@ -563,14 +565,22 @@ void AdvancedOptionsHandler::SetupFontSizeLabel() {
 
 void AdvancedOptionsHandler::SetupDownloadLocationPath() {
   StringValue value(default_download_location_.GetValue().value());
-  FundamentalValue disabled(default_download_location_.IsManaged());
+  // In case allow_file_selection_dialogs_ is false, we will not display any
+  // file-selection dialogs but show an InfoBar. That is why we can disable
+  // the DownloadLocationPath-Chooser right-away.
+  FundamentalValue disabled(default_download_location_.IsManaged() ||
+                            !allow_file_selection_dialogs_.GetValue());
   web_ui_->CallJavascriptFunction(
       "options.AdvancedOptions.SetDownloadLocationPath", value, disabled);
 }
 
 void AdvancedOptionsHandler::SetupPromptForDownload() {
   FundamentalValue checked(ask_for_save_location_.GetValue());
-  FundamentalValue disabled(default_download_location_.IsManaged());
+  // If either the DownloadDirectory is managed or if file-selection dialogs are
+  // disallowed then |ask_for_save_location_| must currently be false and cannot
+  // be changed.
+  FundamentalValue disabled(default_download_location_.IsManaged() ||
+                            !allow_file_selection_dialogs_.GetValue());
   web_ui_->CallJavascriptFunction(
       "options.AdvancedOptions.SetPromptForDownload", checked, disabled);
 }

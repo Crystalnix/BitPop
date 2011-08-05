@@ -11,12 +11,14 @@
 #include "chrome/browser/ui/views/infobars/infobar_button_border.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas_skia_paint.h"
+#include "ui/gfx/image.h"
 #include "views/controls/button/image_button.h"
 #include "views/controls/button/menu_button.h"
 #include "views/controls/button/text_button.h"
@@ -43,14 +45,19 @@ const int InfoBar::kDefaultArrowTargetHeight = 9;
 const int InfoBar::kMaximumArrowTargetHeight = 24;
 const int InfoBar::kDefaultArrowTargetHalfWidth = kDefaultArrowTargetHeight;
 const int InfoBar::kMaximumArrowTargetHalfWidth = 14;
+
+#ifdef TOUCH_UI
+const int InfoBar::kDefaultBarTargetHeight = 75;
+#else
 const int InfoBar::kDefaultBarTargetHeight = 36;
+#endif
 
 const int InfoBarView::kButtonButtonSpacing = 10;
 const int InfoBarView::kEndOfLabelSpacing = 16;
 const int InfoBarView::kHorizontalPadding = 6;
 
-InfoBarView::InfoBarView(InfoBarDelegate* delegate)
-    : InfoBar(delegate),
+InfoBarView::InfoBarView(TabContentsWrapper* owner, InfoBarDelegate* delegate)
+    : InfoBar(owner, delegate),
       icon_(NULL),
       close_button_(NULL),
       ALLOW_THIS_IN_INITIALIZER_LIST(delete_factory_(this)),
@@ -74,14 +81,14 @@ views::Label* InfoBarView::CreateLabel(const string16& text) {
 
 // static
 views::Link* InfoBarView::CreateLink(const string16& text,
-                                     views::LinkController* controller,
+                                     views::LinkListener* listener,
                                      const SkColor& background_color) {
   views::Link* link = new views::Link;
   link->SetText(UTF16ToWideHack(text));
   link->SetFont(
       ResourceBundle::GetSharedInstance().GetFont(ResourceBundle::MediumFont));
   link->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
-  link->SetController(controller);
+  link->set_listener(listener);
   link->MakeReadableOverBackgroundColor(background_color);
   return link;
 }
@@ -225,10 +232,10 @@ void InfoBarView::ViewHierarchyChanged(bool is_add, View* parent, View* child) {
       }
 
       if (close_button_ == NULL) {
-        SkBitmap* image = delegate()->GetIcon();
+        gfx::Image* image = delegate()->GetIcon();
         if (image) {
           icon_ = new views::ImageView;
-          icon_->SetImage(image);
+          icon_->SetImage(*image);
           AddChildView(icon_);
         }
 

@@ -8,7 +8,6 @@
 #include "chrome/browser/autofill/autofill_manager.h"
 #include "chrome/browser/background_contents_service.h"
 #include "chrome/browser/background_mode_manager.h"
-#include "chrome/browser/background_page_tracker.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
@@ -19,7 +18,7 @@
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
 #include "chrome/browser/extensions/extensions_ui.h"
-#include "chrome/browser/external_protocol_handler.h"
+#include "chrome/browser/external_protocol/external_protocol_handler.h"
 #include "chrome/browser/geolocation/geolocation_content_settings_map.h"
 #include "chrome/browser/geolocation/geolocation_prefs.h"
 #include "chrome/browser/google/google_url_tracker.h"
@@ -34,9 +33,12 @@
 #include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/browser/page_info_model.h"
 #include "chrome/browser/password_manager/password_manager.h"
+#include "chrome/browser/plugin_updater.h"
 #include "chrome/browser/policy/cloud_policy_subsystem.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
+#include "chrome/browser/printing/print_job_manager.h"
 #include "chrome/browser/profiles/profile_impl.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/renderer_host/web_cache_manager.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/search_engines/template_url_model.h"
@@ -50,7 +52,7 @@
 #include "chrome/browser/ui/search_engines/keyword_editor_controller.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/browser/ui/webui/flags_ui.h"
-#include "chrome/browser/ui/webui/new_tab_ui.h"
+#include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/browser/ui/webui/plugins_ui.h"
 #include "chrome/browser/upgrade_detector.h"
 #include "chrome/browser/web_resource/promo_resource_service.h"
@@ -75,6 +77,7 @@
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/preferences.h"
 #include "chrome/browser/chromeos/status/input_method_menu.h"
+#include "chrome/browser/chromeos/status/network_menu_button.h"
 #include "chrome/browser/chromeos/user_cros_settings_provider.h"
 #endif
 
@@ -92,6 +95,7 @@ void RegisterLocalState(PrefService* local_state) {
   KeywordEditorController::RegisterPrefs(local_state);
   MetricsLog::RegisterPrefs(local_state);
   MetricsService::RegisterPrefs(local_state);
+  printing::PrintJobManager::RegisterPrefs(local_state);
   PromoResourceService::RegisterPrefs(local_state);
   SafeBrowsingService::RegisterPrefs(local_state);
   browser_shutdown::RegisterPrefs(local_state);
@@ -103,18 +107,19 @@ void RegisterLocalState(PrefService* local_state) {
   geolocation::RegisterPrefs(local_state);
   AutofillManager::RegisterBrowserPrefs(local_state);
   BackgroundModeManager::RegisterPrefs(local_state);
-  BackgroundPageTracker::RegisterPrefs(local_state);
   NotificationUIManager::RegisterPrefs(local_state);
   PrefProxyConfigService::RegisterPrefs(local_state);
   policy::CloudPolicySubsystem::RegisterPrefs(local_state);
+  ProfileManager::RegisterPrefs(local_state);
 #if defined(OS_CHROMEOS)
   chromeos::AudioMixerAlsa::RegisterPrefs(local_state);
   chromeos::UserManager::RegisterPrefs(local_state);
   chromeos::UserCrosSettingsProvider::RegisterPrefs(local_state);
-  WizardController::RegisterPrefs(local_state);
+  chromeos::WizardController::RegisterPrefs(local_state);
   chromeos::InputMethodMenu::RegisterPrefs(local_state);
   chromeos::ServicesCustomizationDocument::RegisterPrefs(local_state);
   chromeos::SignedSettingsTempStorage::RegisterPrefs(local_state);
+  chromeos::NetworkMenuButton::RegisterPrefs(local_state);
 #endif
 }
 
@@ -134,10 +139,10 @@ void RegisterUserPrefs(PrefService* user_prefs) {
   ExtensionsUI::RegisterUserPrefs(user_prefs);
   NewTabUI::RegisterUserPrefs(user_prefs);
   PluginsUI::RegisterUserPrefs(user_prefs);
+  PluginUpdater::RegisterPrefs(user_prefs);
   ProfileImpl::RegisterUserPrefs(user_prefs);
   PromoResourceService::RegisterUserPrefs(user_prefs);
   HostContentSettingsMap::RegisterUserPrefs(user_prefs);
-  HostZoomMap::RegisterUserPrefs(user_prefs);
   DevToolsManager::RegisterUserPrefs(user_prefs);
   PinnedTabCodec::RegisterUserPrefs(user_prefs);
   ExtensionPrefs::RegisterUserPrefs(user_prefs);

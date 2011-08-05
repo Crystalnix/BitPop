@@ -8,60 +8,37 @@
 
 #include <vector>
 
+#include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "chrome/browser/autofill/autofill_field.h"
 #include "chrome/browser/autofill/form_field.h"
+
+class AutofillScanner;
 
 // A form field that can parse either a FullNameField or a FirstLastNameField.
 class NameField : public FormField {
  public:
-  static NameField* Parse(std::vector<AutofillField*>::const_iterator* iter,
-                          bool is_ecml);
+  static FormField* Parse(AutofillScanner* scanner, bool is_ecml);
 
  protected:
   NameField() {}
 
+  // FormField:
+  virtual bool ClassifyField(FieldTypeMap* map) const OVERRIDE;
+
  private:
+  FRIEND_TEST_ALL_PREFIXES(NameFieldTest, FirstMiddleLast);
+  FRIEND_TEST_ALL_PREFIXES(NameFieldTest, FirstMiddleLast2);
+  FRIEND_TEST_ALL_PREFIXES(NameFieldTest, FirstLast);
+  FRIEND_TEST_ALL_PREFIXES(NameFieldTest, FirstLast2);
+  FRIEND_TEST_ALL_PREFIXES(NameFieldTest, FirstLastMiddleWithSpaces);
+  FRIEND_TEST_ALL_PREFIXES(NameFieldTest, FirstLastEmpty);
+  FRIEND_TEST_ALL_PREFIXES(NameFieldTest, FirstMiddleLastEmpty);
+  FRIEND_TEST_ALL_PREFIXES(NameFieldTest, MiddleInitial);
+  FRIEND_TEST_ALL_PREFIXES(NameFieldTest, MiddleInitialAtEnd);
+  FRIEND_TEST_ALL_PREFIXES(NameFieldTest, ECMLFirstMiddleLast);
+
   DISALLOW_COPY_AND_ASSIGN(NameField);
-};
-
-// A form field that can parse a full name field.
-class FullNameField : public NameField {
- public:
-  virtual bool GetFieldInfo(FieldTypeMap* field_type_map) const;
-
-  static FullNameField* Parse(
-      std::vector<AutofillField*>::const_iterator* iter);
-
- private:
-  explicit FullNameField(AutofillField* field);
-
-  AutofillField* field_;
-  DISALLOW_COPY_AND_ASSIGN(FullNameField);
-};
-
-// A form field that can parse a first and last name field.
-class FirstLastNameField : public NameField {
- public:
-  static FirstLastNameField* Parse1(
-      std::vector<AutofillField*>::const_iterator* iter);
-  static FirstLastNameField* Parse2(
-      std::vector<AutofillField*>::const_iterator* iter);
-  static FirstLastNameField* ParseEcmlName(
-      std::vector<AutofillField*>::const_iterator* iter);
-  static FirstLastNameField* Parse(
-      std::vector<AutofillField*>::const_iterator* iter, bool is_ecml);
-
-  virtual bool GetFieldInfo(FieldTypeMap* field_type_map) const;
-
- private:
-  FirstLastNameField();
-
-  AutofillField* first_name_;
-  AutofillField* middle_name_;  // Optional.
-  AutofillField* last_name_;
-  bool middle_initial_;  // True if middle_name_ is a middle initial.
-
-  DISALLOW_COPY_AND_ASSIGN(FirstLastNameField);
 };
 
 #endif  // CHROME_BROWSER_AUTOFILL_NAME_FIELD_H_

@@ -26,44 +26,61 @@ class Canvas;
 
 namespace views {
 
+class FocusableBorder;
 class KeyEvent;
 class Menu2;
 
 // A views/skia only implementation of NativeTextfieldWrapper.
 // No platform specific code is used.
 // Following features are not yet supported.
-// * BIDI
-// * IME/i18n support.
+// * BIDI/Complex script.
+// * Support surrogate pair, or maybe we should just use UTF32 internally.
 // * X selection (only if we want to support).
 // * STYLE_MULTILINE, STYLE_LOWERCASE text. (These are not used in
 //   chromeos, so we may not need them)
-// * Double click to select word, and triple click to select all.
-// * Undo/Redo
-class NativeTextfieldViews : public views::View,
-                             public views::ContextMenuController,
+class NativeTextfieldViews : public View,
+                             public ContextMenuController,
+                             public DragController,
                              public NativeTextfieldWrapper,
                              public ui::SimpleMenuModel::Delegate,
                              public TextInputClient,
                              public TextfieldViewsModel::Delegate {
  public:
   explicit NativeTextfieldViews(Textfield* parent);
-  ~NativeTextfieldViews();
+  virtual ~NativeTextfieldViews();
 
-  // views::View overrides:
-  virtual bool OnMousePressed(const views::MouseEvent& event) OVERRIDE;
-  virtual bool OnMouseDragged(const views::MouseEvent& event) OVERRIDE;
-  virtual bool OnKeyPressed(const views::KeyEvent& event) OVERRIDE;
-  virtual bool OnKeyReleased(const views::KeyEvent& event) OVERRIDE;
+  // View overrides:
+  virtual gfx::NativeCursor GetCursor(const MouseEvent& event) OVERRIDE;
+  virtual bool OnMousePressed(const MouseEvent& event) OVERRIDE;
+  virtual bool OnMouseDragged(const MouseEvent& event) OVERRIDE;
+  virtual void OnMouseReleased(const MouseEvent& event) OVERRIDE;
+  virtual bool OnKeyPressed(const KeyEvent& event) OVERRIDE;
+  virtual bool GetDropFormats(
+      int* formats,
+      std::set<OSExchangeData::CustomFormat>* custom_formats) OVERRIDE;
+  virtual bool CanDrop(const OSExchangeData& data) OVERRIDE;
+  virtual int OnDragUpdated(const DropTargetEvent& event) OVERRIDE;
+  virtual int OnPerformDrop(const DropTargetEvent& event) OVERRIDE;
+  virtual void OnDragDone() OVERRIDE;
+  virtual bool OnKeyReleased(const KeyEvent& event) OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual void OnFocus() OVERRIDE;
   virtual void OnBlur() OVERRIDE;
-  virtual gfx::NativeCursor GetCursorForPoint(ui::EventType event_type,
-                                              const gfx::Point& p) OVERRIDE;
 
-  // views::ContextMenuController overrides:
+  // ContextMenuController overrides:
   virtual void ShowContextMenuForView(View* source,
                                       const gfx::Point& p,
                                       bool is_mouse_gesture) OVERRIDE;
+
+  // Overridden from DragController:
+  virtual void WriteDragDataForView(View* sender,
+                                    const gfx::Point& press_pt,
+                                    OSExchangeData* data) OVERRIDE;
+  virtual int GetDragOperationsForView(View* sender,
+                                       const gfx::Point& p) OVERRIDE;
+  virtual bool CanStartDragForView(View* sender,
+                                   const gfx::Point& press_pt,
+                                   const gfx::Point& p) OVERRIDE;
 
   // NativeTextfieldWrapper overrides:
   virtual string16 GetText() const OVERRIDE;
@@ -89,8 +106,8 @@ class NativeTextfieldViews : public views::View,
   virtual void GetSelectedRange(ui::Range* range) const OVERRIDE;
   virtual void SelectRange(const ui::Range& range) OVERRIDE;
   virtual size_t GetCursorPosition() const OVERRIDE;
-  virtual bool HandleKeyPressed(const views::KeyEvent& e) OVERRIDE;
-  virtual bool HandleKeyReleased(const views::KeyEvent& e) OVERRIDE;
+  virtual bool HandleKeyPressed(const KeyEvent& e) OVERRIDE;
+  virtual bool HandleKeyReleased(const KeyEvent& e) OVERRIDE;
   virtual void HandleFocus() OVERRIDE;
   virtual void HandleBlur() OVERRIDE;
   virtual TextInputClient* GetTextInputClient() OVERRIDE;
@@ -107,18 +124,12 @@ class NativeTextfieldViews : public views::View,
   static const char kViewClassName[];
 
   // Returns true when
-  // 1) built with GYP_DEFIENS="touchui=1"
+  // 1) built with GYP_DEFINES="touchui=1"
   // 2) enabled by SetEnableTextfieldViews(true)
   // 3) enabled by the command line flag "--enable-textfield-view".
   static bool IsTextfieldViewsEnabled();
   // Enable/Disable TextfieldViews implementation for Textfield.
   static void SetEnableTextfieldViews(bool enabled);
-
-  enum ClickState {
-    TRACKING_DOUBLE_CLICK,
-    TRACKING_TRIPLE_CLICK,
-    NONE,
-  };
 
  protected:
   // View override.
@@ -126,30 +137,6 @@ class NativeTextfieldViews : public views::View,
 
  private:
   friend class NativeTextfieldViewsTest;
-
-  // A Border class to draw focus border for the text field.
-  class TextfieldBorder : public Border {
-   public:
-    TextfieldBorder();
-
-    // Border implementation.
-    virtual void Paint(const View& view, gfx::Canvas* canvas) const;
-    virtual void GetInsets(gfx::Insets* insets) const;
-
-    // Sets the insets of the border.
-    void SetInsets(int top, int left, int bottom, int right);
-
-    // Sets the focus state.
-    void set_has_focus(bool has_focus) {
-      has_focus_ = has_focus;
-    }
-
-   private:
-    bool has_focus_;
-    gfx::Insets insets_;
-
-    DISALLOW_COPY_AND_ASSIGN(TextfieldBorder);
-  };
 
   // Overridden from TextInputClient:
   virtual void SetCompositionText(
@@ -200,12 +187,11 @@ class NativeTextfieldViews : public views::View,
   // Find a cusor position for given |point| in this views coordinates.
   size_t FindCursorPosition(const gfx::Point& point) const;
 
-  // Mouse event handler. Returns true if textfield needs to be repainted.
-  bool HandleMousePressed(const views::MouseEvent& e);
+  // Returns true if the local point is over the selected range of text.
+  bool IsPointInSelection(const gfx::Point& point) const;
 
-  // Helper function that sets the cursor position at the location of mouse
-  // event.
-  void SetCursorForMouseClick(const views::MouseEvent& e);
+  // Helper function to call MoveCursorTo on the TextfieldViewsModel.
+  bool MoveCursorTo(const gfx::Point& point, bool select);
 
   // Utility function to inform the parent textfield (and its controller if any)
   // that the text in the textfield has changed.
@@ -230,6 +216,10 @@ class NativeTextfieldViews : public views::View,
   // Convenience method to call TextfieldController::OnAfterUserAction();
   void OnAfterUserAction();
 
+  // Calls |model_->Paste()| and calls TextfieldController::ContentsChanged()
+  // explicitly if paste succeeded.
+  bool Paste();
+
   // Checks if a char is ok to be inserted into the textfield. The |ch| is a
   // modified character, i.e., modifiers took effect when generating this char.
   static bool ShouldInsertChar(char16 ch, int flags);
@@ -241,7 +231,7 @@ class NativeTextfieldViews : public views::View,
   scoped_ptr<TextfieldViewsModel> model_;
 
   // The reference to the border class. The object is owned by View::border_.
-  TextfieldBorder* text_border_;
+  FocusableBorder* text_border_;
 
   // The x offset for the text to be drawn, without insets;
   int text_offset_;
@@ -258,17 +248,16 @@ class NativeTextfieldViews : public views::View,
   // True if InputMethod::CancelComposition() should not be called.
   bool skip_input_method_cancel_composition_;
 
+  // Is the user potentially dragging and dropping from this view?
+  bool initiating_drag_;
+
   // A runnable method factory for callback to update the cursor.
   ScopedRunnableMethodFactory<NativeTextfieldViews> cursor_timer_;
 
-  // Time of last LEFT mouse press. Used for tracking double/triple click.
-  base::Time last_mouse_press_time_;
-
-  // Position of last LEFT mouse press. Used for tracking double/triple click.
-  gfx::Point last_mouse_press_location_;
-
-  // State variable to track double and triple clicks.
-  ClickState click_state_;
+  // State variables used to track double and triple clicks.
+  size_t aggregated_clicks_;
+  base::Time last_click_time_;
+  gfx::Point last_click_location_;
 
   // Context menu and its content list for the textfield.
   scoped_ptr<ui::SimpleMenuModel> context_menu_contents_;

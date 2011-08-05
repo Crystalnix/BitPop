@@ -59,7 +59,8 @@ class RenderWidgetHostViewViews : public RenderWidgetHostView,
   virtual gfx::Rect GetViewBounds() const OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
-  virtual void ImeUpdateTextInputState(WebKit::WebTextInputType type,
+  virtual void ImeUpdateTextInputState(ui::TextInputType type,
+                                       bool can_compose_inline,
                                        const gfx::Rect& caret_rect) OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
   virtual void DidUpdateBackingStore(
@@ -70,7 +71,8 @@ class RenderWidgetHostViewViews : public RenderWidgetHostView,
   virtual void Destroy() OVERRIDE;
   virtual void WillDestroyRenderWidget(RenderWidgetHost* rwh) OVERRIDE {}
   virtual void SetTooltipText(const std::wstring& tooltip_text) OVERRIDE;
-  virtual void SelectionChanged(const std::string& text) OVERRIDE;
+  virtual void SelectionChanged(const std::string& text,
+                                const ui::Range& range) OVERRIDE;
   virtual void ShowingContextMenu(bool showing) OVERRIDE;
   virtual BackingStore* AllocBackingStore(const gfx::Size& size) OVERRIDE;
   virtual void SetBackground(const SkBitmap& background) OVERRIDE;
@@ -89,8 +91,7 @@ class RenderWidgetHostViewViews : public RenderWidgetHostView,
 
   // Overridden from views::View.
   virtual std::string GetClassName() const OVERRIDE;
-  virtual gfx::NativeCursor GetCursorForPoint(ui::EventType type,
-                                              const gfx::Point& point) OVERRIDE;
+  virtual gfx::NativeCursor GetCursor(const views::MouseEvent& event) OVERRIDE;
   virtual bool OnMousePressed(const views::MouseEvent& event) OVERRIDE;
   virtual bool OnMouseDragged(const views::MouseEvent& event) OVERRIDE;
   virtual void OnMouseReleased(const views::MouseEvent& event) OVERRIDE;
@@ -180,8 +181,8 @@ class RenderWidgetHostViewViews : public RenderWidgetHostView,
   // The native cursor.
   gfx::NativeCursor native_cursor_;
 
-  // Whether we are showing a context menu.
-  bool is_showing_context_menu_;
+  // Whether we are showing a popup menu.
+  bool is_showing_popup_menu_;
 
   // The time at which this view started displaying white pixels as a result of
   // not having anything to paint (empty backing store from renderer). This

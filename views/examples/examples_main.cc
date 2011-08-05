@@ -16,9 +16,13 @@
 #include "views/controls/tabbed_pane/tabbed_pane.h"
 #include "views/examples/button_example.h"
 #include "views/examples/combobox_example.h"
+#include "views/examples/link_example.h"
 #include "views/examples/menu_example.h"
 #include "views/examples/message_box_example.h"
 #include "views/examples/native_theme_button_example.h"
+#include "views/examples/native_theme_checkbox_example.h"
+#include "views/examples/native_widget_views_example.h"
+#include "views/examples/native_window_views_example.h"
 #include "views/examples/radio_button_example.h"
 #include "views/examples/scroll_view_example.h"
 #include "views/examples/single_split_view_example.h"
@@ -29,12 +33,10 @@
 #include "views/examples/widget_example.h"
 #include "views/focus/accelerator_handler.h"
 #include "views/layout/grid_layout.h"
+#include "views/widget/widget.h"
 #include "views/window/window.h"
+#include "views/test/test_views_delegate.h"
 
-#if defined(OS_LINUX)
-// Slider is not yet ported to Windows.
-#include "views/examples/slider_example.h"
-#endif
 #if defined(OS_WIN)
 // TableView is not yet ported to Linux.
 #include "views/examples/table_example.h"
@@ -102,9 +104,21 @@ void ExamplesMain::Run() {
   views::Window* window =
       views::Window::CreateChromeWindow(NULL, gfx::Rect(0, 0, 850, 300), this);
 
+  examples::NativeThemeCheckboxExample native_theme_checkbox_example(this);
+  tabbed_pane->AddTab(native_theme_checkbox_example.GetExampleTitle(),
+                      native_theme_checkbox_example.GetExampleView());
+
   examples::NativeThemeButtonExample native_theme_button_example(this);
   tabbed_pane->AddTab(native_theme_button_example.GetExampleTitle(),
                       native_theme_button_example.GetExampleView());
+
+  examples::NativeWidgetViewsExample native_widget_views_example(this);
+  tabbed_pane->AddTab(native_widget_views_example.GetExampleTitle(),
+                      native_widget_views_example.GetExampleView());
+
+  examples::NativeWindowViewsExample native_window_views_example(this);
+  tabbed_pane->AddTab(native_window_views_example.GetExampleTitle(),
+                      native_window_views_example.GetExampleView());
 
   examples::TextfieldExample textfield_example(this);
   tabbed_pane->AddTab(textfield_example.GetExampleTitle(),
@@ -121,6 +135,10 @@ void ExamplesMain::Run() {
   examples::ComboboxExample combobox_example(this);
   tabbed_pane->AddTab(combobox_example.GetExampleTitle(),
                       combobox_example.GetExampleView());
+
+  examples::LinkExample link_example(this);
+  tabbed_pane->AddTab(link_example.GetExampleTitle(),
+                      link_example.GetExampleView());
 
   examples::TabbedPaneExample tabbed_pane_example(this);
   tabbed_pane->AddTab(tabbed_pane_example.GetExampleTitle(),
@@ -156,12 +174,6 @@ void ExamplesMain::Run() {
   tabbed_pane->AddTab(widget_example.GetExampleTitle(),
                       widget_example.GetExampleView());
 
-#if defined(OS_LINUX)
-  examples::SliderExample slider_example(this);
-  tabbed_pane->AddTab(slider_example.GetExampleTitle(),
-                      slider_example.GetExampleView());
-#endif
-
   examples::MenuExample menu_example(this);
   tabbed_pane->AddTab(menu_example.GetExampleTitle(),
                       menu_example.GetExampleView());
@@ -182,8 +194,15 @@ int main(int argc, char** argv) {
   g_type_init();
   gtk_init(&argc, &argv);
 #endif
+  TestViewsDelegate delegate;
 
   CommandLine::Init(argc, argv);
+
+  // We do not this header: chrome/common/chrome_switches.h
+  // because that would create a dependency back on Chrome
+  views::Widget::SetPureViews(
+        CommandLine::ForCurrentProcess()->HasSwitch("use-pure-views"));
+
   examples::ExamplesMain main;
   main.Run();
 

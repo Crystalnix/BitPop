@@ -24,6 +24,11 @@ int GetKeyStateFlags() {
   return flags;
 }
 
+bool IsButtonDown(NativeEvent native_event) {
+  return (native_event.wParam & (MK_LBUTTON | MK_MBUTTON | MK_RBUTTON |
+                                 MK_XBUTTON1 | MK_XBUTTON2)) != 0;
+}
+
 // Convert windows message identifiers to Event types.
 ui::EventType EventTypeFromNative(NativeEvent native_event) {
   switch (native_event.message) {
@@ -55,6 +60,8 @@ ui::EventType EventTypeFromNative(NativeEvent native_event) {
     case WM_RBUTTONUP:
       return ui::ET_MOUSE_RELEASED;
     case WM_MOUSEMOVE:
+      return IsButtonDown(native_event) ? ui::ET_MOUSE_DRAGGED :
+                                          ui::ET_MOUSE_MOVED;
     case WM_NCMOUSEMOVE:
       return ui::ET_MOUSE_MOVED;
     case WM_MOUSEWHEEL:
@@ -66,20 +73,6 @@ ui::EventType EventTypeFromNative(NativeEvent native_event) {
       NOTREACHED();
   }
   return ui::ET_UNKNOWN;
-}
-
-bool IsClientMouseEvent(NativeEvent native_event) {
-  return native_event.message == WM_MOUSELEAVE ||
-         native_event.message == WM_MOUSEHOVER ||
-        (native_event.message >= WM_MOUSEFIRST &&
-         native_event.message <= WM_MOUSELAST);
-}
-
-bool IsNonClientMouseEvent(NativeEvent native_event) {
-  return native_event.message == WM_NCMOUSELEAVE ||
-         native_event.message == WM_NCMOUSEHOVER ||
-        (native_event.message >= WM_NCMOUSEMOVE &&
-         native_event.message <= WM_NCXBUTTONDBLCLK);
 }
 
 // Get views::Event flags from a native Windows message
@@ -134,18 +127,51 @@ int EventFlagsFromNative(NativeEvent native_event) {
       break;
   }
 
-  UINT win_flags = GET_KEYSTATE_WPARAM(native_event.wParam);
-  flags |= (win_flags & MK_CONTROL) ? ui::EF_CONTROL_DOWN : 0;
-  flags |= (win_flags & MK_SHIFT) ? ui::EF_SHIFT_DOWN : 0;
-  flags |= (GetKeyState(VK_MENU) < 0) ? ui::EF_ALT_DOWN : 0;
-  flags |= (win_flags & MK_LBUTTON) ? ui::EF_LEFT_BUTTON_DOWN : 0;
-  flags |= (win_flags & MK_MBUTTON) ? ui::EF_MIDDLE_BUTTON_DOWN : 0;
-  flags |= (win_flags & MK_RBUTTON) ? ui::EF_RIGHT_BUTTON_DOWN : 0;
+  // For non-client mouse message, the WPARAM value represents the hit test
+  // result, instead of the key state.
+  switch (native_event.message) {
+    case WM_NCLBUTTONDOWN:
+    case WM_NCLBUTTONUP:
+      flags |= ui::EF_LEFT_BUTTON_DOWN;
+      break;
+    case WM_NCMBUTTONDOWN:
+    case WM_NCMBUTTONUP:
+      flags |= ui::EF_MIDDLE_BUTTON_DOWN;
+      break;
+    case WM_NCRBUTTONDOWN:
+    case WM_NCRBUTTONUP:
+      flags |= ui::EF_RIGHT_BUTTON_DOWN;
+      break;
+    default: {
+      UINT win_flags = GET_KEYSTATE_WPARAM(native_event.wParam);
+      flags |= (win_flags & MK_CONTROL) ? ui::EF_CONTROL_DOWN : 0;
+      flags |= (win_flags & MK_SHIFT) ? ui::EF_SHIFT_DOWN : 0;
+      flags |= (GetKeyState(VK_MENU) < 0) ? ui::EF_ALT_DOWN : 0;
+      flags |= (win_flags & MK_LBUTTON) ? ui::EF_LEFT_BUTTON_DOWN : 0;
+      flags |= (win_flags & MK_MBUTTON) ? ui::EF_MIDDLE_BUTTON_DOWN : 0;
+      flags |= (win_flags & MK_RBUTTON) ? ui::EF_RIGHT_BUTTON_DOWN : 0;
+      break;
+    }
+  }
 
   return flags;
 }
 
 }  // namespace
+
+bool IsClientMouseEvent(const views::NativeEvent& native_event) {
+  return native_event.message == WM_MOUSELEAVE ||
+    native_event.message == WM_MOUSEHOVER ||
+    (native_event.message >= WM_MOUSEFIRST &&
+    native_event.message <= WM_MOUSELAST);
+}
+
+bool IsNonClientMouseEvent(const views::NativeEvent& native_event) {
+  return native_event.message == WM_NCMOUSELEAVE ||
+    native_event.message == WM_NCMOUSEHOVER ||
+    (native_event.message >= WM_NCMOUSEMOVE &&
+    native_event.message <= WM_NCXBUTTONDBLCLK);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Event, public:

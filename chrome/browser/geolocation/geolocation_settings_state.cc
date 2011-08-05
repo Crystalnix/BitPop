@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
+#include "content/browser/tab_contents/navigation_details.h"
 #include "content/browser/tab_contents/navigation_entry.h"
 #include "net/base/net_util.h"
 
@@ -27,7 +28,7 @@ void GeolocationSettingsState::OnGeolocationPermissionSet(
 }
 
 void GeolocationSettingsState::DidNavigate(
-    const NavigationController::LoadCommittedDetails& details) {
+    const content::LoadCommittedDetails& details) {
   if (details.entry)
     embedder_url_ = details.entry->url();
   if (state_map_.empty())
@@ -95,9 +96,8 @@ void GeolocationSettingsState::GetDetailedInfo(
 
 std::string GeolocationSettingsState::GURLToFormattedHost(
     const GURL& url) const {
-  std::wstring display_host_wide;
-  net::AppendFormattedHost(
-      url, UTF8ToWide(profile_->GetPrefs()->GetString(prefs::kAcceptLanguages)),
-      &display_host_wide, NULL, NULL);
-  return WideToUTF8(display_host_wide);
+  string16 display_host;
+  net::AppendFormattedHost(url,
+      profile_->GetPrefs()->GetString(prefs::kAcceptLanguages), &display_host);
+  return UTF16ToUTF8(display_host);
 }

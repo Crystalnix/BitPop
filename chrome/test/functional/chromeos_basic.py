@@ -26,13 +26,26 @@ class ChromeosBasic(pyauto.PyUITest):
     self.RestartBrowser(clear_profile=False)
     self.assertEqual(1, len(self.GetHistoryInfo().History()))
 
-  def testScreenLocker(self):
-    """Sanity check for screen locker functions."""
-    self.assertFalse(self.GetLoginInfo()['is_screen_locked'])
-    self.LockScreen()
-    self.assertTrue(self.GetLoginInfo()['is_screen_locked'])
-    self.UnlockScreen()
-    self.assertFalse(self.GetLoginInfo()['is_screen_locked'])
+  def testSetDownloadShelfVisible(self):
+    self.assertFalse(self.IsDownloadShelfVisible())
+    self.SetDownloadShelfVisible(True)
+    self.assertTrue(self.IsDownloadShelfVisible())
+    self.SetDownloadShelfVisible(False)
+    self.assertFalse(self.IsDownloadShelfVisible())
+
+  def testSetVolume(self):
+    """Basic test for setting and getting the volume and mute state."""
+    volume_info = self.GetVolumeInfo()
+    for mute_setting in (False, True, False):
+      self.SetMute(mute_setting)
+      self.assertEqual(mute_setting, self.GetVolumeInfo()['is_mute'])
+    for volume_setting in (40, 0, 100, 70):
+      self.SetVolume(volume_setting)
+      self.assertEqual(volume_setting, round(self.GetVolumeInfo()['volume']))
+
+    self.SetVolume(volume_info['volume'])
+    self.SetMute(volume_info['is_mute'])
+    self.assertEqual(volume_info, self.GetVolumeInfo())
 
 
 if __name__ == '__main__':

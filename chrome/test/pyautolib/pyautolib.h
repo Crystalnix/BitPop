@@ -26,9 +26,9 @@
 class PyUITestSuiteBase : public UITestSuite {
  public:
   PyUITestSuiteBase(int argc, char** argv);
-  ~PyUITestSuiteBase();
+  virtual ~PyUITestSuiteBase();
 
-  void Initialize(const FilePath& browser_dir);
+  void InitializeWithPath(const FilePath& browser_dir);
 
   void SetCrSourceRoot(const FilePath& path);
 
@@ -44,7 +44,7 @@ class PyUITestBase : public UITestBase {
 
   // Constructor. Lookup pyauto.py for doc on these args.
   PyUITestBase(bool clear_profile, std::wstring homepage);
-  ~PyUITestBase();
+  virtual ~PyUITestBase();
 
   // Initialize the setup. Should be called before launching the browser.
   // |browser_dir| is the path to dir containing chromium binaries.
@@ -52,6 +52,7 @@ class PyUITestBase : public UITestBase {
 
   void UseNamedChannelID(const std::string& named_channel_id) {
     named_channel_id_ = named_channel_id;
+    launcher_.reset(CreateProxyLauncher());
   }
 
   virtual ProxyLauncher* CreateProxyLauncher();
@@ -176,7 +177,7 @@ class PyUITestBase : public UITestBase {
   // a low-level method intended for use mostly by GetDOMValue(). Note that
   // any complicated manipulation of the page should be done by something
   // like WebDriver, not PyAuto. Also note that in order for the script to
-  // return a value to the calling code, it invoke
+  // return a value to the calling code, it invokes
   // window.domAutomationController.send(), passing in the intended return
   // value.
   std::wstring ExecuteJavascript(const std::wstring& script,

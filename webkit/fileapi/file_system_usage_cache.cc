@@ -11,7 +11,7 @@
 namespace fileapi {
 
 const char FileSystemUsageCache::kUsageFileName[] = ".usage";
-const char FileSystemUsageCache::kUsageFileHeader[] = "FSU0";
+const char FileSystemUsageCache::kUsageFileHeader[] = "FSU2";
 const int FileSystemUsageCache::kUsageFileHeaderSize = 4;
 const int FileSystemUsageCache::kUsageFileSize =
     sizeof(Pickle::Header) +
@@ -24,10 +24,22 @@ int64 FileSystemUsageCache::GetUsage(const FilePath& usage_file_path) {
   int64 fs_usage;
   fs_usage = Read(usage_file_path, &dirty);
 
-  if (fs_usage < 0 || dirty > 0)
+  if (fs_usage < 0)
     return -1;
 
   return fs_usage;
+}
+
+// static
+int32 FileSystemUsageCache::GetDirty(const FilePath& usage_file_path) {
+  uint32 dirty = 0;
+  int64 fs_usage;
+  fs_usage = Read(usage_file_path, &dirty);
+
+  if (fs_usage < 0)
+    return -1;
+
+  return static_cast<int32>(dirty);
 }
 
 // static
@@ -55,6 +67,17 @@ bool FileSystemUsageCache::DecrementDirty(const FilePath& usage_file_path) {
 }
 
 // static
+int FileSystemUsageCache::AtomicUpdateUsageByDelta(
+    const FilePath& usage_file_path, int64 delta) {
+  uint32 dirty = 0;
+  int64 fs_usage;
+  // TODO(dmikurube): Make sure that usage_file_path is available.
+  fs_usage = Read(usage_file_path, &dirty);
+
+  return Write(usage_file_path, dirty, fs_usage + delta);
+}
+
+// static
 int FileSystemUsageCache::UpdateUsage(const FilePath& usage_file_path,
                                       int64 fs_usage) {
   return Write(usage_file_path, 0, fs_usage);
@@ -75,6 +98,7 @@ int64 FileSystemUsageCache::Read(const FilePath& usage_file_path,
                                  uint32* dirty) {
   char buffer[kUsageFileSize];
   const char *header;
+  DCHECK(!usage_file_path.empty());
   if (kUsageFileSize !=
       file_util::ReadFile(usage_file_path, buffer, kUsageFileSize))
     return -1;
@@ -104,6 +128,7 @@ int FileSystemUsageCache::Write(const FilePath& usage_file_path,
   write_pickle.WriteUInt32(dirty);
   write_pickle.WriteInt64(fs_usage);
 
+  DCHECK(!usage_file_path.empty());
   FilePath temporary_usage_file_path;
   file_util::CreateTemporaryFileInDir(usage_file_path.DirName(),
                                       &temporary_usage_file_path);

@@ -42,12 +42,13 @@ class ResourceDispatcherHost;
 class SafeBrowsingResourceHandler : public ResourceHandler,
                                     public SafeBrowsingService::Client {
  public:
-  SafeBrowsingResourceHandler(ResourceHandler* handler,
-                              int render_process_host_id,
-                              int render_view_id,
-                              ResourceType::Type resource_type,
-                              SafeBrowsingService* safe_browsing,
-                              ResourceDispatcherHost* resource_dispatcher_host);
+  static SafeBrowsingResourceHandler* Create(
+      ResourceHandler* handler,
+      int render_process_host_id,
+      int render_view_id,
+      ResourceType::Type resource_type,
+      SafeBrowsingService* safe_browsing,
+      ResourceDispatcherHost* resource_dispatcher_host);
 
   // ResourceHandler implementation:
   virtual bool OnUploadProgress(int request_id, uint64 position, uint64 size);
@@ -87,7 +88,14 @@ class SafeBrowsingResourceHandler : public ResourceHandler,
     DEFERRED_REDIRECT,
   };
 
-  ~SafeBrowsingResourceHandler();
+  SafeBrowsingResourceHandler(ResourceHandler* handler,
+                              int render_process_host_id,
+                              int render_view_id,
+                              ResourceType::Type resource_type,
+                              SafeBrowsingService* safe_browsing,
+                              ResourceDispatcherHost* resource_dispatcher_host);
+
+  virtual ~SafeBrowsingResourceHandler();
 
   // Cancels any in progress safe browsing actions.
   void Shutdown();

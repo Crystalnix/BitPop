@@ -58,23 +58,18 @@ class BitmapPlatformDevice : public PlatformDevice {
   BitmapPlatformDevice(const BitmapPlatformDevice& other);
   virtual ~BitmapPlatformDevice();
 
-  virtual SkDeviceFactory* getDeviceFactory();
-
   // See warning for copy constructor above.
   BitmapPlatformDevice& operator=(const BitmapPlatformDevice& other);
 
+  // PlatformDevice overrides
   virtual CGContextRef GetBitmapContext();
+  virtual void DrawToNativeContext(CGContextRef context, int x, int y,
+                                   const CGRect* src_rect);
+  virtual void MakeOpaque(int x, int y, int width, int height);
+
+  // SkDevice overrides
   virtual void setMatrixClip(const SkMatrix& transform, const SkRegion& region,
                              const SkClipStack&);
-
-  virtual void DrawToContext(CGContextRef context, int x, int y,
-                             const CGRect* src_rect);
-  virtual void makeOpaque(int x, int y, int width, int height);
-  virtual bool IsVectorial();
-
-  // Returns the color value at the specified location. This does not
-  // consider any transforms that may be set on the device.
-  SkColor getColorAt(int x, int y);
 
  protected:
   // Reference counted data that can be shared between multiple devices. This
@@ -89,6 +84,9 @@ class BitmapPlatformDevice : public PlatformDevice {
   // directly by Skia. Overridden from SkDevice, this is called when Skia
   // starts accessing pixel data.
   virtual void onAccessBitmap(SkBitmap*);
+
+  // Override SkDevice.
+  virtual SkDeviceFactory* onNewDeviceFactory();
 
   // Data associated with this device, guaranteed non-null. We hold a reference
   // to this object.

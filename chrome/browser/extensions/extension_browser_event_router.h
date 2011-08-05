@@ -36,7 +36,7 @@ class ExtensionBrowserEventRouter : public TabStripModelObserver,
                                     public NotificationObserver {
  public:
   explicit ExtensionBrowserEventRouter(Profile* profile);
-  ~ExtensionBrowserEventRouter();
+  virtual ~ExtensionBrowserEventRouter();
 
   // Must be called once. Subsequent calls have no effect.
   void Init();
@@ -64,10 +64,10 @@ class ExtensionBrowserEventRouter : public TabStripModelObserver,
                             TabContentsWrapper* contents,
                             int index);
   virtual void TabDetachedAt(TabContentsWrapper* contents, int index);
-  virtual void TabSelectedAt(TabContentsWrapper* old_contents,
-                             TabContentsWrapper* new_contents,
-                             int index,
-                             bool user_gesture);
+  virtual void ActiveTabChanged(TabContentsWrapper* old_contents,
+                                TabContentsWrapper* new_contents,
+                                int index,
+                                bool user_gesture);
   virtual void TabMoved(TabContentsWrapper* contents, int from_index,
                         int to_index);
   virtual void TabChangedAt(TabContentsWrapper* contents, int index,
@@ -102,6 +102,27 @@ class ExtensionBrowserEventRouter : public TabStripModelObserver,
   // Internal processing of tab updated events. Is called by both TabChangedAt
   // and Observe/NAV_ENTRY_COMMITTED.
   void TabUpdated(TabContents* contents, bool did_navigate);
+
+  // The DispatchEvent methods forward events to the |profile|'s event router.
+  // The ExtensionBrowserEventRouter listens to events for all profiles,
+  // so we avoid duplication by dropping events destined for other profiles.
+  void DispatchEvent(Profile* profile,
+                     const char* event_name,
+                     const std::string& json_args);
+
+  void DispatchEventToExtension(Profile* profile,
+                                const std::string& extension_id,
+                                const char* event_name,
+                                const std::string& json_args);
+
+  void DispatchEventWithTab(Profile* profile,
+                            const std::string& extension_id,
+                            const char* event_name,
+                            const TabContents* tab_contents);
+
+  void DispatchSimpleBrowserEvent(Profile* profile,
+                                  const int window_id,
+                                  const char* event_name);
 
   // Packages |changed_properties| as a tab updated event for the tab |contents|
   // and dispatches the event to the extension.

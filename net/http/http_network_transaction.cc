@@ -99,9 +99,6 @@ HttpNetworkTransaction::HttpNetworkTransaction(HttpNetworkSession* session)
     : pending_auth_target_(HttpAuth::AUTH_NONE),
       ALLOW_THIS_IN_INITIALIZER_LIST(
           io_callback_(this, &HttpNetworkTransaction::OnIOComplete)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(delegate_callback_(
-          new CancelableCompletionCallback<HttpNetworkTransaction>(
-              this, &HttpNetworkTransaction::OnIOComplete))),
       user_callback_(NULL),
       session_(session),
       request_(NULL),
@@ -117,6 +114,11 @@ HttpNetworkTransaction::HttpNetworkTransaction(HttpNetworkSession* session)
 }
 
 HttpNetworkTransaction::~HttpNetworkTransaction() {
+  if (request_ && session_->network_delegate()) {
+    session_->network_delegate()->NotifyHttpTransactionDestroyed(
+        request_->request_id);
+  }
+
   if (stream_.get()) {
     HttpResponseHeaders* headers = GetResponseHeaders();
     // TODO(mbelshe): The stream_ should be able to compute whether or not the
@@ -149,8 +151,6 @@ HttpNetworkTransaction::~HttpNetworkTransaction() {
       }
     }
   }
-
-  delegate_callback_->Cancel();
 }
 
 int HttpNetworkTransaction::Start(const HttpRequestInfo* request_info,
@@ -751,8 +751,6 @@ void HttpNetworkTransaction::BuildRequestHeaders(bool using_proxy) {
 
 int HttpNetworkTransaction::DoBuildRequest() {
   next_state_ = STATE_BUILD_REQUEST_COMPLETE;
-  delegate_callback_->AddRef();  // balanced in DoSendRequestComplete
-
   request_body_.reset(NULL);
   if (request_->upload_data) {
     int error_code;
@@ -774,15 +772,13 @@ int HttpNetworkTransaction::DoBuildRequest() {
 
   if (session_->network_delegate()) {
     return session_->network_delegate()->NotifyBeforeSendHeaders(
-        request_->request_id, delegate_callback_, &request_headers_);
+        request_->request_id, &io_callback_, &request_headers_);
   }
 
   return OK;
 }
 
 int HttpNetworkTransaction::DoBuildRequestComplete(int result) {
-  delegate_callback_->Release();  // balanced in DoBuildRequest
-
   if (result == OK)
     next_state_ = STATE_SEND_REQUEST;
   return result;
@@ -796,6 +792,11 @@ int HttpNetworkTransaction::DoSendRequest() {
 }
 
 int HttpNetworkTransaction::DoSendRequestComplete(int result) {
+  if (session_->network_delegate()) {
+    session_->network_delegate()->NotifyRequestSent(
+        request_->request_id, response_.socket_address, request_headers_);
+  }
+
   if (result < 0)
     return HandleIOError(result);
   next_state_ = STATE_READ_HEADERS;
@@ -1009,9 +1010,8 @@ void HttpNetworkTransaction::LogTransactionConnectedMetrics() {
         base::TimeDelta::FromMilliseconds(1), base::TimeDelta::FromMinutes(10),
         100);
 
-  static bool use_conn_impact_histogram(
-      base::FieldTrialList::Find("ConnCountImpact") &&
-      !base::FieldTrialList::Find("ConnCountImpact")->group_name().empty());
+  static const bool use_conn_impact_histogram =
+      base::FieldTrialList::TrialExists("ConnCountImpact");
   if (use_conn_impact_histogram) {
     UMA_HISTOGRAM_CLIPPED_TIMES(
         base::FieldTrial::MakeName("Net.Transaction_Connected_New",
@@ -1022,8 +1022,8 @@ void HttpNetworkTransaction::LogTransactionConnectedMetrics() {
     }
   }
 
-  static bool use_spdy_histogram(base::FieldTrialList::Find("SpdyImpact") &&
-      !base::FieldTrialList::Find("SpdyImpact")->group_name().empty());
+  static const bool use_spdy_histogram =
+      base::FieldTrialList::TrialExists("SpdyImpact");
   if (use_spdy_histogram && response_.was_npn_negotiated) {
     UMA_HISTOGRAM_CLIPPED_TIMES(
       base::FieldTrial::MakeName("Net.Transaction_Connected_Under_10",

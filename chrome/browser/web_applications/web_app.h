@@ -8,7 +8,7 @@
 
 #include <vector>
 
-#include "base/callback.h"
+#include "base/callback_old.h"
 #include "base/file_path.h"
 #include "build/build_config.h"
 #include "chrome/browser/shell_integration.h"
@@ -29,6 +29,9 @@ std::string GenerateApplicationNameFromURL(const GURL& url);
 
 // Compute a deterministic name based on an extension/apps's id.
 std::string GenerateApplicationNameFromExtensionId(const std::string& id);
+
+// Extracts the extension id from the app name.
+std::string GetExtensionIdFromApplicationName(const std::string& app_name);
 
 // Callback after user dismisses CreateShortcutView. "true" indicates
 // shortcut is created successfully. Otherwise, it is false.

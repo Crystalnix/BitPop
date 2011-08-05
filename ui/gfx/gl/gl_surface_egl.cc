@@ -14,7 +14,7 @@
 // it brings in #defines that cause conflicts.
 #include "ui/gfx/gl/gl_bindings.h"
 
-#if defined(OS_LINUX)
+#if defined(USE_X11)
 extern "C" {
 #include <X11/Xlib.h>
 }
@@ -25,6 +25,7 @@ namespace gfx {
 namespace {
 EGLConfig g_config;
 EGLDisplay g_display;
+EGLNativeDisplayType g_native_display;
 }
 
 GLSurfaceEGL::GLSurfaceEGL() {
@@ -38,12 +39,12 @@ bool GLSurfaceEGL::InitializeOneOff() {
   if (initialized)
     return true;
 
-#ifdef OS_LINUX
-  EGLNativeDisplayType native_display = XOpenDisplay(NULL);
+#if defined(USE_X11)
+  g_native_display = XOpenDisplay(NULL);
 #else
-  EGLNativeDisplayType native_display = EGL_DEFAULT_DISPLAY;
+  g_native_display = EGL_DEFAULT_DISPLAY;
 #endif
-  g_display = eglGetDisplay(native_display);
+  g_display = eglGetDisplay(g_native_display);
   if (!g_display) {
     LOG(ERROR) << "eglGetDisplay failed with error " << GetLastEGLErrorString();
     return false;
@@ -59,15 +60,12 @@ bool GLSurfaceEGL::InitializeOneOff() {
     EGL_BUFFER_SIZE, 32,
     EGL_ALPHA_SIZE, 8,
     EGL_BLUE_SIZE, 8,
+    EGL_GREEN_SIZE, 8,
     EGL_RED_SIZE, 8,
     EGL_DEPTH_SIZE, 16,
     EGL_STENCIL_SIZE, 8,
     EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
-#ifdef EGL_HAS_PBUFFERS
     EGL_SURFACE_TYPE, EGL_WINDOW_BIT | EGL_PBUFFER_BIT,
-#else
-    EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-#endif
     EGL_NONE
   };
 
@@ -112,7 +110,11 @@ EGLConfig GLSurfaceEGL::GetConfig() {
   return g_config;
 }
 
-NativeViewGLSurfaceEGL::NativeViewGLSurfaceEGL(void* window)
+EGLNativeDisplayType GLSurfaceEGL::GetNativeDisplay() {
+  return g_native_display;
+}
+
+NativeViewGLSurfaceEGL::NativeViewGLSurfaceEGL(gfx::PluginWindowHandle window)
     : window_(window),
       surface_(NULL)
 {
@@ -126,11 +128,9 @@ bool NativeViewGLSurfaceEGL::Initialize() {
   DCHECK(!surface_);
 
   // Create a surface for the native window.
-  EGLNativeWindowType native_window =
-      reinterpret_cast<EGLNativeWindowType>(window_);
   surface_ = eglCreateWindowSurface(g_display,
                                     g_config,
-                                    native_window,
+                                    window_,
                                     NULL);
 
   if (!surface_) {

@@ -9,6 +9,7 @@
 #include <pango/pango.h>
 #include <pango/pangocairo.h>
 
+#include "base/i18n/rtl.h"
 #include "base/logging.h"
 #include "base/utf_string_conversions.h"
 #include "ui/gfx/font.h"
@@ -19,6 +20,13 @@
 namespace {
 
 const gunichar kAcceleratorChar = '&';
+
+// Multiply by the text height to determine how much text should be faded
+// when elliding.
+const double kFadeWidthFactor = 1.5;
+
+// End state of the elliding fade.
+const double kFadeFinalAlpha = 0.15;
 
 // Font settings that we initialize once and then use when drawing text in
 // DrawStringInt().
@@ -108,22 +116,26 @@ static void SetupPangoLayout(PangoLayout* layout,
   if (width > 0)
     pango_layout_set_width(layout, width * PANGO_SCALE);
 
-  if (flags & gfx::Canvas::NO_ELLIPSIS) {
-    pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_NONE);
-  } else {
-    pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
-  }
-
   if (flags & gfx::Canvas::TEXT_ALIGN_CENTER) {
     pango_layout_set_alignment(layout, PANGO_ALIGN_CENTER);
   } else if (flags & gfx::Canvas::TEXT_ALIGN_RIGHT) {
     pango_layout_set_alignment(layout, PANGO_ALIGN_RIGHT);
   }
 
-  if (flags & gfx::Canvas::MULTI_LINE) {
-    pango_layout_set_wrap(layout,
-        (flags & gfx::Canvas::CHARACTER_BREAK) ?
-            PANGO_WRAP_WORD_CHAR : PANGO_WRAP_WORD);
+  if (flags & gfx::Canvas::NO_ELLIPSIS) {
+    pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_NONE);
+    if (flags & gfx::Canvas::MULTI_LINE) {
+      pango_layout_set_wrap(layout,
+          (flags & gfx::Canvas::CHARACTER_BREAK) ?
+              PANGO_WRAP_WORD_CHAR : PANGO_WRAP_WORD);
+    }
+  } else if (base::i18n::IsRTL()){
+    pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
+  } else {
+    // Fading the text will be handled in the draw operation.
+    // that the text is only on one line.
+    pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_NONE);
+    pango_layout_set_width(layout, -1);
   }
 
   // Set the resolution to match that used by Gtk. If we don't set the
@@ -208,7 +220,7 @@ DrawStringContext::DrawStringContext(gfx::CanvasSkia* canvas,
       text_height_(0) {
   DCHECK(!bounds_.IsEmpty());
 
-  cr_ = canvas_->beginPlatformPaint();
+  cr_ = skia::BeginPlatformPaint(canvas_);
   layout_ = pango_cairo_create_layout(cr_);
 
   SetupPangoLayout(layout_, text, font, bounds_.width(), flags_);
@@ -246,18 +258,51 @@ DrawStringContext::~DrawStringContext() {
   }
   cairo_restore(cr_);
 
+  skia::EndPlatformPaint(canvas_);
+
   g_object_unref(layout_);
-  // NOTE: beginPlatformPaint returned its surface, we shouldn't destroy it.
+  // NOTE: BeginPlatformPaint returned its surface, we shouldn't destroy it.
 }
 
 void DrawStringContext::Draw(const SkColor& text_color) {
-  cairo_set_source_rgba(cr_,
-                        SkColorGetR(text_color) / 255.0,
-                        SkColorGetG(text_color) / 255.0,
-                        SkColorGetB(text_color) / 255.0,
-                        SkColorGetA(text_color) / 255.0);
+  double r = SkColorGetR(text_color) / 255.0,
+         g = SkColorGetG(text_color) / 255.0,
+         b = SkColorGetB(text_color) / 255.0,
+         a = SkColorGetA(text_color) / 255.0;
+
+  cairo_pattern_t* pattern = NULL;
+
+  cairo_save(cr_);
+
+  // If we're not eliding, use a fixed color.
+  // Otherwise, create a gradient pattern to use as the source.
+  if (base::i18n::IsRTL() ||
+      (flags_ & gfx::Canvas::NO_ELLIPSIS) ||
+      text_width_ <= bounds_.width()) {
+    cairo_set_source_rgba(cr_, r, g, b, a);
+  } else {
+    // Fade to semi-transparent to elide.
+    int fade_width = static_cast<double>(text_height_) * kFadeWidthFactor;
+    if (fade_width > (bounds_.width() / 2)) {
+      // Don't fade more than half the text.
+      fade_width = bounds_.width() / 2;
+    }
+    int fade_x = bounds_.x() + bounds_.width() - fade_width;
+
+    pattern = cairo_pattern_create_linear(
+        fade_x, bounds_.y(), bounds_.x() + bounds_.width(), bounds_.y());
+    cairo_pattern_add_color_stop_rgba(pattern, 0, r, g, b, a);
+    cairo_pattern_add_color_stop_rgba(pattern, 1, r, g, b, kFadeFinalAlpha);
+    cairo_set_source(cr_, pattern);
+  }
+
   cairo_move_to(cr_, text_x_, text_y_);
   pango_cairo_show_layout(cr_, layout_);
+
+  if (pattern)
+    cairo_pattern_destroy(pattern);
+
+  cairo_restore(cr_);
 }
 
 void DrawStringContext::DrawWithHalo(const SkColor& text_color,
@@ -266,32 +311,33 @@ void DrawStringContext::DrawWithHalo(const SkColor& text_color,
   text_canvas.FillRectInt(static_cast<SkColor>(0),
       0, 0, bounds_.width() + 2, bounds_.height() + 2);
 
-  cairo_t* text_cr = text_canvas.beginPlatformPaint();
+  {
+    skia::ScopedPlatformPaint scoped_platform_paint(&text_canvas);
+    cairo_t* text_cr = scoped_platform_paint.GetPlatformSurface();
 
-  cairo_move_to(text_cr, 2, 1);
-  pango_cairo_layout_path(text_cr, layout_);
+    cairo_move_to(text_cr, 2, 1);
+    pango_cairo_layout_path(text_cr, layout_);
 
-  cairo_set_source_rgba(text_cr,
-                        SkColorGetR(halo_color) / 255.0,
-                        SkColorGetG(halo_color) / 255.0,
-                        SkColorGetB(halo_color) / 255.0,
-                        SkColorGetA(halo_color) / 255.0);
-  cairo_set_line_width(text_cr, 2.0);
-  cairo_set_line_join(text_cr, CAIRO_LINE_JOIN_ROUND);
-  cairo_stroke_preserve(text_cr);
+    cairo_set_source_rgba(text_cr,
+                          SkColorGetR(halo_color) / 255.0,
+                          SkColorGetG(halo_color) / 255.0,
+                          SkColorGetB(halo_color) / 255.0,
+                          SkColorGetA(halo_color) / 255.0);
+    cairo_set_line_width(text_cr, 2.0);
+    cairo_set_line_join(text_cr, CAIRO_LINE_JOIN_ROUND);
+    cairo_stroke_preserve(text_cr);
 
-  cairo_set_operator(text_cr, CAIRO_OPERATOR_SOURCE);
-  cairo_set_source_rgba(text_cr,
-                        SkColorGetR(text_color) / 255.0,
-                        SkColorGetG(text_color) / 255.0,
-                        SkColorGetB(text_color) / 255.0,
-                        SkColorGetA(text_color) / 255.0);
-  cairo_fill(text_cr);
-
-  text_canvas.endPlatformPaint();
+    cairo_set_operator(text_cr, CAIRO_OPERATOR_SOURCE);
+    cairo_set_source_rgba(text_cr,
+                          SkColorGetR(text_color) / 255.0,
+                          SkColorGetG(text_color) / 255.0,
+                          SkColorGetB(text_color) / 255.0,
+                          SkColorGetA(text_color) / 255.0);
+    cairo_fill(text_cr);
+  }
 
   const SkBitmap& text_bitmap = const_cast<SkBitmap&>(
-      text_canvas.getTopPlatformDevice().accessBitmap(false));
+      skia::GetTopDevice(text_canvas)->accessBitmap(false));
   canvas_->DrawBitmapInt(text_bitmap, text_x_ - 1, text_y_ - 1);
 }
 
@@ -351,7 +397,7 @@ void CanvasSkia::DrawStringWithHalo(const string16& text,
                                     const SkColor& halo_color,
                                     int x, int y, int w, int h,
                                     int flags) {
-  if (w <= 0 || h <= 0)
+  if (!IntersectsClipRectInt(x, y, w, h))
     return;
 
   gfx::Rect bounds(x, y, w, h);
@@ -365,7 +411,7 @@ void CanvasSkia::DrawStringInt(const string16& text,
                                const SkColor& color,
                                int x, int y, int w, int h,
                                int flags) {
-  if (w <= 0 || h <= 0)
+  if (!IntersectsClipRectInt(x, y, w, h))
     return;
 
   gfx::Rect bounds(x, y, w, h);
@@ -379,7 +425,8 @@ void CanvasSkia::DrawGdkPixbuf(GdkPixbuf* pixbuf, int x, int y) {
     return;
   }
 
-  cairo_t* cr = beginPlatformPaint();
+  skia::ScopedPlatformPaint scoped_platform_paint(this);
+  cairo_t* cr = scoped_platform_paint.GetPlatformSurface();
   gdk_cairo_set_source_pixbuf(cr, pixbuf, x, y);
   cairo_paint(cr);
 }

@@ -25,12 +25,11 @@ ExternalProcessImporterBridge::ExternalProcessImporterBridge(
   localized_strings_.reset(localized_strings.DeepCopy());
 }
 
-void ExternalProcessImporterBridge::AddBookmarkEntries(
+void ExternalProcessImporterBridge::AddBookmarks(
     const std::vector<ProfileWriter::BookmarkEntry>& bookmarks,
-    const string16& first_folder_name,
-    int options) {
-  profile_import_thread_->NotifyBookmarksImportReady(
-      bookmarks, first_folder_name, options);
+    const string16& first_folder_name) {
+  profile_import_thread_->NotifyBookmarksImportReady(bookmarks,
+                                                     first_folder_name);
 }
 
 void ExternalProcessImporterBridge::AddHomePage(const GURL& home_page) {

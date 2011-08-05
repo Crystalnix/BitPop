@@ -2,27 +2,26 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Stub out the `chrome.experimental.proxy` API
-chrome.experimental = chrome.experimental || {
-   proxy: {
-     settings: {
-       get: function() {},
-       clear: function() {},
-       set: function() {}
+// Stub out the `chrome.proxy`, `chrome.i18n`, and `chrome.extension` APIs
+chrome = chrome || {
+  proxy: {
+    settings: {
+      get: function() {},
+      clear: function() {},
+      set: function() {}
+    }
+  },
+  i18n: {
+    getMessage: function(x) { return x; }
+  },
+  extension: {
+    sendRequest: function() {},
+    isAllowedIncognitoAccess: function(funk) {
+      funk(true);
     }
   }
 };
-// Stub out i18n
-chrome.i18n = chrome.i18n || {
-  getMessage: function(x) { return x; }
-};
-// Stub out messaging and access.
-chrome.extension = chrome.extension || {
-  sendRequest: function() {},
-  isAllowedIncognitoAccess: function(funk) {
-    funk(true);
-  }
-};
+
 var fixture = document.getElementById('fixture');
 var baselineHTML = fixture.innerHTML;
 var groupIDs = [ProxyFormController.ProxyTypes.DIRECT,
@@ -47,8 +46,6 @@ var mockFunctionFactory = function(returnValue, logging) {
   return funky;
 };
 
-var chrome = chrome || {};
-
 var proxyform = new Test.Unit.Runner({
   setup: function() {
     fixture.innerHTML = baselineHTML;
@@ -57,19 +54,17 @@ var proxyform = new Test.Unit.Runner({
     this.clickEvent_.initMouseEvent('click', true, true, window,
         0, 0, 0, 0, 0, false, false, false, false, 0, null);
     // Reset mock functions.
-    chrome.experimental = {
-       proxy: {
-         settings: {
-           get: mockFunctionFactory({
-                  value: {mode: 'system' },
-                  levelOfControl: 'ControllableByThisExtension' }),
-           clear: mockFunctionFactory({
-                    value: {mode: 'system' },
-                    levelOfControl: 'ControllableByThisExtension' }),
-           set: mockFunctionFactory({
-                  value: {mode: 'system' },
-                  levelOfControl: 'ControllableByThisExtension' })
-        }
+    chrome.proxy = {
+      settings: {
+        get: mockFunctionFactory({
+               value: {mode: 'system' },
+               levelOfControl: 'controllable_by_this_extension' }),
+        clear: mockFunctionFactory({
+                 value: {mode: 'system' },
+                 levelOfControl: 'controllable_by_this_extension' }),
+        set: mockFunctionFactory({
+               value: {mode: 'system' },
+               levelOfControl: 'controllable_by_this_extension' })
       }
     };
   },
@@ -136,13 +131,12 @@ var proxyform = new Test.Unit.Runner({
   },
 
   // On instantiation, ProxyFormController should read the current state
-  // from `chrome.experimental.getCurrentProxySettings`, and react
-  // accordingly.  Let's see if that happens with the next four sets of
-  // assertsions.
+  // from `chrome.proxy.settings.get`, and react accordingly.
+  // Let's see if that happens with the next four sets of assertions.
   testSetupFormSystem: function() {
-    chrome.experimental.proxy.settings.get = mockFunctionFactory({
+    chrome.proxy.settings.get = mockFunctionFactory({
       value: {mode: 'system'},
-      levelOfControl: 'ControllableByThisExtension'
+      levelOfControl: 'controllable_by_this_extension'
     });
 
     fixture.innerHTML = baselineHTML;
@@ -150,8 +144,8 @@ var proxyform = new Test.Unit.Runner({
     // Wait for async calls to fire
     this.wait(100, function() {
       this.assertEqual(
-          2,
-          chrome.experimental.proxy.settings.get.getCallList().length);
+          6,
+          chrome.proxy.settings.get.getCallList().length);
       this.assert(
           document.getElementById(ProxyFormController.ProxyTypes.SYSTEM)
               .classList.contains('active'));
@@ -159,9 +153,9 @@ var proxyform = new Test.Unit.Runner({
   },
 
   testSetupFormDirect: function() {
-    chrome.experimental.proxy.settings.get =
+    chrome.proxy.settings.get =
         mockFunctionFactory({value: {mode: 'direct'},
-             levelOfControl: 'ControllableByThisExtension'}, true);
+             levelOfControl: 'controllable_by_this_extension'}, true);
 
     fixture.innerHTML = baselineHTML;
     this.controller_ = new ProxyFormController('proxyForm');
@@ -169,7 +163,7 @@ var proxyform = new Test.Unit.Runner({
     this.wait(100, function() {
       this.assertEqual(
           2,
-          chrome.experimental.proxy.settings.get.getCallList().length);
+          chrome.proxy.settings.get.getCallList().length);
       this.assert(
           document.getElementById(ProxyFormController.ProxyTypes.DIRECT)
               .classList.contains('active'));
@@ -177,9 +171,9 @@ var proxyform = new Test.Unit.Runner({
   },
 
   testSetupFormPac: function() {
-    chrome.experimental.proxy.settings.get =
+    chrome.proxy.settings.get =
         mockFunctionFactory({value: {mode: 'pac_script' },
-             levelOfControl: 'ControllableByThisExtension'});
+             levelOfControl: 'controllable_by_this_extension'});
 
     fixture.innerHTML = baselineHTML;
     this.controller_ = new ProxyFormController('proxyForm');
@@ -187,7 +181,7 @@ var proxyform = new Test.Unit.Runner({
     this.wait(100, function() {
       this.assertEqual(
           2,
-          chrome.experimental.proxy.settings.get.getCallList().length);
+          chrome.proxy.settings.get.getCallList().length);
       this.assert(
           document.getElementById(ProxyFormController.ProxyTypes.PAC)
               .classList.contains('active'));
@@ -195,9 +189,9 @@ var proxyform = new Test.Unit.Runner({
   },
 
   testSetupFormFixed: function() {
-    chrome.experimental.proxy.settings.get =
+    chrome.proxy.settings.get =
         mockFunctionFactory({value: {mode: 'fixed_servers' },
-             levelOfControl: 'ControllableByThisExtension'});
+             levelOfControl: 'controllable_by_this_extension'});
 
     fixture.innerHTML = baselineHTML;
     this.controller_ = new ProxyFormController('proxyForm');
@@ -205,7 +199,7 @@ var proxyform = new Test.Unit.Runner({
     this.wait(100, function() {
       this.assertEqual(
           2,
-          chrome.experimental.proxy.settings.get.getCallList().length);
+          chrome.proxy.settings.get.getCallList().length);
       this.assert(
           document.getElementById(ProxyFormController.ProxyTypes.FIXED)
               .classList.contains('active'));

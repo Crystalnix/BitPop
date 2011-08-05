@@ -198,7 +198,6 @@ void StatusBubbleViews::StatusView::Show() {
   SetOpacity(1.0);
   popup_->Show();
   stage_ = BUBBLE_SHOWN;
-  PaintNow();
 }
 
 void StatusBubbleViews::StatusView::Hide() {
@@ -559,18 +558,19 @@ StatusBubbleViews::~StatusBubbleViews() {
 
 void StatusBubbleViews::Init() {
   if (!popup_.get()) {
-    Widget::CreateParams params(Widget::CreateParams::TYPE_POPUP);
-    params.transparent = true;
-    params.accept_events = false;
-    params.delete_on_destroy = false;
-    popup_.reset(Widget::CreateWidget(params));
+    popup_.reset(new Widget);
     views::Widget* frame = base_view_->GetWidget();
     if (!view_)
       view_ = new StatusView(this, popup_.get(), frame->GetThemeProvider());
     if (!expand_view_.get())
       expand_view_.reset(new StatusViewExpander(this, view_));
+    Widget::InitParams params(Widget::InitParams::TYPE_POPUP);
+    params.transparent = true;
+    params.accept_events = false;
+    params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+    params.parent = frame->GetNativeView();
+    popup_->Init(params);
     popup_->SetOpacity(0x00);
-    popup_->Init(frame->GetNativeView(), gfx::Rect());
     popup_->SetContentsView(view_);
     Reposition();
     popup_->Show();
@@ -794,7 +794,7 @@ bool StatusBubbleViews::IsFrameVisible() {
   if (!frame->IsVisible())
     return false;
 
-  views::Window* window = frame->GetWindow();
+  views::Window* window = frame->GetContainingWindow();
   return !window || !window->IsMinimized();
 }
 

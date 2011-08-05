@@ -12,7 +12,7 @@
   'targets': [
     {
       'target_name': 'base_i18n',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '968F3222-9798-4D21-BE08-15ECB5EF2994',
       'dependencies': [
         'base',
@@ -20,7 +20,7 @@
         '../third_party/icu/icu.gyp:icuuc',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['toolkit_uses_gtk==1', {
           'dependencies': [
             # i18n/rtl.cc uses gtk
             '../build/linux/system.gyp:gtk',
@@ -37,6 +37,8 @@
         'i18n/break_iterator.h',
         'i18n/char_iterator.cc',
         'i18n/char_iterator.h',
+        'i18n/case_conversion.cc',
+        'i18n/case_conversion.h',
         'i18n/file_util_icu.cc',
         'i18n/file_util_icu.h',
         'i18n/icu_encoding_detection.cc',
@@ -55,9 +57,10 @@
     },
     {
       # This is the subset of files from base that should not be used with a
-      # dynamic library.
+      # dynamic library. Note that this library cannot depend on base because
+      # base depends on base_static.
       'target_name': 'base_static',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         'base_switches.cc',
         'base_switches.h',
@@ -72,7 +75,7 @@
       # TODO(rvargas): Remove this when gyp finally supports a clean model.
       # See bug 36232.
       'target_name': 'base_static_win64',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         'base_switches.cc',
         'base_switches.h',
@@ -114,6 +117,7 @@
         'cpu_unittest.cc',
         'debug/leak_tracker_unittest.cc',
         'debug/stack_trace_unittest.cc',
+        'debug/trace_event_unittest.cc',
         'debug/trace_event_win_unittest.cc',
         'dir_reader_posix_unittest.cc',
         'environment_unittest.cc',
@@ -125,9 +129,11 @@
         'id_map_unittest.cc',
         'i18n/break_iterator_unittest.cc',
         'i18n/char_iterator_unittest.cc',
+        'i18n/case_conversion_unittest.cc',
         'i18n/file_util_icu_unittest.cc',
         'i18n/icu_string_conversions_unittest.cc',
         'i18n/rtl_unittest.cc',
+        'i18n/time_formatting_unittest.cc',
         'json/json_reader_unittest.cc',
         'json/json_writer_unittest.cc',
         'json/string_escape_unittest.cc',
@@ -135,17 +141,19 @@
         'linked_list_unittest.cc',
         'logging_unittest.cc',
         'mac/mac_util_unittest.mm',
+        'mac/objc_property_releaser_unittest.mm',
+        'md5_unittest.cc',
         'memory/linked_ptr_unittest.cc',
+        'memory/mru_cache_unittest.cc',
         'memory/ref_counted_unittest.cc',
-        'memory/scoped_native_library_unittest.cc',
         'memory/scoped_ptr_unittest.cc',
-        'memory/scoped_temp_dir_unittest.cc',
         'memory/scoped_vector_unittest.cc',
         'memory/singleton_unittest.cc',
         'memory/weak_ptr_unittest.cc',
         'message_loop_proxy_impl_unittest.cc',
         'message_loop_unittest.cc',
         'message_pump_glib_unittest.cc',
+        'message_pump_libevent_unittest.cc',
         'metrics/field_trial_unittest.cc',
         'metrics/histogram_unittest.cc',
         'metrics/stats_table_unittest.cc',
@@ -158,6 +166,8 @@
         'process_util_unittest_mac.h',
         'process_util_unittest_mac.mm',
         'rand_util_unittest.cc',
+        'scoped_native_library_unittest.cc',
+        'scoped_temp_dir_unittest.cc',
         'sha1_unittest.cc',
         'shared_memory_unittest.cc',
         'stack_container_unittest.cc',
@@ -177,6 +187,7 @@
         'sys_info_unittest.cc',
         'sys_string_conversions_mac_unittest.mm',
         'sys_string_conversions_unittest.cc',
+        'system_monitor/system_monitor_unittest.cc',
         'task_queue_unittest.cc',
         'task_unittest.cc',
         'template_util_unittest.cc',
@@ -220,11 +231,14 @@
         'base_i18n',
         'base_static',
         'test_support_base',
+        'third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
+        '../third_party/icu/icu.gyp:icui18n',
+        '../third_party/icu/icu.gyp:icuuc',
       ],
       'conditions': [
-        ['OS == "linux" or OS == "freebsd" or OS == "openbsd" or OS == "solaris"', {
+        ['toolkit_uses_gtk==1', {
           'sources!': [
             'file_version_info_unittest.cc',
           ],
@@ -238,13 +252,20 @@
                 ],
               },
             ],
+            ['gcc_version==44', {
+              # Avoid gcc 4.4 strict aliasing issues in stl_tree.h when
+              # building mru_cache_unittest.cc.
+              'cflags': [
+                '-fno-strict-aliasing',
+              ],
+            }],
           ],
           'dependencies': [
             '../build/linux/system.gyp:gtk',
-            '../build/linux/system.gyp:nss',
+            '../build/linux/system.gyp:ssl',
             '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
           ],
-        }, {  # OS != "linux" and OS != "freebsd" and OS != "openbsd" and OS != "solaris"
+        }, {  # toolkit_uses_gtk!=1
           'sources!': [
             'message_pump_glib_unittest.cc',
           ]
@@ -259,31 +280,35 @@
             'dir_reader_posix_unittest.cc',
             'file_descriptor_shuffle_unittest.cc',
             'threading/worker_pool_posix_unittest.cc',
+            'message_pump_libevent_unittest.cc',
           ],
         }, {  # OS != "win"
           'sources/': [
             ['exclude', '^win/'],
           ],
           'sources!': [
-            'system_monitor_unittest.cc',
+            'debug/trace_event_win_unittest.cc',
             'time_win_unittest.cc',
-            'trace_event_win_unittest.cc',
-            'win_util_unittest.cc',
+            'win/win_util_unittest.cc',
           ],
         }],
       ],
     },
     {
       'target_name': 'test_support_base',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         'base',
+        'base_static',
         'base_i18n',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
       ],
+      'export_dependent_settings': [
+        'base',
+      ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['toolkit_uses_gtk==1', {
           'dependencies': [
             # test_suite initializes GTK.
             '../build/linux/system.gyp:gtk',
@@ -313,7 +338,7 @@
     },
     {
       'target_name': 'test_support_perf',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         'base',
         '../testing/gtest.gyp:gtest',
@@ -328,7 +353,7 @@
         ],
       },
       'conditions': [
-        ['OS == "linux" or OS == "freebsd" or OS == "openbsd" or OS == "solaris"', {
+        ['toolkit_uses_gtk==1', {
           'dependencies': [
             # Needed to handle the #include chain:
             #   base/test/perf_test_suite.h

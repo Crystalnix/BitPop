@@ -1,10 +1,12 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_DOWNLOAD_DOWNLOAD_HISTORY_H_
 #define CHROME_BROWSER_DOWNLOAD_DOWNLOAD_HISTORY_H_
 #pragma once
+
+#include <map>
 
 #include "base/basictypes.h"
 #include "chrome/browser/history/history.h"
@@ -20,6 +22,8 @@ class Time;
 // Interacts with the HistoryService on behalf of the download subsystem.
 class DownloadHistory {
  public:
+  typedef Callback2<int32, bool>::Type VisitedBeforeDoneCallback;
+
   // A fake download table ID which represents a download that has started,
   // but is not yet in the table.
   static const int kUninitializedHandle;
@@ -30,9 +34,14 @@ class DownloadHistory {
   // Retrieves DownloadCreateInfos saved in the history.
   void Load(HistoryService::DownloadQueryCallback* callback);
 
+  // Checks whether |referrer_url| has been visited before today.  This takes
+  // ownership of |callback|.
+  void CheckVisitedReferrerBefore(int32 download_id,
+                                  const GURL& referrer_url,
+                                  VisitedBeforeDoneCallback* callback);
+
   // Adds a new entry for a download to the history database.
-  void AddEntry(const DownloadCreateInfo& info,
-                DownloadItem* download_item,
+  void AddEntry(DownloadItem* download_item,
                 HistoryService::DownloadCreateCallback* callback);
 
   // Updates the history entry for |download_item|.
@@ -53,6 +62,15 @@ class DownloadHistory {
   int64 GetNextFakeDbHandle();
 
  private:
+  typedef std::map<HistoryService::Handle,
+                   std::pair<int32, VisitedBeforeDoneCallback*> >
+      VisitedBeforeRequestsMap;
+
+  void OnGotVisitCountToHost(HistoryService::Handle handle,
+                             bool found_visits,
+                             int count,
+                             base::Time first_visit);
+
   Profile* profile_;
 
   // In case we don't have a valid db_handle, we use |fake_db_handle_| instead.
@@ -62,6 +80,9 @@ class DownloadHistory {
   int64 next_fake_db_handle_;
 
   CancelableRequestConsumer history_consumer_;
+
+  // The outstanding requests made by CheckVisitedReferrerBefore().
+  VisitedBeforeRequestsMap visited_before_requests_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadHistory);
 };

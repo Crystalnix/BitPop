@@ -15,13 +15,13 @@
 #include "net/socket/tcp_server_socket.h"
 
 namespace net {
-class ClientSocket;
+class StreamSocket;
 }  // namespace net
 
 class P2PSocketHostTcpServer : public P2PSocketHost {
  public:
   P2PSocketHostTcpServer(IPC::Message::Sender* message_sender,
-                   int routing_id, int id);
+                         int routing_id, int id);
   virtual ~P2PSocketHostTcpServer();
 
   // P2PSocketHost overrides.
@@ -33,7 +33,9 @@ class P2PSocketHostTcpServer : public P2PSocketHost {
       const net::IPEndPoint& remote_address, int id) OVERRIDE;
 
  private:
-  typedef std::map<net::IPEndPoint, net::ClientSocket*> AcceptedSocketsMap;
+  friend class P2PSocketHostTcpServerTest;
+
+  typedef std::map<net::IPEndPoint, net::StreamSocket*> AcceptedSocketsMap;
 
   void OnError();
 
@@ -43,10 +45,10 @@ class P2PSocketHostTcpServer : public P2PSocketHost {
   // Callback for Accept().
   void OnAccepted(int result);
 
-  scoped_ptr<net::TCPServerSocket> socket_;
+  scoped_ptr<net::ServerSocket> socket_;
   net::IPEndPoint local_address_;
 
-  scoped_ptr<net::ClientSocket> accept_socket_;
+  scoped_ptr<net::StreamSocket> accept_socket_;
   AcceptedSocketsMap accepted_sockets_;
 
   net::CompletionCallbackImpl<P2PSocketHostTcpServer> accept_callback_;

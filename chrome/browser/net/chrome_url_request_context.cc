@@ -6,6 +6,7 @@
 
 #include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
+#include "base/synchronization/waitable_event.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/profiles/profile.h"
@@ -19,10 +20,6 @@
 #include "net/http/http_transaction_factory.h"
 #include "net/http/http_util.h"
 #include "webkit/glue/webkit_glue.h"
-
-#if defined(USE_NSS)
-#include "net/ocsp/nss_ocsp.h"
-#endif
 
 class ChromeURLRequestContextFactory {
  public:
@@ -149,15 +146,6 @@ net::URLRequestContext* ChromeURLRequestContextGetter::GetURLRequestContext() {
   if (!url_request_context_) {
     DCHECK(factory_.get());
     url_request_context_ = factory_->Create();
-    if (is_main()) {
-      url_request_context_->set_is_main(true);
-#if defined(USE_NSS)
-      // TODO(ukai): find a better way to set the net::URLRequestContext for
-      // OCSP.
-      net::SetURLRequestContextForOCSP(url_request_context_);
-#endif
-    }
-
     factory_.reset();
     io_thread_->RegisterURLRequestContextGetter(this);
   }
@@ -374,21 +362,22 @@ void ChromeURLRequestContext::CopyFrom(ChromeURLRequestContext* other) {
   // Copy ChromeURLRequestContext parameters.
   set_user_script_dir_path(other->user_script_dir_path());
   set_appcache_service(other->appcache_service());
-  set_host_content_settings_map(other->host_content_settings_map());
-  set_host_zoom_map(other->host_zoom_map_);
   set_blob_storage_context(other->blob_storage_context());
   set_file_system_context(other->file_system_context());
   set_extension_info_map(other->extension_info_map_);
-  set_prerender_manager(other->prerender_manager());
   // ChromeURLDataManagerBackend is unique per context.
   set_is_incognito(other->is_incognito());
 }
 
 ChromeURLDataManagerBackend*
-    ChromeURLRequestContext::GetChromeURLDataManagerBackend() {
-  if (!chrome_url_data_manager_backend_.get())
-    chrome_url_data_manager_backend_.reset(new ChromeURLDataManagerBackend());
-  return chrome_url_data_manager_backend_.get();
+ChromeURLRequestContext::chrome_url_data_manager_backend() const {
+  return chrome_url_data_manager_backend_;
+}
+
+void ChromeURLRequestContext::set_chrome_url_data_manager_backend(
+    ChromeURLDataManagerBackend* backend) {
+  DCHECK(backend);
+  chrome_url_data_manager_backend_ = backend;
 }
 
 ChromeURLRequestContext::~ChromeURLRequestContext() {
@@ -397,26 +386,10 @@ ChromeURLRequestContext::~ChromeURLRequestContext() {
   if (appcache_service_.get() && appcache_service_->request_context() == this)
     appcache_service_->set_request_context(NULL);
 
-#if defined(USE_NSS)
-  if (is_main()) {
-    net::URLRequestContext* ocsp_context = net::GetURLRequestContextForOCSP();
-    if (ocsp_context) {
-      DCHECK_EQ(this, ocsp_context);
-      // We are releasing the net::URLRequestContext used by OCSP handlers.
-      net::SetURLRequestContextForOCSP(NULL);
-    }
-  }
-#endif
-
   NotificationService::current()->Notify(
       NotificationType::URL_REQUEST_CONTEXT_RELEASED,
       Source<net::URLRequestContext>(this),
       NotificationService::NoDetails());
-
-  // cookie_policy_'s lifetime is auto-managed by chrome_cookie_policy_.  We
-  // null this out here to avoid a dangling reference to chrome_cookie_policy_
-  // when ~net::URLRequestContext runs.
-  set_cookie_policy(NULL);
 }
 
 const std::string& ChromeURLRequestContext::GetUserAgent(

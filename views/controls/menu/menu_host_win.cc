@@ -12,7 +12,8 @@ namespace views {
 // MenuHostWin, public:
 
 MenuHostWin::MenuHostWin(internal::NativeMenuHostDelegate* delegate)
-    : delegate_(delegate) {
+    : NativeWidgetWin(delegate->AsNativeWidgetDelegate()),
+      delegate_(delegate) {
 }
 
 MenuHostWin::~MenuHostWin() {
@@ -20,11 +21,6 @@ MenuHostWin::~MenuHostWin() {
 
 ////////////////////////////////////////////////////////////////////////////////
 // MenuHostWin, NativeMenuHost implementation:
-
-void MenuHostWin::InitMenuHost(gfx::NativeWindow parent,
-                               const gfx::Rect& bounds) {
-  WidgetWin::Init(parent, bounds);
-}
 
 void MenuHostWin::StartCapturing() {
   SetMouseCapture();
@@ -35,26 +31,16 @@ NativeWidget* MenuHostWin::AsNativeWidget() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// MenuHostWin, WidgetWin overrides:
+// MenuHostWin, NativeWidgetWin overrides:
 
 void MenuHostWin::OnDestroy() {
   delegate_->OnNativeMenuHostDestroy();
-  WidgetWin::OnDestroy();
+  NativeWidgetWin::OnDestroy();
 }
 
 void MenuHostWin::OnCancelMode() {
   delegate_->OnNativeMenuHostCancelCapture();
-  WidgetWin::OnCancelMode();
-}
-
-// TODO(beng): remove once MenuHost is-a Widget
-RootView* MenuHostWin::CreateRootView() {
-  return delegate_->CreateRootView();
-}
-
-// TODO(beng): remove once MenuHost is-a Widget
-bool MenuHostWin::ShouldReleaseCaptureOnMouseReleased() const {
-  return delegate_->ShouldReleaseCaptureOnMouseRelease();
+  NativeWidgetWin::OnCancelMode();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

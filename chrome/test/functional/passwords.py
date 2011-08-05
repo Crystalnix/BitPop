@@ -1,5 +1,5 @@
 #!/usr/bin/python
-# Copyright (c) 2010 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -24,6 +24,10 @@ class PasswordTest(pyauto.PyUITest):
       import pprint
       pp = pprint.PrettyPrinter(indent=2)
       pp.pprint(self.GetSavedPasswords())
+
+  def setUp(self):
+    pyauto.PyUITest.setUp(self)
+    self.assertFalse(self.GetSavedPasswords())
 
   def _AssertWithinOneSecond(self, time1, time2):
     self.assertTrue(abs(time1 - time2) < 1.0,
@@ -54,7 +58,7 @@ class PasswordTest(pyauto.PyUITest):
         'https://www.example.com/', 'https://www.example.com/login',
         'username', 'password', 'https://www.example.com/login/')
     self.assertTrue(self.AddSavedPassword(password1))
-    self.assertEquals(self.GetSavedPasswords(), [password1])
+    self.assertEqual(self.GetSavedPasswords(), [password1])
 
   def testRemovePasswords(self):
     """Verify that saved passwords can be removed."""
@@ -109,8 +113,7 @@ class PasswordTest(pyauto.PyUITest):
     test_utils.ClearPasswords(self)
 
   def testNeverSavePasswords(self):
-    """Verify that we don't save passwords and delete saved passwords
-    for a domain when 'never for this site' is chosen."""
+    """Verify passwords not saved/deleted when 'never for this site' chosen."""
     creds1 = self.GetPrivateInfo()['test_google_account']
     test_utils.GoogleAccountsLogin(
         self, creds1['username'], creds1['password'])
@@ -131,8 +134,7 @@ class PasswordTest(pyauto.PyUITest):
     # TODO: Check the exceptions list
 
   def testSavedPasswordInTabsAndWindows(self):
-    """Verify saved username/password displays in Regular/Incognito Window
-       and NTP"""
+    """Verify saved username/password shows in regular/incognito Window, NTP"""
     username = 'test'
     password = 'test12345'
     password_dict = {
@@ -161,8 +163,7 @@ class PasswordTest(pyauto.PyUITest):
     test_utils.ClearPasswords(self)
 
   def testInfoBarDisappearByNavigatingPage(self):
-    """Test that Password infobar is dismissed by navigating to
-       different page."""
+    """Test password infobar is dismissed when navigating to different page."""
     creds = self.GetPrivateInfo()['test_google_account']
     # Login to Google a/c
     test_utils.GoogleAccountsLogin(self, creds['username'], creds['password'])

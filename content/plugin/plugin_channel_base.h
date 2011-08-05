@@ -12,12 +12,37 @@
 #include "base/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
 #include "content/common/message_router.h"
 #include "content/plugin/npobject_base.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_sync_channel.h"
 #include "ui/gfx/native_widget_types.h"
+
+namespace base {
+class MessageLoopProxy;
+}
+
+#if defined(COMPILER_GCC)
+namespace __gnu_cxx {
+
+template<>
+struct hash<NPObject*> {
+  std::size_t operator()(NPObject* const& ptr) const {
+    return hash<size_t>()(reinterpret_cast<size_t>(ptr));
+  }
+};
+
+}  // namespace __gnu_cxx
+#elif defined(COMPILER_MSVC)
+namespace stdext {
+
+template<>
+inline size_t hash_value(NPObject* const& ptr) {
+  return hash_value(reinterpret_cast<size_t>(ptr));
+}
+
+}  // namespace stdext
+#endif // COMPILER
 
 // Encapsulates an IPC channel between a renderer and a plugin process.
 class PluginChannelBase : public IPC::Channel::Listener,
@@ -34,6 +59,17 @@ class PluginChannelBase : public IPC::Channel::Listener,
   void AddRoute(int route_id, IPC::Channel::Listener* listener,
                 NPObjectBase* npobject);
   void RemoveRoute(int route_id);
+
+
+  void AddMappingForNPObjectProxy(int route_id, NPObject* object);
+  void RemoveMappingForNPObjectProxy(int route_id);
+
+  void AddMappingForNPObjectStub(int route_id, NPObject* object);
+  void RemoveMappingForNPObjectStub(int route_id, NPObject* object);
+
+  NPObject* GetExistingNPObjectProxy(int route_id);
+  int GetExistingRouteForNPObjectStub(NPObject* npobject);
+
 
   // IPC::Message::Sender implementation:
   virtual bool Send(IPC::Message* msg);
@@ -77,7 +113,7 @@ class PluginChannelBase : public IPC::Channel::Listener,
   // on the channel and its ref count is 0, the object deletes itself.
   static PluginChannelBase* GetChannel(
       const IPC::ChannelHandle& channel_handle, IPC::Channel::Mode mode,
-      PluginChannelFactory factory, MessageLoop* ipc_message_loop,
+      PluginChannelFactory factory, base::MessageLoopProxy* ipc_message_loop,
       bool create_pipe_now);
 
   // Sends a message to all instances.
@@ -100,7 +136,8 @@ class PluginChannelBase : public IPC::Channel::Listener,
     send_unblocking_only_during_unblock_dispatch_ = true;
   }
 
-  virtual bool Init(MessageLoop* ipc_message_loop, bool create_pipe_now);
+  virtual bool Init(base::MessageLoopProxy* ipc_message_loop,
+                    bool create_pipe_now);
 
   scoped_ptr<IPC::SyncChannel> channel_;
 
@@ -117,6 +154,12 @@ class PluginChannelBase : public IPC::Channel::Listener,
   // channel is closed we can inform them.
   typedef base::hash_map<int, NPObjectBase*> ListenerMap;
   ListenerMap npobject_listeners_;
+
+  typedef base::hash_map<int, NPObject*> ProxyMap;
+  ProxyMap proxy_map_;
+
+  typedef base::hash_map<NPObject*, int> StubMap;
+  StubMap stub_map_;
 
   // Used to implement message routing functionality to WebPlugin[Delegate]
   // objects

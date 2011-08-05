@@ -6,7 +6,7 @@
 
 #include "build/build_config.h"
 
-#if defined(USE_X11)
+#if defined(TOOLKIT_USES_GTK)
 #include <gtk/gtk.h>
 #elif defined(OS_MACOSX)
 #include <CoreFoundation/CoreFoundation.h>
@@ -39,6 +39,33 @@
 #include "ui/base/x/x11_util.h"
 #endif
 
+namespace {
+
+class EnsureTerminateMessageFilter : public IPC::ChannelProxy::MessageFilter {
+ public:
+  EnsureTerminateMessageFilter() {}
+  ~EnsureTerminateMessageFilter() {}
+
+ private:
+  virtual void OnChannelError() {
+    // How long we wait before forcibly shutting down the process.
+    const int kPluginProcessTerminateTimeoutMs = 3000;
+    // Ensure that we don't wait indefinitely for the plugin to shutdown.
+    // as the browser does not terminate plugin processes on shutdown.
+    // We achieve this by posting an exit process task on the IO thread.
+    MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        NewRunnableMethod(this, &EnsureTerminateMessageFilter::Terminate),
+        kPluginProcessTerminateTimeoutMs);
+  }
+
+  void Terminate() {
+    base::KillProcess(base::GetCurrentProcessHandle(), 0, false);
+  }
+};
+
+}  // namespace
+
 static base::LazyInstance<base::ThreadLocalPointer<PluginThread> > lazy_tls(
     base::LINKER_INITIALIZED);
 
@@ -49,7 +76,7 @@ PluginThread::PluginThread()
           switches::kPluginPath);
 
   lazy_tls.Pointer()->Set(this);
-#if defined(OS_LINUX)
+#if defined(TOOLKIT_USES_GTK)
   {
     // XEmbed plugins assume they are hosted in a Gtk application, so we need
     // to initialize Gtk in the plugin process.
@@ -78,8 +105,12 @@ PluginThread::PluginThread()
 
   scoped_refptr<webkit::npapi::PluginLib> plugin(
       webkit::npapi::PluginLib::CreatePluginLib(plugin_path_));
-  if (plugin.get())
+  if (plugin.get()) {
     plugin->NP_Initialize();
+    // For OOP plugins the plugin dll will be unloaded during process shutdown
+    // time.
+    plugin->set_defer_unload(true);
+  }
 
   content::GetContentClient()->plugin()->PluginProcessStarted(
       plugin.get() ? plugin->plugin_info().name : string16());
@@ -87,6 +118,7 @@ PluginThread::PluginThread()
   // Certain plugins, such as flash, steal the unhandled exception filter
   // thus we never get crash reports when they fault. This call fixes it.
   message_loop()->set_exception_restoration(true);
+  channel()->AddFilter(new EnsureTerminateMessageFilter());
 }
 
 PluginThread::~PluginThread() {
@@ -121,7 +153,7 @@ bool PluginThread::OnControlMessageReceived(const IPC::Message& msg) {
 void PluginThread::OnCreateChannel(int renderer_id,
                                    bool incognito) {
   scoped_refptr<PluginChannel> channel(PluginChannel::GetPluginChannel(
-      renderer_id, ChildProcess::current()->io_message_loop()));
+      renderer_id, ChildProcess::current()->io_message_loop_proxy()));
   IPC::ChannelHandle channel_handle;
   if (channel.get()) {
     channel_handle.name = channel->channel_handle().name;
@@ -140,43 +172,6 @@ void PluginThread::OnNotifyRenderersOfPendingShutdown() {
 }
 
 namespace webkit_glue {
-
-#if defined(OS_WIN)
-bool DownloadUrl(const std::string& url, HWND caller_window) {
-  PluginThread* plugin_thread = PluginThread::current();
-  if (!plugin_thread) {
-    return false;
-  }
-
-  IPC::Message* message =
-      new PluginProcessHostMsg_DownloadUrl(MSG_ROUTING_NONE, url,
-                                           ::GetCurrentProcessId(),
-                                           caller_window);
-  return plugin_thread->Send(message);
-}
-#endif
-
-bool GetPluginFinderURL(std::string* plugin_finder_url) {
-  if (!plugin_finder_url) {
-    NOTREACHED();
-    return false;
-  }
-
-  PluginThread* plugin_thread = PluginThread::current();
-  if (!plugin_thread)
-    return false;
-
-  plugin_thread->Send(
-      new PluginProcessHostMsg_GetPluginFinderUrl(plugin_finder_url));
-  // If we get an empty string back this means the plugin finder has been
-  // disabled.
-  return true;
-}
-
-bool IsDefaultPluginEnabled() {
-  return true;
-}
-
 bool FindProxyForUrl(const GURL& url, std::string* proxy_list) {
   int net_error;
   std::string proxy_result;

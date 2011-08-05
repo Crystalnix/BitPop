@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
@@ -19,6 +20,7 @@
 #include "base/timer.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/sync/engine/syncapi.h"
+#include "chrome/browser/sync/engine/configure_reason.h"
 #include "chrome/browser/sync/engine/model_safe_worker.h"
 #include "chrome/browser/sync/js_backend.h"
 #include "chrome/browser/sync/js_sync_manager_observer.h"
@@ -79,13 +81,12 @@ class SyncFrontend {
   virtual void OnClearServerDataSucceeded() = 0;
   virtual void OnClearServerDataFailed() = 0;
 
-  // The syncer requires a passphrase to decrypt sensitive
-  // updates. This is called when the first sensitive data type is
-  // setup by the user as well as anytime any the passphrase is
-  // changed in another synced client.  if
-  // |passphrase_required_for_decryption| is false, the passphrase is
-  // required only for encryption.
-  virtual void OnPassphraseRequired(bool for_decryption) = 0;
+  // The syncer requires a passphrase to decrypt sensitive updates. This is
+  // called when the first sensitive data type is setup by the user and anytime
+  // the passphrase is changed by another synced client. |reason| denotes why
+  // the passphrase was required.
+  virtual void OnPassphraseRequired(
+      sync_api::PassphraseRequiredReason reason) = 0;
 
   // Called when the passphrase provided by the user is
   // accepted. After this is called, updates to sensitive nodes are
@@ -166,7 +167,9 @@ class SyncBackendHost : public browser_sync::ModelSafeWorkerRegistrar {
   virtual void ConfigureDataTypes(
       const DataTypeController::TypeMap& data_type_controllers,
       const syncable::ModelTypeSet& types,
-      CancelableTask* ready_task);
+      sync_api::ConfigureReason reason,
+      CancelableTask* ready_task,
+      bool enable_nigori);
 
   // Makes an asynchronous call to syncer to switch to config mode. When done
   // syncer will call us back on FinishConfigureDataTypes.
@@ -235,6 +238,9 @@ class SyncBackendHost : public browser_sync::ModelSafeWorkerRegistrar {
   // ONLY CALL THIS IF OnInitializationComplete was called!
   bool HasUnsyncedItems() const;
 
+  // Logs the unsynced items.
+  void LogUnsyncedItems(int level) const;
+
   // Whether or not we are syncing encryption keys.
   bool IsNigoriEnabled() const;
 
@@ -277,8 +283,8 @@ class SyncBackendHost : public browser_sync::ModelSafeWorkerRegistrar {
         const sessions::SyncSessionSnapshot* snapshot);
     virtual void OnInitializationComplete();
     virtual void OnAuthError(const GoogleServiceAuthError& auth_error);
-    virtual void OnPassphraseRequired(bool for_decryption);
-    virtual void OnPassphraseFailed();
+    virtual void OnPassphraseRequired(
+        sync_api::PassphraseRequiredReason reason);
     virtual void OnPassphraseAccepted(const std::string& bootstrap_token);
     virtual void OnStopSyncingPermanently();
     virtual void OnUpdatedToken(const std::string& token);
@@ -288,16 +294,18 @@ class SyncBackendHost : public browser_sync::ModelSafeWorkerRegistrar {
         const syncable::ModelTypeSet& encrypted_types);
 
     // JsBackend implementation.
-    virtual void SetParentJsEventRouter(JsEventRouter* router);
-    virtual void RemoveParentJsEventRouter();
-    virtual const JsEventRouter* GetParentJsEventRouter() const;
+    virtual void SetParentJsEventRouter(JsEventRouter* router) OVERRIDE;
+    virtual void RemoveParentJsEventRouter() OVERRIDE;
+    virtual const JsEventRouter* GetParentJsEventRouter() const OVERRIDE;
     virtual void ProcessMessage(const std::string& name, const JsArgList& args,
-                                const JsEventHandler* sender);
+                                const JsEventHandler* sender) OVERRIDE;
 
     // JsEventRouter implementation.
     virtual void RouteJsEvent(const std::string& event_name,
-                              const JsArgList& args,
-                              const JsEventHandler* dst);
+                              const JsEventDetails& details) OVERRIDE;
+    virtual void RouteJsMessageReply(const std::string& event_name,
+                                     const JsArgList& args,
+                                     const JsEventHandler* target) OVERRIDE;
 
     struct DoInitializeOptions {
       DoInitializeOptions(
@@ -356,7 +364,7 @@ class SyncBackendHost : public browser_sync::ModelSafeWorkerRegistrar {
     void DoSetPassphrase(const std::string& passphrase, bool is_explicit);
 
     // Getter/setter for whether we are waiting on SetPassphrase to process a
-    // passphrase. Set by SetPassphrase, cleared by OnPassphraseFailed or
+    // passphrase. Set by SetPassphrase, cleared by OnPassphraseRequired or
     // OnPassphraseAccepted.
     bool processing_passphrase() const;
     void set_processing_passphrase();
@@ -377,7 +385,8 @@ class SyncBackendHost : public browser_sync::ModelSafeWorkerRegistrar {
     void DoShutdown(bool stopping_sync);
 
     // Posts a config request on the core thread.
-    virtual void DoRequestConfig(const syncable::ModelTypeBitSet& added_types);
+    virtual void DoRequestConfig(const syncable::ModelTypeBitSet& added_types,
+        sync_api::ConfigureReason reason);
 
     // Start the configuration mode.
     virtual void DoStartConfiguration(Callback0::Type* callback);
@@ -450,14 +459,8 @@ class SyncBackendHost : public browser_sync::ModelSafeWorkerRegistrar {
         const GoogleServiceAuthError& new_auth_error);
 
     // Invoked when a passphrase is required to decrypt a set of Nigori keys,
-    // or for encrypting.  If the reason is decryption, |for_decryption| will
-    // be true.
-    void NotifyPassphraseRequired(bool for_decryption);
-
-    // Invoked when the syncer attempts to set a passphrase but fails to decrypt
-    // the cryptographer's pending keys. This tells the profile sync service
-    // that a new passphrase is required.
-    void NotifyPassphraseFailed();
+    // or for encrypting. |reason| denotes why the passhrase was required.
+    void NotifyPassphraseRequired(sync_api::PassphraseRequiredReason reason);
 
     // Invoked when the passphrase provided by the user has been accepted.
     void NotifyPassphraseAccepted(const std::string& bootstrap_token);
@@ -486,8 +489,11 @@ class SyncBackendHost : public browser_sync::ModelSafeWorkerRegistrar {
     void HandleInitalizationCompletedOnFrontendLoop();
 
     void RouteJsEventOnFrontendLoop(
+        const std::string& name, const JsEventDetails& details);
+
+    void RouteJsMessageReplyOnFrontendLoop(
         const std::string& name, const JsArgList& args,
-        const JsEventHandler* dst);
+        const JsEventHandler* target);
 
     void FinishConfigureDataTypesOnFrontendLoop();
 
@@ -574,6 +580,7 @@ class SyncBackendHost : public browser_sync::ModelSafeWorkerRegistrar {
     // Additional details about which types were added / removed.
     bool deleted_type;
     syncable::ModelTypeBitSet added_types;
+    sync_api::ConfigureReason reason;
   };
 
   UIModelWorker* ui_worker();
@@ -586,7 +593,9 @@ class SyncBackendHost : public browser_sync::ModelSafeWorkerRegistrar {
       const DataTypeController::TypeMap& data_type_controllers,
       const syncable::ModelTypeSet& types,
       CancelableTask* ready_task,
-      ModelSafeRoutingInfo* routing_info);
+      ModelSafeRoutingInfo* routing_info,
+      sync_api::ConfigureReason reason,
+      bool nigori_enabled);
 
   // A thread we dedicate for use by our Core to perform initialization,
   // authentication, handle messages from the syncapi, and periodically tell

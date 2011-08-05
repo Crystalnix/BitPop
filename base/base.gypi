@@ -40,7 +40,6 @@
           'bind_internal.h',
           'bind_internal_win.h',
           'bits.h',
-          'bzip2_error_handler.cc',
           'callback.h',
           'callback_internal.cc',
           'callback_internal.h',
@@ -50,6 +49,8 @@
           'compiler_specific.h',
           'cpu.cc',
           'cpu.h',
+          'debug/alias.cc',
+          'debug/alias.h',
           'debug/debug_on_start_win.cc',
           'debug/debug_on_start_win.h',
           'debug/debugger.cc',
@@ -95,7 +96,6 @@
           'files/file_path_watcher_win.cc',
           'fix_wp64.h',
           'float_util.h',
-          'foundation_utils_mac.h',
           'global_descriptors_posix.cc',
           'global_descriptors_posix.h',
           'gtest_prod_util.h',
@@ -119,17 +119,22 @@
           'mac/foundation_util.mm',
           'mac/mac_util.h',
           'mac/mac_util.mm',
+          'mac/objc_property_releaser.h',
+          'mac/objc_property_releaser.mm',
           'mac/os_crash_dumps.cc',
           'mac/os_crash_dumps.h',
           'mac/scoped_aedesc.h',
           'mac/scoped_cftyperef.h',
           'mac/scoped_nsautorelease_pool.h',
           'mac/scoped_nsautorelease_pool.mm',
+          'mac/scoped_nsexception_enabler.h',
+          'mac/scoped_nsexception_enabler.mm',
           'mach_ipc_mac.h',
           'mach_ipc_mac.mm',
           'memory/linked_ptr.h',
           'memory/memory_debug.cc',
           'memory/memory_debug.h',
+          'memory/mru_cache.h',
           'memory/raw_scoped_refptr_mismatch_checker.h',
           'memory/ref_counted.cc',
           'memory/ref_counted.h',
@@ -137,13 +142,9 @@
           'memory/ref_counted_memory.h',
           'memory/scoped_callback_factory.h',
           'memory/scoped_handle.h',
-          'memory/scoped_native_library.cc',
-          'memory/scoped_native_library.h',
           'memory/scoped_nsobject.h',
           'memory/scoped_open_process.h',
           'memory/scoped_ptr.h',
-          'memory/scoped_temp_dir.cc',
-          'memory/scoped_temp_dir.h',
           'memory/scoped_vector.h',
           'memory/singleton.h',
           'memory/weak_ptr.cc',
@@ -162,8 +163,6 @@
           'message_pump_win.h',
           'metrics/histogram.cc',
           'metrics/histogram.h',
-          'metrics/nacl_histogram.cc',
-          'metrics/nacl_histogram.h',
           'metrics/stats_counters.cc',
           'metrics/stats_counters.h',
           'metrics/stats_table.cc',
@@ -204,6 +203,10 @@
           'safe_strerror_posix.cc',
           'safe_strerror_posix.h',
           'scoped_ptr.h',
+          'scoped_native_library.cc',
+          'scoped_native_library.h',
+          'scoped_temp_dir.cc',
+          'scoped_temp_dir.h',
           'sha1.h',
           'sha1_portable.cc',
           'sha1_win.cc',
@@ -242,6 +245,11 @@
           'synchronization/waitable_event_watcher_posix.cc',
           'synchronization/waitable_event_watcher_win.cc',
           'synchronization/waitable_event_win.cc',
+          'system_monitor/system_monitor.cc',
+          'system_monitor/system_monitor.h',
+          'system_monitor/system_monitor_mac.mm',
+          'system_monitor/system_monitor_posix.cc',
+          'system_monitor/system_monitor_win.cc',
           'sys_info.h',
           'sys_info_chromeos.cc',
           'sys_info_freebsd.cc',
@@ -353,7 +361,7 @@
           '$(SDKROOT)/System/Library/Frameworks/ApplicationServices.framework/Frameworks',
         ],
         'conditions': [
-          [ 'OS != "linux" and OS != "freebsd" and OS != "openbsd" and OS != "solaris"', {
+          [ 'toolkit_uses_gtk==0', {
               'sources/': [
                 ['exclude', '^nix/'],
               ],
@@ -374,7 +382,7 @@
           ],
           [ 'OS != "mac"', {
               'sources!': [
-                'scoped_aedesc.h'
+                'mac/scoped_aedesc.h'
               ],
           }],
           # For now, just test the *BSD platforms enough to exclude them.
@@ -403,15 +411,14 @@
               # regression to page cycler moz.
               'sha1_win.cc',
               'string16.cc',
-              'debug/trace_event.cc',
             ],
           },],
-          ['OS=="freebsd" or OS=="openbsd"', {
+          ['os_posix==1 and OS!="linux" and OS!="mac"', {
             'sources!': [
-              'base/files/file_path_watcher_linux.cc',
+              'files/file_path_watcher_linux.cc',
             ],
             'sources': [
-              'base/files/file_path_watcher_stub.cc',
+              'files/file_path_watcher_stub.cc',
             ],
           }],
         ],
@@ -421,7 +428,7 @@
   'targets': [
     {
       'target_name': 'base',
-      'type': '<(library)',
+      'type': '<(component)',
       'msvs_guid': '1832A374-8A74-4F9E-B536-69A699B3E165',
       'variables': {
         'base_target': 1,
@@ -429,6 +436,9 @@
       'dependencies': [
         'base_static',
         '../third_party/modp_b64/modp_b64.gyp:modp_b64',
+        'third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+      ],
+      'export_dependent_settings': [
         'third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
       ],
       # TODO(gregoryd): direct_dependent_settings should be shared with the
@@ -439,7 +449,7 @@
         ],
       },
       'conditions': [
-        [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd" or OS == "solaris"', {
+        [ 'toolkit_uses_gtk==1', {
           'conditions': [
             [ 'chromeos==1', {
                 'sources/': [ ['include', '_chromeos\\.cc$'] ]
@@ -474,7 +484,7 @@
             '../build/linux/system.gyp:gtk',
             '../build/linux/system.gyp:x11',
           ],
-        }, {  # OS != "linux" and OS != "freebsd" and OS != "openbsd" and OS != "solaris"
+        }, {  # toolkit_uses_gtk!=1
             'sources/': [
               ['exclude', '/xdg_user_dirs/'],
               ['exclude', '_nss\.cc$'],
@@ -514,15 +524,34 @@
             'dependencies': ['../third_party/libevent/libevent.gyp:libevent'],
             'sources!': [
               'third_party/purify/pure_api.c',
-              'base_drag_source.cc',
-              'base_drop_target.cc',
               'event_recorder.cc',
-              'file_version_info.cc',
-              'registry.cc',
               'resource_util.cc',
-              'win_util.cc',
             ],
         },],
+        [ 'component=="shared_library"', {
+          'defines': [
+            'BASE_DLL',
+            'BASE_IMPLEMENTATION=1',
+          ],
+          'conditions': [
+            ['OS=="win"', {
+              'msvs_disabled_warnings': [
+                4251,
+              ],
+              'sources!': [
+                'debug/debug_on_start_win.cc',
+              ],
+              'direct_dependent_settings': {
+                'defines': [
+                  'BASE_DLL',
+                ],
+                'msvs_disabled_warnings': [
+                  4251,
+                ],
+              },
+            }],
+          ],
+        }],
       ],
       'sources': [
         'third_party/nspr/prcpucfg.h',
@@ -570,7 +599,7 @@
       'targets': [
         {
           'target_name': 'base_nacl_win64',
-          'type': '<(library)',
+          'type': 'static_library',
           'msvs_guid': 'CEE1F794-DC70-4FED-B7C4-4C12986672FE',
           'variables': {
             'base_target': 1,
@@ -600,11 +629,11 @@
         },
       ],
     }],
-    [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd" or OS == "solaris"', {
+    [ 'os_posix==1 and OS!="mac"', {
       'targets': [
         {
           'target_name': 'symbolize',
-          'type': '<(library)',
+          'type': 'static_library',
           'variables': {
             'chromium_code': 0,
           },
@@ -629,7 +658,7 @@
         },
         {
           'target_name': 'xdg_mime',
-          'type': '<(library)',
+          'type': 'static_library',
           'variables': {
             'chromium_code': 0,
           },

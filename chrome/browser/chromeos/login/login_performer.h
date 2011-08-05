@@ -54,7 +54,7 @@ namespace chromeos {
 class LoginPerformer : public LoginStatusConsumer,
                        public SignedSettingsHelper::Callback,
                        public NotificationObserver,
-                       public ProfileManager::Observer {
+                       public ProfileManagerObserver {
  public:
   // Delegate class to get notifications from the LoginPerformer.
   class Delegate : public LoginStatusConsumer {
@@ -119,8 +119,8 @@ class LoginPerformer : public LoginStatusConsumer,
   void set_delegate(Delegate* delegate) { delegate_ = delegate; }
 
  private:
-  // ProfeleManager::Observer implementation:
-  void OnProfileCreated(Profile* profile);
+  // ProfileManager::Observer implementation:
+  virtual void OnProfileCreated(Profile* profile);
 
   // Requests screen lock and subscribes to screen lock notifications.
   void RequestScreenLock();

@@ -14,14 +14,13 @@
 #include "chrome/browser/download/download_item.h"
 #include "chrome/browser/download/download_item_model.h"
 #include "chrome/browser/download/download_manager.h"
-#include "chrome/browser/download/download_shelf.h"
 #include "chrome/browser/download/download_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/gtk/custom_drag.h"
+#include "chrome/browser/ui/gtk/download/download_shelf_context_menu_gtk.h"
 #include "chrome/browser/ui/gtk/download/download_shelf_gtk.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
-#include "chrome/browser/ui/gtk/menu_gtk.h"
 #include "chrome/browser/ui/gtk/nine_box.h"
 #include "content/common/notification_service.h"
 #include "grit/generated_resources.h"
@@ -79,79 +78,6 @@ static const double kDownloadItemLuminanceMod = 0.8;
 
 }  // namespace
 
-// DownloadShelfContextMenuGtk -------------------------------------------------
-
-class DownloadShelfContextMenuGtk : public DownloadShelfContextMenu,
-                                    public MenuGtk::Delegate {
- public:
-  // The constructor creates the menu and immediately pops it up.
-  // |model| is the download item model associated with this context menu,
-  // |widget| is the button that popped up this context menu, and |e| is
-  // the button press event that caused this menu to be created.
-  DownloadShelfContextMenuGtk(BaseDownloadItemModel* model,
-                              DownloadItemGtk* download_item)
-      : DownloadShelfContextMenu(model),
-        download_item_(download_item) {
-  }
-
-  ~DownloadShelfContextMenuGtk() {
-  }
-
-  void Popup(GtkWidget* widget, GdkEventButton* event) {
-    // Create the menu if we have not created it yet or we created it for
-    // an in-progress download that has since completed.
-    if (download_->IsComplete())
-      menu_.reset(new MenuGtk(this, GetFinishedMenuModel()));
-    else
-      menu_.reset(new MenuGtk(this, GetInProgressMenuModel()));
-
-    if (widget)
-      menu_->PopupForWidget(widget, event->button, event->time);
-    else
-      menu_->PopupAsContext(gfx::Point(event->x_root, event->y_root),
-                            event->time);
-  }
-
-  // MenuGtk::Delegate implementation:
-  virtual void StoppedShowing() {
-    download_item_->menu_showing_ = false;
-    gtk_widget_queue_draw(download_item_->menu_button_);
-  }
-
-  virtual GtkWidget* GetImageForCommandId(int command_id) const {
-    const char* stock = NULL;
-    switch (command_id) {
-      case SHOW_IN_FOLDER:
-      case OPEN_WHEN_COMPLETE:
-        stock = GTK_STOCK_OPEN;
-        break;
-
-      case CANCEL:
-        stock = GTK_STOCK_CANCEL;
-        break;
-
-      case ALWAYS_OPEN_TYPE:
-      case TOGGLE_PAUSE:
-        stock = NULL;
-    }
-
-    return stock ? gtk_image_new_from_stock(stock, GTK_ICON_SIZE_MENU) : NULL;
-  }
-
- private:
-  // The menu we show on Popup(). We keep a pointer to it for a couple reasons:
-  //  * we don't want to have to recreate the menu every time it's popped up.
-  //  * we have to keep it in scope for longer than the duration of Popup(), or
-  //    completing the user-selected action races against the menu's
-  //    destruction.
-  scoped_ptr<MenuGtk> menu_;
-
-  // The download item that created us.
-  DownloadItemGtk* download_item_;
-};
-
-// DownloadItemGtk -------------------------------------------------------------
-
 NineBox* DownloadItemGtk::body_nine_box_normal_ = NULL;
 NineBox* DownloadItemGtk::body_nine_box_prelight_ = NULL;
 NineBox* DownloadItemGtk::body_nine_box_active_ = NULL;
@@ -167,8 +93,8 @@ DownloadItemGtk::DownloadItemGtk(DownloadShelfGtk* parent_shelf,
     : parent_shelf_(parent_shelf),
       arrow_(NULL),
       menu_showing_(false),
-      theme_service_(GtkThemeService::GetFrom(
-                          parent_shelf->browser()->profile())),
+      theme_service_(
+          GtkThemeService::GetFrom(parent_shelf->browser()->profile())),
       progress_angle_(download_util::kStartAngleDegrees),
       download_model_(download_model),
       dangerous_prompt_(NULL),
@@ -394,15 +320,18 @@ void DownloadItemGtk::OnDownloadUpdated(DownloadItem* download) {
       complete_animation_.Show();
       break;
     case DownloadItem::COMPLETE:
-      if (download_complete_)
-        // We've already handled the completion specific actions; skip
-        // doing them again.
-        break;
-
+      // auto_opened() may change after the download's initial transition to
+      // COMPLETE, so we check it before the idemopotency shield below.
       if (download->auto_opened()) {
         parent_shelf_->RemoveDownloadItem(this);  // This will delete us!
         return;
       }
+
+      // We've already handled the completion specific actions; skip
+      // doing the non-idempotent ones again.
+      if (download_complete_)
+        break;
+
       StopDownloadProgress();
 
       // Set up the widget as a drag source.
@@ -460,7 +389,7 @@ void DownloadItemGtk::Observe(NotificationType type,
   if (type == NotificationType::BROWSER_THEME_CHANGED) {
     // Our GtkArrow is only visible in gtk mode. Otherwise, we let the custom
     // rendering code do whatever it wants.
-    if (theme_service_->UseGtkTheme()) {
+    if (theme_service_->UsingNativeTheme()) {
       if (!arrow_) {
         arrow_ = gtk_arrow_new(GTK_ARROW_DOWN, GTK_SHADOW_NONE);
         gtk_widget_set_size_request(arrow_,
@@ -560,8 +489,9 @@ void DownloadItemGtk::UpdateNameLabel() {
 
   GdkColor color = theme_service_->GetGdkColor(
       ThemeService::COLOR_BOOKMARK_TEXT);
-  gtk_util::SetLabelColor(name_label_, theme_service_->UseGtkTheme() ?
-                                       NULL : &color);
+  gtk_util::SetLabelColor(
+      name_label_,
+      theme_service_->UsingNativeTheme() ? NULL : &color);
   gtk_label_set_text(GTK_LABEL(name_label_),
                      UTF16ToUTF8(elided_filename).c_str());
 }
@@ -571,7 +501,7 @@ void DownloadItemGtk::UpdateStatusLabel(const std::string& status_text) {
     return;
 
   GdkColor text_color;
-  if (!theme_service_->UseGtkTheme()) {
+  if (!theme_service_->UsingNativeTheme()) {
     SkColor color = theme_service_->GetColor(
         ThemeService::COLOR_BOOKMARK_TEXT);
     if (color_utils::RelativeLuminance(color) > 0.5) {
@@ -591,8 +521,9 @@ void DownloadItemGtk::UpdateStatusLabel(const std::string& status_text) {
         color_utils::AlphaBlend(blend_color, color, 77));
   }
 
-  gtk_util::SetLabelColor(status_label_, theme_service_->UseGtkTheme() ?
-                                        NULL : &text_color);
+  gtk_util::SetLabelColor(
+      status_label_,
+      theme_service_->UsingNativeTheme() ? NULL : &text_color);
   gtk_label_set_text(GTK_LABEL(status_label_), status_text.c_str());
 }
 
@@ -605,13 +536,14 @@ void DownloadItemGtk::UpdateDangerWarning() {
     string16 dangerous_warning;
 
     // The dangerous download label text is different for different cases.
-    if (get_download()->danger_type() == DownloadItem::DANGEROUS_URL) {
+    if (get_download()->GetDangerType() == DownloadItem::DANGEROUS_URL) {
       // Safebrowsing shows the download URL leads to malicious file.
       dangerous_warning =
           l10n_util::GetStringUTF16(IDS_PROMPT_UNSAFE_DOWNLOAD_URL);
     } else {
       // It's a dangerous file type (e.g.: an executable).
-      DCHECK(get_download()->danger_type() == DownloadItem::DANGEROUS_FILE);
+      DCHECK(get_download()->GetDangerType() ==
+             DownloadItem::DANGEROUS_FILE);
       if (get_download()->is_extension_install()) {
         dangerous_warning =
             l10n_util::GetStringUTF16(IDS_PROMPT_DANGEROUS_DOWNLOAD_EXTENSION);
@@ -624,7 +556,7 @@ void DownloadItemGtk::UpdateDangerWarning() {
       }
     }
 
-    if (theme_service_->UseGtkTheme()) {
+    if (theme_service_->UsingNativeTheme()) {
       gtk_util::SetLabelColor(dangerous_label_, NULL);
     } else {
       GdkColor color = theme_service_->GetGdkColor(
@@ -659,9 +591,9 @@ void DownloadItemGtk::UpdateDangerWarning() {
 }
 
 void DownloadItemGtk::UpdateDangerIcon() {
-  if (theme_service_->UseGtkTheme()) {
+  if (theme_service_->UsingNativeTheme()) {
     const char* stock =
-        get_download()->danger_type() == DownloadItem::DANGEROUS_URL ?
+        get_download()->GetDangerType() == DownloadItem::DANGEROUS_URL ?
         GTK_STOCK_DIALOG_ERROR : GTK_STOCK_DIALOG_WARNING;
     gtk_image_set_from_stock(
         GTK_IMAGE(dangerous_image_), stock, GTK_ICON_SIZE_SMALL_TOOLBAR);
@@ -669,9 +601,9 @@ void DownloadItemGtk::UpdateDangerIcon() {
     // Set the warning icon.
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
     int pixbuf_id =
-        get_download()->danger_type() == DownloadItem::DANGEROUS_URL ?
+        get_download()->GetDangerType() == DownloadItem::DANGEROUS_URL ?
         IDR_SAFEBROWSING_WARNING : IDR_WARNING;
-    GdkPixbuf* download_pixbuf = rb.GetPixbufNamed(pixbuf_id);
+    GdkPixbuf* download_pixbuf = rb.GetNativeImageNamed(pixbuf_id);
     gtk_image_set_from_pixbuf(GTK_IMAGE(dangerous_image_), download_pixbuf);
   }
 }
@@ -742,7 +674,7 @@ void DownloadItemGtk::InitNineBoxes() {
 }
 
 gboolean DownloadItemGtk::OnHboxExpose(GtkWidget* widget, GdkEventExpose* e) {
-  if (theme_service_->UseGtkTheme()) {
+  if (theme_service_->UsingNativeTheme()) {
     int border_width = GTK_CONTAINER(widget)->border_width;
     int x = widget->allocation.x + border_width;
     int y = widget->allocation.y + border_width;
@@ -811,7 +743,7 @@ gboolean DownloadItemGtk::OnHboxExpose(GtkWidget* widget, GdkEventExpose* e) {
 }
 
 gboolean DownloadItemGtk::OnExpose(GtkWidget* widget, GdkEventExpose* e) {
-  if (!theme_service_->UseGtkTheme()) {
+  if (!theme_service_->UsingNativeTheme()) {
     bool is_body = widget == body_.get();
 
     NineBox* nine_box = NULL;
@@ -917,7 +849,7 @@ void DownloadItemGtk::ShowPopupMenu(GtkWidget* button,
 
 gboolean DownloadItemGtk::OnDangerousPromptExpose(GtkWidget* widget,
                                                   GdkEventExpose* event) {
-  if (!theme_service_->UseGtkTheme()) {
+  if (!theme_service_->UsingNativeTheme()) {
     // The hbox renderer will take care of the border when in GTK mode.
     dangerous_nine_box_->RenderToWidget(widget);
   }

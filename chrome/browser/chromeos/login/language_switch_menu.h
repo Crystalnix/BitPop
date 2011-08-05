@@ -26,6 +26,7 @@ class LanguageSwitchMenu : public views::ViewMenuDelegate,
                            public ui::SimpleMenuModel::Delegate {
  public:
   LanguageSwitchMenu();
+  virtual ~LanguageSwitchMenu();
 
   // Initializes language selection menu contents.
   void InitLanguageMenu();

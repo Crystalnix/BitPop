@@ -351,22 +351,22 @@ void URLRequestAutomationJob::OnRequestEnd(
     // 1. We failed to connect to the server, in which case we did not receive
     //    a valid response.
     // 2. In response to a read request.
-    if (!has_response_started() || pending_buf_) {
+    if (!has_response_started()) {
+      NotifyStartError(status);
+    } else if (pending_buf_) {
+      pending_buf_ = NULL;
+      pending_buf_size_ = 0;
       NotifyDone(status);
+      NotifyReadComplete(0);
     } else {
       // Wait for the http stack to issue a Read request where we will notify
       // that the job has completed.
       request_status_ = status;
-      return;
     }
   }
-
-  // Reset any pending reads.
-  if (pending_buf_) {
-    pending_buf_ = NULL;
-    pending_buf_size_ = 0;
-    NotifyReadComplete(0);
-  }
+  // Note
+  // The job could have been destroyed above. Please don't attempt to access
+  // member variables here.
 }
 
 void URLRequestAutomationJob::Cleanup() {

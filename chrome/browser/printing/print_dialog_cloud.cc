@@ -29,6 +29,7 @@
 #include "content/common/notification_registrar.h"
 #include "content/common/notification_source.h"
 #include "content/common/notification_type.h"
+#include "content/common/view_messages.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "webkit/glue/webpreferences.h"
 
@@ -99,18 +100,6 @@
 
 namespace internal_cloud_print_helpers {
 
-bool GetDoubleOrInt(const DictionaryValue& dictionary,
-                    const std::string& path,
-                    double* out_value) {
-  if (!dictionary.GetDouble(path, out_value)) {
-    int int_value = 0;
-    if (!dictionary.GetInteger(path, &int_value))
-      return false;
-    *out_value = int_value;
-  }
-  return true;
-}
-
 // From the JSON parsed value, get the entries for the page setup
 // parameters.
 bool GetPageSetupParameters(const std::string& json,
@@ -124,9 +113,9 @@ bool GetPageSetupParameters(const std::string& json,
 
   bool result = true;
   DictionaryValue* params = static_cast<DictionaryValue*>(parsed_value.get());
-  result &= GetDoubleOrInt(*params, "dpi", &parameters.dpi);
-  result &= GetDoubleOrInt(*params, "min_shrink", &parameters.min_shrink);
-  result &= GetDoubleOrInt(*params, "max_shrink", &parameters.max_shrink);
+  result &= params->GetDouble("dpi", &parameters.dpi);
+  result &= params->GetDouble("min_shrink", &parameters.min_shrink);
+  result &= params->GetDouble("max_shrink", &parameters.max_shrink);
   result &= params->GetBoolean("selection_only", &parameters.selection_only);
   return result;
 }
@@ -281,7 +270,8 @@ void CloudPrintFlowHandler::RegisterMessages() {
     if (rvh && rvh->delegate()) {
       WebPreferences webkit_prefs = rvh->delegate()->GetWebkitPrefs();
       webkit_prefs.allow_scripts_to_close_windows = true;
-      rvh->UpdateWebPreferences(webkit_prefs);
+      rvh->Send(new ViewMsg_UpdateWebPreferences(
+          rvh->routing_id(), webkit_prefs));
     }
 
     // Register for appropriate notifications, and re-direct the URL
@@ -413,7 +403,8 @@ CloudPrintHtmlDialogDelegate::CloudPrintHtmlDialogDelegate(
                                               print_job_title,
                                               file_type)),
       modal_(modal),
-      owns_flow_handler_(true) {
+      owns_flow_handler_(true),
+      path_to_file_(path_to_file) {
   Init(width, height, json_arguments);
 }
 
@@ -489,6 +480,14 @@ void CloudPrintHtmlDialogDelegate::OnDialogClosed(
     const std::string& json_retval) {
   // Get the final dialog size and store it.
   flow_handler_->StoreDialogClientSize();
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kCloudPrintDeleteFile)) {
+    BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
+        NewRunnableFunction(&internal_cloud_print_helpers::Delete,
+                            path_to_file_));
+  }
+
   // If we're modal we can show the dialog with no browser.
   // End the keep-alive so that Chrome can exit.
   if (!modal_)
@@ -536,11 +535,13 @@ void CreateDialogImpl(const FilePath& path_to_file,
   DCHECK(pref_service);
   if (!pref_service->FindPreference(prefs::kCloudPrintDialogWidth)) {
     pref_service->RegisterIntegerPref(prefs::kCloudPrintDialogWidth,
-                                      kDefaultWidth);
+                                      kDefaultWidth,
+                                      PrefService::UNSYNCABLE_PREF);
   }
   if (!pref_service->FindPreference(prefs::kCloudPrintDialogHeight)) {
     pref_service->RegisterIntegerPref(prefs::kCloudPrintDialogHeight,
-                                      kDefaultHeight);
+                                      kDefaultHeight,
+                                      PrefService::UNSYNCABLE_PREF);
   }
 
   int width = pref_service->GetInteger(prefs::kCloudPrintDialogWidth);
@@ -556,6 +557,11 @@ void CreateDialogImpl(const FilePath& path_to_file,
   } else {
     browser::ShowHtmlDialog(NULL, profile, dialog_delegate);
   }
+}
+
+// Provides a runnable function to delete a file.
+void Delete(const FilePath& file_path) {
+  file_util::Delete(file_path, false);
 }
 
 }  // namespace internal_cloud_print_helpers

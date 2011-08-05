@@ -16,7 +16,7 @@
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/infobars/infobar_gtk.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "content/common/notification_details.h"
 #include "content/common/notification_source.h"
 #include "third_party/skia/include/core/SkPaint.h"
@@ -39,7 +39,7 @@ void AnimateClosingForDelegate(GtkWidget* infobar_widget,
   }
 
   if (delegate == infobar->delegate())
-    infobar->AnimateClose();
+    infobar->Hide(true);
 }
 
 // If |infobar_widget| matches |info_bar_delegate|, then close the infobar w/o
@@ -56,7 +56,7 @@ void ClosingForDelegate(GtkWidget* infobar_widget, gpointer info_bar_delegate) {
   }
 
   if (delegate == infobar->delegate())
-    infobar->Close();
+    infobar->Hide(false);
 }
 
 // Get the height of the widget and add it to |userdata|, but only if it is in
@@ -71,8 +71,6 @@ void SumAnimatingBarHeight(GtkWidget* widget, gpointer userdata) {
 
 }  // namespace
 
-// InfoBarContainerGtk, public: ------------------------------------------------
-
 InfoBarContainerGtk::InfoBarContainerGtk(Profile* profile)
     : profile_(profile),
       tab_contents_(NULL),
@@ -86,22 +84,24 @@ InfoBarContainerGtk::~InfoBarContainerGtk() {
   container_.Destroy();
 }
 
-void InfoBarContainerGtk::ChangeTabContents(TabContents* contents) {
-  if (tab_contents_)
-    registrar_.RemoveAll();
+void InfoBarContainerGtk::ChangeTabContents(TabContentsWrapper* contents) {
+  registrar_.RemoveAll();
 
   gtk_util::RemoveAllChildren(widget());
   UpdateToolbarInfoBarState(NULL, false);
 
   tab_contents_ = contents;
   if (tab_contents_) {
-    UpdateInfoBars();
-    Source<TabContents> source(tab_contents_);
+    Source<TabContents> source(tab_contents_->tab_contents());
     registrar_.Add(this, NotificationType::TAB_CONTENTS_INFOBAR_ADDED, source);
     registrar_.Add(this, NotificationType::TAB_CONTENTS_INFOBAR_REMOVED,
                    source);
     registrar_.Add(this, NotificationType::TAB_CONTENTS_INFOBAR_REPLACED,
                    source);
+    for (size_t i = 0; i < tab_contents_->infobar_count(); ++i) {
+      InfoBarDelegate* delegate = tab_contents_->GetInfoBarDelegateAt(i);
+      AddInfoBar(delegate, false);
+    }
   }
 }
 
@@ -114,8 +114,6 @@ int InfoBarContainerGtk::TotalHeightOfAnimatingBars() const {
   gtk_container_foreach(GTK_CONTAINER(widget()), SumAnimatingBarHeight, &sum);
   return sum;
 }
-
-// InfoBarContainerGtk, NotificationObserver implementation: -------------------
 
 void InfoBarContainerGtk::Observe(NotificationType type,
                                   const NotificationSource& source,
@@ -133,15 +131,6 @@ void InfoBarContainerGtk::Observe(NotificationType type,
     AddInfoBar(delegates->second, false);
   } else {
     NOTREACHED();
-  }
-}
-
-// InfoBarContainerGtk, private: -----------------------------------------------
-
-void InfoBarContainerGtk::UpdateInfoBars() {
-  for (size_t i = 0; i < tab_contents_->infobar_count(); ++i) {
-    InfoBarDelegate* delegate = tab_contents_->GetInfoBarDelegateAt(i);
-    AddInfoBar(delegate, false);
   }
 }
 
@@ -176,17 +165,13 @@ void InfoBarContainerGtk::ShowArrowForDelegate(InfoBarDelegate* delegate,
 }
 
 void InfoBarContainerGtk::AddInfoBar(InfoBarDelegate* delegate, bool animate) {
-  InfoBar* infobar = delegate->CreateInfoBar();
+  InfoBar* infobar = delegate->CreateInfoBar(tab_contents_);
   infobar->set_container(this);
   infobar->SetThemeProvider(GtkThemeService::GetFrom(profile_));
   gtk_box_pack_start(GTK_BOX(widget()), infobar->widget(),
                      FALSE, FALSE, 0);
 
-  if (animate)
-    infobar->AnimateOpen();
-  else
-    infobar->Open();
-
+  infobar->Show(animate);
   ShowArrowForDelegate(delegate, animate);
 }
 

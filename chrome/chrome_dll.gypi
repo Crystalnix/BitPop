@@ -23,19 +23,20 @@
               'VCLinkerTool': {
                 'BaseAddress': '0x01c30000',
                 'DelayLoadDLLs': [
+                  'comdlg32.dll',
                   'crypt32.dll',
                   'cryptui.dll',
-                  'winhttp.dll',
-                  'wininet.dll',
-                  'wsock32.dll',
-                  'ws2_32.dll',
-                  'winspool.drv',
-                  'comdlg32.dll',
+                  'dhcpcsvc.dll',
                   'imagehlp.dll',
-                  'urlmon.dll',
                   'imm32.dll',
                   'iphlpapi.dll',
                   'setupapi.dll',
+                  'urlmon.dll',
+                  'winhttp.dll',
+                  'wininet.dll',
+                  'winspool.drv',
+                  'ws2_32.dll',
+                  'wsock32.dll',
                 ],
                 # Set /SUBSYSTEM:WINDOWS for chrome.dll (for consistency).
                 'SubSystem': '2',
@@ -117,7 +118,9 @@
                 '<(SHARED_INTERMEDIATE_DIR)/chrome/common_resources.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/chrome/renderer_resources.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/chrome/theme_resources.rc',
+                '<(SHARED_INTERMEDIATE_DIR)/chrome/theme_resources_standard.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
+                '<(SHARED_INTERMEDIATE_DIR)/ui/gfx/gfx_resources.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources.rc',
 
@@ -213,7 +216,7 @@
                 'app/nibs/ContentBlockedJavaScript.xib',
                 'app/nibs/ContentBlockedPlugins.xib',
                 'app/nibs/ContentBlockedPopups.xib',
-                'app/nibs/ContentBubbleGeolocation.xib',
+                'app/nibs/ContentBlockedGeolocation.xib',
                 'app/nibs/DownloadItem.xib',
                 'app/nibs/DownloadShelf.xib',
                 'app/nibs/ExtensionInstalledBubble.xib',
@@ -230,6 +233,7 @@
                 'app/nibs/InstantOptIn.xib',
                 'app/nibs/MainMenu.xib',
                 'app/nibs/Notification.xib',
+                'app/nibs/Panel.xib',
                 'app/nibs/PreviewableContents.xib',
                 'app/nibs/ReportBug.xib',
                 'app/nibs/SaveAccessoryView.xib',
@@ -239,14 +243,10 @@
                 'app/nibs/TabView.xib',
                 'app/nibs/TaskManager.xib',
                 'app/nibs/Toolbar.xib',
-                'app/theme/back_Template.pdf',
                 'app/theme/balloon_wrench.pdf',
-                'app/theme/browser_actions_overflow_Template.pdf',
                 'app/theme/chevron.pdf',
                 'app/theme/find_next_Template.pdf',
                 'app/theme/find_prev_Template.pdf',
-                'app/theme/forward_Template.pdf',
-                'app/theme/home_Template.pdf',
                 'app/theme/menu_hierarchy_arrow.pdf',
                 'app/theme/menu_overflow_down.pdf',
                 'app/theme/menu_overflow_up.pdf',
@@ -264,11 +264,8 @@
                 'app/theme/omnibox_star.pdf',
                 'app/theme/otr_icon.pdf',
                 'app/theme/popup_window_animation.pdf',
-                'app/theme/reload_Template.pdf',
                 'app/theme/star.pdf',
                 'app/theme/star_lit.pdf',
-                'app/theme/stop_Template.pdf',
-                'app/theme/tools_Template.pdf',
                 'browser/ui/cocoa/install.sh',
               ],
               'mac_bundle_resources!': [
@@ -321,6 +318,7 @@
                       '<(grit_out_dir)/default_plugin_resources/default_plugin_resources.pak',
                       '<(grit_out_dir)/renderer_resources.pak',
                       '<(grit_out_dir)/theme_resources.pak',
+                      '<(grit_out_dir)/theme_resources_standard.pak',
                       '<(SHARED_INTERMEDIATE_DIR)/app/app_resources/app_resources.pak',
                       '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.pak',
                       '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.pak',
@@ -333,6 +331,24 @@
                   ],
                   'outputs': [
                     '<(INTERMEDIATE_DIR)/repack/chrome.pak',
+                  ],
+                  'action': ['python', '<(repack_path)', '<@(_outputs)',
+                             '<@(pak_inputs)'],
+                  'process_outputs_as_mac_bundle_resources': 1,
+                },
+                {
+                  'action_name': 'repack_theme_resources_large',
+                  'variables': {
+                    'pak_inputs': [
+                      '<(grit_out_dir)/theme_resources_large.pak',
+                    ],
+                  },
+                  'inputs': [
+                    '<(repack_path)',
+                    '<@(pak_inputs)',
+                  ],
+                  'outputs': [
+                    '<(INTERMEDIATE_DIR)/repack/theme_resources_large.pak',
                   ],
                   'action': ['python', '<(repack_path)', '<@(_outputs)',
                              '<@(pak_inputs)'],
@@ -376,8 +392,10 @@
                   'variables': {
                     'pak_inputs': [
                       '<(grit_out_dir)/component_extension_resources.pak',
+                      '<(grit_out_dir)/devtools_frontend_resources.pak',
                       '<(grit_out_dir)/devtools_resources.pak',
                       '<(grit_out_dir)/net_internals_resources.pak',
+                      '<(grit_out_dir)/options_resources.pak',
                       '<(grit_out_dir)/shared_resources.pak',
                       '<(grit_out_dir)/sync_internals_resources.pak',
                     ],
@@ -463,7 +481,10 @@
                     ['disable_nacl!=1', {
                       'files': [
                         '<(PRODUCT_DIR)/ppGoogleNaClPluginChrome.plugin',
-                      ],                    
+                        # We leave out nacl_irt_x86_64.nexe because we only
+                        # support x86-32 NaCl on Mac OS X.
+                        '<(PRODUCT_DIR)/nacl_irt_x86_32.nexe',
+                      ],
                     }],
                   ],
                 },
@@ -567,7 +588,7 @@
             'app/chrome_main.cc',
             'app/chrome_main_win.cc',
             # Parsing is needed for the UserDataDir policy which is read much
-            # earlier than the initialization of the policy/pref system. 
+            # earlier than the initialization of the policy/pref system.
             'browser/policy/policy_path_parser_win.cc',
             'browser/renderer_host/render_process_host_dummy.cc',
             'common/googleurl_dummy.cc',
@@ -610,6 +631,7 @@
             '../content/common/notification_details.cc',
             '../content/common/notification_service.cc',
             '../content/common/notification_source.cc',
+            '../content/common/sandbox_policy.cc',
             '../content/common/sandbox_init_wrapper_win.cc',
             '../content/common/url_constants.cc',
           ],

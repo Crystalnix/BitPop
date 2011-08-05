@@ -12,6 +12,7 @@
 
 #include "base/time.h"
 #include "chrome/browser/prefs/value_map_pref_store.h"
+#include "chrome/browser/extensions/extension_prefs_scope.h"
 
 // Non-persistent data container that is shared by ExtensionPrefStores. All
 // extension pref values (incognito and regular) are stored herein and
@@ -70,14 +71,14 @@ class ExtensionPrefValueMap {
   // Precondition: the extension must be registered.
   void SetExtensionPref(const std::string& ext_id,
                         const std::string& key,
-                        bool incognito,
+                        extension_prefs_scope::Scope scope,
                         Value* value);
 
   // Remove the extension preference value for |key| of extension |ext_id|.
   // Precondition: the extension must be registered.
   void RemoveExtensionPref(const std::string& ext_id,
                            const std::string& key,
-                           bool incognito);
+                           extension_prefs_scope::Scope scope);
 
   // Returns true if currently no extension with higher precedence controls the
   // preference.
@@ -87,6 +88,9 @@ class ExtensionPrefValueMap {
   bool CanExtensionControlPref(const std::string& extension_id,
                                const std::string& pref_key,
                                bool incognito) const;
+
+  // Removes all "incognito session only" preference values.
+  void ClearAllIncognitoSessionOnlyPreferences();
 
   // Returns true if an extension identified by |extension_id| controls the
   // preference. This means this extension has set a preference value and no
@@ -127,11 +131,13 @@ class ExtensionPrefValueMap {
 
   typedef std::map<std::string, ExtensionEntry*> ExtensionEntryMap;
 
-  const PrefValueMap* GetExtensionPrefValueMap(const std::string& ext_id,
-                                               bool incognito) const;
+  const PrefValueMap* GetExtensionPrefValueMap(
+      const std::string& ext_id,
+      extension_prefs_scope::Scope scope) const;
 
-  PrefValueMap* GetExtensionPrefValueMap(const std::string& ext_id,
-                                         bool incognito);
+  PrefValueMap* GetExtensionPrefValueMap(
+      const std::string& ext_id,
+      extension_prefs_scope::Scope scope);
 
   // Returns all keys of pref values that are set by the extension of |entry|,
   // regardless whether they are set for incognito or regular pref values.

@@ -13,6 +13,7 @@
 
 #include "base/basictypes.h"
 #include "base/task.h"
+#include "base/time.h"
 
 namespace browser_sync {
 
@@ -26,7 +27,12 @@ class DataTypeManagerImpl : public DataTypeManager {
   virtual ~DataTypeManagerImpl();
 
   // DataTypeManager interface.
-  virtual void Configure(const TypeSet& desired_types);
+  virtual void Configure(const TypeSet& desired_types,
+                         sync_api::ConfigureReason reason);
+
+  virtual void ConfigureWithoutNigori(const TypeSet& desired_types,
+                                      sync_api::ConfigureReason reason);
+
   virtual void Stop();
   virtual const DataTypeController::TypeMap& controllers();
   virtual State state();
@@ -51,12 +57,20 @@ class DataTypeManagerImpl : public DataTypeManager {
   bool GetControllersNeedingStart(
       std::vector<DataTypeController*>* needs_start);
 
-  void Restart();
+  void Restart(sync_api::ConfigureReason reason, bool enable_nigori);
   void DownloadReady();
   void NotifyStart();
   void NotifyDone(ConfigureResult result,
       const tracked_objects::Location& location);
   void SetBlockedAndNotify();
+
+  // Add to |configure_time_delta_| the time since we last called
+  // Restart().
+  void AddToConfigureTime();
+
+  virtual void ConfigureImpl(const TypeSet& desired_types,
+                             sync_api::ConfigureReason reason,
+                             bool enable_nigori);
 
   SyncBackendHost* backend_;
   // Map of all data type controllers that are available for sync.
@@ -72,7 +86,18 @@ class DataTypeManagerImpl : public DataTypeManager {
   // The |last_requested_types_| will reflect the newest set of requested types.
   bool needs_reconfigure_;
 
+  // The reason for the last reconfigure attempt. Not this will be set to a
+  // valid value only if needs_reconfigure_ is set.
+  sync_api::ConfigureReason last_configure_reason_;
+
   ScopedRunnableMethodFactory<DataTypeManagerImpl> method_factory_;
+
+  // The last time Restart() was called.
+  base::Time last_restart_time_;
+
+  // The accumulated time spent between calls to Restart() and going
+  // to the DONE/BLOCKED state.
+  base::TimeDelta configure_time_delta_;
 
   DISALLOW_COPY_AND_ASSIGN(DataTypeManagerImpl);
 };

@@ -34,6 +34,8 @@ class ClientSession : public protocol::HostStub,
         scoped_refptr<protocol::ConnectionToClient> client) = 0;
   };
 
+  // Takes ownership of |user_authenticator|. Does not take ownership of
+  // |event_handler| or |input_stub|.
   ClientSession(EventHandler* event_handler,
                 UserAuthenticator* user_authenticator,
                 scoped_refptr<protocol::ConnectionToClient> connection,
@@ -51,6 +53,9 @@ class ClientSession : public protocol::HostStub,
 
   // Disconnect this client session.
   void Disconnect();
+
+  // Set the authenticated flag or log a failure message as appropriate.
+  void OnAuthorizationComplete(bool success);
 
   protocol::ConnectionToClient* connection() const {
     return connection_.get();

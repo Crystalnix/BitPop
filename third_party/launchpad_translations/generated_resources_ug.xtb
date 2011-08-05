@@ -3,9 +3,9 @@
 <translationbundle lang="ug">
 <translation id="1002064594444093641">كاندۇك باس…(&amp;R)</translation>
 <translation id="1008557486741366299">ھازىر ئەمەس</translation>
-<translation id="10122177803156699">كۆرسەت</translation>
+<translation id="10122177803156699">ماڭا كۆرسەت</translation>
 <translation id="1017280919048282932">لۇغەتكە قوش(&amp;A)</translation>
-<translation id="1018656279737460067">قالدۇرۇۋېتىلدى</translation>
+<translation id="1018656279737460067">ۋاز كەچتى</translation>
 <translation id="1031460590482534116">خېرىدار گۇۋاھنامىسىنى ساقلاشنى سىنىغاندا خاتالىق كۆرۈلدى. خاتالىق <ph name="ERROR_NUMBER"/> (<ph name="ERROR_NAME"/>).</translation>
 <translation id="1035650339541835006">ئۆزلۈكىدىن تولدۇرۇش تەڭشىكى…</translation>
 <translation id="1036561994998035917"><ph name="ENGINE_NAME"/> نى ئىشلىتىۋەر</translation>
@@ -19,7 +19,6 @@
 <translation id="1065245965611933814">ساقلانغان ئېكران كەسمىسىدىن بىرى بار:</translation>
 <translation id="1070066693520972135">WEP</translation>
 <translation id="1071917609930274619">مەلۇمات شىفىرلاش</translation>
-<translation id="1074663319790387896">قەدەمداش سەپلەش</translation>
 <translation id="1076818208934827215">Microsoft Internet Explorer</translation>
 <translation id="1077946062898560804">ھەممە ئىشلەتكۈچىنىڭ تەڭشىكىنى ئۆزلۈكىدىن يېڭىلا</translation>
 <translation id="1084824384139382525">ئۇلانما ئادرېسىنى كۆچۈر(&amp;E)</translation>
@@ -53,7 +52,6 @@
 <translation id="1177863135347784049">ئىختىيارى…</translation>
 <translation id="1178581264944972037">ۋاقىتلىق توختا</translation>
 <translation id="1181037720776840403">چىقىرىۋەت</translation>
-<translation id="1186495307273111926">پرىنتېر تېپىلمىدى</translation>
 <translation id="1190844492833803334">توركۆرگۈنى ياپقاندا</translation>
 <translation id="1195447618553298278">نامەلۇم خاتالىق.</translation>
 <translation id="1195977189444203128"><ph name="PLUGIN_NAME"/> قىستۇرمىنىڭ ۋاقتى ئۆتتى.</translation>
@@ -83,7 +81,6 @@
 <translation id="1275018677838892971"><ph name="HOST_NAME"/> ئادرېستىكى تور بېكەت ئالدامچى تور بېكەت دەپ دوكلات قىلىنغان. ئالدامچى تور بېكەت دائىم بانكا تۈرىدىكى ئىشەنچلىك ئورگانلاردەك نىقابلىنىپ، ئىشلەتكۈچىلەرنىڭ شەخسىي ياكى مالىيە ئۇچۇرلىرىنى ئالداپ بىلىۋالىدۇ.</translation>
 <translation id="1275718070701477396">تاللانغان</translation>
 <translation id="1285320974508926690">بۇ بېكەتكە ھەرگىز تەرجىمە قىلما</translation>
-<translation id="1290691390430578691">ئىنگلىزچە ھالەتكە ئالماشتۇر</translation>
 <translation id="1294298200424241932">ئىشەنچ تەڭشىكىنى تەھرىرلەش:</translation>
 <translation id="129553762522093515">يېقىندا تاقىغان بەتكۈچ</translation>
 <translation id="1307041843857566458">قايتا ئىشلىتىشنى جەزملەش</translation>
@@ -126,7 +123,6 @@
 <translation id="1425975335069981043">كەزمە:</translation>
 <translation id="1426410128494586442">ھەئە</translation>
 <translation id="1430915738399379752">باس</translation>
-<translation id="1437307674059038925">ئەگەر ۋاكالەتچى مۇلازىمېتىر ئىشلەتسىڭىز، ۋاكالەتچى تەڭشەكنى تەكشۈرۈڭ ياكى تور باشقۇرغۇچىدىن ۋاكالەتچى مۇلازىمېتىرنىڭ خىزمەت قىلىۋاتقانلىقىنى جەزملەڭ.</translation>
 <translation id="144136026008224475">تېخىمۇ كۆپ كېڭەيتىلمىگە ئېرىش››</translation>
 <translation id="1441458099223378239">ھېساباتىمنى زىيارەت قىلالمىدىم</translation>
 <translation id="144518587530125858">'<ph name="IMAGE_PATH"/>' دىن باش تېمىنى يۈكلىيەلمىدى.</translation>
@@ -140,7 +136,6 @@
 <translation id="1474842329983231719">بېسىش تەڭشەك باشقۇرۇش…</translation>
 <translation id="1481244281142949601">سىز يېتەرلىك قۇم ساندۇقى سىنىقى ئېلىپ باردىڭىز.</translation>
 <translation id="1485146213770915382">تور ئادرېسىدا ئىزدىگەن سۆزنىڭ  قىستۇرۇش ئورنى  <ph name="SEARCH_TERMS_LITERAL"/> كۆرۈلىدۇ</translation>
-<translation id="1486740077039107580">ئالىي ھۆججەت سىستېمىسىنى قوزغات، USB ۋە SD كارتا قوللاشنى ئۆز ئىچىگە ئالىدۇ.</translation>
 <translation id="1493263392339817010">ئۆزلەشتۈرۈلگەن خەت نۇسخىلىرى…</translation>
 <translation id="149347756975725155">كېڭەيتىلمە سىنبەلگىسى '<ph name="ICON"/>'نى يۈكلىيەلمەيدۇ.</translation>
 <translation id="1493492096534259649">بۇ تىلنى ئىملا تەكشۈرۈشكە ئىشلىتەلمەيدۇ</translation>
@@ -240,7 +235,6 @@
 <translation id="1779766957982586368">كۆزنەك ياپ</translation>
 <translation id="1782924894173027610">قەدەمداش مۇلازىمېتىر ئالدىراش. سەل تۇرۇپ قايتا سىناڭ</translation>
 <translation id="1788636309517085411">كۆڭۈلدىكىنى ئىشلەت</translation>
-<translation id="1791662854739702043">ئورنىتىلغان</translation>
 <translation id="179767530217573436">ئۆتكەن تۆت ھەپتە</translation>
 <translation id="1800035677272595847">تور ئالدامچىلىقى</translation>
 <translation id="1800124151523561876">تەلەپپۇز ئاڭلانمىدى.</translation>
@@ -256,12 +250,10 @@
 <translation id="1818606096021558659">بەت</translation>
 <translation id="182729337634291014">قەدەمداش خاتالىقى…</translation>
 <translation id="1829483195200467833">ئۆزلۈكىدىن ئېچىش تەڭشىكىنى تازىلا</translation>
-<translation id="1844694039143158925">خەنزۇچە ھالەتكە ئالماشتۇر</translation>
 <translation id="1847961471583915783">توركۆرگۈمنى ياپقاندا cookie، باشقا بېكەت  ۋە قىستۇرما سانلىق-مەلۇماتىنى تازىلا</translation>
 <translation id="1849632043866553433">پروگرامما غەملىكى</translation>
 <translation id="1851266746056575977">ھازىرلا يېڭىلا</translation>
 <translation id="1852799913675865625">ھۆججەت ئوقۇشنى سىناۋاتقاندا خاتالىق كۆرۈلدى: <ph name="ERROR_TEXT"/>.</translation>
-<translation id="185455864151206349">شەخسىي شىفىرلىق ئاچقۇچ ئىم:</translation>
 <translation id="1858072074757584559">باغلىنىش پرېسلانمىغان.</translation>
 <translation id="1859234291848436338">يېزىش يۆنىلىشى</translation>
 <translation id="1867780286110144690"><ph name="PRODUCT_NAME"/> ئورنىتىشىڭىزنى تاماملاشقا تەييارلاندى.</translation>
@@ -284,7 +276,6 @@
 <translation id="1932098463447129402">كېيىن</translation>
 <translation id="1936157145127842922">قىسقۇچتا كۆرسەت</translation>
 <translation id="1949795154112250744"><ph name="BEGIN_BOLD"/>ئاگاھلاندۇرۇش:<ph name="END_BOLD"/> <ph name="PRODUCT_NAME"/> كېڭەيتىلمىنىڭ زىيارەت تارىخىڭىزنى خاتىرىلىشىنى توسالمايدۇ. يوشۇرۇن ھالەتتە بۇ كېڭەيتىلمىنى چەكلەشتە بۇ تاللانمىنى تاللىماڭ.</translation>
-<translation id="1951332921786364801">يىراقتىكى ئىقتىدار تەڭشىكى</translation>
 <translation id="1951615167417147110">ئۈستىگە بىر بەت سىيرىل</translation>
 <translation id="1956050014111002555">ھۆججەت كۆپ گۇۋاھنامىنى ئۆز ئىچىگە ئالغان ئەمما ھېچقانداق گۇۋاھنامىنى ئەكىرمىدى:</translation>
 <translation id="1959258573753840401">'''   <ph name="LABEL"/>'''</translation>
@@ -379,7 +370,6 @@
 <translation id="2231990265377706070">ئۈندەش بەلگىسى</translation>
 <translation id="2232876851878324699">ھۆججەتتىكى بىر گۇۋاھنامىنى ئەكىرمىدى:</translation>
 <translation id="2233320200890047564">ئىندېكىسلانغان ساندان</translation>
-<translation id="2238123906478057869"><ph name="PRODUCT_NAME"/> تۆۋەندىكى مەشغۇلاتنى تاماملايدۇ:</translation>
 <translation id="2240852107813849027">asdfghjkl;</translation>
 <translation id="2251809247798634662">يېڭى يوشۇرۇن كۆزنەك</translation>
 <translation id="2255317897038918278">مىكروسوفت ۋاقىت تامغىسى</translation>
@@ -407,7 +397,6 @@
 <translation id="2359808026110333948">داۋاملاشتۇر</translation>
 <translation id="2370882663124746154">قوش پىنيىن ھالىتىنى قوزغات</translation>
 <translation id="2371076942591664043">تاماملانغاندا ئاچ(&amp;D)</translation>
-<translation id="2371436973350908350">ھېساباتىڭىزغا رەسىم تارتىدۇ</translation>
 <translation id="2374144379568843525">ئىملا تاختىسىنى يوشۇر(&amp;H)</translation>
 <translation id="2378982052244864789">كېڭەيتىلمە مۇندەرىجىسى تاللىنىدۇ.</translation>
 <translation id="2382901536325590843">DNS دا مۇلازىمېتىرنىڭ گۇۋاھنامە ئۇچۇرى يوق</translation>
@@ -421,7 +410,6 @@
 <translation id="2422927186524098759">يان قورال بالداق</translation>
 <translation id="2423017480076849397"><ph name="CLOUD_PRINT_NAME"/> ئارقىلىق پرىنتېرىڭىزنى توردا زىيارەت قىلىپ ھەمبەھىرلىيەلەيسىز.</translation>
 <translation id="2423578206845792524">سۈرەتنى باشقا ئاتتا ساقلا(&amp;V)…</translation>
-<translation id="2425693476159185661">سىز <ph name="PRODUCT_NAME"/> بىلەن باشقا كومپيۇتېرنىڭ سانلىق مەلۇمات قەدەمداشلاشنى تەڭشىمىدىڭىز.</translation>
 <translation id="2430043402233747791">ئەڭگىمەگىلا يول قوي</translation>
 <translation id="2433507940547922241">قىياپەت</translation>
 <translation id="2435457462613246316">ئىم كۆرسەت</translation>
@@ -494,7 +482,6 @@
 <translation id="2649911884196340328">بۇ مۇلازىمېتىرنىڭ بىخەتەرلىك گۇۋاھنامىسىدە خاتالىق بار!</translation>
 <translation id="2653266418988778031">ئەگەر گۇۋاھنامە ئىجازىتى (CA) نى ئۆچۈرسىڭىز، توركۆرگۈڭىز بۇ CA تارقاتقان  ھەرقانداق گۇۋاھنامىگە ئىشەنمەيدۇ</translation>
 <translation id="265390580714150011">سۆز بۆلەك قىممىتى</translation>
-<translation id="2657327428424666237">بۇ بەتنى كېيىن <ph name="BEGIN_LINK"/>قايتا يۈكلە<ph name="END_LINK"/></translation>
 <translation id="2662952950313424742">ئىشلەتكۈچى بەلگىلىگەن DNS مۇلازىمېتىر، Chrome سىستېما كۆڭۈلدىكى مۇلازىمېتىرنى ئەمەس بەلكى ئۇنى ئىشلىتىپ DNS يېشىدۇ.</translation>
 <translation id="2670965183549957348">Chewing كىرگۈزگۈچ</translation>
 <translation id="2674170444375937751">بۇ بەتلەرنى تارىخ خاتىرىسىدىن راستىنىلا ئۆچۈرەمسىز؟</translation>
@@ -521,7 +508,6 @@
 <translation id="2749881179542288782">ئىملا تىلقۇرما تەكشۈر</translation>
 <translation id="2752805177271551234">كىرگۈزۈش تارىخ ئىشلەت</translation>
 <translation id="2756651186786928409">ئىقتىدار كۇنۇپكىسىنى ئالماشتۇرما</translation>
-<translation id="2757513101875140959">بىر بايتلىق ھالەتكە ئالماشتۇر</translation>
 <translation id="2762402405578816341">تۆۋەندىكى تۈرلەر ئۆزلۈكىدىن قەدەمداشلىنىدۇ:</translation>
 <translation id="2765217105034171413">كىچىك</translation>
 <translation id="2766006623206032690">چاپلاپ يۆتكەل(&amp;S)</translation>
@@ -532,7 +518,6 @@
 <translation id="2784407158394623927">يۆتكەلمە تور سانلىق-مەلۇمات مۇلازىمىتىڭىزنى ئاكتىپلاۋاتىدۇ</translation>
 <translation id="2784949926578158345">باغلىنىش ئەسلىگە قايتۇرۇلغان.</translation>
 <translation id="2785530881066938471">مەزمۇن قوليازمىسى ئۈچۈن '<ph name="RELATIVE_PATH"/>' ھۆججەتنى يۈكلىيەلمىدى. بۇ ھۆججەت UTF-8 دە كودلانمىغان.</translation>
-<translation id="2786847742169026523">ئىمىڭىزنى ماسقدەملەشتۈرۈڭ</translation>
 <translation id="2788135150614412178">+</translation>
 <translation id="2788575669734834343">گۇۋاھنامە ھۆججىتى تاللاڭ</translation>
 <translation id="2791364193466153585">بىخەتەرلىك ئۇچۇرى</translation>
@@ -609,7 +594,6 @@
 <translation id="3030138564564344289">چۈشۈرۈشنى قايتا سىنا</translation>
 <translation id="3031433885594348982">سىزنىڭ <ph name="DOMAIN"/> غا ئۇلىنىشىڭىز تۆۋەن دەرىجىدە شىفىرلاندى.</translation>
 <translation id="3031557471081358569">ئەكىرىدىغان تۈرنى تاللاڭ:</translation>
-<translation id="3034556148956616333"><ph name="PRODUCT_NAME"/> بىخەتەر ھالدا سانلىق مەلۇماتلىرىڭىزنى گۇگىل ھېساباتىڭىز بىلەن قەدەمداشلايدۇ. ھەممىنى قەدەمداشلاش ياكى مەزكۇر كومپيۇتېردىن قايسى سانلىق مەلۇماتلارنى قەدەمداشلاشنى تاللىيالايسىز.</translation>
 <translation id="3036649622769666520">ھۆججەت ئاچ</translation>
 <translation id="3037605927509011580">ئاپلا، ئۈزۈلۈپتۇ!</translation>
 <translation id="3041612393474885105">گۇۋاھنامە ئۇچۇرى</translation>
@@ -628,7 +612,6 @@
 <translation id="3092544800441494315">بۇ ئېكران كەسمىسى ئىچىدە:</translation>
 <translation id="3093473105505681231">تىل ۋە ئىملا تەكشۈرگۈچ تەڭشەكلىرى…</translation>
 <translation id="3095995014811312755">نەشرى</translation>
-<translation id="309628958563171656">سەزگۈرلۈكى:</translation>
 <translation id="3100609564180505575">بۆلەك (<ph name="TOTAL_COUNT"/>) - مەلۇملۇق توقۇنۇش: <ph name="BAD_COUNT"/>, گۇمان توقۇنۇش: <ph name="SUSPICIOUS_COUNT"/></translation>
 <translation id="3101709781009526431">چېسلا ۋە ۋاقىت</translation>
 <translation id="3105917916468784889">ئېكران كەسمىسى تۇت</translation>
@@ -655,7 +638,6 @@
 <translation id="3192947282887913208">ئۈن ھۆججەتلىرى</translation>
 <translation id="3199127022143353223">مۇلازىمېتىر</translation>
 <translation id="3202578601642193415">ئەڭ يېڭى</translation>
-<translation id="3202812515056344404">ئىم بەك قىسقا ياكى ئىناۋەتسىز.</translation>
 <translation id="3208703785962634733">جەزملەنمىگەن</translation>
 <translation id="3220630151624181591">بەتكۈچ 2 نى ئاكتىپلا</translation>
 <translation id="3225319735946384299">كودلۇق ئىمزا</translation>
@@ -704,7 +686,6 @@
 <translation id="3371861036502301517">كېڭەيتىلمە ئورنىتالمىدى</translation>
 <translation id="3373604799988099680">كېڭەيتىلمە ياكى پروگراممىلار</translation>
 <translation id="337920581046691015"><ph name="PRODUCT_NAME"/> ئورنىتىلىدۇ.</translation>
-<translation id="3380286644315743596">ئىككى بايتلىق ھالەتكە ئالماشتۇر</translation>
 <translation id="3384773155383850738">ئەڭ كۆپ تەۋسىيە سانى</translation>
 <translation id="338583716107319301">ئايرىغۇچ</translation>
 <translation id="3388026114049080752">بەتكۇچلىرىڭىز ۋە زىيارەت تارىخىڭىز</translation>
@@ -743,7 +724,6 @@
 <translation id="3505920073976671674">تور تاللا</translation>
 <translation id="3508920295779105875">باشقا قىسقۇچ تاللاڭ…</translation>
 <translation id="3511307672085573050">ئۇلانما ئادرېسىنى كۆچۈر(&amp;E)</translation>
-<translation id="3511856953956128305">ئىم جۈملىسى:</translation>
 <translation id="3524079319150349823">قاڭقىش كۆزنەك مەزمۇنىنى تەكشۈرۈشتە، بەتتە چاشقىنەكنى ياكى توركۆرگۈ مەشغۇلات سىنبەلگىسىنى ئوڭ چېكىپ ئاندىن قاڭقىش كۆزنەك مەزمۇنىنى تەكشۈرنى تاللاڭ.</translation>
 <translation id="3524915994314972210">چۈشۈرۈشنىڭ باشلىنىشىنى كۈتۈۋاتىدۇ…</translation>
 <translation id="3528033729920178817">بۇ بەت ئورنىڭىزنى ئىزلايدۇ.</translation>
@@ -752,7 +732,6 @@
 <translation id="3533943170037501541">باش بېتىڭىزگە خۇش كەپسىز!</translation>
 <translation id="3539028630945755931">［］／</translation>
 <translation id="354211537509721945">يېڭىلاش IT باشقۇرغۇچىڭىز تەرىپىدىن چەكلەنگەن</translation>
-<translation id="3549436232897695316">سېلىشتۇر</translation>
 <translation id="3551320343578183772">بەتكۈچ ياپ</translation>
 <translation id="3561217442734750519">شەخسىي شىفىرلىق ئاچقۇچنىڭ كىرگۈزۈلگەن قىممىتى چوقۇم ئىناۋەتلىك يول بولۇشى لازىم.</translation>
 <translation id="3569713929051927529">قىسقۇچ قوش…</translation>
@@ -801,7 +780,6 @@
 <translation id="3729920814805072072">ساقلانغان ئىمنى باشقۇر…</translation>
 <translation id="3733127536501031542">Step-up ئىشلەتكەن SSL مۇلازىمېتىرى</translation>
 <translation id="373572798843615002">1 بەتكۈچ</translation>
-<translation id="3735989458866598442">قوللىنىشچان پروگرامما دېگەن نېمە؟ بۇلاردىن بىرنى سىناڭ:</translation>
 <translation id="3738924763801731196"><ph name="OID"/>:</translation>
 <translation id="374530189620960299">بۇ بېكەتنىڭ بىخەتەرلىك گۇۋاھنامىسىگە ئىشەنگىلى بولمايدۇ!</translation>
 <translation id="3745810751851099214">يوللاش:</translation>
@@ -826,12 +804,10 @@
 <translation id="3803991353670408298">بۇ كىرگۈزگۈچنى چىقىرىۋېتىشتىن ئىلگىرى باشقا كىرگۈزگۈچ قوشۇڭ.</translation>
 <translation id="3807747707162121253">ۋاز كەچ(&amp;C)</translation>
 <translation id="3819800052061700452">پۈتۈن ئېكران(&amp;F)</translation>
-<translation id="3824846808674205670">بۇ ھۆججەت زەھەرخەندە ھۆججەتتەك قىلىدۇ. داۋاملاشتۇرامسىز؟</translation>
 <translation id="3827774300009121996">پۈتۈن ئېكران(&amp;F)</translation>
 <translation id="3828029223314399057">خەتكۈش ئىزدە</translation>
 <translation id="3831099738707437457">ئىملا تاختىسىنى يوشۇر(&amp;H)</translation>
 <translation id="3835522725882634757">ئاپلا! <ph name="PRODUCT_NAME"/> مۇلازىمېتىر يوللىغان سانلىق مەلۇماتنى چۈشىنەلمىدى. <ph name="BEGIN_LINK"/> كەمتۈك مەلۇم قىل <ph name="END_LINK"/>ئىڭ، ھەمدە <ph name="BEGIN2_LINK"/>ئەسلى تىزىم<ph name="END2_LINK"/> نى قوشۇڭ.</translation>
-<translation id="3835835603544455972">قەدەمداش تەڭشەك</translation>
 <translation id="3838186299160040975">تېخىمۇ كۆپ سېتىۋال…</translation>
 <translation id="38385141699319881">سۈرەت چۈشۈرۈۋاتىدۇ…</translation>
 <translation id="3850258314292525915">قەدەمداش چەكلە</translation>
@@ -906,7 +882,6 @@
 <translation id="4064488613268730704">ئۆزلۈكىدىن تولدۇرۇش تەڭشىكىنى باشقۇرۇش…</translation>
 <translation id="4064575095154312869">、。</translation>
 <translation id="4065006016613364460">سۈرەت URL نى كۆچۈر(&amp;O)</translation>
-<translation id="4066710578506115647">ۋاسىتە قويغۇچنى قوزغات.</translation>
 <translation id="4068506536726151626">بۇ بەتتە تۆۋەندىكى بەتتىن كەلگەن ئېلېمېنت بار، بۇ بېكەتلەر ئورنىڭىزنى ئىزلاۋاتىدۇ.</translation>
 <translation id="4074900173531346617">ئېلخەت ئىمزالىق گۇۋاھنامىسى</translation>
 <translation id="4081383687659939437">ئۇچۇرنى ساقلا</translation>
@@ -971,7 +946,6 @@
 <translation id="4250680216510889253">ياق</translation>
 <translation id="4251486191409116828">پروگرامما تېزلەتمىسىنى قۇرالمىدى</translation>
 <translation id="4254921211241441775">بۇ ھېساباتنى قەدەمداشلاشنى توختات</translation>
-<translation id="4255684106974551453">Flickr</translation>
 <translation id="4256316378292851214">سىننى باشقا ئاتتا ساقلا(&amp;V)…</translation>
 <translation id="425878420164891689">تولۇق توكلاشقا كېتەرلىك ۋاقىتنى ھېسابلاۋاتىدۇ</translation>
 <translation id="4260722247480053581">ئۇلانمىنى يوشۇرۇن كۆزنەكتە ئاچ</translation>
@@ -1048,13 +1022,7 @@
 <translation id="4522570452068850558">تەپسىلاتى</translation>
 <translation id="4535734014498033861">ۋاكالەتچى مۇلازىمېتىرغا ئۇلىنالمىدى.</translation>
 <translation id="4538417792467843292">سۆزنى ئۆچۈر</translation>
-<translation id="4551440281920791563">مەشغۇلات ئۇسۇلى:
-          <ph name="BEGIN_BOLD"/>
-          كۇلۇچ تىزىملىكى &gt; تاللانما &gt; ئالىي تاللانما &gt; ۋاكالەتچى تەڭشەك ئۆزگەرت&gt;  LAN تەڭشەك
-          <ph name="END_BOLD"/>نى زىيارەت قىلىپ 
-           &quot;LAN ئۈچۈن ۋاكالەتچى مۇلازىمېتىر ئىشلەت&quot; نى تاللىماڭ.</translation>
 <translation id="4553117311324416101">گۇگىلنىڭ بايقىشىچە ئەگەر داۋاملاشتۇرسىڭىز كومپيۇتېرىڭىزغا زەھەرخەندە يۇمشاق دېتال ئورنىتىلىشى مۇمكىن. ئەگەر سىز ئىلگىرى بۇ بېكەتنى زىيارەت قىلغان ياكى بۇ بېكەتكە ئىشىنىدىغان بولسىڭىز، يېقىندا بۇ بېكەتكە خاككىرلار ھۇجۇم قىلغان بولۇشى مۇمكىن. ئەڭ ياخشىسى داۋاملاشتۇرماڭ ياكى ئەتە سىناڭ ۋە ياكى باشقا جاينى زىيارەت قىلىڭ.</translation>
-<translation id="4558734465070698159"><ph name="HOTKEY_NAME"/> بېسىپ ئالدىنقى كىرگۈزگۈچنى تاللاڭ.</translation>
 <translation id="4563210852471260509">دەسلەپكى كىرگۈزىدىغان تىل خەنزۇچە</translation>
 <translation id="4568660204877256194">خەتكۈش چىقار…</translation>
 <translation id="4569998400745857585">تىزىملىكتە يوشۇرۇن كېڭەيتىلمە بار</translation>
@@ -1063,7 +1031,6 @@
 <translation id="4577070033074325641">خەتكۈش ئەكىر…</translation>
 <translation id="4585473702689066695">'<ph name="NAME"/>' تورغا باغلىنالمىدى.</translation>
 <translation id="4589279373639964403">خەتكۈش چىقار</translation>
-<translation id="4590074117005971373">گرافىك بىر تەرەپ قىلىش بۆلىكى (GPU) نىڭ قاتتىق دېتالىنى ئىشلىتىش ئارقىلىق ئىككى ئۆلچەملىك (2D) مەزمۇندا canvas بەلگىنىڭ تېخىمۇ يۇقىرى ئۈنۈمىنى ئەمەلگە ئاشۇردى.</translation>
 <translation id="4593021220803146968"><ph name="URL"/> غا يۆتكەل(&amp;G)</translation>
 <translation id="4608500690299898628">ئىزدە(&amp;F)…</translation>
 <translation id="4610637590575890427"><ph name="SITE"/> نى زىيارەت قىلماقچىمۇسىز؟</translation>
@@ -1074,7 +1041,6 @@
 <translation id="4631110328717267096">سىستېما يېڭىلىيالمىدى.</translation>
 <translation id="4643612240819915418">سىننى يېڭى بەتكۈچتە ئاچ(&amp;O)</translation>
 <translation id="4647175434312795566">ئىجازەتنامىگە قوشۇل</translation>
-<translation id="464745974361668466">ئىپادە:</translation>
 <translation id="4664482161435122549">PKCS #12 چىقىرىش خاتالىقى</translation>
 <translation id="4673916386520338632">بۇ پروگرامما بىلەن ئورنىتىلغان  '<ph name="APP_NAME"/>' توقۇنۇشىدۇ، شۇڭلاشقا ئورنىتالمايدۇ.</translation>
 <translation id="4681260323810445443">سىزگە <ph name="URL"/> نى زىيارەت قىلىش ھوقۇقى بېرىلمىگەن. تىزىمغا كىرسىڭىز بولىدىغان ئوخشايدۇ.</translation>
@@ -1083,7 +1049,6 @@
 <translation id="4694445829210540512"><ph name="NETWORK"/> سانلىق مەلۇمات ئېقىم يۈرۈشلۈكى ئاكتىپلانمىغان</translation>
 <translation id="4701488924964507374"><ph name="SENTENCE1"/> <ph name="SENTENCE2"/></translation>
 <translation id="4708849949179781599"><ph name="PRODUCT_NAME"/> چېكىن</translation>
-<translation id="4710257996998566163">ئاخىرقى يېڭىلانغان ۋاقتى:</translation>
 <translation id="4711094779914110278">تۈركچە</translation>
 <translation id="471800408830181311">شەخسىي شىفىرلىق ئاچقۇچنى چىقىرالمىدى.</translation>
 <translation id="4718464510840275738">قەدەمداشلانغان مايىللىق</translation>
@@ -1144,7 +1109,6 @@
 <translation id="4910619056351738551">تۆۋەندىكىسى بىر قىسىم تەكلىپ:</translation>
 <translation id="4920887663447894854">تۆۋەندىكى بېكەتنىڭ بۇ بەتتىكى ئورنىڭىزنى ئىزلىشىنى توستى:</translation>
 <translation id="4923417429809017348">بۇ بەت نامەلۇم تىلدىن <ph name="LANGUAGE_LANGUAGE"/> غا تەرجىمە قىلىندى</translation>
-<translation id="4925481733100738363">يىراقنى زىيارەت قىلىشنى تەڭشەش…</translation>
 <translation id="4927301649992043040">كېڭەيتىلمە بوغچىلا</translation>
 <translation id="4928569512886388887">سىستېما يېڭىلاشنى تاماملاۋاتىدۇ…</translation>
 <translation id="492914099844938733">ماسلاشماسلىقنى كۆرسەت</translation>
@@ -1222,9 +1186,7 @@
 <translation id="5209518306177824490">SHA-1 بارماق ئىزى</translation>
 <translation id="5210365745912300556">بەتكۈچ ياپ</translation>
 <translation id="5212108862377457573">ئىلگىرى كىرگۈزگەن مەزمۇنغا ئاساسەن ئايلاندۇرۇشنى تەڭشە</translation>
-<translation id="5212396831966182761">ھەممىنى قەدەمداشلا</translation>
 <translation id="521467793286158632">ھەممە ئىمنى چىقىرىۋەت</translation>
-<translation id="5220797120063118010">manifest ۋە سىنبەلگىنى crx ھۆججەتكە بوغچىلاپ Chrome پروگراممىلىرىنى قوللاشنى قوزغاتماي، تور بەت manifest ھۆججىتى ئارقىلىق جايلاشتۇرۇشنى قوزغات.</translation>
 <translation id="5222676887888702881">تىزىمدىن چىق</translation>
 <translation id="5228309736894624122">SSL كېلىشىم خاتالىقى.</translation>
 <translation id="5230516054153933099">كۆزنەك</translation>
@@ -1311,10 +1273,6 @@
 <translation id="5457599981699367932">مېھمان سۈپىتىدە كۆز يۈگۈرت</translation>
 <translation id="5458214261780477893">Dvorak</translation>
 <translation id="5463275305984126951"><ph name="LOCATION"/> ئىندېكسى</translation>
-<translation id="5463582782056205887">مۇداپىئە تېمى ياكى ۋىرۇسخور تەڭشىكىدە
-<ph name="PRODUCT_NAME"/>
-نى ئىجازەت بېرىلگەن پروگراممىغا قوشىدۇ.
-ئەگەر ئىجازەت بېرىلىپ بولغان پروگرامما بولسا ئىجازەت بېرىلگەن پروگرامما تىزىمىدىن ئۆچۈرۈۋېتىپ قايتا قوشۇڭ.</translation>
 <translation id="5463856536939868464">تىزىملىكتە يوشۇرۇن خەتكۈش بار</translation>
 <translation id="546411240573627095">سان ھەرپتاختا ئۇسلۇبى</translation>
 <translation id="5473075389972733037">IBM</translation>
@@ -1359,7 +1317,6 @@
 <translation id="5584537427775243893">ئەكىرىۋاتىدۇ</translation>
 <translation id="5585118885427931890">خەتكۈش قىسقۇچى قۇرالمىدى.</translation>
 <translation id="5586329397967040209">بۇنى باش بەتكە تەڭشە</translation>
-<translation id="5586942249556966598">ھېچقانداق قىلما</translation>
 <translation id="5595485650161345191">ئادرېس تەھرىر</translation>
 <translation id="5602600725402519729">قايتا يۈكلە(&amp;L)</translation>
 <translation id="5605623530403479164">باشقا ئىزدەش ماتورى</translation>
@@ -1397,7 +1354,6 @@
 <translation id="5704565838965461712">گۇۋاھنامىدىن بىرنى تاللاپ بەلگە قىلىڭ:</translation>
 <translation id="5708171344853220004">مىكروسوفت ئاساسىي نامى</translation>
 <translation id="5710435578057952990">بۇ تور بەتنىڭ سالاھىيىتى دەلىللەنمىدى.</translation>
-<translation id="5710740561465385694">تور بېكەت سانلىق مەلۇمات تەڭشەشنى سىنىغاندا مەندىن سورا</translation>
 <translation id="5714678912774000384">ئاخىرقى بەتكۈچنى ئاكتىپلا</translation>
 <translation id="5717920936024713315">cookie ۋە باشقا سانلىق مەلۇمات…</translation>
 <translation id="5725734596824080201">DC</translation>
@@ -1453,7 +1409,6 @@
 <translation id="5866557323934807206">كەلگۈسىدە زىيارەت قىلىش ئۈچۈن بۇ تەڭشەكلەرنى  تازىلا</translation>
 <translation id="5868426874618963178">نۆۋەتتىكى بەتنىڭ ئەسلى ھۆججىتىنى يوللا</translation>
 <translation id="5869522115854928033">ئىم ساقلاندى</translation>
-<translation id="5870109324660702118">ئالىي ھۆججەت سىستېمىسى</translation>
 <translation id="5875565123733157100">كەمتۈك تىپى:</translation>
 <translation id="5880867612172997051">تورنى زىيارەت قىلىش توڭلىتىلغان</translation>
 <translation id="5885996401168273077">تور باغلىنىشى</translation>
@@ -1491,15 +1446,12 @@
 <translation id="5992752872167177798">Seccomp قۇم ساندۇقى</translation>
 <translation id="5999606216064768721">سىستېما ماۋزۇ بالداق ۋە يان گىرۋەك ئىشلەت</translation>
 <translation id="5999940714422617743"><ph name="EXTENSION_NAME"/> ھازىر ئورنىتىلدى.</translation>
-<translation id="6002148394280876541">ۋاسىتە قويغۇچ</translation>
 <translation id="6003177993629630467"><ph name="PRODUCT_NAME"/> ئۆزىنى يېڭىلىيالماسلىقى مۇمكىن.</translation>
 <translation id="6004539838376062211">ئىملا تاللانمىسى(&amp;S)</translation>
-<translation id="6009389970523377008">ھازىر قەدەمداش ئىقتىدارىنى قوزغاتقان ھەممە كومپيۇتېر ئارىسىدا <ph name="PRODUCT_NAME"/> سانلىق مەلۇماتىنى قەدەمداشلىيالايسىز.</translation>
 <translation id="6014776969142880350"><ph name="PRODUCT_NAME"/> يېڭىلاشنى تاماملاش ئۈچۈن قايتا قوزغىتىڭ</translation>
 <translation id="602251597322198729">بۇ تور بېكەت بىر قانچە ھۆججەت چۈشۈرۈشكە ئۇرۇنۇۋاتىدۇ. بۇ مەشغۇلاتقا يول قويامسىز؟</translation>
 <translation id="6040143037577758943">ياپ</translation>
 <translation id="604124094241169006">ئۆزلۈكىدىن</translation>
-<translation id="6042308850641462728">تېخىمۇ كۆپ</translation>
 <translation id="6042708169578999844"><ph name="WEBSITE_1"/> ۋە <ph name="WEBSITE_2"/> دىكى سانلىق مەلۇماتلىرىڭىز</translation>
 <translation id="6052976518993719690">SSL گۇۋاھنامە تارقاتقۇچى</translation>
 <translation id="6053401458108962351">كۆز يۈگۈرتۈش سانلىق مەلۇماتىنى تازىلا…(&amp;C)</translation>
@@ -1536,7 +1488,6 @@
 <translation id="6165508094623778733">تەپسىلات بىلدۈرگۈسى</translation>
 <translation id="6175314957787328458">مىكروسوفت دائىرە GUID</translation>
 <translation id="6178664161104547336">گۇۋاھنامە تاللاش</translation>
-<translation id="6180504945088020651">قانداق قەدەمداشلاشنى تاللاش:</translation>
 <translation id="6188939051578398125">ئات ياكى ئادرېس كىرگۈزۈڭ.</translation>
 <translation id="6193618946302416945">مەن ئوقۇيدىغان تىلدا يېزىلمىغان بەتنى تەرجىمە قىل</translation>
 <translation id="619398760000422129">قىستۇرما (مەسىلەن، Adobe Flash Player, Quicktime قاتارلىق )</translation>
@@ -1559,7 +1510,6 @@
 <translation id="6264485186158353794">بىخەتەر ئۇلىنىشقا قايت</translation>
 <translation id="6267166720438879315"><ph name="HOST_NAME"/> دا ئۆزىڭىزنىڭ سالاھىيىتىنى دەلىللەش ئۈچۈن گۇۋاھنامە تاللاڭ</translation>
 <translation id="62780591024586043">تەجرىبە باسقۇچىدىكى ئورۇن ئىقتىدارى</translation>
-<translation id="6285074077487067719">قېلىپ</translation>
 <translation id="6294193300318171613">خەتكۈش بالداقنى ھەمىشە كۆرسەت(&amp;A)</translation>
 <translation id="6295228342562451544">سىز بىخەتەر تور بېكەتكە ئۇلانغاندا، بۇ بېكەتنى ۋاكالىتەن باشقۇرىدىغان مۇلازىمېتىر توركۆرگۈڭىزگە «گۇۋاھنامە» دېيىلىدىغان بىر قىسىم مەزمۇنلارنى يوللايدۇ، مەقسىتى سالاھىيىتىنى دەلىللەش. بۇ گۇۋاھنامىدە تور بەت ئادرېسى قاتارلىق كومپيۇتېرىڭىز ئىشىنىدىغان ئۈچىنچى تەرەپ دەلىللىگەن سالاھىيەت ئۇچۇرىنى ئۆز ئىچىگە ئالغان. گۇۋاھنامىدىكى ئادرېس بىلەن تور بەتتىكى ئادرېسنىڭ ماس كېلىدىغان كەلمەيدىغانلىقىنى تەكشۈرۈش ئارقىلىق ئۆزىڭىزگە لازىملىق تور بېكەت بىلەن بىخەتەر ئالاقە قىلىۋاتقانلىقىڭىزنى تەخمىنەن قىياس قىلالايسىز، ھەمدە توردىكى ھۇجۇم قىلغۇچى قاتارلىق ئۈچىنچى تەرەپ بىلەن ئالاقە قىلمايۋاتقانلىقىڭىزنى جەزملىيەلەيسىز.</translation>
 <translation id="6295535972717341389">قىستۇرما</translation>
@@ -1571,7 +1521,6 @@
 <translation id="6320286250305104236">تور تەڭشەك…</translation>
 <translation id="6322279351188361895">شەخسىي شىفىرلىق ئاچقۇچنى ئوقۇيالمىدى.</translation>
 <translation id="6333049849394141510">قانداق قەدەمداشلاشنى تاللاش</translation>
-<translation id="6337234675334993532">شىفىرلاش</translation>
 <translation id="6342069812937806050">ھازىر</translation>
 <translation id="6348657800373377022">بىرىكمە رامكا</translation>
 <translation id="6349678711452810642">كۆڭۈلدىكىگە تەڭشە</translation>
@@ -1599,9 +1548,7 @@
 <translation id="6430814529589430811">Base64 دە كودلانغان ASCII، يەككە گۇۋاھنامە</translation>
 <translation id="6431347207794742960"><ph name="PRODUCT_NAME"/> بۇ كومپيۇتېردىكى ھەممە ئىشلەتكۈچىنىڭ تەڭشىكىنى ئۆزلۈكىدىن يېڭىلايدۇ.</translation>
 <translation id="6434309073475700221">تاشلىۋەت</translation>
-<translation id="6440205424473899061">خەتكۈچلىرىڭىز گۇگىل پۈتۈككە قەدەمداشلاندى! خەتكۈچلىرىڭىزنى باشقا بىر كومپيۇتېردىكى <ph name="PRODUCT_NAME"/> نىڭ خەتكۈچى بىلەن بىرلەشتۈرۈپ قەدەمداشلىماقچى بولسىڭىز، مۇناسىپ كومپيۇتېردا ئوخشاش تەڭشەش جەريانىنى تەكرارلىسىڭىزلا بولىدۇ.</translation>
 <translation id="644038709730536388">ئۆزىڭىزنى قوغداش، توردىكى زىيانلىق يۇمشاق دېتاللارنىڭ زىيىنىغا ئۇچرىماسلىقنىڭ تەپسىلاتىنى چۈشىنىڭ.</translation>
-<translation id="6440412031372697869">ياق، رەھمەت، بۇنى يوشۇر</translation>
 <translation id="6442697326824312960">بەتكۈچنى قادىما</translation>
 <translation id="6445051938772793705">دۆلەت</translation>
 <translation id="6447842834002726250">Cookies</translation>
@@ -1760,7 +1707,6 @@
 <translation id="702455272205692181"><ph name="EXTENSION_NAME"/></translation>
 <translation id="7025190659207909717">كۆچمە تور سانلىق-مەلۇمات مۇلازىمىتىنى باشقۇرۇش</translation>
 <translation id="7029809446516969842">ئىم</translation>
-<translation id="7031711645186424727">سىرتقى كۆزەتكۈچ ئىشلەت</translation>
 <translation id="7031962166228839643">TPM تەييارلىنىۋاتىدۇ، سەل كۈتۈڭ(بۇنىڭغا بىر قانچە مىنۇت ۋاقىت كېتىشى مۇمكىن)…</translation>
 <translation id="7033648024564583278">ئويۇش جەريانىنى دەسلەپلەشتۈرۈۋاتىدۇ…</translation>
 <translation id="703748601351783580">يېڭى كۆزنەكتە ھەممە خەتكۈچنى ئاچ</translation>
@@ -1792,14 +1738,12 @@
 <translation id="7136694880210472378">كۆڭۈلدىكىگە تەڭشە</translation>
 <translation id="7136984461011502314"><ph name="PRODUCT_NAME"/> غا خۇش كەلدىڭىز!</translation>
 <translation id="7138678301420049075">باشقا</translation>
-<translation id="7146678227226703416">&lt;a&gt; Chrome Web Store&lt;/a&gt;  نى زىيارەت قىلىپ Chrome نىڭ يېڭى بەتكۈچىگە داڭلىق پروگرامما ۋە ئويۇنلارنى قوشۇڭ.</translation>
 <translation id="7148804936871729015"><ph name="URL"/> نىڭ مۇلازىمېتىرىنىڭ ئىنكاس قايتۇرۇش ۋاقتى بەك ئۇزۇن. ئۇنىڭ يۈكى ئېشىپ كەتكەن بولۇشى مۇمكىن.</translation>
 <translation id="7150146631451105528"><ph name="DATE"/></translation>
 <translation id="7154108546743862496">تېخىمۇ كۆپ ئۇچۇرلار</translation>
 <translation id="715487527529576698">دەسلەپكى خەنزۇچە كىرگۈزۈش ئۇسۇلى ئاددىي خەنزۇچە</translation>
 <translation id="7166764805709183719">قىسقۇچتا كۆرسەت(&amp;S)</translation>
 <translation id="7167486101654761064">بۇ خىل ھۆججەتنى دائىم ئاچ(&amp;A)</translation>
-<translation id="7167621057293532233">سانلىق مەلۇمات تىپى</translation>
 <translation id="7168109975831002660">ئەڭ كىچىك خەت چوڭلۇقى</translation>
 <translation id="7170041865419449892">چېگرا ھالقىدى</translation>
 <translation id="7179921470347911571">ھازىرلا قايتا قوزغات</translation>
@@ -1856,9 +1800,6 @@
 <translation id="740624631517654988">قاڭقىش كۆزنىكى توسۇلدى</translation>
 <translation id="7414887922320653780"><ph name="NUMBER_ONE"/> سائەت قالدى</translation>
 <translation id="741630086309232721">مېھمان ئەڭگىمەدىن چېكىن</translation>
-<translation id="7418490403869327287">شۇئان ئىزدەش قوزغىتىلغاندىن كېيىن، كۆپ قىسىم تور بەتلەر سىز Enter كۇنۇپكىسىنى بېسىشتىن ئىلگىرى omnibox قا كىرگۈزگەن تور ئادرېسىڭىزغا ئەگىشىپ يۈكلەيدۇ. ئۇندىن باشقا ئەگەر ئىزدەش ماتورىڭىز قوللىسا، ئىزدەش نەتىجىسى omnibox قا كىرگۈزگەنگە ئەگىشىپ كۆرسىتىلىدۇ، قۇردا مۆلچەرلەش ئىزدىشىڭىزگە يېتەكچىلىك قىلىشقا ياردەم بېرىدۇ.
-
-چۈنكى ئىزدەش نەتىجىسى سىزنىڭ كىرگۈزۈشىڭىزگە ئەگىشىپ ئىلتىماس قىلىنىدۇ، كۆڭۈلدىكى ئىزدەش ماتورىڭىز ئىزدەش ئىلتىماسىڭىزنى خاتىرىلىشى مۇمكىن.</translation>
 <translation id="7421925624202799674">بەتنىڭ مەنبە كودىنى كۆرسەت(&amp;V)</translation>
 <translation id="7422192691352527311">مايىللىق…</translation>
 <translation id="7426243339717063209">&quot;<ph name="EXTENSION_NAME"/>&quot; نى ئۆچۈرەمسىز؟</translation>
@@ -1920,12 +1861,10 @@
 <translation id="760537465793895946">ئۈچىنچى تەرەپ مودېلىنىڭ مەلۇملۇق توقۇنۇشىنى تەكشۈرىدۇ.</translation>
 <translation id="7606992457248886637">گۇۋاھنامە تارقاتقۇچى</translation>
 <translation id="7607002721634913082">ۋاقىتلىق توختىدى</translation>
-<translation id="7608619752233383356">قەدەمداشلاشنى ئەسلىگە قايتۇر</translation>
 <translation id="7615851733760445951">&lt;cookie تاللانمىدى&gt;</translation>
 <translation id="7617095560120859490">نېمە ئىش يۈز بەرگەنلىكىنى بىزگە ئېيتىڭ. (زۆرۈر)</translation>
 <translation id="7624154074265342755">سىمسىز تور</translation>
 <translation id="7624267205732106503">توركۆرگۈمنى ياپقاندا cookie ۋە باشقا بېكەت سانلىق مەلۇماتىنى تازىلا</translation>
-<translation id="7624421287830016388">Picasa تور</translation>
 <translation id="762904068808419792">ئىزدەيدىغان سۈرۈشتۈرۈشىڭىزنى بۇ جايغا كىرگۈزۈڭ</translation>
 <translation id="762917759028004464">نۆۋەتتە كۆڭۈلدىكى توركۆرگۈ <ph name="BROWSER_NAME"/>.</translation>
 <translation id="7629827748548208700">بەتكۈچ: <ph name="TAB_NAME"/></translation>
@@ -1938,7 +1877,6 @@
 <translation id="7649070708921625228">ياردەم</translation>
 <translation id="7650701856438921772"><ph name="PRODUCT_NAME"/> بۇ تىلدا كۆرسىتىلىدۇ</translation>
 <translation id="7658239707568436148">ۋاز كەچ</translation>
-<translation id="7663002797281767775">گرافىك بىر تەرەپ قىلىش بۆلىكى (GPU) نىڭ قاتتىق دېتالىنى ئىشلىتىش ئارقىلىق ئەمەلگە ئاشۇرىدىغان 3D CSS ۋە يۇقىرى ئۈنۈملۈك تور بەت كىرىشتۈرۈشنى قوزغىتىدۇ.</translation>
 <translation id="7666868073052500132">ئىشلىتىلىشى: <ph name="USAGES"/></translation>
 <translation id="7671130400130574146">سىستېما ماۋزۇ بالداق ۋە يان گىرۋەك ئىشلەت</translation>
 <translation id="7671576867600624">تېخنىكا:</translation>
@@ -2004,12 +1942,10 @@
 <translation id="7851768487828137624">كانارى</translation>
 <translation id="7861215335140947162">چۈشۈر(&amp;D)</translation>
 <translation id="7866522434127619318">قىستۇرما مەزمۇن تەڭشىكىدە «چېكىلسە قوي» تاللانما قوزغىتىلىدۇ.</translation>
-<translation id="7867353655952609678">ئاخىرقى يېڭىلانغان ۋاقتى:</translation>
 <translation id="7876243839304621966">ھەممىنى چىقىرىۋەت</translation>
 <translation id="7879478708475862060">كىرگۈزگۈچكە ئەگەش</translation>
 <translation id="7881267037441701396">ھەمبەھىر پرىنتېر <ph name="CLOUD_PRINT_NAME"/> غا بەرگەن ئىسپاتنىڭ ۋاقتى ئۆتتى. بۇ جاينى چېكىپ ئىشلەتكۈچى ئاتى ۋە ئىمنى قايتا كىرگۈزۈڭ.</translation>
 <translation id="7886758531743562066"><ph name="HOST_NAME"/>  دىكى تور بېكەت باشقا تور بېكەتتىن كەلگەن ئېلېمېنتنى ئۆز ئىچىگە ئالغان ئۇنىڭ ئۈستىگە ئۇنىڭدا زەھەرخەندە يۇمشاق دېتال باردەك قىلىدۇ، كومپيۇتېرىڭىزغا زىيان سېلىشى ياكى سىزنىڭ رۇخسىتىڭىزنى ئالماي ئۆزلۈكىدىن ئىجرا قىلىنىشى مۇمكىن. زەھەرخەندە يۇمشاق دېتالنى ئۆز ئىچىگە ئالغان تور بېكەتنى زىيارەت قىلسىڭىزلا كومپيۇتېرىڭىز يۇقۇملىنىشى مۇمكىن.</translation>
-<translation id="7886793013438592140">مۇلازىمېتنى باشلىيالمىدى.</translation>
 <translation id="7887334752153342268">كۆچۈر</translation>
 <translation id="7887998671651498201">تۆۋەندىكى قىستۇرمىدا ئىنكاس يوق: <ph name="PLUGIN_NAME"/>ئۇنى توختىتامسىز؟</translation>
 <translation id="7893393459573308604"><ph name="ENGINE_NAME"/> (كۆڭۈلدىكى)</translation>
@@ -2107,8 +2043,6 @@
 <translation id="8156020606310233796">تىزىم كۆرۈنۈشى</translation>
 <translation id="816055135686411707">گۇۋاھنامە ئىشەنچىنى تەڭشەش خاتالىقى</translation>
 <translation id="816095449251911490"><ph name="SPEED"/> - <ph name="RECEIVED_AMOUNT"/>, <ph name="TIME_REMAINING"/></translation>
-<translation id="8163672774605900272">ئەگەر ۋاكالەتچى مۇلازىمېتىر ئىشلىتىشكە ئىشەنمىسىڭىز، تۆۋەندىكى قەدەملەرنى سىناڭ:
-        <ph name="PLATFORM_TEXT"/></translation>
 <translation id="8167737133281862792">گۇۋاھنامە قوش</translation>
 <translation id="81686154743329117">ZRM</translation>
 <translation id="8178665534778830238">مەزمۇنى:</translation>
@@ -2224,7 +2158,6 @@
 <translation id="8503813439785031346">ئىشلەتكۈچى ئاتى</translation>
 <translation id="8506299468868975633">سۈرەت چۈشۈرۈش ئاخىرلاشتۇرۇلدى</translation>
 <translation id="8507996248087185956"><ph name="NUMBER_DEFAULT"/> مىنۇت</translation>
-<translation id="8508050303181238566"><ph name="HOTKEY_NAME"/> بېسىلسا كىرگۈزگۈچ ئارىسىدا ئالمىشىدۇ.</translation>
 <translation id="851263357009351303"><ph name="HOST"/> نىڭ ھەمىشە سۈرەت كۆرسىتىشىگە يول قوي</translation>
 <translation id="8515737884867295000">گۇۋاھنامە ئاساسىدا سالاھىيەت دەلىللىيەلمىدى</translation>
 <translation id="8525306231823319788">پۈتۈن ئېكران</translation>
@@ -2285,7 +2218,6 @@
 <translation id="870805141700401153">مىكروسوفت شەخسىي كودلۇق ئىمزا</translation>
 <translation id="8709969075297564489">مۇلازىمېتىر گۇۋاھنامىسىنىڭ كۈچتىن قالغان قالمىغانلىقىنى تەكشۈر</translation>
 <translation id="8710160868773349942">ئېلخەت: <ph name="EMAIL_ADDRESSES"/></translation>
-<translation id="8715293307644297506">تاۋۇش بەلگە كىرگۈزگۈچ</translation>
 <translation id="872451400847464257">ئىزدەش ماتورىنى ئۆزگەرت</translation>
 <translation id="8725066075913043281">قايتا سىنا</translation>
 <translation id="8725178340343806893">يىغقۇچ/خەتكۈش</translation>
@@ -2407,16 +2339,12 @@
 <translation id="9147392381910171771">تاللانما(&amp;O)</translation>
 <translation id="9148126808321036104">قايتا تىزىمغا كىر</translation>
 <translation id="9149866541089851383">تەھرىر…</translation>
-<translation id="9152253400021365649">PDF كۆرگۈچنى ئىشلەتكىلى بولمايدۇ.</translation>
-<translation id="9154072353677278078"><ph name="REALM"/> دىكى <ph name="DOMAIN"/> مۇلازىمېتىر ئىشلەتكۈچى ئاتى ۋە ئىم تەلەپ قىلىدۇ.</translation>
 <translation id="9154176715500758432">بۇ بەتتە تۇرۇپ تۇر</translation>
 <translation id="9157595877708044936">تەڭشەك…</translation>
 <translation id="917051065831856788">يان بەتكۈچنى ئىشلەت</translation>
 <translation id="9170848237812810038">يېنىۋال(&amp;U)</translation>
 <translation id="917450738466192189">مۇلازىمېتىر گۇۋاھنامىسى ئىناۋەتسىز.</translation>
-<translation id="9181507391138817530">يېڭى! پروگرامما ۋە ئويۇن دۇنيا بايقالدى</translation>
 <translation id="9181716872983600413">يۇنىكود</translation>
-<translation id="9187657844611842955">قوش يۈز</translation>
 <translation id="9187787570099877815">قىستۇرما توسۇشنى داۋاملاشتۇر</translation>
 <translation id="9187827965378254003">ۋوي، تەجرىبە خاراكتېرلىك ئىقتىدار يوقتەك تۇرىدا.</translation>
 <translation id="9199258761842902152">ئېسىپ قوي ياكى داۋاملاشتۇر</translation>
@@ -2433,13 +2361,11 @@
 <translation id="939598580284253335">ئىم جۈملىسىنى كىرگۈزۈڭ</translation>
 <translation id="939736085109172342">يېڭى مۇندەرىجە</translation>
 <translation id="941543339607623937">شەخسىي شىفىرلىق ئاچقۇچ ئىناۋەتسىز.</translation>
-<translation id="945332329539165145">GPU تېزلەتكەن 2D رەسىم رەختى</translation>
 <translation id="945522503751344254">پىكىر يوللا</translation>
 <translation id="950108145290971791">شۇئان ئىزدەش قوزغىتىپ ئىزدەش ۋە كۆز يۈگۈرتۈشنى تېزلىتەمدۇ؟</translation>
 <translation id="952992212772159698">ئاكتىپلانمىغان</translation>
 <translation id="9563164493805065">سۈرەت ئويۇش تامام.</translation>
 <translation id="964324710553558337">C</translation>
-<translation id="965674096648379287">بۇ بەتنى نورمال كۆرسىتىش ئۈچۈن سىز بۇرۇن كىرگۈزگەن سانلىق مەلۇماتلار بولۇشى لازىم. سىز بۇ سانلىق مەلۇماتلارنى قايتا يوللىسىڭىز بولىدۇ، ئەمما بۇنداق قىلسىڭىز ئىلگىرى مۇشۇ تور بەتتە ئىجرا قىلغان بارلىق مەشغۇلاتنى تەكرارلىشىڭىز لازىم.</translation>
 <translation id="969892804517981540">رەسمىي نەشرى</translation>
 <translation id="978146274692397928">دەسلەپكى تىنىش بەلگىلىرى ئىككى بايتلىق</translation>
 <translation id="978407797571588532">مەشغۇلات ئۇسۇلى:
@@ -2463,26 +2389,20 @@
 <translation id="1221462285898798023"><ph name="PRODUCT_NAME"/> نى ئادەتتىكى ئىشلەتكۈچى سۈپىتىدە قوزغىتىڭ. ئەگەر سىز ئىلگىرى root سالاھىيىتىدە ئىجرا قىلسىڭىز،  سىز --user-data-dir ئارقىلىق سەپلىمە ھۆججەت مۇندەرىجىسىنىڭ ئۇچۇرىنى ئۆزگەرتىشىڭىز كېرەك.</translation>
 <translation id="1354868058853714482">Adobe Reader نىڭ مۆھلىتى ئۆتتى، بىخەتەر بولماسلىقى مۇمكىن.</translation>
 <translation id="1416836038590872660">EAP-MD5</translation>
-<translation id="1466288268059179648">ئىنتېرنېت باغلىنىشىڭىزنى تەكشۈرۈڭ. يول تاللىغۇچ، مودېم ياكى باشقا تور ئۈسكۈنىلىڭىزنى قايتا قوزغىتىڭ.</translation>
 <translation id="1492188167929010410">بۇزۇلۇش ID <ph name="CRASH_ID"/></translation>
 <translation id="1502960562739459116">بۇ PDF پۈتۈكنىڭ بىر قىسمىنى كۆرسىتەلمەيدۇ. Adobe Reader ئورنىتامدۇ؟</translation>
 <translation id="1545786162090505744">%s ئىزدەش ھالقىلىق سۆزگە ۋاكالەتلىك قىلىدىغان تور ئادرېسى</translation>
-<translation id="1592960452683145077">يىراقتىكى ئىقتىدار مۇۋەپپەقىيەتلىك قوزغىتىلدى. ھازىر سىز يىراقتىن بۇ كومپيۇتېرغا باغلىنالايسىز.</translation>
 <translation id="1607220950420093847">ھېساباتىڭىز ئۆچۈرۈلگەن ياكى چەكلەنگەن بولۇشى مۇمكىن. تىزىمدىن چىقىڭ.</translation>
-<translation id="1684638090259711957">يېڭى مۇستەسنا ئەندىزىدىن بىرنى قوش</translation>
 <translation id="1701567960725324452">ئەگەر قەدەمداشنى توختاتسىڭىز، مەزكۇر كومپيۇتېردا ساقلانغان گۇگىل ھېساباتىدىكى سانلىق مەلۇماتلارنىڭ ھەممىسى ساقلىنىپ قالىدۇ. ئەمما سانلىق مەلۇماتىڭىزغا ئېلىپ بارغان قوشۇش ياكى ئۆزگەرتىشلەرنىڭ ھەممىسى ئۆزئارا قەدەمداشلانمايدۇ.</translation>
 <translation id="1737968601308870607">ھۆججەت كەمتۈكى</translation>
 <translation id="1758018619400202187">EAP-TLS</translation>
 <translation id="1763138995382273070">HTML5 تەسىرلىشىشچان جەدۋەل دەلىللەشنى چەكلە</translation>
 <translation id="1824910108648426227">بۇ مۇلازىمەتلەرنى چەكلەشنى تاللىيالايسىز</translation>
-<translation id="185461872046985453">پەقەت سىزنىڭ ئىم جۈملىڭىزگە ئىگە كىشىلا سانلىق مەلۇماتلىرىڭىزنى ئوقۇيالايدۇ. ئەگەر ئىم جۈملىڭىزنى ئۇنتۇپ قالسىڭىز، قەدەمداشنى ئەسلىگە قايتۇرۇشىڭىز لازىم.</translation>
-<translation id="1972131420608645908">FPS سانىغۇچ.</translation>
 <translation id="1976150099241323601">بىخەتەر ئۈسكۈنىگە تىزىمغا كىر</translation>
 <translation id="201192063813189384">غەملەكتىن سانلىق مەلۇمات ئوقۇغاندا خاتالىق كۆرۈلدى.</translation>
 <translation id="2024918351532495204">ئۈسكۈنىڭىز تورسىز ھالەتتى.</translation>
 <translation id="2053553514270667976">پوچتا نومۇرى</translation>
 <translation id="2086712242472027775">ھېساباتىڭىز <ph name="PRODUCT_NAME"/> دا ئىشلىمەيدۇ، دائىرە باشقۇرغۇچىڭىز بىلەن ئالاقىلىشىڭ ياكى ئۆلچەملىك گۇگىل ھېساباتىدا تىزىمغا كىرىڭ.</translation>
-<translation id="2089090684895656482">ئاز</translation>
 <translation id="2119721408814495896"><ph name="CLOUD_PRINT_NAME"/> باغلىغۇچ ئالدى بىلەن Microsoft XML قەغەز ئۆلچىمى ئاساسىي بوغچىسى (XPS Essentials Pack)نى ئورنىتىشنى تەلەپ قىلىدۇ.</translation>
 <translation id="2125314715136825419">Adobe Reader نى يېڭىلىماي داۋاملاشتۇر(تەۋسىيە قىلىنمايدۇ)</translation>
 <translation id="2200129049109201305">شىفىرلانغان سانلىق مەلۇماتنى قەدەمداشلاشتىن ئاتلاپ كېتەمدۇ؟</translation>
@@ -2499,7 +2419,6 @@
 <translation id="2799223571221894425">قايتا ئىجرا قىل</translation>
 <translation id="2817109084437064140">ئەكىرىپ ئۈسكۈنە بىلەن باغلا…</translation>
 <translation id="2832519330402637498">سول يۇقىرى</translation>
-<translation id="2860002559146138960"><ph name="PRODUCT_NAME"/> ھازىر ئىمنى قەدەمداشلىيالايدۇ؛ سانلىق مەلۇماتلىرىڭىز گۇگىل ھېساباتىڭىزنىڭ ئىمى ياكى سىز تاللىغان ئىم جۈملىسىدە شىفىرلىنىدۇ.</translation>
 <translation id="2900139581179749587">تەلەپپۇزنى تونۇيالمىدى.</translation>
 <translation id="2950186680359523359">مۇلازىمېتىر ھېچقانداق سانلىق مەلۇمات يوللىمايلا باغلىنىشنى ياپتى.</translation>
 <translation id="295228163843771014">ئىم ساقلىماسلىقنى تاللىدىڭىز؛ سىز كېيىن قەدەمداش تەڭشىكىنى ئۆزگەرتەلەيسىز.</translation>
@@ -2525,7 +2444,6 @@
 <translation id="3885155851504623709">ئوقۇتۇش رايونى</translation>
 <translation id="3936877246852975078">مۇلازىمېتىرغا يوللايدىغان ئىلتىماس ۋاقىتلىق ئۈزۈۋېتىلدى.</translation>
 <translation id="3937609171782005782">سىز بۇ ئاگاھلاندۇرۇشنى كۆرگەن بېكەتنىڭ قوشۇمچە ئۇچۇرلىرىنى گۇگىلغا يوللاش ئارقىلىق زەھەرخەندە يۇمشاق دېتاللارنى بايقاشقا ياردەم قىلالايسىز. سانلىق مەلۇماتلار <ph name="PRIVACY_PAGE_LINK"/> غا ئاساسەن بىر تەرەپ قىلىنىدۇ.</translation>
-<translation id="4051923669149193910"><ph name="HANDLER_TITLE"/> ئاللىبۇرۇن <ph name="PROTOCOL"/>:// ئۇلانمىنى بىر تەرەپ قىلىشقا ئىشلىتىلدى.</translation>
 <translation id="4052120076834320548">كىچىك</translation>
 <translation id="4142744419835627535">شۇئان ئۆزلۈكىدىن تاماملىنىدۇ</translation>
 <translation id="4278390842282768270">يول قويغان</translation>
@@ -2533,14 +2451,12 @@
 <translation id="4287689875748136217">تور بەتنى يۈكلىيەلمىدى چۈنكى مۇلازىمېتىر سانلىق مەلۇمات يوللىمىدى.</translation>
 <translation id="428771275901304970">1 مىگابايتتىن ئاز ئېقىم مىقدارى قالدى</translation>
 <translation id="4310537301481716192">ئاغىنە ئۇ تاقالدى!</translation>
-<translation id="4404805853119650018">مەزكۇر كومپيۇتېرغا يىراقتىن زىيارەتنى خەتلىتەلمىدى.</translation>
 <translation id="4519351128520996510">قەدەمداش ئىم جۈملىسىنى كىرگۈزۈڭ</translation>
 <translation id="4611079913162790275">ئىم قەدەمداش ئىقتىدارىغا دىققەت قىلىڭ.</translation>
 <translation id="4654488276758583406">بەك كىچىك</translation>
 <translation id="469553822757430352">ئىناۋەتسىز قوللىنىشچان پىروگرامما - بەلگىلەنگەن ئىم</translation>
 <translation id="4714531393479055912"><ph name="PRODUCT_NAME"/> ئىمنى قەدەمداشلىيالايدۇ.</translation>
 <translation id="4740663705480958372">2P Pepper API ۋە P2P JavaScript API نى قوزغىتىدۇ. API ئىجاد قىلىنىۋاتىدۇ، تېخى ئىشلەتكىلى بولمايدۇ.</translation>
-<translation id="4792057643643237295">يىراقتىن زىيارەتنى چەكلە</translation>
 <translation id="4821935166599369261">تەھلىل قىلىش ئىقتىدارى قوزغىتىلدى(&amp;P)</translation>
 <translation id="4857138207355690859">P2P API</translation>
 <translation id="4865571580044923428">مۇستەسنا باشقۇرۇش…</translation>
@@ -2573,8 +2489,6 @@
 <translation id="572525680133754531">بىرىكمە رەڭلەش قەۋىتىنىڭ ئەتراپىدا گىرۋەكتىن بىرنى رەڭلەپ، قەۋەتنى سازلاش ۋە تەتقىق قىلىشقا ياردەملىشىدۇ.</translation>
 <translation id="574392208103952083">ئوتتۇرا</translation>
 <translation id="5748266869826978907">DNS تەڭشىكىڭىزنى تەكشۈرىدۇ. ئەگەر بۇ ئەسكەرتىشنى چۈشەنمىسىڭىز، سىستېما باشقۇرغۇچى بىلەن ئالاقىلىشىڭ.</translation>
-<translation id="574892445775113786">جەزملەش ئىم جۈملىسى:</translation>
-<translation id="5786805320574273267">بۇ كومپيۇتېرنىڭ يىراقتىن زىيارەت ئىقتىدارىنى تەڭشەۋاتىدۇ.</translation>
 <translation id="5833726373896279253">بۇ تەڭشەكنى ئىگىدارلا ئۆزگەرتەلەيدۇ:</translation>
 <translation id="58625595078799656"><ph name="PRODUCT_NAME"/> گۇگىل ئىم ياكى ئۆزىڭىز ئىشلىتىدىغان ئىم بىلەن سانلىق مەلۇماتلىرىڭىزنى شىفىرلاشنى تەلەپ قىلىدۇ.</translation>
 <translation id="5941343993301164315"><ph name="TOKEN_NAME"/> غا تىزىمغا كىرىڭ.</translation>
@@ -2597,9 +2511,7 @@
 <translation id="6099520380851856040"><ph name="CRASH_TIME"/> يۈز بەرگەن</translation>
 <translation id="6102827823267795198">شۇئان ئىزدەش ئىقتىدارى قوزغىتىلغاندا ئىزدەش تەمىنلىگۈچىنىڭ تەۋسىيەسىنى شۇ ئانلا ئۆزلۈكىدىن تاماملانمۇ يوق.</translation>
 <translation id="6122365914076864562">كۆچمە تورىڭىزنى تەڭشەۋاتىدۇ، سەل كۈتۈڭ.</translation>
-<translation id="6127884830679585004">قەۋەت گىرۋىكىنى بىرلەشتۈرۈپ رەڭلەيدۇ.</translation>
 <translation id="6143635259298204954">كېڭەيتىلمە بوغچىسىنى يېشەلمىدى. كېڭەيتىلمىنى بىخەتەر يېشىشتە، چوقۇم قوزغاتقۇچ بەلگىسىدىن باشلانغان  ئۇلانما نۇقتىسىنى ئۆز ئىچىگە ئالمىغان سەپلىمە ھۆججىتىڭىزنى كۆرسىتىدىغان يولنى تەمىنلىشىڭىز لازىم. سەپلىمە ھۆججىتىڭىزنىڭ بۇنداق يولى مەۋجۇد ئەمەس.</translation>
-<translation id="6259308910735500867">يىراقتىكى كومپيۇتېرنىڭ مۇندەرىجىسىنى زىيارەت قىلىش رەت قىلىندى. باشقا ھېساباتنى ئىشلىتىپ سىناڭ.</translation>
 <translation id="6282194474023008486">پوچتا نومۇرى</translation>
 <translation id="6423731501149634044">Adobe Reader نى كۆڭۈلدىكى PDF كۆرگۈچ قىلىپ ئىشلىتەمسىز؟</translation>
 <translation id="6523841952727744497">تىزىمغا كىرىشتىن ئىلگىرى، مېھمان ئەڭگىمەنى قوزغىتىپ <ph name="NETWORK_ID"/> تورنى ئاكتىپلاڭ</translation>
@@ -2618,18 +2530,11 @@
 <translation id="7074488040076962230">يان بالداق بەت '<ph name="SIDEBAR_PAGE"/>' نى يۈكليەلمىدى .</translation>
 <translation id="7108338896283013870">يوشۇر</translation>
 <translation id="7139724024395191329">خەلىپەلىك</translation>
-<translation id="7144878232160441200">قايتا سىنا</translation>
 <translation id="7199540622786492483"><ph name="PRODUCT_NAME"/> نىڭ نەشرى تۆۋەن چۈنكى قايتا قوزغاتمىغىلى خېلى ئۇزۇن بولدى. يېڭىلاشنى ئىشلەتكىلى بولىدۇ، قايتا قوزغاتقان ۋاقتىڭىزدا قوللىنىدۇ.</translation>
 <translation id="7241389281993241388"><ph name="TOKEN_NAME"/> غا تىزىمغا كىرىپ خېرىدار گۇۋاھنامىسىنى ئەكىرىڭ.</translation>
 <translation id="7282743297697561153">ساندان ساقلاش</translation>
-<translation id="7384913436093989340">مەشغۇلات ئۇسۇلى: 
-          <ph name="BEGIN_BOLD"/>
-          كۇلۇچ تىزىملىكى &gt; مايىللىق &gt; ئالىي تاللانما &gt; ۋاكالەتچى تەڭشەك ئۆزگەرت
-          <ph name="END_BOLD"/>زىيارەت قىلىپ 
-          سەپلىمىنى  &quot;ۋاكالەتچى يوق&quot; ياكى &quot;بىۋاسىتە&quot; قىلىپ تەڭشەڭ.</translation>
 <translation id="7387829944233909572">«كۆز يۈگۈرتۈش سانلىق مەلۇماتىنى تازىلا» سۆزلەشكۈ</translation>
 <translation id="7396845648024431313"><ph name="APP_NAME"/> سىستېما قوزغالغاندا قوزغىلىپ ئارقا سۇپىدا ئىجرا قىلىنىدۇ ھەتتا باشقا <ph name="PRODUCT_NAME"/> كۆزنەكلەر يېپىلغان تەقدىردىمۇ.</translation>
-<translation id="7406714851119047430">بۇ كومپيۇتېرنى يىراقتىن زىيارەت قىلىش چەكلەنگەن.</translation>
 <translation id="7427315641433634153">MSCHAP</translation>
 <translation id="7429235532957570505">كارخانا تاكتىكىسى ئارقىلىق قوزغىتىلغان قىستۇرمىنى چەكلىيەلمەيدۇ</translation>
 <translation id="7450633916678972976">دىققەت: سىز «قايتما ئىنكاس يوللا»نى چەككەندىن كېيىن، Chrome سىزنىڭ قايتما ئىنكاسىڭىز
@@ -2639,10 +2544,8 @@
 قايتما ئىنكاس دوكلاتى ئۆز ئىچىگە ئالغان ھەر قانداق شەخسىي ئۇچۇر، مەيلى سىز ئىزاھاتتا كۆرسەتكەن بولۇڭ ياكى خاتىرە، تور ئادرېسى ۋە ئېكران كەسمىسى ئۆز ئىچىگە ئالغان بولسۇن بىزنىڭ شەخسىيەت تاكتىكىمىز بويىچە قوغدىلىدۇ. ئەگەر تور ئادرېسىنى يوللاشنى خالىمىسىڭىز، بۇ تور ئادرېسىنى ئۆز ئىچىگە ئالىدۇ كۆپ تاللاش رامكىسىنى تاللىماڭ.
 Google سىز تەمىنلىگەن ھەر قانداق قايتما ئىنكاسنى ئىشلىتىپ خالىغان Google مەھسۇلاتى ياكى مۇلازىمەتلىرىنى ياخشىلاشقا قوشۇلىسىز.</translation>
 <translation id="7550830279652415241">bookmarks_<ph name="DATESTAMP"/>.html</translation>
-<translation id="7552203043556919163">قەدەمداش ئىم</translation>
 <translation id="7582844466922312471">يانفون سانلىق مەلۇماتى</translation>
 <translation id="7632380866023782514">ئوڭ يۇقىرى</translation>
-<translation id="7658220534651353369">ئۆزەمنىڭ قەدەمداش ئىم جۈملىسىنى تاللا</translation>
 <translation id="7693221960936265065">باشلانغان ۋاقتى</translation>
 <translation id="7733107687644253241">ئوڭ تۆۋەن</translation>
 <translation id="7771452384635174008">ئۇسلۇب</translation>
@@ -2653,12 +2556,10 @@ Google سىز تەمىنلىگەن ھەر قانداق قايتما ئىنكاس
 <translation id="8050783156231782848">ئىشلىتەلەيدىغان سانلىق مەلۇمات ئېقىم مىقدارى يوق</translation>
 <translation id="8079135502601738761">بۇ PDF پۈتۈكنىڭ پارچىسىنى كۆرسىتەلمەيدۇ. Adobe Reader ئاچامدۇ؟</translation>
 <translation id="8281596639154340028"><ph name="HANDLER_TITLE"/> ئىشلەت</translation>
-<translation id="8321738493186308836">يىراقتىكى ئىقتىدار مۇلازىمەت جەريانى بىلەن خېرىدار تەرەپ قىستۇرمىسىغا UI كۈچەيتىلگەن قوللاش كودى قوزغىتىدۇ. ئاگاھلاندۇرۇش: بۇ تۈرنى پەقەت ئىجادكارلار سىناشقا ئىشلىتىدۇ. قوزغىتىلغان UI پەقەت سىز ئىجادكارلار قوشۇنىغا تەۋە بولۇپ ئاق تىزىمدا بولسىڭىز ئاندىن كۈچكە ئىگە بولىدۇ.</translation>
 <translation id="8412145213513410671">(<ph name="CRASH_COUNT"/>) يىمىرىلدى</translation>
 <translation id="8412392972487953978">سىز ئىككى قېتىمدا كىرگۈزگەن ئىم ئوخشاش بولۇشى لازىم.</translation>
 <translation id="8433186206711564395">تور تەڭشەك</translation>
 <translation id="8472623782143987204">قاتتىق دېتال قوللايدىغان</translation>
-<translation id="8518425453349204360"><ph name="USER_EMAIL_ADDRESS"/> نىڭ مەزكۇر كومپيۇتېرنى يىراقتىن زىيارەت قىلىش ھوقۇقى قوزغىتىلدى.</translation>
 <translation id="8525552230188318924">ئىم قەدەمداش سەپلىمىسى.</translation>
 <translation id="8539727552378197395">ياق (پەقەت Http ئىلتىماسىدىلا)</translation>
 <translation id="8550022383519221471">سىز تۇرۇشلۇق دائىرىدە قەدەمداشنى ئىشلەتكىلى بولمايدۇ.</translation>
@@ -2689,11 +2590,6 @@ Google سىز تەمىنلىگەن ھەر قانداق قايتما ئىنكاس
 <translation id="940425055435005472">خەت چوڭلۇقى:</translation>
 <translation id="957120528631539888">دەلىللەش ئۇچۇرىنى كۆرسىتىش چەكلىنىدۇ ھەمدە جەدۋەل تاپشۇرۇش توسۇلىدۇ.</translation>
 <translation id="976526967778596630"><ph name="HOST_NAME"/> دىكى بەتنى زىيارەت قىلالمىدى چۈنكى تور باغلىنىشىڭىز ئۈزۈلگەن. بەت تور باغلىنىشى ئەسلىگە كەلگەندە  يۈكلىنىدۇ.&lt;br&gt;</translation>
-<translation id="99648783926443049">مەشغۇلات ئۇسۇلى: 
-          <ph name="BEGIN_BOLD"/>
-          كۇلۇچ تىزىملىكى &gt; تەڭشەك &gt; ئالىي تاللانما &gt; ۋاكالەتچى تەڭشەك ئۆزگەرت
-          <ph name="END_BOLD"/>زىيارەت قىلىپ 
-          سەپلىمىنى  &quot;ۋاكالەتچى يوق&quot; ياكى &quot;بىۋاسىتە&quot; قىلىپ تەڭشەڭ.</translation>
 <translation id="1180549724812639004">يېڭى سەپلىمە ھۆججەت قۇر</translation>
 <translation id="1291144580684226670">ئۆلچەملىك خەت نۇسخىسى</translation>
 <translation id="1470719357688513792">يېڭى cookie تەڭشىكى بۇ بەتنى قايتا يۈكلىگەندە ئاندىن كۈچكە ئىگە بولىدۇ.</translation>
@@ -2705,7 +2601,6 @@ Google سىز تەمىنلىگەن ھەر قانداق قايتما ئىنكاس
 <translation id="2391419135980381625">ئۆلچەملىك خەت نۇسخىسى</translation>
 <translation id="2893168226686371498">كۆڭۈلدىكى توركۆرگۈ</translation>
 <translation id="3264544094376351444">Sans-serif خەت نۇسخىسى</translation>
-<translation id="3347210705307733273">سىز گۇگىل ھېساباتى ئىشلىتىپ خەتكۈچ ۋە باشقا تەڭشەكلەرنى قەدەمداشلىيالايسىز ھەمدە گۇگىل تور دۇكىنىنى زىيارەت قىلالايسىز.</translation>
 <translation id="351152300840026870">تەڭ كەڭلىكتىكى خەت نۇسخىسى</translation>
 <translation id="3718288130002896473">ھەرىكەت</translation>
 <translation id="3842552989725514455">Serif خەت نۇسخىسى</translation>
@@ -2715,15 +2610,8 @@ Google سىز تەمىنلىگەن ھەر قانداق قايتما ئىنكاس
 <translation id="4539401194496451708">Chrome سەپلىمە ھۆججىتى <ph name="USER_EMAIL_ADDRESS"/> نى ئىشلىتىۋاتىدۇ. ئاخىرقى قەدەمداشلىغان ۋاقىت: <ph name="LAST_SYNC_TIME"/></translation>
 <translation id="4625904365165566833">كەچۈرۈڭ، سىزنىڭ تىزىمغا كىرىش ھوقۇقىڭىز يوق. يان كومپيۇتېر ئىگىسىنى جەزملەڭ.</translation>
 <translation id="4665674675433053715">تەجرىبە خاراكتىرلىك يېڭى بەتكۈچ</translation>
-<translation id="4734773543612306111"><ph name="HOST_NAME"/> غا ماس كېلىدىغان مۇلازىمېتىرنى تاپالمىدى.
-DNS ئىزدەش مەغلۇپ بولدى. DNS تور ئادرېسنىڭ دائىرە ئاتىنى ئىنتېرنېت ئادرېسىغا تەرجىمە قىلىدىغان تور مۇلازىمېتىرى.
-بۇ خاتالىق ئادەتتە ئىنتېرنېت باغلىنىشى بولماسلىق ياكى تور خاتا سەپلىنىش سەۋەبىدىن كېلىپ چىقىدۇ.
-DNS مۇلازىمېتىردا ئىنكاس يوق ياكى مۇداپىئە تېمى توسۇۋالغان بولۇشى مۇمكىن
-<ph name="PRODUCT_NAME"/>
-تورنى زىيارەت قىلىدۇ.</translation>
 <translation id="4886690096315032939">مەۋجۇد بەتكۈچنى مەجبۇرىي ئاچ</translation>
 <translation id="5105855035535475848">بەتكۈچلەرنى قادا</translation>
-<translation id="5353719617589986386">بەت دائىرىسى ئىناۋەتسىز</translation>
 <translation id="5453029940327926427">بەتكۈچلەرنى ياپ</translation>
 <translation id="5542132724887566711">سەپلىمە ھۆججەت</translation>
 <translation id="5565871407246142825">ئىناۋەتلىك كارتا</translation>
@@ -2742,7 +2630,6 @@ DNS مۇلازىمېتىردا ئىنكاس يوق ياكى مۇداپىئە ت�
 <translation id="7747704580171477003">ئىجادىيەتتىكى يېڭى بەتكۈچنىڭ يېڭى لايىھەسىنى قوزغىتىدۇ.</translation>
 <translation id="780617032715125782">يېڭى سەپلىمە ھۆججەت قۇر</translation>
 <translation id="8072988827236813198">بەتكۈچلەرنى قادا</translation>
-<translation id="8097376295508217350">ئىناۋەتسىز سان</translation>
 <translation id="8205333955675906842">Sans-Serif خەت نۇسخىسى</translation>
 <translation id="8828781037212165374">بۇ ئىقتىدارلارنى قوزغات…</translation>
 <translation id="8870318296973696995">باش بەت</translation>
@@ -2769,7 +2656,6 @@ DNS مۇلازىمېتىردا ئىنكاس يوق ياكى مۇداپىئە ت�
 <translation id="1337036551624197047">چېخچە ھەرپتاختا</translation>
 <translation id="1352060938076340443">ئۈزۈلدى</translation>
 <translation id="1358032944105037487">ياپونچە ھەرپتاختا</translation>
-<translation id="1436277043903132741">SIM  كارتا قۇلۇپلانغان، PIN نى كىرگۈزۈڭ.</translation>
 <translation id="1455548678241328678">نورۋېگىيەچە ھەرپتاختا</translation>
 <translation id="1478632774608054702">رەڭلىگۈچ جەريانىدا PPAPI Flash نى ئىجرا قىل</translation>
 <translation id="1492817554256909552">زىيارەت نۇقتا ئاتى:</translation>
@@ -2783,7 +2669,6 @@ DNS مۇلازىمېتىردا ئىنكاس يوق ياكى مۇداپىئە ت�
 <translation id="19094784437781028">Solo ئىناۋەتلىك كارتىسى</translation>
 <translation id="1947424002851288782">گېرمانچە ھەرپتاختا</translation>
 <translation id="2025632980034333559"><ph name="APP_NAME"/> يىمىرىلدى. بۇ كۆپۈكچە چېكىلسە كېڭەيتىلمە قايتا يۈكلىنىدۇ.</translation>
-<translation id="2055443983279698110">GNOME تىزىملىك بالداقنى سىناق تەرىقىسىدە قوللايدۇ</translation>
 <translation id="2080010875307505892">سېربچە ھەرپتاختا</translation>
 <translation id="2113479184312716848">ھۆججەت ئاچ…(&amp;F)</translation>
 <translation id="2296019197782308739">EAP ئۇسۇلى:</translation>
@@ -2806,7 +2691,6 @@ DNS مۇلازىمېتىردا ئىنكاس يوق ياكى مۇداپىئە ت�
 <translation id="3187212781151025377">ئىبرانىچە ھەرپتاختا</translation>
 <translation id="3222066309010235055">ئالدىن رەڭلەش: <ph name="PRERENDER_CONTENTS_NAME"/></translation>
 <translation id="32330993344203779">ئۈسكۈنىڭىز مۇۋەپپەقىيەتلىك ھالدا كارخانا باشقۇرۇشقا كىردى.</translation>
-<translation id="3254480558747838290">بۇ ھېسابات مەزكۇر مۇلازىمەتنى ئىشلىتەلمەيدۇ.</translation>
 <translation id="3286538390144397061">ھازىرلا قايتا قوزغات</translation>
 <translation id="3338239663705455570">سىلوۋاكچە ھەرپتاختا</translation>
 <translation id="3363332416643747536"><ph name="DOWNLOAD_RECEIVED"/>/<ph name="DOWNLOAD_TOTAL"/>، ئۈزۈلدى</translation>
@@ -2817,10 +2701,7 @@ DNS مۇلازىمېتىردا ئىنكاس يوق ياكى مۇداپىئە ت�
 <translation id="3573179567135747900">&quot;<ph name="FROM_LOCALE"/>&quot; غا قايتۇر (قايتا قوزغىتىش زۆرۈر)</translation>
 <translation id="3602290021589620013">ئالدىن كۆزەت</translation>
 <translation id="3614837889828516995">PDF كە باس</translation>
-<translation id="3638865692466101147">بېسىشنى ئالدىن كۆزەت - <ph name="PREVIEW_TAB_TITLE"/></translation>
-<translation id="373253045595069619">سالاھىيەت دەلىللەشتە ئەجەللىك خاتالىق كۆرۈلدى.</translation>
 <translation id="3749289110408117711">ھۆججەت ئاتى</translation>
-<translation id="3753317529742723206">كېيىن <ph name="HANDLER_TITLE"/> (<ph name="HANDLER_HOSTNAME"/>) ئىشلىتىپ <ph name="REPLACED_HANDLER_TITLE"/> نى ئالماشتۇرۇپ <ph name="PROTOCOL"/>:// ئۇلانمىسىنى بىر تەرەپ قىلامسىز؟</translation>
 <translation id="3754634516926225076">PIN خاتا، قايتا سىناڭ.</translation>
 <translation id="3781488789734864345">بىر كۆچمە تور تاللاڭ</translation>
 <translation id="385120052649200804">ئامېرىكىچە خەلقئارا ھەرپتاختا</translation>
@@ -2843,14 +2724,6 @@ DNS مۇلازىمېتىردا ئىنكاس يوق ياكى مۇداپىئە ت�
 <translation id="4755240240651974342">فىنلاندچە ھەرپتاختا</translation>
 <translation id="4768698601728450387">سۈرەت كەس</translation>
 <translation id="4932733599132424254">چېسلا</translation>
-<translation id="5130942302003143934">تۆۋەندىكى قەدەم باسقۇچ بويىچە تور ئالدىن مۆلچەرلەشنى چەكلەڭ:
-<ph name="BEGIN_BOLD"/>
-«كۇلۇچ تىزىملىكى»&gt;
-<ph name="SETTINGS_TITLE"/>
-&gt;
-<ph name="ADVANCED_TITLE"/>
-<ph name="END_BOLD"/>
-غا يۆتكىلىپ &quot;<ph name="NO_PREFETCH_DESCRIPTION"/>&quot; نى تاللىماڭ.</translation>
 <translation id="5246282308050205996"><ph name="APP_NAME"/> يىمىرىلدى. بۇ كۆپۈكچە چېكىلسە قوللىنىشچان پىروگرامما قايتا قوزغىلىدۇ.</translation>
 <translation id="529172024324796256">ئىشلەتكۈچى ئاتى:</translation>
 <translation id="5319782540886810524">لاتۋىيەچە ھەرپتاختا</translation>
@@ -2872,7 +2745,6 @@ DNS مۇلازىمېتىردا ئىنكاس يوق ياكى مۇداپىئە ت�
 <translation id="6008256403891681546">JCB</translation>
 <translation id="6030946405726632495">&quot;$1&quot; قىسقۇچ قۇرالمايدۇ: $2</translation>
 <translation id="6054173164583630569">فىرانسۇزچە ھەرپتاختا</translation>
-<translation id="609904544291553607">ئۈسكۈنىنى كارخانا باشقۇرۇشقا كىرگۈزۈپ ئۇنى سىزنىڭ Google Apps دائىرىڭىز بىلەن باغلايدۇ. بۇنداق بولغاندا ئۈسكۈنىنى يىراقتىن باشقۇرۇشقا يول قويۇپ، سىز تەشكىللىگەن ئۇچۇر تېخنىكىسى(IT) تاكتىكىسىنىڭ ئېھتىياجىنى قاندۇرىدۇ.</translation>
 <translation id="6273404661268779365">يېڭى فاكس قوش</translation>
 <translation id="6353618411602605519">كىرودىيەچە ھەرپتاختا</translation>
 <translation id="6359806961507272919"><ph name="PHONE_NUMBER"/> دىن كەلگەن قىسقا ئۇچۇر</translation>
@@ -2884,7 +2756,6 @@ DNS مۇلازىمېتىردا ئىنكاس يوق ياكى مۇداپىئە ت�
 <translation id="657402800789773160">بۇ بەتنى قايتا يۈكلە(&amp;R)</translation>
 <translation id="661719348160586794">سىز ساقلىغان ئىم بۇ جايدا كۆرۈنىدۇ.</translation>
 <translation id="668171684555832681">باشقا…</translation>
-<translation id="6695593907428118229">Google Apps دائىرە تىزگىن تاختىسىنى ئىشلىتىپ <ph name="PRODUCT_NAME"/> ئۈسكۈنىنى تەشكىللەش سەپلىمىسىنى يىراقتىن باشقۇرالايسىز.</translation>
 <translation id="6721972322305477112">ھۆججەت(&amp;F)</translation>
 <translation id="6748105842970712833">SIM كارتا قۇلۇپلانغان</translation>
 <translation id="6749695674681934117">يېڭى قىسقۇچقا بىر ئات كىرگۈزۈڭ</translation>
@@ -2920,10 +2791,220 @@ DNS مۇلازىمېتىردا ئىنكاس يوق ياكى مۇداپىئە ت�
 <translation id="8836712291807476944"><ph name="SAVED_BYTES"/> / <ph name="TOTAL_BYTES"/> بايت، ئۈزۈلدى</translation>
 <translation id="89217462949994770">سىز خاتا كىرگۈزگەن PIN قېتىم سانى بەك كۆپ بولۇپ كەتتى. <ph name="CARRIER_ID"/> بىلەن ئالاقىلىشىپ 8 خانىلىق PIN ئاچقۇچىغا ئېرىشىڭ.</translation>
 <translation id="9019654278847959325">سىلوۋاكچە ھەرپتاختا</translation>
-<translation id="9073247318500677671">يېڭىلانغان Unity ۋە GNOME (تارقىتىلماقچى بولغان Ubuntu Natty Narwhal مۇ ئىچىدە) ئېكران چوققىسىدا OSX ئۇسلۇبىدىكى تىزىملىك بالداقنى كۆرسىتىدۇ.</translation>
 <translation id="9115675100829699941">خەتكۈچلەر(&amp;B)</translation>
 <translation id="9131598836763251128">بىر ياكى بىر قانچە ھۆججەت تاللاڭ</translation>
 <translation id="91731790394942114">يېڭى ئات قوشۇش</translation>
 <translation id="933712198907837967">Diners Club</translation>
 <translation id="953692523250483872">ھېچقانداق ھۆججەت تاللانمىدى</translation>
+<translation id="1006316751839332762">شىفىرلانغان ئىم جۈملىسى</translation>
+<translation id="1297175357211070620">نىشان</translation>
+<translation id="1367951781824006909">بىرھۆججەت تاللاڭ</translation>
+<translation id="1394853081832053657">ئاۋاز تونۇش تاللانمىسى</translation>
+<translation id="1639192739400715787">بىخەتەرلىك تەڭشىكىنى زىيارەت قىلىشتا SIM كارتا PIN نى كىرگۈزۈڭ</translation>
+<translation id="1995173078718234136">مەزمۇننى تەكشۈرۈۋاتىدۇ…</translation>
+<translation id="2049137146490122801">يەرلىك ماشىنىڭىزدىكى ھۆججەتلەرنى زىيارەت قىلىش باشقۇرغۇچىڭىز تەرىپىدىن چەكلەنگەن.</translation>
+<translation id="2074739700630368799">كارخانا نەشرىدىكى Chrome OS ئۈسكۈنىڭىزنى دائىرىڭىزدىكى Google Apps غا باغلىشىڭىزغا يول قويىدۇ، دائىرىڭىزنىڭ Google Apps تىزگىن تاختىدىن ئىزدەپ، ئۈسكۈنىڭىزنى تىزگىنلىيەلەيسىز.</translation>
+<translation id="2541423446708352368">ھەممە چۈشۈرۈشلەرنى كۆرسەت</translation>
+<translation id="2608770217409477136">كۆڭۈلدىكى تەڭشەكنى ئىشلەت</translation>
+<translation id="2757031529886297178">FPS سانىغۇچ</translation>
+<translation id="2874027208508018603">خىروم WiFi باغلىنىشى يوق ئەھۋالدا 3G سانلىق مەلۇمات مۇلازىمېتىنى ئىشلىتىدۇ.</translation>
+<translation id="298068999958468740">ھەممە قەدەمداشنى ساقلاپ قالىدۇ ياكى بۇ كومپيۇتېردا قايسى سانلىق مەلۇماتلارنى قەدەمداشلايدىغانلىقىنى تاللايدۇ.</translation>
+<translation id="3024374909719388945">24 سائەتلىك سائەت ئىشلەت</translation>
+<translation id="3056462238804545033">ۋوي ۋوي! سالاھىيىتىڭىزنى دەلىللەشنى سىناشتا خاتالىق كۆرۈلدى. تىزىمغا كىرىش ئىسپاتىڭىزنى قايتا تەكشۈرۈپ ئاندىن قايتا سىناڭ.</translation>
+<translation id="3242765319725186192">ئالدىن ھەمبەھىر ئاچقۇچى:</translation>
+<translation id="3269101346657272573">PIN كىرگۈزۈڭ.</translation>
+<translation id="3300768886937313568">SIM كارتا PIN نى ئۆزگەر</translation>
+<translation id="3348038390189153836">يۆتكەشچان ئۈسكۈنە بايقالدى</translation>
+<translation id="3391392691301057522">كونا PIN:</translation>
+<translation id="3725367690636977613">بەت</translation>
+<translation id="3829932584934971895">تەمىنلىگۈچى تىپى:</translation>
+<translation id="3872166400289564527">سىرتقى ساقلىغۇچ</translation>
+<translation id="3929673387302322681">ئىجادىيەت - مۇقىمسىز</translation>
+<translation id="3949593566929137881">SIM كارتا PIN نى كىرگۈزۈڭ</translation>
+<translation id="4091434297613116013">بەت ۋارىقى</translation>
+<translation id="4114470632216071239">SIM كاتا قۇلۇپلا (كۆچمە سانلىق مەلۇمات ئىشلىتىش ئۈچۈن PIN زۆرۈر)</translation>
+<translation id="4250377793615429299">نۇسخا سانى ئىناۋەتسىز</translation>
+<translation id="4262113024799883061">خەنچە</translation>
+<translation id="4411770745820968260">ھۆججەت تەكچىسى</translation>
+<translation id="445923051607553918">Wi-Fi  تورىغا قوشۇل</translation>
+<translation id="4497097279402334319">تورغا باغلىنالمىدى.</translation>
+<translation id="452785312504541111">ئىككى بايتلىق ئىنگلىزچە</translation>
+<translation id="4640525840053037973">گۇگىل ھېساباتىڭىزدا تىزىمغا كىرىڭ</translation>
+<translation id="4684427112815847243">ھەممىنى قەدەمداشلا</translation>
+<translation id="4721475475128190282">كۆپ سەپلىمە ھۆججەت</translation>
+<translation id="4801512016965057443">كۆچمە سانلىق مەلۇمات كەزمىسىگە يول قوي</translation>
+<translation id="4806525999832945986"><ph name="DOMAIN"/>  ئارقىلىق  (<ph name="STATUS"/>) نى باشقۇرىدۇ</translation>
+<translation id="4910673011243110136">شەخسىي تورلار</translation>
+<translation id="497490572025913070">بىرىكمە رەڭلەش قەۋەت گىرۋىكى</translation>
+<translation id="5063180925553000800">يېڭى PIN:</translation>
+<translation id="5227536357203429560">شەخسىي تور قوش…</translation>
+<translation id="524759338601046922">يېڭى PIN نى قايتا كىرگۈزۈڭ:</translation>
+<translation id="5298420986276701358">دائىرە ئاتىڭىزنى ئىشلەتكەن Google Apps ھېساباتىدا تىزىمغا كىرسىڭىز، بۇلۇت تەرەپتە مەزكۇر <ph name="PRODUCT_NAME"/> ئۈسكۈنىسىنىڭ سەپلىمىسىنى باشقۇرالايسىز.</translation>
+<translation id="5388588172257446328">ئىشلەتكۈچى ئاتى:</translation>
+<translation id="5399158067281117682">PIN ماس كەلمىدى!</translation>
+<translation id="5445557969380904478">ئاۋاز تونۇتۇش ھەققىدە</translation>
+<translation id="5553784454066145694">يېڭى PIN تاللاڭ</translation>
+<translation id="5554573843028719904">باشقا Wi-Fi تورى…</translation>
+<translation id="5604324414379907186">خەتكۈچ بالداقنى ھەمىشە كۆرسەت</translation>
+<translation id="5605716740717446121">ئەگەر توغرا PIN ئاچىدىغان ئاچقۇچنى كىرگۈزمىسىڭىز، SIM كارتىڭىز مەڭگۈلۈك قۇلۇپلىنىدۇ. قېپقالغان سىناش قېتىم سانى: <ph name="TRIES_COUNT"/></translation>
+<translation id="5783059781478674569">ئاۋاز تونۇتۇش تاللانمىسى</translation>
+<translation id="5843685321177053287">ئۈسكۈنە باشقۇرۇش مۇلازىمىتى بىلەن قول ئېلىشىپ ئېسىپ قويۇۋاتىدۇ…</translation>
+<translation id="5852112051279473187">ۋاييەي! بۇ ئۈسكۈنىنى كارخانىغا كىرگۈزۈشتە ئېغىر مەسىلە كۆرۈلدى. قايتا سىناڭ ياكى قوللايدىغانلار بىلەن ئالاقىلىشىڭ.</translation>
+<translation id="5920618722884262402">قوپال سوزلەرنى توس</translation>
+<translation id="5948544841277865110">شەخسىي تور قوش</translation>
+<translation id="5950967683057767490">L2TP/IPSec + ئالدىن ھەمبەھىر ئاچقۇچ</translation>
+<translation id="6147020289383635445">بېسىشنى ئالدىن كۆزىتەلمىدى.</translation>
+<translation id="6198252989419008588">PIN ئۆزگەرت</translation>
+<translation id="6263541650532042179">قەدەمداشنى ئەسلىگە قايتۇر</translation>
+<translation id="6312403991423642364">نامەلۇم تور خاتالىقى</translation>
+<translation id="6321196148033717308">ئاۋاز پەرقلەندۈرۈش ھەققىدە</translation>
+<translation id="6423239382391657905">OpenVPN</translation>
+<translation id="6499058468232888609">ئۈسكۈنە باشقۇرۇش مۇلازىمىتى بىلەن ئالاقە قىلىۋاتقاندا تور خاتالىق كۆرۈلدى.</translation>
+<translation id="6562758426028728553">كونا ۋە يېڭى PIN نى كىرگۈزۈڭ.</translation>
+<translation id="6585234750898046415">تىزىمغا كىرىدىغان كۆزنەكتە ھېساباتىڭىزدا كۆرۈنىدىغان رەسىمنى تاللاڭ.</translation>
+<translation id="6623138136890659562">VPN غا باشلىنىشقا قولايلىق يارىتىش ئۈچۈن تور تىزىملىكىدە شەخسىي تورنى كۆرسىتىدۇ.</translation>
+<translation id="6679492495854441399">ۋاييەي! بۇ ئۈسكۈنىنى كارخانىغا كىرگۈزۈشنى سىناۋاتقاندا تور ئالاقە خاتالىقى كۆرۈلدى. تور باغلىنىشىڭىزنى تەكشۈرۈپ قايتا سىناڭ.</translation>
+<translation id="6681668084120808868">سۈرەت تارت</translation>
+<translation id="684587995079587263"><ph name="PRODUCT_NAME"/> سانلىق مەلۇماتلىرىڭىزنى بىخەتەر ھالدا گۇگىل ھېساباتىڭىز بىلەن قەدەمداشلايدۇ. ھەممە مەزمۇنلارنىڭ قەدەمداشلىقىنى ساقلاپ قالالايسىز ياكى قەدەمداشلايدىغان سانلىق مەلۇماتلارنىڭ تىپى ۋە شىفىرلاش تاللانمىسىنى ئۆزلەشتۈرەلەيسىز.</translation>
+<translation id="688547603556380205">L2TP/IPSec + ئىشلەتكۈچى ئارايۈزى</translation>
+<translation id="7104784605502674932">قەدەمداش مايىللىق جەزملەڭ</translation>
+<translation id="7180865173735832675">ئۆزلەشتۈر</translation>
+<translation id="7323391064335160098">VPN قوللاش</translation>
+<translation id="7424526482660971538">ئىم جۈملەمنى تاللايمەن</translation>
+<translation id="7434823369735508263">ئەنگلىيە Dvorak ھەرپتاختا</translation>
+<translation id="7516602544578411747">توركۆرگۈنىڭ ھەر قايسى كۆزنەكلىرى بىلەن ئۇلارنىڭ سەپلىمە ھۆججەتلىرىنى باغلاپ، ئوڭ ئۈستى بۇرجەكتە سەپلىمە ھۆججەت ئالماشتۇرغۇچنى قوشىدۇ. ھەر قايسى سەپلىمە ھۆججەتتە ئۆزىنىڭ مۇستەقىل خەتكۈچ، كېڭەيتىلمە، قوللىنىشچان پىروگرامما قاتارلىقلار بولىدۇ.</translation>
+<translation id="7681202901521675750">SIM كارتا قۇلۇپلانغان، PIN نى كىرگۈزۈڭ، قالغان سىناش قېتىم سانى: <ph name="TRIES_COUNT"/></translation>
+<translation id="7723779034587221017">تاكتىكا مۇلازىمىتى بىلەن باغلىنىش ئۈزۈلۈپ قالدى. ئۈسكۈنىنى ئەسلىگە قايتۇرۇڭ ياكى قوللىغۇچى بىلەن ئالاقە قىلىڭ.</translation>
+<translation id="7772032839648071052">ئىم جۈملىسى جەزملەڭ</translation>
+<translation id="7779140087128114262">پەقەت ئىم جۈملىسى بار كىشىلا ئاندىن شىفىرلانغان سانلىق مەلۇماتلارنى ئوقۇيالايدۇ -- بۇ ئىم جۈملىسى گۇگىلغا يوللانمىدى ياكى ساقلانمىدى. ئەگەر ئىم جۈملىسىنى ئۇنتۇپ قالسىڭىز، قەدەمداشنى ئەسلىگە قايتۇرۇڭ.</translation>
+<translation id="8130276680150879341">شەخسىي تور باغلىنىشىنى ئۈز</translation>
+<translation id="8142732521333266922">بولىدۇ، ھەممىنى قەدەمداشلا</translation>
+<translation id="8180239481735238521">بەت</translation>
+<translation id="8267453826113867474">قوپال سۆزلەرنى توس</translation>
+<translation id="8448695406146523553">پەقەت ئىم جۈملىسى بار كىشىلا ئاندىن شىفىرلانغان سانلىق مەلۇماتلارنى ئوقۇيالايدۇ -- بۇ ئىم جۈملىسى گۇگىلغا يوللانمىدى ياكى ساقلانمىدى. ئەگەر ئىم جۈملىسىنى ئۇنتۇپ قالسىڭىز، ئۇنداقتا</translation>
+<translation id="8464132254133862871">بۇ ھېساباتنىڭ مەزكۇر مۇلازىمەتنى ئىشلىتىش سالاھىيىتى يوق.</translation>
+<translation id="8628085465172583869">مۇلازىمېتىر ماشىنا ئاتى:</translation>
+<translation id="8666678546361132282">ئىنگلىزچە</translation>
+<translation id="8807632654848257479">مۇقىم</translation>
+<translation id="8886960478266132308"><ph name="PRODUCT_NAME"/> سانلىق مەلۇماتلىرىڭىز بىخەتەر ھالدا گۇگىل ھېساباتىڭىز بىلەن قەدەمداشلىنىدۇ.</translation>
+<translation id="8995603266996330174"><ph name="DOMAIN"/> باشقۇرىدۇ</translation>
+<translation id="9018524897810991865">قەدەمداش مايىللىقنى جەزملەڭ</translation>
+<translation id="9050666287014529139">ئىم جۈملىسى</translation>
+<translation id="9112614144067920641">يېڭى بىر PIN تاللاڭ.</translation>
+<translation id="9153934054460603056">كىملىك ۋە ئىم ساقلا</translation>
+<translation id="100242374795662595">يوچۇن ئۈسكۈنە</translation>
+<translation id="1031362278801463162">ئالدىن كۆزىتىشنى يۈكلەۋاتىدۇ</translation>
+<translation id="1055216403268280980">سۈرەت چوڭلۇقى</translation>
+<translation id="1110772031432362678">ھېچقانداق تور تېپىلمىدى</translation>
+<translation id="1128987120443782698">بۇ ساقلاش ئۈسكۈنىسىنىڭ سىغىمى <ph name="DEVICE_CAPACITY"/>، سىغىمى 4GB دىن كىچىك بولمىغان SD كارتا ياكى USB ساقلىغۇچتىن بىرنى قىستۇرۇڭ.</translation>
+<translation id="1173894706177603556">ئات ئۆزگەرت</translation>
+<translation id="1225544122210684390">قاتتىق دىسكا قوزغاتقۇچ</translation>
+<translation id="1437399238463685286">ھۆججەت ئاتىدا ئىناۋەتسىز ھەرپ بار: $1</translation>
+<translation id="1725068750138367834">ھۆججەت باشقۇرغۇچ(&amp;F)</translation>
+<translation id="1901769927849168791">SD كارتا بايقالدى</translation>
+<translation id="1956724372173215413">alt+shift نى بېسىپ كىرگۈزگۈچ ئارىسىدا ئالماشتۇرغىلى بولىدۇ.</translation>
+<translation id="1974060860693918893">ئالىي</translation>
+<translation id="2246340272688122454">ئەسلىگە كەلتۈرىدىغان تەسۋىرنى چۈشۈرۈۋاتىدۇ…</translation>
+<translation id="2367657048471519165"><ph name="PRODUCT_NAME"/> مېنىڭ كۆڭۈلدىكى توركۆرگۈم بولسۇن</translation>
+<translation id="2409527877874991071">بىر يېڭى ئات كىرگۈزۈڭ</translation>
+<translation id="2475982808118771221">خاتالىق كۆرۈلدى</translation>
+<translation id="2496540304887968742">ئۈسكۈنە سىغىمى چوقۇم 4GB ياكى تېخىمۇ چوڭ بولۇشى لازىم.</translation>
+<translation id="2570648609346224037">ئەسلىگە كەلتۈرىدىغان تەسۋىرنى چۈشۈرۈۋاتقاندا خاتالىق كۆرۈلدى.</translation>
+<translation id="2617919205928008385">بوشلۇق يېتىشمىدى</translation>
+<translation id="2717361709448355148">&quot;$1&quot; ئاتىنى ئۆزگەرتەلمىدى: $2</translation>
+<translation id="2930644991850369934">ئەسلىگە كەلتۈرىدىغان تەسۋىرنى چۈشۈرگەندە مەسىلە كۆرۈلدى. تور باغلىنىشى ئۈزۈلدى.</translation>
+<translation id="2934952234745269935">دىسكا بەلگىسى</translation>
+<translation id="2972557485845626008">مۇقىم دېتال</translation>
+<translation id="3058212636943679650">ئەگەر كومپيۇتېرىڭىزنىڭ مەشغۇلات سىستېمىسىنى ئەسلىگە كەلتۈرمەكچى بولسىڭىز، ئەسلىگە كەلتۈرىدىغان SD كارتا ياكى USB ساقلىغۇچ بولۇشى لازىم</translation>
+<translation id="3178000186192127858">ئوقۇشقىلا بولىدىغان</translation>
+<translation id="3222343486469566063">تىزىمغا كىرمىگەن</translation>
+<translation id="3258924582848461629">ياپونچە قولدا يېزىپ كىرگۈزگۈچ</translation>
+<translation id="3348643303702027858">مەشغۇلات سىستېما (OS) ئەسلىگە كەلتۈرۈش ۋاسىتىسىنى قۇرۇش بىكار قىلىندى.</translation>
+<translation id="347699201225182431">بۇ كېڭەيتىلمە قارا تىزىمدا ئىكەن.</translation>
+<translation id="3711446483454322176">ئالىي…</translation>
+<translation id="3786100282288846904">&quot;$1&quot; نى ئۆچۈرەلمەيدۇ: $2</translation>
+<translation id="3866443872548686097">ئەسلىگە كەلتۈرىدىغان ۋاسىتىڭىز تەييارلاندى. ئۇنى سىستېمىدىن چىقىرىۋەتسىڭىز بولىدۇ.</translation>
+<translation id="4145797339181155891">قاڭقىت</translation>
+<translation id="4161592545897541416">شۇئان ئىقتىدارى چەكلەنسە ئىزدەش بەتلىرىنىلا يۈكلەيدۇ.</translation>
+<translation id="4283623729247862189">ئوپتىكىلىق ئۈسكۈنە</translation>
+<translation id="4307281933914537745">سىستېما ئەسلىگە كەلتۈرۈش ھەققىدىكى تېخىمۇ كۆپ بىلدۈرگۈ</translation>
+<translation id="4433914671537236274">ئەسلىگە كەلتۈرۈش ۋاسىتىسىدىن بىرنى قۇر</translation>
+<translation id="4567836003335927027"><ph name="WEBSITE_1"/> دىكى سانلىق مەلۇماتىڭىز</translation>
+<translation id="4605399136610325267">ئىنتېرنېت باغلانمىغان</translation>
+<translation id="4618990963915449444"><ph name="DEVICE_NAME"/> دىكى ھەممە ھۆججەت ئۆچۈرۈلىدۇ.</translation>
+<translation id="4653235815000740718">مەشغۇلات سىستېما (OS) ئەسلىگە كەلتۈرىدىغان ۋاىستە قۇرۇشتا مەسىلە كۆرۈلدى. ئىشلىتىدىغان ساقلاش ئۈسكۈنىسى تېپىلمىدى.</translation>
+<translation id="4668954208278016290">تەسۋىرنى ماشىنىغا ئاجرىتىشتا ماسىلە كۆرۈلدى.</translation>
+<translation id="4731578803613910821"><ph name="WEBSITE_1"/>، <ph name="WEBSITE_2"/> ۋە <ph name="WEBSITE_3"/> دىكى سانلىق مەلۇماتىڭىز</translation>
+<translation id="5292890015345653304">SD كارتا ياكى USB ساقلىغۇچتىن بىرنى قىستۇرۇڭ</translation>
+<translation id="5305688511332277257">ھېچنېمە ئورنىتىلمىدى</translation>
+<translation id="5508282018086013138">بۇ كېڭەيتىلمە باشقۇرۇش قائىدىسىگە ئاساسەن قارا تىزىمغا كىرگۈزۈلگەن.</translation>
+<translation id="5527463195266282916">نەشرىنى تۆۋەنلەتمەكچى بولغان.</translation>
+<translation id="5583370583559395927">قالغان ۋاقىت: <ph name="TIME_REMAINING"/></translation>
+<translation id="560442828508350263">&quot;$1&quot; نى يۆتكىيەلمەيدۇ: $2</translation>
+<translation id="5745056705311424885">USB ساقلىغۇچ بايقالدى</translation>
+<translation id="5749483996735055937">ئەسلىگە كەلتۈرىدىغان تەسۋىرنى ئۈسكۈنىگە كۆچۈرۈۋاتقاندا مەسىلە كۆرۈلدى.</translation>
+<translation id="5790085346892983794">مۇۋەپپەقىيەتلىك</translation>
+<translation id="593451978644335626">ctrl+space بېسىلسا ئالدىنقى كىرگۈزگۈچ تاللىنىدۇ.</translation>
+<translation id="603890000178803545">1-ئاي^2-ئاي^3-ئاي^4-ئاي^5-ئاي^6-ئاي^7-ئاي^8-ئاي^9-ئاي^10-ئاي^11-ئاي^12-ئاي</translation>
+<translation id="6314007596429871800">پروگرامما غەملىكى</translation>
+<translation id="6562437808764959486">ئەسلىگە كەلتۈرىدىغان تەسۋىرنى ئاجرىتىۋاتىدۇ…</translation>
+<translation id="6615807189585243369"><ph name="TOTAL_SIZE"/> دىن <ph name="BURNT_AMOUNT"/> كۆچۈرۈلدى</translation>
+<translation id="6652975592920847366">مەشغۇلات سىستېما ئەسلىگە كەلتۈرۈش ۋاسىتىسى قۇرۇش</translation>
+<translation id="6731320427842222405">بۇنىڭغا بىر قانچە مىنۇت كېتىشى مۇمكىن</translation>
+<translation id="6830600606572693159"><ph name="URL"/> دىكى تور بەتنى نۆۋەتتە زىيارەت قىلغىلى بولمايدۇ. مۇلازىمىتېرنىڭ يۈكى ئېشىپ كەتتى ياكى توردىن چۈشۈرۈلۈپ ئاسرىلىۋاتىدۇ.</translation>
+<translation id="6853643819051005790">شۇئان ئىقتىدارى ئىزدەش بىلەنلا چەكلىنىدۇ</translation>
+<translation id="6906268095242253962">ئىنتېرنېتقا باغلاپ داۋاملاشتۇرۇڭ.</translation>
+<translation id="69375245706918574">ئۆزلەشتۈرگەن قەدەمداش مايىللىقى</translation>
+<translation id="7024867552176634416">ئىشلىتىدىغان كۆچمە ئۈسكۈنىدىن بىرنى تاللاڭ</translation>
+<translation id="7032947513385578725">Flash قوزغاتقۇچ</translation>
+<translation id="7231224339346098802">باسىدىغان ۋاراق سانى سان بىلەن ئىپادىلىنىدۇ (1 ياكى تېخىمۇ كۆپ).</translation>
+<translation id="7531238562312180404"><ph name="PRODUCT_NAME"/> كېڭەيتىلمىلەرنىڭ شەخسىي سانلىق مەلۇماتلىرىڭىزنى بىر تەرەپ قىلىش ئۇسۇلىنى تىزگىنلىمىگەنلىكتىن، ھەممە كېڭەيتىلمىلەر يوشۇرۇن كۆزنەكتە چەكلەندى.  تۆۋەندىكى ئۇلانمىدىن ھەر قايسى كېڭەيتىلمىلەرنى قوزغىتالايسىز:
+        <ph name="BEGIN_LINK"/>كېڭەيتىلمە باشقۇرغۇچ<ph name="END_LINK"/></translation>
+<translation id="774576312655125744"><ph name="WEBSITE_1"/>، <ph name="WEBSITE_2"/> ۋە باشقا <ph name="NUMBER_OF_OTHER_WEBSITES"/> تور بېكەتتىكى سانلىق مەلۇماتىڭىز</translation>
+<translation id="7765158879357617694">يۆتكە</translation>
+<translation id="7821009361098626711"><ph name="DOMAIN"/> مۇلازىمېتىرغا ئىشلەتكۈچى ئاتى ۋە ئىم زۆرۈر. مۇلازىمېتىر ئۇچۇرى: <ph name="REALM"/>.</translation>
+<translation id="7861805612256278846">تىزىمغا كىرمىگەن</translation>
+<translation id="7881483672146086348">ھېسابات كۆرسەت</translation>
+<translation id="7951780829309373534">&quot;$1&quot; نى چاپلىيالمايدۇ: $2</translation>
+<translation id="8026354464835030469"><ph name="BURNT_AMOUNT"/> نامەلۇم</translation>
+<translation id="8136149669168180907"><ph name="TOTAL_SIZE"/> دىن <ph name="DOWNLOADED_AMOUNT"/> چۈشۈردى</translation>
+<translation id="8443621894987748190">ھېساباتىڭىزنىڭ رەسىمىنى تاللاڭ</translation>
+<translation id="8467548439852845758">بىخەتەرلىكنى كۈچەيتىش ئۈچۈن، <ph name="PRODUCT_NAME"/> ئىمنى شىفىرلايدۇ.</translation>
+<translation id="8631271110654520730">ئەسلىگە كەلتۈرىدىغان تەسۋىرنى كۆچۈرۈۋاتىدۇ…</translation>
+<translation id="8816996941061600321">ھۆججەت باشقۇرغۇچ(&amp;F)</translation>
+<translation id="8987670145726065238">دىققەت بۇ ھۆججەت زىيانلىق. راستلا داۋاملاشتۇرامسىز؟</translation>
+<translation id="938470336146445890">ئىشلەتكۈچى گۇۋاھنامىسىدىن بىرنى ئورنىتىڭ.</translation>
+<translation id="1049337682107026577">قەدەمداشلايدىغان ئىمنى كىرگۈزۈڭ</translation>
+<translation id="1408167824939409937">ئىخچام يولباشچى بالداق</translation>
+<translation id="1559235587769913376">يۇنىكود ھەرپ كىرگۈزۈڭ</translation>
+<translation id="1559528461873125649">بۇنداق ھۆججەت ياكى مۇندەرىجە يوق</translation>
+<translation id="1704967159337061587">قورال بالداقنى يوشۇر</translation>
+<translation id="1710259589646384581">OS</translation>
+<translation id="1731589410171062430">جەمئى: <ph name="NUMBER_OF_SHEETS"/> <ph name="SHEETS_LABEL"/> (<ph name="NUMBER_OF_PAGES"/> <ph name="PAGE_OR_PAGES_LABEL"/>)</translation>
+<translation id="2565875069387440417">گۇگىل ھېساباتىڭىزدا تىزىمغا كىرىڭ</translation>
+<translation id="2580924999637585241">جەمئى: <ph name="NUMBER_OF_SHEETS"/> <ph name="SHEETS_LABEL"/></translation>
+<translation id="3596315483920932980">نۆۋەتتىكى ئەڭگىمەنىڭلا يەرلىك سانلىق مەلۇماتنى تەڭشىشىگە يول قويىدۇ</translation>
+<translation id="4744603770635761495">ئىجراچان يول</translation>
+<translation id="4844024059590024413">ئۆزلەشتۈرگەن قەدەمداش مايىللىقى</translation>
+<translation id="5951823343679007761">توكدان يوق</translation>
+<translation id="6878031674662373246">بۇ ھېساباتنى قەدەمداشلاشنى توختىتىۋاتىدۇ…</translation>
+<translation id="7030689690480150547">بۇ تاختا ھەققىدە</translation>
+<translation id="7419106976560586862">سەپلىمە ھۆججەت يولى</translation>
+<translation id="7552723648707145905">ئىخچام يولباشچى</translation>
+<translation id="7845201717638045845">سىز كۆچۈرۈپ چاپلايدىغان سانلىق مەلۇمات</translation>
+<translation id="8074548357564495927">يىراقتىكى ئىقتىدار خېرىدار قىستۇرمىسىنى قوزغىتىدۇ. ئاگاھلاندۇرۇش: نۆۋەتتە ئىجادكارلارنىڭ سىنىشى ئۈچۈنلا تەمىنلىنىدۇ. ئىجادكارلار قوشۇنىدا بولۇپ ئاق تىزىملىكتە بولمىسىڭىز ئارايۈزدە قوزغاتقان ئىقتىدار ئىشلىمەيدۇ.</translation>
+<translation id="8082103788701842156">بەتكۈچنىڭ تىل مۇھىت تىزىملىكىگە «قورال بالداقنى يوشۇر» تىزىملىك تۈرىنى قوشىدۇ. بۇ ئىقتىدارنى ئىشلىتىپ ھەمىشە قورال بالداقنى كۆرسەت(كۆڭۈلدىكى) بىلەن زۆرۈر بولغاندا تارتما رامكىدا ئاچ ئوتتۇرىسىدا ئالماشتۇرغىلى بولىدۇ.</translation>
+<translation id="8632196666436827923">قورال بالداقنى يوشۇر</translation>
+<translation id="8788054318005539616">بۇ ھېساباتنى قەدەمداشلاشنى توختىتىدۇ</translation>
+<translation id="8813811964357448561">ۋاراق قەغەز</translation>
+<translation id="948487459457438956">بۇ ھېساباتنى قەدەمداشلاشنى توختىتىدۇ…</translation>
+<translation id="1476822615785139447">پىرىنتېر باشقۇرۇش…</translation>
+<translation id="3317459757438853210">قوش يۈزلۈك</translation>
+<translation id="350945665292790777">پەقەت GPU تېزلىتىلگەن قەۋەتلەردىلا ئەمەس بەلكى ھەممە بەتلەردە GPU دا تېزلىتىپ بىرىكتۈرۈشنى ئىشلىتىدۇ.</translation>
+<translation id="4839122884004914586">يۇمشاق دېتال رەڭلەش تىزىمىنى قاپلايدۇ</translation>
+<translation id="5849294688757445020">ھەممە بەتلەردە GPU بىرىكتۈرۈشنى قوزغىتىدۇ</translation>
+<translation id="5892507820957994680">قوللىمايدىغان سىستېما سەپلىمىسىدە ئىچكى يۇمشاق دېتال رەڭلەش تىزىمىنى قاپلايدۇ ھەمدە GPU تېزلىتىشنى قوزغىتىدۇ.</translation>
+<translation id="6280731100889067253">بېسىشنى ئالدىن كۆزىتىدۇ</translation>
+<translation id="7444538544936087653"><ph name="PRODUCT_NAME"/> يېڭىلانمايدۇ چۈنكى مەشغۇلات سىستېمىڭىز كونا.</translation>
+<translation id="7576690715254076113">بەت ئايرىش</translation>
 </translationbundle>

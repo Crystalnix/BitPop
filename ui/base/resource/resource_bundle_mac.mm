@@ -11,6 +11,7 @@
 #include "base/mac/mac_util.h"
 #include "base/memory/scoped_nsobject.h"
 #include "base/synchronization/lock.h"
+#include "base/sys_info.h"
 #include "base/sys_string_conversions.h"
 #include "ui/gfx/image.h"
 
@@ -45,6 +46,21 @@ FilePath ResourceBundle::GetResourcesFilePath() {
   return GetResourcesPakFilePath(@"chrome", nil);
 }
 
+// static
+FilePath ResourceBundle::GetLargeIconResourcesFilePath() {
+  int32 major = 0;
+  int32 minor = 0;
+  int32 bugfix = 0;
+  base::SysInfo::OperatingSystemVersionNumbers(&major, &minor, &bugfix);
+
+  // Only load the large resource pak on if we're running on 10.7 or above.
+  if (major > 10 || (major == 10 && minor >= 7))
+    return GetResourcesPakFilePath(@"theme_resources_large", nil);
+  else
+    return FilePath();
+}
+
+// static
 FilePath ResourceBundle::GetLocaleFilePath(const std::string& app_locale) {
   NSString* mac_locale = base::SysUTF8ToNSString(app_locale);
 
@@ -65,7 +81,7 @@ gfx::Image& ResourceBundle::GetNativeImageNamed(int resource_id) {
     base::AutoLock lock(*lock_);
     ImageMap::const_iterator found = images_.find(resource_id);
     if (found != images_.end()) {
-      if (!found->second->HasRepresentation(gfx::Image::kNSImageRep)) {
+      if (!found->second->HasRepresentation(gfx::Image::kImageRepCocoa)) {
         DLOG(WARNING) << "ResourceBundle::GetNativeImageNamed() is returning a"
           << " cached gfx::Image that isn't backed by an NSImage. The image"
           << " will be converted, rather than going through the NSImage loader."
@@ -88,6 +104,21 @@ gfx::Image& ResourceBundle::GetNativeImageNamed(int resource_id) {
 
   // Cache the converted image.
   if (ns_image.get()) {
+    // Load a high resolution version of the icon if available.
+    if (large_icon_resources_data_) {
+      scoped_refptr<RefCountedStaticMemory> large_data(
+          LoadResourceBytes(large_icon_resources_data_, resource_id));
+      if (large_data.get()) {
+        scoped_nsobject<NSData> ns_large_data(
+            [[NSData alloc] initWithBytes:large_data->front()
+                                   length:large_data->size()]);
+        NSImageRep* image_rep =
+            [NSBitmapImageRep imageRepWithData:ns_large_data];
+        if (image_rep)
+          [ns_image addRepresentation:image_rep];
+      }
+    }
+
     base::AutoLock lock(*lock_);
 
     // Another thread raced the load and has already cached the image.

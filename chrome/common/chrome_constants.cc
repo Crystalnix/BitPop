@@ -70,6 +70,7 @@ const wchar_t kMessageWindowClass[] = L"Chrome_MessageWindow";
 const wchar_t kCrashReportLog[] = L"Reported Crashes.txt";
 const wchar_t kTestingInterfaceDLL[] = L"testing_interface.dll";
 const char    kNotSignedInProfile[] = "Default";
+const char    kMultiProfileDirPrefix[] = "profile_";
 const wchar_t kBrowserResourcesDll[] = L"chrome.dll";
 const FilePath::CharType kExtensionFileExtension[] = FPL(".crx");
 const FilePath::CharType kExtensionKeyFileExtension[] = FPL(".pem");
@@ -131,6 +132,8 @@ const int kHistogramSynchronizerReservedSequenceNumber = 0;
 const char* const kUnknownLanguageCode = "und";
 
 const int kJavascriptMessageExpectedDelay = 1000;
+
+const bool kEnableTouchIcon = false;
 
 }  // namespace chrome
 

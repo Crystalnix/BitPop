@@ -12,15 +12,15 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "chrome/browser/autocomplete/autocomplete_edit.h"
-#include "chrome/browser/autocomplete/autocomplete_edit_view_gtk.h"
 #include "chrome/browser/extensions/extension_context_menu_model.h"
 #include "chrome/browser/extensions/image_loading_tracker.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/prefs/pref_member.h"
-#include "chrome/browser/ui/gtk/info_bubble_gtk.h"
+#include "chrome/browser/ui/gtk/bubble/bubble_gtk.h"
 #include "chrome/browser/ui/gtk/menu_gtk.h"
 #include "chrome/browser/ui/gtk/owned_widget_gtk.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
@@ -29,11 +29,12 @@
 #include "content/common/notification_registrar.h"
 #include "content/common/page_transition_types.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/base/animation/animation_delegate.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/gtk/gtk_signal.h"
 #include "webkit/glue/window_open_disposition.h"
 
-class AutocompleteEditViewGtk;
+class OmniboxViewGtk;
 class Browser;
 class CommandUpdater;
 class ContentSettingImageModel;
@@ -65,6 +66,8 @@ class LocationBarViewGtk : public AutocompleteEditController,
 
   // Returns the widget the extension installed bubble should point to.
   GtkWidget* location_entry_widget() const { return entry_box_; }
+
+  Browser* browser() const { return browser_; }
 
   // Returns the current TabContents.
   TabContents* GetTabContents() const;
@@ -122,8 +125,8 @@ class LocationBarViewGtk : public AutocompleteEditController,
   virtual void InvalidatePageActions();
   virtual void SaveStateToContents(TabContents* contents);
   virtual void Revert();
-  virtual const AutocompleteEditView* location_entry() const;
-  virtual AutocompleteEditView* location_entry();
+  virtual const OmniboxView* location_entry() const;
+  virtual OmniboxView* location_entry();
   virtual LocationBarTesting* GetLocationBarForTesting();
 
   // Implement the LocationBarTesting interface.
@@ -142,7 +145,7 @@ class LocationBarViewGtk : public AutocompleteEditController,
   static const GdkColor kBackgroundColor;
 
  private:
-  class ContentSettingImageViewGtk : public InfoBubbleGtkDelegate,
+  class ContentSettingImageViewGtk : public BubbleDelegateGtk,
                                      public ui::AnimationDelegate {
    public:
     ContentSettingImageViewGtk(ContentSettingsType content_type,
@@ -174,9 +177,9 @@ class LocationBarViewGtk : public AutocompleteEditController,
     CHROMEGTK_CALLBACK_1(ContentSettingImageViewGtk, gboolean, OnExpose,
                          GdkEventExpose*);
 
-    // InfoBubbleDelegate overrides:
-    virtual void InfoBubbleClosing(InfoBubbleGtk* info_bubble,
-                                   bool closed_by_escape);
+    // BubbleDelegateGtk overrides:
+    virtual void BubbleClosing(BubbleGtk* bubble,
+                               bool closed_by_escape) OVERRIDE;
 
     scoped_ptr<ContentSettingImageModel> content_setting_image_model_;
 
@@ -195,8 +198,8 @@ class LocationBarViewGtk : public AutocompleteEditController,
     // The currently active profile.
     Profile* profile_;
 
-    // The currently shown info bubble if any.
-    ContentSettingBubbleGtk* info_bubble_;
+    // The currently shown bubble if any.
+    ContentSettingBubbleGtk* content_setting_bubble_;
 
     // When we show explanatory text, we slide it in/out.
     ui::SlideAnimation animation_;
@@ -402,7 +405,7 @@ class LocationBarViewGtk : public AutocompleteEditController,
   GtkWidget* tab_to_search_hint_icon_;
   GtkWidget* tab_to_search_hint_trailing_label_;
 
-  scoped_ptr<AutocompleteEditViewGtk> location_entry_;
+  scoped_ptr<OmniboxViewGtk> location_entry_;
 
   // Alignment used to wrap |location_entry_|.
   GtkWidget* location_entry_alignment_;
@@ -423,7 +426,7 @@ class LocationBarViewGtk : public AutocompleteEditController,
   // The transition type to use for the navigation.
   PageTransition::Type transition_;
 
-  // Used to schedule a task for the first run info bubble.
+  // Used to schedule a task for the first run bubble.
   ScopedRunnableMethodFactory<LocationBarViewGtk> first_run_bubble_;
 
   // When true, the location bar view is read only and also is has a slightly

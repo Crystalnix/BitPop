@@ -12,6 +12,7 @@
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/synchronization/lock.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
 #include "chrome/browser/prefs/pref_member.h"
@@ -41,6 +42,9 @@ namespace prerender {
 class PrerenderManager;
 };  // namespace prerender
 class ProtocolHandlerRegistry;
+namespace quota {
+class QuotaManager;
+};  // namespace quota
 namespace webkit_database {
 class DatabaseTracker;
 }  // webkit_database
@@ -60,6 +64,14 @@ class DatabaseTracker;
 // accessor.
 class ProfileIOData : public base::RefCountedThreadSafe<ProfileIOData> {
  public:
+  // Returns true if |scheme| is handled in Chrome, or by default handlers in
+  // net::URLRequest.
+  static bool IsHandledProtocol(const std::string& scheme);
+
+  // Returns true if |url| is handled in Chrome, or by default handlers in
+  // net::URLRequest.
+  static bool IsHandledURL(const GURL& url);
+
   // These should only be called at most once each. Ownership is reversed when
   // they get called, from ProfileIOData owning ChromeURLRequestContext to vice
   // versa.
@@ -71,13 +83,18 @@ class ProfileIOData : public base::RefCountedThreadSafe<ProfileIOData> {
       const std::string& app_id) const;
   const content::ResourceContext& GetResourceContext() const;
 
+  // These are useful when the Chrome layer is called from the content layer
+  // with a content::ResourceContext, and they want access to Chrome data for
+  // that profile.
+  HostContentSettingsMap* GetHostContentSettingsMap() const;
+
  protected:
   friend class base::RefCountedThreadSafe<ProfileIOData>;
 
   class RequestContext : public ChromeURLRequestContext {
    public:
     RequestContext();
-    ~RequestContext();
+    virtual ~RequestContext();
 
     // Setter is used to transfer ownership of the ProfileIOData to the context.
     void set_profile_io_data(const ProfileIOData* profile_io_data) {
@@ -110,8 +127,9 @@ class ProfileIOData : public base::RefCountedThreadSafe<ProfileIOData> {
     scoped_refptr<ChromeAppCacheService> appcache_service;
     scoped_refptr<ChromeBlobStorageContext> blob_storage_context;
     scoped_refptr<fileapi::FileSystemContext> file_system_context;
+    scoped_refptr<quota::QuotaManager> quota_manager;
     scoped_refptr<ExtensionInfoMap> extension_info_map;
-    scoped_refptr<prerender::PrerenderManager> prerender_manager;
+    base::WeakPtr<prerender::PrerenderManager> prerender_manager;
     scoped_refptr<ProtocolHandlerRegistry> protocol_handler_registry;
     // We need to initialize the ProxyConfigService from the UI thread
     // because on linux it relies on initializing things through gconf,
@@ -140,6 +158,10 @@ class ProfileIOData : public base::RefCountedThreadSafe<ProfileIOData> {
     return &enable_referrers_;
   }
 
+  ChromeURLDataManagerBackend* chrome_url_data_manager_backend() const {
+    return chrome_url_data_manager_backend_.get();
+  }
+
   net::NetworkDelegate* network_delegate() const {
     return network_delegate_.get();
   }
@@ -152,8 +174,8 @@ class ProfileIOData : public base::RefCountedThreadSafe<ProfileIOData> {
     return proxy_service_.get();
   }
 
-  net::CookiePolicy* cookie_policy() const {
-    return cookie_policy_.get();
+  net::URLRequestJobFactory* job_factory() const {
+    return job_factory_.get();
   }
 
   ChromeURLRequestContext* main_request_context() const {
@@ -210,16 +232,25 @@ class ProfileIOData : public base::RefCountedThreadSafe<ProfileIOData> {
   mutable BooleanPrefMember enable_referrers_;
 
   // Pointed to by URLRequestContext.
+  mutable scoped_ptr<ChromeURLDataManagerBackend>
+      chrome_url_data_manager_backend_;
   mutable scoped_ptr<net::NetworkDelegate> network_delegate_;
   mutable scoped_ptr<net::DnsCertProvenanceChecker> dns_cert_checker_;
-  mutable scoped_refptr<net::ProxyService> proxy_service_;
-  mutable scoped_ptr<net::CookiePolicy> cookie_policy_;
+  mutable scoped_ptr<net::ProxyService> proxy_service_;
+  mutable scoped_ptr<net::URLRequestJobFactory> job_factory_;
 
   // Pointed to by ResourceContext.
   mutable scoped_refptr<webkit_database::DatabaseTracker> database_tracker_;
   mutable scoped_refptr<ChromeAppCacheService> appcache_service_;
   mutable scoped_refptr<ChromeBlobStorageContext> blob_storage_context_;
   mutable scoped_refptr<fileapi::FileSystemContext> file_system_context_;
+  mutable scoped_refptr<quota::QuotaManager> quota_manager_;
+  mutable scoped_refptr<HostZoomMap> host_zoom_map_;
+
+  // TODO(willchan): Remove from ResourceContext.
+  mutable scoped_refptr<HostContentSettingsMap> host_content_settings_map_;
+  mutable scoped_refptr<ExtensionInfoMap> extension_info_map_;
+  mutable base::WeakPtr<prerender::PrerenderManager> prerender_manager_;
 
   mutable ResourceContext resource_context_;
 

@@ -21,12 +21,12 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/most_visited_handler.h"
+#include "chrome/browser/ui/webui/ntp/most_visited_handler.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/thumbnail_score.h"
 #include "content/browser/browser_thread.h"
-#include "content/browser/tab_contents/navigation_controller.h"
+#include "content/browser/tab_contents/navigation_details.h"
 #include "content/browser/tab_contents/navigation_entry.h"
 #include "content/common/notification_service.h"
 #include "grit/chromium_strings.h"
@@ -340,6 +340,19 @@ void TopSites::HistoryLoaded() {
   }
 }
 
+void TopSites::SyncWithHistory() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (loaded_ && temp_images_.size()) {
+    // If we have temporary thumbnails it means there isn't much data, and most
+    // likely the user is first running Chrome. During this time we throttle
+    // updating from history by 30 seconds. If the user creates a new tab page
+    // during this window of time we force updating from history so that the new
+    // tab page isn't so far out of date.
+    timer_.Stop();
+    StartQueryForMostVisited();
+  }
+}
+
 bool TopSites::HasBlacklistedItems() const {
   return !blacklist_->empty();
 }
@@ -357,6 +370,7 @@ void TopSites::AddBlacklistedURL(const GURL& url) {
   }
 
   ResetThreadSafeCache();
+  NotifyTopSitesChanged();
 }
 
 void TopSites::RemoveBlacklistedURL(const GURL& url) {
@@ -368,6 +382,7 @@ void TopSites::RemoveBlacklistedURL(const GURL& url) {
     blacklist->RemoveWithoutPathExpansion(GetURLHash(url), NULL);
   }
   ResetThreadSafeCache();
+  NotifyTopSitesChanged();
 }
 
 bool TopSites::IsBlacklisted(const GURL& url) {
@@ -384,6 +399,7 @@ void TopSites::ClearBlacklistedURLs() {
     blacklist->Clear();
   }
   ResetThreadSafeCache();
+  NotifyTopSitesChanged();
 }
 
 void TopSites::AddPinnedURL(const GURL& url, size_t pinned_index) {
@@ -406,6 +422,7 @@ void TopSites::AddPinnedURL(const GURL& url, size_t pinned_index) {
   }
 
   ResetThreadSafeCache();
+  NotifyTopSitesChanged();
 }
 
 bool TopSites::IsURLPinned(const GURL& url) {
@@ -424,6 +441,7 @@ void TopSites::RemovePinnedURL(const GURL& url) {
   }
 
   ResetThreadSafeCache();
+  NotifyTopSitesChanged();
 }
 
 bool TopSites::GetPinnedURLAtIndex(size_t index, GURL* url) {
@@ -799,8 +817,8 @@ void TopSites::Observe(NotificationType type,
     StartQueryForMostVisited();
   } else if (type == NotificationType::NAV_ENTRY_COMMITTED) {
     if (!IsFull()) {
-      NavigationController::LoadCommittedDetails* load_details =
-          Details<NavigationController::LoadCommittedDetails>(details).ptr();
+      content::LoadCommittedDetails* load_details =
+          Details<content::LoadCommittedDetails>(details).ptr();
       if (!load_details)
         return;
       const GURL& url = load_details->entry->url();
@@ -821,8 +839,9 @@ void TopSites::SetTopSites(const MostVisitedURLList& new_top_sites) {
 
   TopSitesDelta delta;
   DiffMostVisited(cache_->top_sites(), top_sites, &delta);
-  if (!delta.deleted.empty() || !delta.added.empty() || !delta.moved.empty())
+  if (!delta.deleted.empty() || !delta.added.empty() || !delta.moved.empty()) {
     backend_->UpdateTopSites(delta);
+  }
 
   last_num_urls_changed_ = delta.added.size() + delta.moved.size();
 
@@ -856,6 +875,7 @@ void TopSites::SetTopSites(const MostVisitedURLList& new_top_sites) {
 
   ResetThreadSafeCache();
   ResetThreadSafeImageCache();
+  NotifyTopSitesChanged();
 
   // Restart the timer that queries history for top sites. This is done to
   // ensure we stay in sync with history.
@@ -906,6 +926,13 @@ void TopSites::ResetThreadSafeImageCache() {
   base::AutoLock lock(lock_);
   thread_safe_cache_->SetThumbnails(cache_->images());
   thread_safe_cache_->RemoveUnreferencedThumbnails();
+}
+
+void TopSites::NotifyTopSitesChanged() {
+  NotificationService::current()->Notify(
+      NotificationType::TOP_SITES_CHANGED,
+      Source<TopSites>(this),
+      NotificationService::NoDetails());
 }
 
 void TopSites::RestartQueryForTopSitesTimer(base::TimeDelta delta) {

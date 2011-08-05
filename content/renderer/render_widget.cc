@@ -5,23 +5,25 @@
 #include "content/renderer/render_widget.h"
 
 #include "base/command_line.h"
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "build/build_config.h"
 #include "content/common/content_switches.h"
+#include "content/common/swapped_out_messages.h"
 #include "content/common/view_messages.h"
 #include "content/renderer/render_process.h"
 #include "content/renderer/render_thread.h"
 #include "content/renderer/renderer_webkitclient_impl.h"
-#include "gpu/common/gpu_trace_event.h"
 #include "ipc/ipc_sync_message.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupMenu.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupMenuInfo.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebRange.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebRect.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSize.h"
@@ -48,11 +50,11 @@ using WebKit::WebNavigationPolicy;
 using WebKit::WebPopupMenu;
 using WebKit::WebPopupMenuInfo;
 using WebKit::WebPopupType;
+using WebKit::WebRange;
 using WebKit::WebRect;
 using WebKit::WebScreenInfo;
 using WebKit::WebSize;
 using WebKit::WebTextDirection;
-using WebKit::WebTextInputType;
 using WebKit::WebVector;
 using WebKit::WebWidget;
 
@@ -65,21 +67,28 @@ RenderWidget::RenderWidget(RenderThreadBase* render_thread,
       host_window_(0),
       current_paint_buf_(NULL),
       next_paint_flags_(0),
+      filtered_time_per_frame_(1.0f/60.0f),
       update_reply_pending_(false),
+      using_asynchronous_swapbuffers_(false),
+      num_swapbuffers_complete_pending_(0),
       did_show_(false),
       is_hidden_(false),
       needs_repainting_on_restore_(false),
       has_focus_(false),
       handling_input_event_(false),
       closing_(false),
+      is_swapped_out_(false),
       input_method_is_active_(false),
-      text_input_type_(WebKit::WebTextInputTypeNone),
+      text_input_type_(ui::TEXT_INPUT_TYPE_NONE),
+      can_compose_inline_(true),
       popup_type_(popup_type),
       pending_window_rect_count_(0),
       suppress_next_char_events_(false),
       is_accelerated_compositing_active_(false),
+      compositing_surface_(gfx::kNullPluginWindow),
       animation_update_pending_(false),
-      animation_task_posted_(false) {
+      animation_task_posted_(false),
+      invalidation_task_posted_(false) {
   RenderProcess::current()->AddRefProcess();
   DCHECK(render_thread_);
 }
@@ -90,7 +99,9 @@ RenderWidget::~RenderWidget() {
     RenderProcess::current()->ReleaseTransportDIB(current_paint_buf_);
     current_paint_buf_ = NULL;
   }
-  RenderProcess::current()->ReleaseProcess();
+  // If we are swapped out, we have released already.
+  if (!is_swapped_out_)
+    RenderProcess::current()->ReleaseProcess();
 }
 
 // static
@@ -158,6 +169,20 @@ void RenderWidget::CompleteInit(gfx::NativeViewId parent_hwnd,
   Send(new ViewHostMsg_RenderViewReady(routing_id_));
 }
 
+void RenderWidget::SetSwappedOut(bool is_swapped_out) {
+  // We should only toggle between states.
+  DCHECK(is_swapped_out_ != is_swapped_out);
+  is_swapped_out_ = is_swapped_out;
+
+  // If we are swapping out, we will call ReleaseProcess, allowing the process
+  // to exit if all of its RenderViews are swapped out.  We wait until the
+  // WasSwappedOut call to do this, to avoid showing the sad tab.
+  // If we are swapping in, we call AddRefProcess to prevent the process from
+  // exiting.
+  if (!is_swapped_out)
+    RenderProcess::current()->AddRefProcess();
+}
+
 bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(RenderWidget, message)
@@ -166,6 +191,7 @@ bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_Resize, OnResize)
     IPC_MESSAGE_HANDLER(ViewMsg_WasHidden, OnWasHidden)
     IPC_MESSAGE_HANDLER(ViewMsg_WasRestored, OnWasRestored)
+    IPC_MESSAGE_HANDLER(ViewMsg_WasSwappedOut, OnWasSwappedOut)
     IPC_MESSAGE_HANDLER(ViewMsg_UpdateRect_ACK, OnUpdateRectAck)
     IPC_MESSAGE_HANDLER(ViewMsg_HandleInputEvent, OnHandleInputEvent)
     IPC_MESSAGE_HANDLER(ViewMsg_MouseCaptureLost, OnMouseCaptureLost)
@@ -177,14 +203,18 @@ bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_Repaint, OnMsgRepaint)
     IPC_MESSAGE_HANDLER(ViewMsg_SetTextDirection, OnSetTextDirection)
     IPC_MESSAGE_HANDLER(ViewMsg_Move_ACK, OnRequestMoveAck)
+    IPC_MESSAGE_HANDLER(ViewMsg_GetFPS, OnGetFPS)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
 }
 
 bool RenderWidget::Send(IPC::Message* message) {
-  // Don't send any messages after the browser has told us to close.
-  if (closing_) {
+  // Don't send any messages after the browser has told us to close, and filter
+  // most outgoing messages while swapped out.
+  if ((is_swapped_out_ &&
+       !content::SwappedOutMessages::CanSendWhileSwappedOut(message)) ||
+      closing_) {
     delete message;
     return false;
   }
@@ -269,11 +299,13 @@ void RenderWidget::OnResize(const gfx::Size& new_size,
 }
 
 void RenderWidget::OnWasHidden() {
+  TRACE_EVENT0("renderer", "RenderWidget::OnWasHidden");
   // Go into a mode where we stop generating paint and scrolling events.
   SetHidden(true);
 }
 
 void RenderWidget::OnWasRestored(bool needs_repainting) {
+  TRACE_EVENT0("renderer", "RenderWidget::OnWasRestored");
   // During shutdown we can just ignore this message.
   if (!webwidget_)
     return;
@@ -293,8 +325,20 @@ void RenderWidget::OnWasRestored(bool needs_repainting) {
   if (!is_accelerated_compositing_active_) {
     didInvalidateRect(gfx::Rect(size_.width(), size_.height()));
   } else {
+#ifdef WTF_USE_THREADED_COMPOSITING
+    webwidget_->composite(false);
+#else
     scheduleComposite();
+#endif
   }
+}
+
+void RenderWidget::OnWasSwappedOut() {
+  // If we have been swapped out and no one else is using this process,
+  // it's safe to exit now.  If we get swapped back in, we will call
+  // AddRefProcess in SetSwappedOut.
+  if (is_swapped_out_)
+    RenderProcess::current()->ReleaseProcess();
 }
 
 void RenderWidget::OnRequestMoveAck() {
@@ -303,7 +347,7 @@ void RenderWidget::OnRequestMoveAck() {
 }
 
 void RenderWidget::OnUpdateRectAck() {
-  GPU_TRACE_EVENT0("renderer", "RenderWidget::OnUpdateRectAck");
+  TRACE_EVENT0("renderer", "RenderWidget::OnUpdateRectAck");
   DCHECK(update_reply_pending());
   update_reply_pending_ = false;
 
@@ -314,14 +358,76 @@ void RenderWidget::OnUpdateRectAck() {
     current_paint_buf_ = NULL;
   }
 
+  // If swapbuffers is still pending, then defer the update until the
+  // swapbuffers occurs.
+  if (num_swapbuffers_complete_pending_ >= kMaxSwapBuffersPending) {
+    TRACE_EVENT0("renderer", "EarlyOut_SwapStillPending");
+    return;
+  }
+
   // Notify subclasses.
   DidFlushPaint();
 
   // Continue painting if necessary...
-  CallDoDeferredUpdate();
+  DoDeferredUpdateAndSendInputAck();
+}
+
+bool RenderWidget::SupportsAsynchronousSwapBuffers()
+{
+  return false;
+}
+
+void RenderWidget::OnSwapBuffersAborted()
+{
+  TRACE_EVENT0("renderer", "RenderWidget::OnSwapBuffersAborted");
+  num_swapbuffers_complete_pending_ = 0;
+  using_asynchronous_swapbuffers_ = false;
+  // Schedule another frame so the compositor learns about it.
+  scheduleComposite();
+}
+
+void RenderWidget::OnSwapBuffersPosted() {
+  TRACE_EVENT0("renderer", "RenderWidget::OnSwapBuffersPosted");
+  if (using_asynchronous_swapbuffers_)
+    num_swapbuffers_complete_pending_++;
+}
+
+void RenderWidget::OnSwapBuffersComplete() {
+  TRACE_EVENT0("renderer", "RenderWidget::OnSwapBuffersComplete");
+  // When compositing deactivates, we reset the swapbuffers pending count.  The
+  // swapbuffers acks may still arrive, however.
+  if (num_swapbuffers_complete_pending_ == 0) {
+    TRACE_EVENT0("renderer", "EarlyOut_ZeroSwapbuffersPending");
+    return;
+  }
+  num_swapbuffers_complete_pending_--;
+
+  // If update reply is still pending, then defer the update until that reply
+  // occurs.
+  if (update_reply_pending_){
+    TRACE_EVENT0("renderer", "EarlyOut_UpdateReplyPending");
+    return;
+  }
+
+  // If we are not accelerated rendering, then this is a stale swapbuffers from
+  // when we were previously rendering. However, if an invalidation task is not
+  // posted, there may be software rendering work pending. In that case, don't
+  // early out.
+  if (!is_accelerated_compositing_active_ && invalidation_task_posted_) {
+    TRACE_EVENT0("renderer", "EarlyOut_AcceleratedCompositingOff");
+    return;
+  }
+
+  // Notify subclasses.
+  if(is_accelerated_compositing_active_)
+    DidFlushPaint();
+
+  // Continue painting if necessary...
+  DoDeferredUpdateAndSendInputAck();
 }
 
 void RenderWidget::OnHandleInputEvent(const IPC::Message& message) {
+  TRACE_EVENT0("renderer", "RenderWidget::OnHandleInputEvent");
   void* iter = NULL;
 
   const char* data;
@@ -403,7 +509,8 @@ void RenderWidget::ClearFocus() {
 void RenderWidget::PaintRect(const gfx::Rect& rect,
                              const gfx::Point& canvas_origin,
                              skia::PlatformCanvas* canvas) {
-
+  TRACE_EVENT2("renderer", "PaintRect",
+               "width", rect.width(), "height", rect.height());
   canvas->save();
 
   // Bring the canvas into the coordinate system of the paint rect.
@@ -456,7 +563,7 @@ void RenderWidget::PaintRect(const gfx::Rect& rect,
     webwidget_->paint(webkit_glue::ToWebCanvas(canvas), rect);
 
     // Flush to underlying bitmap.  TODO(darin): is this needed?
-    canvas->getTopPlatformDevice().accessBitmap(false);
+    skia::GetTopDevice(*canvas)->accessBitmap(false);
   }
 
   PaintDebugBorder(rect, canvas);
@@ -504,7 +611,7 @@ void RenderWidget::AnimationCallback() {
                                base::TimeDelta::FromMilliseconds(30),
                                25);
   }
-  CallDoDeferredUpdate();
+  DoDeferredUpdateAndSendInputAck();
 }
 
 void RenderWidget::AnimateIfNeeded() {
@@ -520,11 +627,11 @@ void RenderWidget::AnimateIfNeeded() {
         this, &RenderWidget::AnimationCallback), 16);
     animation_task_posted_ = true;
     animation_update_pending_ = false;
-    // Explicitly pump the WebCore Timer queue to avoid starvation on OS X.
-    // See crbug.com/71735.
-    // TODO(jamesr) Remove this call once crbug.com/72007 is fixed.
-    RenderThread::current()->GetWebKitClientImpl()->DoTimeout();
+#ifdef WEBWIDGET_HAS_ANIMATE_CHANGES
+    webwidget_->animate(0.0);
+#else
     webwidget_->animate();
+#endif
     return;
   }
   if (animation_task_posted_)
@@ -543,7 +650,13 @@ void RenderWidget::AnimateIfNeeded() {
       NewRunnableMethod(this, &RenderWidget::AnimationCallback), delay);
 }
 
-void RenderWidget::CallDoDeferredUpdate() {
+void RenderWidget::InvalidationCallback() {
+  TRACE_EVENT0("renderer", "RenderWidget::InvalidationCallback");
+  invalidation_task_posted_ = false;
+  DoDeferredUpdateAndSendInputAck();
+}
+
+void RenderWidget::DoDeferredUpdateAndSendInputAck() {
   DoDeferredUpdate();
 
   if (pending_input_event_ack_.get())
@@ -551,18 +664,30 @@ void RenderWidget::CallDoDeferredUpdate() {
 }
 
 void RenderWidget::DoDeferredUpdate() {
-  GPU_TRACE_EVENT0("renderer", "RenderWidget::DoDeferredUpdate");
+  TRACE_EVENT0("renderer", "RenderWidget::DoDeferredUpdate");
 
-  if (!webwidget_ || update_reply_pending())
+  if (!webwidget_)
     return;
+  if (update_reply_pending()) {
+    TRACE_EVENT0("renderer", "EarlyOut_UpdateReplyPending");
+    return;
+  }
+  if (is_accelerated_compositing_active_ &&
+      num_swapbuffers_complete_pending_ >= kMaxSwapBuffersPending) {
+    TRACE_EVENT0("renderer", "EarlyOut_MaxSwapBuffersPending");
+    return;
+  }
 
   // Suppress updating when we are hidden.
   if (is_hidden_ || size_.IsEmpty()) {
     paint_aggregator_.ClearPendingUpdate();
     needs_repainting_on_restore_ = true;
+    TRACE_EVENT0("renderer", "EarlyOut_NotVisible");
     return;
   }
 
+  // Tracking of frame rate jitter
+  base::TimeTicks frame_begin_ticks = base::TimeTicks::Now();
   AnimateIfNeeded();
 
   // Layout may generate more invalidation.  It may also enable the
@@ -572,8 +697,32 @@ void RenderWidget::DoDeferredUpdate() {
 
   // Suppress painting if nothing is dirty.  This has to be done after updating
   // animations running layout as these may generate further invalidations.
-  if (!paint_aggregator_.HasPendingUpdate())
+  if (!paint_aggregator_.HasPendingUpdate()) {
+    TRACE_EVENT0("renderer", "EarlyOut_NoPendingUpdate");
     return;
+  }
+
+  if (!last_do_deferred_update_time_.is_null()) {
+    base::TimeDelta delay = frame_begin_ticks - last_do_deferred_update_time_;
+    if(is_accelerated_compositing_active_)
+      UMA_HISTOGRAM_CUSTOM_TIMES("Renderer4.AccelDoDeferredUpdateDelay",
+                                 delay,
+                                 base::TimeDelta::FromMilliseconds(1),
+                                 base::TimeDelta::FromMilliseconds(60),
+                                 30);
+    else
+      UMA_HISTOGRAM_CUSTOM_TIMES("Renderer4.SoftwareDoDeferredUpdateDelay",
+                                 delay,
+                                 base::TimeDelta::FromMilliseconds(1),
+                                 base::TimeDelta::FromMilliseconds(60),
+                                 30);
+
+    // Calculate filtered time per frame:
+    float frame_time_elapsed = static_cast<float>(delay.InSecondsF());
+    filtered_time_per_frame_ =
+        0.9f * filtered_time_per_frame_ + 0.1f * frame_time_elapsed;
+  }
+  last_do_deferred_update_time_ = frame_begin_ticks;
 
   // OK, save the pending update to a local since painting may cause more
   // invalidation.  Some WebCore rendering objects only layout when painted.
@@ -678,9 +827,6 @@ void RenderWidget::DoDeferredUpdate() {
 // WebWidgetClient
 
 void RenderWidget::didInvalidateRect(const WebRect& rect) {
-  // We only want one pending DoDeferredUpdate call at any time...
-  bool update_pending = paint_aggregator_.HasPendingUpdate();
-
   // The invalidated rect might be outside the bounds of the view.
   gfx::Rect view_rect(size_);
   gfx::Rect damaged_rect = view_rect.Intersect(rect);
@@ -690,11 +836,17 @@ void RenderWidget::didInvalidateRect(const WebRect& rect) {
   paint_aggregator_.InvalidateRect(damaged_rect);
 
   // We may not need to schedule another call to DoDeferredUpdate.
-  if (update_pending)
+  if (invalidation_task_posted_)
     return;
   if (!paint_aggregator_.HasPendingUpdate())
     return;
-  if (update_reply_pending())
+  if (update_reply_pending() ||
+      num_swapbuffers_complete_pending_ >= kMaxSwapBuffersPending)
+    return;
+
+  // When GPU rendering, combine pending animations and invalidations into
+  // a single update.
+  if (is_accelerated_compositing_active_ && animation_task_posted_)
     return;
 
   // Perform updating asynchronously.  This serves two purposes:
@@ -702,8 +854,9 @@ void RenderWidget::didInvalidateRect(const WebRect& rect) {
   //    on the call stack.
   // 2) Allows us to collect more damage rects before painting to help coalesce
   //    the work that we will need to do.
+  invalidation_task_posted_ = true;
   MessageLoop::current()->PostTask(FROM_HERE, NewRunnableMethod(
-      this, &RenderWidget::CallDoDeferredUpdate));
+      this, &RenderWidget::InvalidationCallback));
 }
 
 void RenderWidget::didScrollRect(int dx, int dy, const WebRect& clip_rect) {
@@ -711,9 +864,6 @@ void RenderWidget::didScrollRect(int dx, int dy, const WebRect& clip_rect) {
   // TODO(nduca): stop WebViewImpl from sending scrolls in the first place.
   if (is_accelerated_compositing_active_)
     return;
-
-  // We only want one pending DoDeferredUpdate call at any time...
-  bool update_pending = paint_aggregator_.HasPendingUpdate();
 
   // The scrolled rect might be outside the bounds of the view.
   gfx::Rect view_rect(size_);
@@ -724,11 +874,17 @@ void RenderWidget::didScrollRect(int dx, int dy, const WebRect& clip_rect) {
   paint_aggregator_.ScrollRect(dx, dy, damaged_rect);
 
   // We may not need to schedule another call to DoDeferredUpdate.
-  if (update_pending)
+  if (invalidation_task_posted_)
     return;
   if (!paint_aggregator_.HasPendingUpdate())
     return;
-  if (update_reply_pending())
+  if (update_reply_pending() ||
+      num_swapbuffers_complete_pending_ >= kMaxSwapBuffersPending)
+    return;
+
+  // When GPU rendering, combine pending animations and invalidations into
+  // a single update.
+  if (is_accelerated_compositing_active_ && animation_task_posted_)
     return;
 
   // Perform updating asynchronously.  This serves two purposes:
@@ -736,17 +892,26 @@ void RenderWidget::didScrollRect(int dx, int dy, const WebRect& clip_rect) {
   //    on the call stack.
   // 2) Allows us to collect more damage rects before painting to help coalesce
   //    the work that we will need to do.
+  invalidation_task_posted_ = true;
   MessageLoop::current()->PostTask(FROM_HERE, NewRunnableMethod(
-      this, &RenderWidget::CallDoDeferredUpdate));
+      this, &RenderWidget::InvalidationCallback));
 }
 
 void RenderWidget::didActivateAcceleratedCompositing(bool active) {
   is_accelerated_compositing_active_ = active;
   Send(new ViewHostMsg_DidActivateAcceleratedCompositing(
-    routing_id_, is_accelerated_compositing_active_));
+      routing_id_, is_accelerated_compositing_active_));
+
+  if (active)
+    using_asynchronous_swapbuffers_ = SupportsAsynchronousSwapBuffers();
+  else if (using_asynchronous_swapbuffers_)
+    using_asynchronous_swapbuffers_ = false;
 }
 
 void RenderWidget::scheduleComposite() {
+#if WTF_USE_THREADED_COMPOSITING
+  NOTREACHED();
+#else
   // TODO(nduca): replace with something a little less hacky.  The reason this
   // hack is still used is because the Invalidate-DoDeferredUpdate loop
   // contains a lot of host-renderer synchronization logic that is still
@@ -754,6 +919,7 @@ void RenderWidget::scheduleComposite() {
   // duplicating all that code is less desirable than "faking out" the
   // invalidation path using a magical damage rect.
   didInvalidateRect(WebRect(0, 0, 1, 1));
+#endif
 }
 
 void RenderWidget::scheduleAnimation() {
@@ -886,19 +1052,51 @@ void RenderWidget::OnImeSetComposition(
     int selection_start, int selection_end) {
   if (!webwidget_)
     return;
-  if (!webwidget_->setComposition(
+  if (webwidget_->setComposition(
       text, WebVector<WebCompositionUnderline>(underlines),
       selection_start, selection_end)) {
+    // Setting the IME composition was successful. Send the new composition
+    // range to the browser.
+    ui::Range range(ui::Range::InvalidRange());
+    size_t location, length;
+    if (webwidget_->compositionRange(&location, &length)) {
+      range.set_start(location);
+      range.set_end(location + length);
+    }
+    // The IME was cancelled via the Esc key, so just send back the caret.
+    else if (webwidget_->caretOrSelectionRange(&location, &length)) {
+      range.set_start(location);
+      range.set_end(location + length);
+    }
+    Send(new ViewHostMsg_ImeCompositionRangeChanged(routing_id(), range));
+  } else {
     // If we failed to set the composition text, then we need to let the browser
     // process to cancel the input method's ongoing composition session, to make
     // sure we are in a consistent state.
     Send(new ViewHostMsg_ImeCancelComposition(routing_id()));
+
+    // Send an updated IME range with just the caret range.
+    ui::Range range(ui::Range::InvalidRange());
+    size_t location, length;
+    if (webwidget_->caretOrSelectionRange(&location, &length)) {
+      range.set_start(location);
+      range.set_end(location + length);
+    }
+    Send(new ViewHostMsg_ImeCompositionRangeChanged(routing_id(), range));
   }
 }
 
 void RenderWidget::OnImeConfirmComposition(const string16& text) {
   if (webwidget_)
     webwidget_->confirmComposition(text);
+  // Send an updated IME range with just the caret range.
+  ui::Range range(ui::Range::InvalidRange());
+  size_t location, length;
+  if (webwidget_->caretOrSelectionRange(&location, &length)) {
+    range.set_start(location);
+    range.set_end(location + length);
+  }
+  Send(new ViewHostMsg_ImeCompositionRangeChanged(routing_id(), range));
 }
 
 // This message causes the renderer to render an image of the
@@ -984,7 +1182,13 @@ void RenderWidget::OnMsgRepaint(const gfx::Size& size_to_paint) {
 
   set_next_paint_is_repaint_ack();
   if (is_accelerated_compositing_active_) {
+#ifndef WTF_USE_THREADED_COMPOSITING
     scheduleComposite();
+#else
+#ifdef WEBWIDGET_HAS_THREADED_COMPOSITING_CHANGES
+    webwidget_->composite(false);
+#endif
+#endif
   } else {
     gfx::Rect repaint_rect(size_to_paint.width(), size_to_paint.height());
     didInvalidateRect(repaint_rect);
@@ -995,6 +1199,12 @@ void RenderWidget::OnSetTextDirection(WebTextDirection direction) {
   if (!webwidget_)
     return;
   webwidget_->setTextDirection(direction);
+}
+
+void RenderWidget::OnGetFPS() {
+  float fps = (filtered_time_per_frame_ > 0.0f)?
+      1.0f / filtered_time_per_frame_ : 0.0f;
+  Send(new ViewHostMsg_FPS(routing_id_, fps));
 }
 
 webkit::ppapi::PluginInstance* RenderWidget::GetBitmapForOptimizedPluginPaint(
@@ -1054,22 +1264,45 @@ void RenderWidget::UpdateInputMethod() {
   if (!input_method_is_active_)
     return;
 
-  WebTextInputType new_type = WebKit::WebTextInputTypeNone;
+  ui::TextInputType new_type = GetTextInputType();
+  bool new_can_compose_inline = CanComposeInline();
   WebRect new_caret_bounds;
 
-  if (webwidget_) {
-    new_type = webwidget_->textInputType();
-    new_caret_bounds = webwidget_->caretOrSelectionBounds();
-  }
+  if (webwidget_)
+   new_caret_bounds = webwidget_->caretOrSelectionBounds();
 
   // Only sends text input type and caret bounds to the browser process if they
   // are changed.
-  if (text_input_type_ != new_type || caret_bounds_ != new_caret_bounds) {
+  if (text_input_type_ != new_type || caret_bounds_ != new_caret_bounds ||
+      can_compose_inline_ != new_can_compose_inline) {
     text_input_type_ = new_type;
+    can_compose_inline_ = new_can_compose_inline;
     caret_bounds_ = new_caret_bounds;
     Send(new ViewHostMsg_ImeUpdateTextInputState(
-        routing_id(), new_type, new_caret_bounds));
+        routing_id(), new_type, new_can_compose_inline, new_caret_bounds));
   }
+}
+
+COMPILE_ASSERT(int(WebKit::WebTextInputTypeNone) == \
+               int(ui::TEXT_INPUT_TYPE_NONE), mismatching_enums);
+COMPILE_ASSERT(int(WebKit::WebTextInputTypeText) == \
+               int(ui::TEXT_INPUT_TYPE_TEXT), mismatching_enums);
+COMPILE_ASSERT(int(WebKit::WebTextInputTypePassword) == \
+               int(ui::TEXT_INPUT_TYPE_PASSWORD), mismatching_enums);
+
+ui::TextInputType RenderWidget::GetTextInputType() {
+  if (webwidget_) {
+    int type = webwidget_->textInputType();
+    // Check the type is in the range representable by ui::TextInputType.
+    DCHECK(type <= ui::TEXT_INPUT_TYPE_PASSWORD) <<
+      "WebKit::WebTextInputType and ui::TextInputType not synchronized";
+    return static_cast<ui::TextInputType>(type);
+  }
+  return ui::TEXT_INPUT_TYPE_NONE;
+}
+
+bool RenderWidget::CanComposeInline() {
+  return true;
 }
 
 WebScreenInfo RenderWidget::screenInfo() {
@@ -1084,12 +1317,21 @@ void RenderWidget::resetInputMethod() {
 
   // If the last text input type is not None, then we should finish any
   // ongoing composition regardless of the new text input type.
-  if (text_input_type_ != WebKit::WebTextInputTypeNone) {
+  if (text_input_type_ != ui::TEXT_INPUT_TYPE_NONE) {
     // If a composition text exists, then we need to let the browser process
     // to cancel the input method's ongoing composition session.
     if (webwidget_->confirmComposition())
       Send(new ViewHostMsg_ImeCancelComposition(routing_id()));
   }
+
+  // Send an updated IME range with the current caret rect.
+  ui::Range range(ui::Range::InvalidRange());
+  size_t location, length;
+  if (webwidget_->caretOrSelectionRange(&location, &length)) {
+    range.set_start(location);
+    range.set_end(location + length);
+  }
+  Send(new ViewHostMsg_ImeCompositionRangeChanged(routing_id(), range));
 }
 
 void RenderWidget::SchedulePluginMove(

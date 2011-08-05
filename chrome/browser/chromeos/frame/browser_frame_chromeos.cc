@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -31,7 +31,8 @@ BrowserFrameChromeos::~BrowserFrameChromeos() {
 void BrowserFrameChromeos::InitBrowserFrame() {
   BrowserFrameGtk::InitBrowserFrame();
 
-  if (!browser_view()->IsBrowserTypePopup()) {
+  if (!browser_view()->IsBrowserTypePopup() &&
+      !browser_view()->IsBrowserTypePanel()) {
     // On chromeos we want windows to always render as active.
     DisableInactiveRendering();
   }
@@ -39,9 +40,11 @@ void BrowserFrameChromeos::InitBrowserFrame() {
 
 bool BrowserFrameChromeos::IsMaximized() const {
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kChromeosFrame))
-    return WindowGtk::IsMaximized();
-  bool is_popup = browser_view()->IsBrowserTypePopup();
-  return !IsFullscreen() && (!is_popup || WindowGtk::IsMaximized());
+    return NativeWindowGtk::IsMaximized();
+  bool is_popup_or_panel = browser_view()->IsBrowserTypePopup() ||
+                           browser_view()->IsBrowserTypePanel();
+  return !IsFullscreen() &&
+      (!is_popup_or_panel || NativeWindowGtk::IsMaximized());
 }
 
 }  // namespace chromeos

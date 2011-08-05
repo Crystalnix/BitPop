@@ -4,6 +4,7 @@
 
 #include "chrome/browser/chromeos/login/camera_controller.h"
 
+#include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/threading/thread_restrictions.h"
 
@@ -21,6 +22,9 @@ const int kMaxCameraInitFailureCounter = 3;
 // Name for camera thread.
 const char kCameraThreadName[] = "Chrome_CameraThread";
 
+// Delay multiplier for camera initialization retries, milliseconds.
+const int64 kInitializeDelayMs = 200;
+
 }  // namespace
 
 CameraController::CameraController(Delegate* delegate)
@@ -34,8 +38,7 @@ CameraController::CameraController(Delegate* delegate)
 }
 
 CameraController::~CameraController() {
-  if (camera_.get())
-    camera_->set_delegate(NULL);
+  Stop();
   {
     // A ScopedAllowIO object is required to join the thread when calling Stop.
     // See http://crosbug.com/11392.
@@ -45,15 +48,20 @@ CameraController::~CameraController() {
 }
 
 void CameraController::Start() {
+  Stop();
   camera_ = new Camera(this, camera_thread_.get(), true);
-  camera_->Initialize(frame_width_, frame_height_);
+  camera_->Initialize(
+      frame_width_,
+      frame_height_,
+      kInitializeDelayMs * camera_init_failure_counter_);
 }
 
 void CameraController::Stop() {
-  if (!camera_.get())
-    return;
-  camera_->StopCapturing();
-  camera_->Uninitialize();
+  if (camera_.get()) {
+    camera_->set_delegate(NULL);
+    camera_->Uninitialize();
+    camera_ = NULL;
+  }
 }
 
 void CameraController::GetFrame(SkBitmap* frame) const {

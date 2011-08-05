@@ -131,9 +131,9 @@ HMODULE LoadChromeWithDirectory(std::wstring* dir) {
       key.Close();
     }
     if (pre_read) {
-      TRACE_EVENT_BEGIN("PreReadImage", 0, "");
+      TRACE_EVENT_BEGIN_ETW("PreReadImage", 0, "");
       file_util::PreReadImage(dir->c_str(), pre_read_size, pre_read_step_size);
-      TRACE_EVENT_END("PreReadImage", 0, "");
+      TRACE_EVENT_END_ETW("PreReadImage", 0, "");
     }
   }
 #endif  // NDEBUG
@@ -218,8 +218,13 @@ HMODULE MainDllLoader::Load(std::wstring* out_version, std::wstring* out_file) {
     *out_file = dir;
     *out_version = version_string;
     out_file->append(*out_version).append(L"\\");
-    return LoadChromeWithDirectory(out_file);
+    dll = LoadChromeWithDirectory(out_file);
+    if (!dll) {
+      LOG(ERROR) << "Failed to load Chrome DLL from " << out_file;
+    }
+    return dll;
   } else {
+    LOG(ERROR) << "Could not get Chrome DLL version.";
     return NULL;
   }
 }

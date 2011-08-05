@@ -1,4 +1,4 @@
-# Copyright (c) 2010 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -26,14 +26,10 @@
         '../third_party/icu/icu.gyp:icuuc',
         '../third_party/libpng/libpng.gyp:libpng',
         '../third_party/zlib/zlib.gyp:zlib',
+        '../ui/ui.gyp:ui_base',
         '<(libjpeg_gyp_path):libjpeg',
       ],
       'sources': [
-        '../ui/base/animation/animation_container_unittest.cc',
-        '../ui/base/animation/animation_unittest.cc',
-        '../ui/base/animation/multi_animation_unittest.cc',
-        '../ui/base/animation/slide_animation_unittest.cc',
-        '../ui/base/clipboard/clipboard_unittest.cc',
         '../ui/base/dragdrop/os_exchange_data_win_unittest.cc',
         '../ui/base/l10n/l10n_util_mac_unittest.mm',
         '../ui/base/l10n/l10n_util_unittest.cc',
@@ -41,7 +37,6 @@
         '../ui/base/models/tree_node_model_unittest.cc',
         '../ui/base/resource/data_pack_unittest.cc',
         '../ui/base/resource/resource_bundle_unittest.cc',
-        '../ui/base/system_monitor/system_monitor_unittest.cc',
         '../ui/base/test/data/resource.h',
         '../ui/base/text/text_elider_unittest.cc',
         '../ui/base/view_prop_unittest.cc',
@@ -57,7 +52,7 @@
         '..',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+        ['toolkit_uses_gtk==1', {
           'sources': [
             '../ui/base/dragdrop/gtk_dnd_util_unittest.cc',
           ],
@@ -73,7 +68,7 @@
             '../ui/base/view_prop_unittest.cc',
           ],
         }],
-        ['OS =="linux" or OS =="freebsd"', {
+        ['os_posix==1 and OS!="mac"', {
           'conditions': [
             ['linux_use_tcmalloc==1', {
               'dependencies': [

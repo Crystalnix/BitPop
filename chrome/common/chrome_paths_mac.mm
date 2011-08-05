@@ -21,7 +21,12 @@ namespace {
 
 const FilePath* g_override_versioned_directory = NULL;
 
-NSBundle* OuterAppBundle() {
+// Return a retained (NOT autoreleased) NSBundle* as the internal
+// implementation of chrome::OuterAppBundle(), which should be the only
+// caller.
+NSBundle* OuterAppBundleInternal() {
+  base::mac::ScopedNSAutoreleasePool pool;
+
   if (!base::mac::AmIBundled()) {
     // If unbundled (as in a test), there's no app bundle.
     return nil;
@@ -29,7 +34,7 @@ NSBundle* OuterAppBundle() {
 
   if (!base::mac::IsBackgroundOnlyProcess()) {
     // Shortcut: in the browser process, just return the main app bundle.
-    return [NSBundle mainBundle];
+    return [[NSBundle mainBundle] retain];
   }
 
   // From C.app/Contents/Versions/1.2.3.4, go up three steps to get to C.app.
@@ -38,7 +43,7 @@ NSBundle* OuterAppBundle() {
   const char* outer_app_dir_c = outer_app_dir.value().c_str();
   NSString* outer_app_dir_ns = [NSString stringWithUTF8String:outer_app_dir_c];
 
-  return [NSBundle bundleWithPath:outer_app_dir_ns];
+  return [[NSBundle bundleWithPath:outer_app_dir_ns] retain];
 }
 
 const char* ProductDirNameInternal() {
@@ -53,7 +58,7 @@ const char* ProductDirNameInternal() {
   // should not be accessed from non-browser processes, but those processes do
   // attempt to get the profile directory, so direct them to look in the outer
   // browser .app's Info.plist for the CrProductDirName key.
-  NSBundle* bundle = OuterAppBundle();
+  NSBundle* bundle = chrome::OuterAppBundle();
   NSString* product_dir_name_ns =
       [bundle objectForInfoDictionaryKey:@"CrProductDirName"];
   const char* product_dir_name = [product_dir_name_ns fileSystemRepresentation];
@@ -181,6 +186,13 @@ FilePath GetFrameworkBundlePath() {
 
 bool GetLocalLibraryDirectory(FilePath* result) {
   return base::mac::GetLocalDirectory(NSLibraryDirectory, result);
+}
+
+NSBundle* OuterAppBundle() {
+  // Cache this. Foundation leaks it anyway, and this should be the only call
+  // to OuterAppBundleInternal().
+  static NSBundle* bundle = OuterAppBundleInternal();
+  return bundle;
 }
 
 }  // namespace chrome

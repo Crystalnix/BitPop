@@ -15,6 +15,7 @@
 #include "ui/gfx/font.h"
 #include "views/border.h"
 #include "views/controls/button/custom_button.h"
+#include "views/native_theme_delegate.h"
 
 namespace views {
 
@@ -35,10 +36,8 @@ class TextButtonBorder : public Border {
   TextButtonBorder();
   virtual ~TextButtonBorder();
 
-  // Render the background for the provided view
+  // Implementation of Border:
   virtual void Paint(const View& view, gfx::Canvas* canvas) const;
-
-  // Returns the insets for the border.
   virtual void GetInsets(gfx::Insets* insets) const;
 
  protected:
@@ -67,14 +66,41 @@ class TextButtonBorder : public Border {
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// TextButton
+// TextButtonNativeThemeBorder
 //
-//  A button which displays text and/or and icon that can be changed in
-//  response to actions. TextButton reserves space for the largest string
+//  A Border subclass that paints a TextButton's background layer using the
+//  platform's native theme look.  This handles normal/disabled/hot/pressed
+//  states, with possible animation between states.
+//
+////////////////////////////////////////////////////////////////////////////////
+class TextButtonNativeThemeBorder : public Border {
+ public:
+   TextButtonNativeThemeBorder(NativeThemeDelegate* delegate);
+  virtual ~TextButtonNativeThemeBorder();
+
+  // Implementation of Border:
+  virtual void Paint(const View& view, gfx::Canvas* canvas) const;
+  virtual void GetInsets(gfx::Insets* insets) const;
+
+ private:
+  // The delegate the controls the appearance of this border.
+  NativeThemeDelegate* delegate_;
+
+  DISALLOW_COPY_AND_ASSIGN(TextButtonNativeThemeBorder);
+};
+
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// TextButtonBase
+//
+//  A base ckass for different types of buttons, like push buttons, radio
+//  buttons, and checkboxes, that do not depende on native components for
+//  look and feel. TextButton reserves space for the largest string
 //  passed to SetText. To reset the cached max size invoke ClearMaxTextSize.
 //
 ////////////////////////////////////////////////////////////////////////////////
-class TextButton : public CustomButton {
+class TextButtonBase : public CustomButton, public NativeThemeDelegate {
  public:
   // The menu button's class name.
   static const char kViewClassName[];
@@ -92,8 +118,7 @@ class TextButton : public CustomButton {
     PREFIX_SHOW
   };
 
-  TextButton(ButtonListener* listener, const std::wstring& text);
-  virtual ~TextButton();
+  virtual ~TextButtonBase();
 
   // Call SetText once per string in your set of possible values at button
   // creation time, so that it can contain the largest of them and avoid
@@ -111,27 +136,17 @@ class TextButton : public CustomButton {
 
   void set_prefix_type(PrefixType type) { prefix_type_ = type; }
 
-  void set_icon_text_spacing(int icon_text_spacing) {
-    icon_text_spacing_ = icon_text_spacing;
-  }
+  const ui::Animation* GetAnimation() const;
 
-  // Sets the icon.
-  void SetIcon(const SkBitmap& icon);
-  void SetHoverIcon(const SkBitmap& icon);
-  void SetPushedIcon(const SkBitmap& icon);
+  void SetIsDefault(bool is_default);
+  bool is_default() const { return is_default_; }
 
-  bool HasIcon() const { return !icon_.empty(); }
+  // Set whether the button text can wrap on multiple lines.
+  // Default is false.
+  void SetMultiLine(bool multi_line);
 
-  // Meanings are reversed for right-to-left layouts.
-  enum IconPlacement {
-    ICON_ON_LEFT,
-    ICON_ON_RIGHT
-  };
-
-  IconPlacement icon_placement() { return icon_placement_; }
-  void set_icon_placement(IconPlacement icon_placement) {
-    icon_placement_ = icon_placement;
-  }
+  // Return whether the button text can wrap on multiple lines.
+  bool multi_line() const { return multi_line_; }
 
   // TextButton remembers the maximum display size of the text passed to
   // SetText. This method resets the cached maximum display size to the
@@ -156,8 +171,10 @@ class TextButton : public CustomButton {
 
   bool normal_has_border() const { return normal_has_border_; }
   void SetNormalHasBorder(bool normal_has_border);
+
   // Sets whether or not to show the hot and pushed states for the button icon
   // (if present) in addition to the normal state.  Defaults to true.
+  bool show_multiple_icon_states() const { return show_multiple_icon_states_; }
   void SetShowMultipleIconStates(bool show_multiple_icon_states);
 
   // Clears halo and shadow settings.
@@ -169,9 +186,10 @@ class TextButton : public CustomButton {
   virtual void PaintButton(gfx::Canvas* canvas, PaintButtonMode mode);
 
   // Overridden from View:
-  virtual gfx::Size GetPreferredSize();
-  virtual gfx::Size GetMinimumSize();
-  virtual void SetEnabled(bool enabled);
+  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetMinimumSize() OVERRIDE;
+  virtual void OnEnabledChanged() OVERRIDE;
+  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
 
   // Text colors.
   static const SkColor kEnabledColor;
@@ -183,9 +201,7 @@ class TextButton : public CustomButton {
   virtual std::string GetClassName() const;
 
  protected:
-  SkBitmap icon() const { return icon_; }
-
-  virtual void OnPaint(gfx::Canvas* canvas);
+  TextButtonBase(ButtonListener* listener, const std::wstring& text);
 
   // Called when enabled or disabled state changes, or the colors for those
   // states change.
@@ -195,10 +211,29 @@ class TextButton : public CustomButton {
   // invoked when the font or text changes.
   void UpdateTextSize();
 
+  // Overridden from NativeThemeDelegate:
+  virtual gfx::Rect GetThemePaintRect() const OVERRIDE;
+  virtual gfx::NativeTheme::State GetThemeState(
+      gfx::NativeTheme::ExtraParams* params) const OVERRIDE;
+  virtual const ui::Animation* GetThemeAnimation() const OVERRIDE;
+  virtual gfx::NativeTheme::State GetBackgroundThemeState(
+      gfx::NativeTheme::ExtraParams* params) const OVERRIDE;
+  virtual gfx::NativeTheme::State GetForegroundThemeState(
+      gfx::NativeTheme::ExtraParams* params) const OVERRIDE;
+
+  virtual void GetExtraParams(gfx::NativeTheme::ExtraParams* params) const;
+
+  virtual gfx::Rect GetTextBounds() const;
+
+  int ComputeCanvasStringFlags() const;
+
+  // Calculate the bounds of the content of this button, including any extra
+  // width needed on top of the text width.
+  gfx::Rect GetContentBounds(int extra_width) const;
+
   // The text string that is displayed in the button.
   string16 text_;
 
- private:
   // The size of the text string.
   gfx::Size text_size_;
 
@@ -208,9 +243,6 @@ class TextButton : public CustomButton {
 
   // The alignment of the text string within the button.
   TextAlignment alignment_;
-
-  // The position of the icon.
-  IconPlacement icon_placement_;
 
   // The font used to paint the text.
   gfx::Font font_;
@@ -235,17 +267,6 @@ class TextButton : public CustomButton {
   // Space between text and shadow. Defaults to (1,1).
   gfx::Point shadow_offset_;
 
-  // An icon displayed with the text.
-  SkBitmap icon_;
-
-  // An optional different version of the icon for hover state.
-  SkBitmap icon_hover_;
-  bool has_hover_icon_;
-
-  // An optional different version of the icon for pushed state.
-  SkBitmap icon_pushed_;
-  bool has_pushed_icon_;
-
   // The width of the button will never be larger than this value. A value <= 0
   // indicates the width is not constrained.
   int max_width_;
@@ -256,7 +277,89 @@ class TextButton : public CustomButton {
   // Whether or not to show the hot and pushed icon states.
   bool show_multiple_icon_states_;
 
+  // Whether or not the button appears and behaves as the default button in its
+  // current context.
+  bool is_default_;
+
+  // Whether the text button should handle its text string as multi-line.
+  bool multi_line_;
+
   PrefixType prefix_type_;
+
+  DISALLOW_COPY_AND_ASSIGN(TextButtonBase);
+};
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// TextButton
+//
+//  A button which displays text and/or and icon that can be changed in
+//  response to actions. TextButton reserves space for the largest string
+//  passed to SetText. To reset the cached max size invoke ClearMaxTextSize.
+//
+////////////////////////////////////////////////////////////////////////////////
+class TextButton : public TextButtonBase {
+ public:
+  // The button's class name.
+  static const char kViewClassName[];
+
+  TextButton(ButtonListener* listener, const std::wstring& text);
+  virtual ~TextButton();
+
+  void set_icon_text_spacing(int icon_text_spacing) {
+    icon_text_spacing_ = icon_text_spacing;
+  }
+
+  // Sets the icon.
+  void SetIcon(const SkBitmap& icon);
+  void SetHoverIcon(const SkBitmap& icon);
+  void SetPushedIcon(const SkBitmap& icon);
+
+  bool HasIcon() const { return !icon_.empty(); }
+
+  // Meanings are reversed for right-to-left layouts.
+  enum IconPlacement {
+    ICON_ON_LEFT,
+    ICON_ON_RIGHT
+  };
+
+  IconPlacement icon_placement() { return icon_placement_; }
+  void set_icon_placement(IconPlacement icon_placement) {
+    icon_placement_ = icon_placement;
+  }
+
+  // Overridden from View:
+  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual std::string GetClassName() const OVERRIDE;
+
+  // Overridden from TextButtonBase:
+  virtual void PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) OVERRIDE;
+
+ protected:
+  SkBitmap icon() const { return icon_; }
+
+  // Overridden from NativeThemeDelegate:
+  virtual gfx::NativeTheme::Part GetThemePart() const OVERRIDE;
+
+  // Overridden from TextButtonBase:
+  virtual void GetExtraParams(
+      gfx::NativeTheme::ExtraParams* params) const OVERRIDE;
+  virtual gfx::Rect GetTextBounds() const OVERRIDE;
+
+ private:
+  // The position of the icon.
+  IconPlacement icon_placement_;
+
+  // An icon displayed with the text.
+  SkBitmap icon_;
+
+  // An optional different version of the icon for hover state.
+  SkBitmap icon_hover_;
+  bool has_hover_icon_;
+
+  // An optional different version of the icon for pushed state.
+  SkBitmap icon_pushed_;
+  bool has_pushed_icon_;
 
   // Space between icon and text.
   int icon_text_spacing_;

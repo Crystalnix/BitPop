@@ -10,23 +10,16 @@
 #include <queue>
 #include <string>
 
-#include "base/memory/scoped_callback_factory.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/platform_file.h"
 #include "base/process.h"
 #include "base/timer.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/browser/child_process_launcher.h"
 #include "content/browser/renderer_host/render_process_host.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCache.h"
 #include "ui/gfx/surface/transport_dib.h"
 
 class CommandLine;
 class RendererMainThread;
 class RenderWidgetHelper;
-class VisitedLinkUpdater;
 
 namespace base {
 class SharedMemory;
@@ -47,33 +40,24 @@ class SharedMemory;
 // are correlated with IDs. This way, the Views and the corresponding ViewHosts
 // communicate through the two process objects.
 class BrowserRenderProcessHost : public RenderProcessHost,
-                                 public NotificationObserver,
                                  public ChildProcessLauncher::Client {
  public:
   explicit BrowserRenderProcessHost(Profile* profile);
-  ~BrowserRenderProcessHost();
-
-  // Whether this process is associated with an installed app.
-  const Extension* installed_app() const { return installed_app_; }
-  void set_installed_app(const Extension* installed_app) {
-    installed_app_ = installed_app;
-  }
+  virtual ~BrowserRenderProcessHost();
 
   // RenderProcessHost implementation (public portion).
-  virtual bool Init(bool is_accessibility_enabled, bool is_extensions_process);
+  virtual void EnableSendQueue();
+  virtual bool Init(bool is_accessibility_enabled);
   virtual int GetNextRoutingID();
   virtual void CancelResourceRequests(int render_widget_id);
-  virtual void CrossSiteClosePageACK(const ViewMsg_ClosePage_Params& params);
+  virtual void CrossSiteSwapOutACK(const ViewMsg_SwapOut_Params& params);
   virtual bool WaitForUpdateMsg(int render_widget_id,
                                 const base::TimeDelta& max_delay,
                                 IPC::Message* msg);
   virtual void ReceivedBadMessage();
   virtual void WidgetRestored();
   virtual void WidgetHidden();
-  virtual void ViewCreated();
-  virtual void SendVisitedLinkTable(base::SharedMemory* table_memory);
-  virtual void AddVisitedLinks(const VisitedLinkCommon::Fingerprints& links);
-  virtual void ResetVisitedLinks();
+  virtual int VisibleWidgetCount() const;
   virtual bool FastShutdownIfPossible();
   virtual bool SendWithTimeout(IPC::Message* msg, int timeout_ms);
   virtual base::ProcessHandle GetHandle();
@@ -87,11 +71,6 @@ class BrowserRenderProcessHost : public RenderProcessHost,
   virtual void OnChannelConnected(int32 peer_pid);
   virtual void OnChannelError();
 
-  // NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
-
   // ChildProcessLauncher::Client implementation.
   virtual void OnProcessLaunched();
 
@@ -102,29 +81,10 @@ class BrowserRenderProcessHost : public RenderProcessHost,
   void CreateMessageFilters();
 
   // Control message handlers.
-  void OnUpdatedCacheStats(const WebKit::WebCache::UsageStats& stats);
+  void OnShutdownRequest();
   void SuddenTerminationChanged(bool enabled);
-  void OnExtensionAddListener(const std::string& extension_id,
-                              const std::string& event_name);
-  void OnExtensionRemoveListener(const std::string& extension_id,
-                                 const std::string& event_name);
-  void OnExtensionCloseChannel(int port_id);
   void OnUserMetricsRecordAction(const std::string& action);
-
-  // Initialize support for visited links. Send the renderer process its initial
-  // set of visited links.
-  void InitVisitedLinks();
-
-  // Initialize support for user scripts. Send the renderer process its initial
-  // set of scripts and listen for updates to scripts.
-  void InitUserScripts();
-
-  // Initialize support for extension APIs. Send the list of registered API
-  // functions to thre renderer process.
-  void InitExtensions();
-
-  // Sends the renderer process a new set of user scripts.
-  void SendUserScriptsUpdate(base::SharedMemory* shared_memory);
+  void OnRevealFolderInOS(const FilePath& path);
 
   // Generates a command line to be used to spawn a renderer and appends the
   // results to |*command_line|.
@@ -138,34 +98,6 @@ class BrowserRenderProcessHost : public RenderProcessHost,
 
   // Callers can reduce the RenderProcess' priority.
   void SetBackgrounded(bool backgrounded);
-
-  // The renderer has requested that we initialize its spellchecker. This should
-  // generally only be called once per session, as after the first call, all
-  // future renderers will be passed the initialization information on startup
-  // (or when the dictionary changes in some way).
-  void OnSpellCheckerRequestDictionary();
-
-  // Tell the renderer of a new word that has been added to the custom
-  // dictionary.
-  void AddSpellCheckWord(const std::string& word);
-
-  // Pass the renderer some basic intialization information. Note that the
-  // renderer will not load Hunspell until it needs to.
-  void InitSpellChecker();
-
-  // Tell the renderer that auto spell correction has been enabled/disabled.
-  void EnableAutoSpellCorrect(bool enable);
-
-  // Initializes client-side phishing detection.  Starts reading the phishing
-  // model from the client-side detection service class.  Once the model is read
-  // OpenPhishingModelDone() is invoked.
-  void InitClientSidePhishingDetection();
-
-  // Called once the client-side detection service class is done with opening
-  // the model file.
-  void OpenPhishingModelDone(base::PlatformFile model_file);
-
-  NotificationRegistrar registrar_;
 
   // The count of currently visible widgets.  Since the host can be a container
   // for multiple widgets, it uses this count to determine when it should be
@@ -196,29 +128,21 @@ class BrowserRenderProcessHost : public RenderProcessHost,
   // Used in single-process mode.
   scoped_ptr<RendererMainThread> in_process_renderer_;
 
-  // Buffer visited links and send them to to renderer.
-  scoped_ptr<VisitedLinkUpdater> visited_link_updater_;
-
   // True if this prcoess should have accessibility enabled;
   bool accessibility_enabled_;
 
-  // True iff this process is being used as an extension process. Not valid
-  // when running in single-process mode.
-  bool extension_process_;
-
-  // The Extension for the hosted or packaged app if any, NULL otherwise.
-  scoped_refptr<const Extension> installed_app_;
+  // True after Init() has been called. We can't just check channel_ because we
+  // also reset that in the case of process termination.
+  bool is_initialized_;
 
   // Used to launch and terminate the process without blocking the UI thread.
-  scoped_ptr<ChildProcessLauncher> child_process_;
+  scoped_ptr<ChildProcessLauncher> child_process_launcher_;
 
   // Messages we queue while waiting for the process handle.  We queue them here
   // instead of in the channel so that we ensure they're sent after init related
   // messages that are sent once the process handle is available.  This is
   // because the queued messages may have dependencies on the init messages.
   std::queue<IPC::Message*> queued_messages_;
-
-  base::ScopedCallbackFactory<BrowserRenderProcessHost> callback_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserRenderProcessHost);
 };

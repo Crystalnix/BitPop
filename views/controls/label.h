@@ -153,7 +153,7 @@ class Label : public View {
 
   // Overridden from View:
   virtual gfx::Insets GetInsets() const;
-  virtual int GetBaseline() OVERRIDE;
+  virtual int GetBaseline() const OVERRIDE;
   // Overridden to compute the size required to display this label.
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   // Return the height necessary to display this label with the provided width.
@@ -161,7 +161,7 @@ class Label : public View {
   // GetPreferredSize().height() if the receiver is not multi-line.
   virtual int GetHeightForWidth(int w);
   // Sets the enabled state. Setting the enabled state resets the color.
-  virtual void SetEnabled(bool enabled) OVERRIDE;
+  virtual void OnEnabledChanged() OVERRIDE;
   virtual std::string GetClassName() const OVERRIDE;
   // Mouse enter/exit are overridden to render mouse over background color.
   // These invoke SetContainsMouse as necessary.

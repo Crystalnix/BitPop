@@ -8,6 +8,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/message_loop.h"
+#include "media/base/callback.h"
 #include "remoting/host/capturer.h"
 #include "remoting/proto/event.pb.h"
 #include "ui/base/keycodes/keyboard_codes.h"
@@ -22,7 +23,7 @@ namespace {
 // A class to generate events on Windows.
 class EventExecutorWin : public EventExecutor {
  public:
-  EventExecutorWin(MessageLoopForUI* message_loop, Capturer* capturer);
+  EventExecutorWin(MessageLoop* message_loop, Capturer* capturer);
   virtual ~EventExecutorWin() {}
 
   virtual void InjectKeyEvent(const KeyEvent* event, Task* done) OVERRIDE;
@@ -32,42 +33,44 @@ class EventExecutorWin : public EventExecutor {
   void HandleKey(const KeyEvent* event);
   void HandleMouse(const MouseEvent* event);
 
-  MessageLoopForUI* message_loop_;
+  MessageLoop* message_loop_;
   Capturer* capturer_;
 
   DISALLOW_COPY_AND_ASSIGN(EventExecutorWin);
 };
 
-EventExecutorWin::EventExecutorWin(MessageLoopForUI* message_loop,
+EventExecutorWin::EventExecutorWin(MessageLoop* message_loop,
                                    Capturer* capturer)
     : message_loop_(message_loop),
       capturer_(capturer) {
 }
 
 void EventExecutorWin::InjectKeyEvent(const KeyEvent* event, Task* done) {
+  base::ScopedTaskRunner done_runner(done);
+
   if (MessageLoop::current() != message_loop_) {
     message_loop_->PostTask(
         FROM_HERE,
         NewRunnableMethod(this, &EventExecutorWin::InjectKeyEvent,
-                          event, done));
+                          event, done_runner.Release()));
     return;
   }
+
   HandleKey(event);
-  done->Run();
-  delete done;
 }
 
 void EventExecutorWin::InjectMouseEvent(const MouseEvent* event, Task* done) {
+  base::ScopedTaskRunner done_runner(done);
+
   if (MessageLoop::current() != message_loop_) {
     message_loop_->PostTask(
         FROM_HERE,
         NewRunnableMethod(this, &EventExecutorWin::InjectMouseEvent,
-                          event, done));
+                          event, done_runner.Release()));
     return;
   }
+
   HandleMouse(event);
-  done->Run();
-  delete done;
 }
 
 void EventExecutorWin::HandleKey(const KeyEvent* event) {
@@ -168,7 +171,7 @@ void EventExecutorWin::HandleMouse(const MouseEvent* event) {
 
 }  // namespace
 
-EventExecutor* EventExecutor::Create(MessageLoopForUI* message_loop,
+EventExecutor* EventExecutor::Create(MessageLoop* message_loop,
                                      Capturer* capturer) {
   return new EventExecutorWin(message_loop, capturer);
 }
@@ -176,4 +179,3 @@ EventExecutor* EventExecutor::Create(MessageLoopForUI* message_loop,
 }  // namespace remoting
 
 DISABLE_RUNNABLE_METHOD_REFCOUNT(remoting::EventExecutorWin);
-

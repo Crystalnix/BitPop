@@ -23,6 +23,7 @@
 #include "chrome/installer/util/master_preferences_constants.h"
 #include "chrome/installer/util/product.h"
 #include "chrome/installer/util/work_item.h"
+#include "chrome/installer/util/work_item_list.h"
 
 namespace installer {
 
@@ -363,9 +364,33 @@ Version* InstallerState::GetCurrentVersion(
     const InstallationState& machine_state) const {
   DCHECK(!products_.empty());
   scoped_ptr<Version> current_version;
-  const BrowserDistribution::Type prod_type = (package_type_ == MULTI_PACKAGE) ?
-      BrowserDistribution::CHROME_BINARIES :
-      products_[0]->distribution()->GetType();
+  // If we're doing a multi-install, the current version may be either an
+  // existing multi or an existing single product that is being migrated
+  // in place (i.e., Chrome).  In the latter case, there is no existing
+  // CHROME_BINARIES installation so we need to search for the product.
+  BrowserDistribution::Type prod_type;
+  if (package_type_ == MULTI_PACKAGE) {
+    prod_type = BrowserDistribution::CHROME_BINARIES;
+    if (machine_state.GetProductState(level_ == SYSTEM_LEVEL,
+                                      prod_type) == NULL) {
+      // Search for a product on which we're operating that is installed in our
+      // target directory.
+      Products::const_iterator end = products().end();
+      for (Products::const_iterator scan = products().begin(); scan != end;
+           ++scan) {
+        BrowserDistribution::Type product_type =
+            (*scan)->distribution()->GetType();
+        const ProductState* state =
+            machine_state.GetProductState(level_ == SYSTEM_LEVEL, product_type);
+        if (state != NULL && target_path_.IsParent(state->GetSetupPath())) {
+          prod_type = product_type;
+          break;
+        }
+      }
+    }
+  } else {
+    prod_type = products_[0]->distribution()->GetType();
+  }
   const ProductState* product_state =
       machine_state.GetProductState(level_ == SYSTEM_LEVEL, prod_type);
 
@@ -431,8 +456,11 @@ void InstallerState::RemoveOldVersionDirectories(
         scoped_ptr<WorkItem> item(
             WorkItem::CreateDeleteTreeWorkItem(next_version, temp_path,
                                                key_files));
-        if (!item->Do())
+        if (!item->Do()) {
+          LOG(ERROR) << "Failed to delete old version directory: "
+                     << next_version.value();
           item->Rollback();
+        }
       }
     }
 
@@ -527,6 +555,34 @@ void InstallerState::UpdateChannels() const {
     LOG(ERROR) << "Failed opening key " << state_key_
                << " to update app channels; result: " << result;
   }
+}
+
+void InstallerState::WriteInstallerResult(
+    InstallStatus status,
+    int string_resource_id,
+    const std::wstring* const launch_cmd) const {
+  DWORD installer_result =
+      (InstallUtil::GetInstallReturnCode(status) == 0) ? 0 : 1;
+  // Use a no-rollback list since this is a best-effort deal.
+  scoped_ptr<WorkItemList> install_list(
+      WorkItem::CreateNoRollbackWorkItemList());
+  const bool system_install = this->system_install();
+  // Write the value for all products upon which we're operating.
+  Products::const_iterator end = products().end();
+  for (Products::const_iterator scan = products().begin(); scan != end;
+       ++scan) {
+    InstallUtil::AddInstallerResultItems(
+        system_install, (*scan)->distribution()->GetStateKey(), status,
+        string_resource_id, launch_cmd, install_list.get());
+  }
+  // And for the binaries if this is a multi-install.
+  if (is_multi_install()) {
+    InstallUtil::AddInstallerResultItems(
+        system_install, multi_package_binaries_distribution()->GetStateKey(),
+        status, string_resource_id, launch_cmd, install_list.get());
+  }
+  if (!install_list->Do())
+    LOG(ERROR) << "Failed to record installer error information in registry.";
 }
 
 }  // namespace installer

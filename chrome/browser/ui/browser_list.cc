@@ -10,10 +10,11 @@
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
+#include "chrome/browser/printing/background_printing_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "content/browser/renderer_host/render_process_host.h"
-#include "content/browser/tab_contents/navigation_controller.h"
+#include "content/browser/tab_contents/navigation_details.h"
 #include "content/common/notification_registrar.h"
 #include "content/common/notification_service.h"
 #include "content/common/result_codes.h"
@@ -49,8 +50,8 @@ class BrowserActivityObserver : public NotificationObserver {
                        const NotificationSource& source,
                        const NotificationDetails& details) {
     DCHECK(type == NotificationType::NAV_ENTRY_COMMITTED);
-    const NavigationController::LoadCommittedDetails& load =
-        *Details<NavigationController::LoadCommittedDetails>(details).ptr();
+    const content::LoadCommittedDetails& load =
+        *Details<content::LoadCommittedDetails>(details).ptr();
     if (!load.is_main_frame || load.is_auto || load.is_in_page)
       return;  // Don't log for subframes or other trivial types.
 
@@ -99,14 +100,13 @@ class BrowserActivityObserver : public NotificationObserver {
 
 BrowserActivityObserver* activity_observer = NULL;
 
-// Type used to indicate only the type should be matched.
-const int kMatchNothing                 = 0;
+// Type used to indicate to match anything.
+const int kMatchAny                     = 0;
 
 // See BrowserMatches for details.
 const int kMatchOriginalProfile         = 1 << 0;
-
-// See BrowserMatches for details.
 const int kMatchCanSupportWindowFeature = 1 << 1;
+const int kMatchTabbed                  = 1 << 2;
 
 // Returns true if the specified |browser| matches the specified arguments.
 // |match_types| is a bitmask dictating what parameters to match:
@@ -115,9 +115,9 @@ const int kMatchCanSupportWindowFeature = 1 << 1;
 //   incognito windows.
 // . If it contains kMatchCanSupportWindowFeature
 //   |CanSupportWindowFeature(window_feature)| must return true.
+// . If it contains kMatchTabbed, the browser must be a tabbed browser.
 bool BrowserMatches(Browser* browser,
                     Profile* profile,
-                    Browser::Type type,
                     Browser::WindowFeature window_feature,
                     uint32 match_types) {
   if (match_types & kMatchCanSupportWindowFeature &&
@@ -133,8 +133,8 @@ bool BrowserMatches(Browser* browser,
     return false;
   }
 
-  if (type != Browser::TYPE_ANY && browser->type() != type)
-    return false;
+  if (match_types & kMatchTabbed)
+    return browser->is_type_tabbed();
 
   return true;
 }
@@ -146,14 +146,34 @@ template <class T>
 Browser* FindBrowserMatching(const T& begin,
                              const T& end,
                              Profile* profile,
-                             Browser::Type type,
                              Browser::WindowFeature window_feature,
                              uint32 match_types) {
   for (T i = begin; i != end; ++i) {
-    if (BrowserMatches(*i, profile, type, window_feature, match_types))
+    if (BrowserMatches(*i, profile, window_feature, match_types))
       return *i;
   }
   return NULL;
+}
+
+Browser* FindBrowserWithTabbedOrAnyType(Profile* profile,
+                                        bool match_tabbed,
+                                        bool match_incognito) {
+  uint32 match_types = kMatchAny;
+  if (match_tabbed)
+    match_types |= kMatchTabbed;
+  if (match_incognito)
+    match_types |= kMatchOriginalProfile;
+  Browser* browser = FindBrowserMatching(
+      BrowserList::begin_last_active(), BrowserList::end_last_active(),
+      profile, Browser::FEATURE_NONE, match_types);
+  // Fall back to a forward scan of all Browsers if no active one was found.
+  return browser ? browser :
+      FindBrowserMatching(BrowserList::begin(), BrowserList::end(), profile,
+                          Browser::FEATURE_NONE, match_types);
+}
+
+printing::BackgroundPrintingManager* GetBackgroundPrintingManager() {
+  return g_browser_process->background_printing_manager();
 }
 
 }  // namespace
@@ -444,7 +464,7 @@ void BrowserList::SessionEnding() {
   // At this point the message loop is still running yet we've shut everything
   // down. If any messages are processed we'll likely crash. Exit now.
   ExitProcess(ResultCodes::NORMAL_EXIT);
-#elif defined(OS_LINUX)
+#elif defined(OS_POSIX) && !defined(OS_MACOSX)
   _exit(ResultCodes::NORMAL_EXIT);
 #else
   NOTIMPLEMENTED();
@@ -455,9 +475,9 @@ void BrowserList::SessionEnding() {
 bool BrowserList::HasBrowserWithProfile(Profile* profile) {
   return FindBrowserMatching(BrowserList::begin(),
                              BrowserList::end(),
-                             profile, Browser::TYPE_ANY,
+                             profile,
                              Browser::FEATURE_NONE,
-                             kMatchNothing) != NULL;
+                             kMatchAny) != NULL;
 }
 
 // static
@@ -513,43 +533,40 @@ Browser* BrowserList::GetLastActive() {
 }
 
 // static
-Browser* BrowserList::GetLastActiveWithProfile(Profile* p) {
+Browser* BrowserList::GetLastActiveWithProfile(Profile* profile) {
   // We are only interested in last active browsers, so we don't fall back to
   // all browsers like FindBrowserWith* do.
   return FindBrowserMatching(
-      BrowserList::begin_last_active(), BrowserList::end_last_active(), p,
-      Browser::TYPE_ANY, Browser::FEATURE_NONE, kMatchNothing);
+      BrowserList::begin_last_active(), BrowserList::end_last_active(), profile,
+      Browser::FEATURE_NONE, kMatchAny);
 }
 
 // static
-Browser* BrowserList::FindBrowserWithType(Profile* p, Browser::Type t,
-                                          bool match_incognito) {
-  uint32 match_types = match_incognito ? kMatchOriginalProfile : kMatchNothing;
-  Browser* browser = FindBrowserMatching(
-      BrowserList::begin_last_active(), BrowserList::end_last_active(),
-      p, t, Browser::FEATURE_NONE, match_types);
-  // Fall back to a forward scan of all Browsers if no active one was found.
-  return browser ? browser :
-      FindBrowserMatching(BrowserList::begin(), BrowserList::end(), p, t,
-                          Browser::FEATURE_NONE, match_types);
+Browser* BrowserList::FindTabbedBrowser(Profile* profile,
+                                        bool match_incognito) {
+  return FindBrowserWithTabbedOrAnyType(profile, true, match_incognito);
 }
 
 // static
-Browser* BrowserList::FindBrowserWithFeature(Profile* p,
+Browser* BrowserList::FindAnyBrowser(Profile* profile, bool match_incognito) {
+  return FindBrowserWithTabbedOrAnyType(profile, false, match_incognito);
+}
+
+// static
+Browser* BrowserList::FindBrowserWithFeature(Profile* profile,
                                              Browser::WindowFeature feature) {
   Browser* browser = FindBrowserMatching(
       BrowserList::begin_last_active(), BrowserList::end_last_active(),
-      p, Browser::TYPE_ANY, feature, kMatchCanSupportWindowFeature);
+      profile, feature, kMatchCanSupportWindowFeature);
   // Fall back to a forward scan of all Browsers if no active one was found.
   return browser ? browser :
-      FindBrowserMatching(BrowserList::begin(), BrowserList::end(), p,
-                          Browser::TYPE_ANY, feature,
-                          kMatchCanSupportWindowFeature);
+      FindBrowserMatching(BrowserList::begin(), BrowserList::end(), profile,
+                          feature, kMatchCanSupportWindowFeature);
 }
 
 // static
-Browser* BrowserList::FindBrowserWithProfile(Profile* p) {
-  return FindBrowserWithType(p, Browser::TYPE_ANY, false);
+Browser* BrowserList::FindBrowserWithProfile(Profile* profile) {
+  return FindAnyBrowser(profile, false);
 }
 
 // static
@@ -563,23 +580,24 @@ Browser* BrowserList::FindBrowserWithID(SessionID::id_type desired_id) {
 }
 
 // static
-size_t BrowserList::GetBrowserCountForType(Profile* p, Browser::Type type) {
+size_t BrowserList::GetBrowserCountForType(Profile* profile,
+                                           bool match_tabbed) {
   size_t result = 0;
   for (BrowserList::const_iterator i = BrowserList::begin();
        i != BrowserList::end(); ++i) {
-    if (BrowserMatches(*i, p, type, Browser::FEATURE_NONE, kMatchNothing))
+    if (BrowserMatches(*i, profile, Browser::FEATURE_NONE,
+                       match_tabbed ? kMatchTabbed : kMatchAny))
       ++result;
   }
   return result;
 }
 
 // static
-size_t BrowserList::GetBrowserCount(Profile* p) {
+size_t BrowserList::GetBrowserCount(Profile* profile) {
   size_t result = 0;
   for (BrowserList::const_iterator i = BrowserList::begin();
        i != BrowserList::end(); ++i) {
-    if (BrowserMatches(*i, p, Browser::TYPE_ANY, Browser::FEATURE_NONE,
-                       kMatchNothing)) {
+    if (BrowserMatches(*i, profile, Browser::FEATURE_NONE, kMatchAny)) {
       result++;
     }
   }
@@ -608,28 +626,24 @@ void BrowserList::RemoveBrowserFrom(Browser* browser,
 TabContentsIterator::TabContentsIterator()
     : browser_iterator_(BrowserList::begin()),
       web_view_index_(-1),
+      bg_printing_iterator_(GetBackgroundPrintingManager()->begin()),
       cur_(NULL) {
-    Advance();
-  }
+  Advance();
+}
 
 void TabContentsIterator::Advance() {
-  // Unless we're at the beginning (index = -1) or end (iterator = end()),
-  // then the current TabContents should be valid.
-  DCHECK(web_view_index_ || browser_iterator_ == BrowserList::end() || cur_)
+  // The current TabContents should be valid unless we are at the beginning.
+  DCHECK(cur_ || (web_view_index_ == -1 &&
+                  browser_iterator_ == BrowserList::begin()))
       << "Trying to advance past the end";
 
   // Update cur_ to the next TabContents in the list.
   while (browser_iterator_ != BrowserList::end()) {
-    web_view_index_++;
-
-    while (web_view_index_ >= (*browser_iterator_)->tab_count()) {
-      // advance browsers
+    if (++web_view_index_ >= (*browser_iterator_)->tab_count()) {
+      // Advance to the next Browser in the list.
       ++browser_iterator_;
-      web_view_index_ = 0;
-      if (browser_iterator_ == BrowserList::end()) {
-        cur_ = NULL;
-        return;
-      }
+      web_view_index_ = -1;
+      continue;
     }
 
     TabContentsWrapper* next_tab =
@@ -639,4 +653,13 @@ void TabContentsIterator::Advance() {
       return;
     }
   }
+  // If no more TabContents from Browsers, check the BackgroundPrintingManager.
+  while (bg_printing_iterator_ != GetBackgroundPrintingManager()->end()) {
+    cur_ = *bg_printing_iterator_;
+    CHECK(cur_);
+    ++bg_printing_iterator_;
+    return;
+  }
+  // Reached the end - no more TabContents.
+  cur_ = NULL;
 }

@@ -31,7 +31,7 @@ class DevicePolicyIdentityStrategy;
 // platform policy providers.
 class BrowserPolicyConnector {
  public:
-  BrowserPolicyConnector();
+  static BrowserPolicyConnector* Create();
   ~BrowserPolicyConnector();
 
   ConfigurationPolicyProvider* GetManagedPlatformProvider() const;
@@ -69,8 +69,14 @@ class BrowserPolicyConnector {
   // Initiates a policy fetch after a successful device registration.
   void FetchPolicy();
 
+  // Schedules initialization of the policy backend service, if the service is
+  // already constructed.
+  void ScheduleServiceInitialization(int64 delay_milliseconds);
+
  private:
   friend class ::TestingBrowserProcess;
+
+  BrowserPolicyConnector();
 
   static ConfigurationPolicyProvider* CreateManagedPlatformProvider();
   static ConfigurationPolicyProvider* CreateRecommendedPlatformProvider();

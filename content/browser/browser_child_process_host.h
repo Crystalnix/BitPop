@@ -23,13 +23,6 @@ class BrowserChildProcessHost : public ChildProcessHost,
  public:
   virtual ~BrowserChildProcessHost();
 
-  // Prepares command_line for crash reporting as appropriate.  On Linux and
-  // Mac, a command-line flag to enable crash reporting in the child process
-  // will be appended if needed, because the child process may not have access
-  // to the data that determines the status of crash reporting in the
-  // currently-executing process.  This function is a no-op on Windows.
-  static void SetCrashReporterCommandLine(CommandLine* command_line);
-
   // Terminates all child processes and deletes each ChildProcessHost instance.
   static void TerminateAll();
 
@@ -98,6 +91,10 @@ class BrowserChildProcessHost : public ChildProcessHost,
   // Extends the base class implementation and removes this host from
   // the host list. Calls ChildProcessHost::ForceShutdown
   virtual void ForceShutdown();
+
+  // Controls whether the child process should be terminated on browser
+  // shutdown. Default is to always terminate.
+  void SetTerminateChildOnShutdown(bool terminate_on_shutdown);
 
  private:
   // By using an internal class as the ChildProcessLauncher::Client, we can

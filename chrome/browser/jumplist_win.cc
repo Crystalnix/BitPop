@@ -21,12 +21,13 @@
 #include "base/utf_string_conversions.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/windows_version.h"
-#include "chrome/browser/favicon_service.h"
+#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/history/history.h"
 #include "chrome/browser/history/page_usage_data.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_types.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
+#include "chrome/browser/sessions/tab_restore_service_factory.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
@@ -596,7 +597,8 @@ bool JumpList::AddObserver(Profile* profile) {
   if (base::win::GetVersion() < base::win::VERSION_WIN7 || !profile)
     return false;
 
-  TabRestoreService* tab_restore_service = profile->GetTabRestoreService();
+  TabRestoreService* tab_restore_service =
+      TabRestoreServiceFactory::GetForProfile(profile);
   if (!tab_restore_service)
     return false;
 
@@ -608,8 +610,12 @@ bool JumpList::AddObserver(Profile* profile) {
 }
 
 void JumpList::RemoveObserver() {
-  if (profile_ && profile_->GetTabRestoreService())
-    profile_->GetTabRestoreService()->RemoveObserver(this);
+  if (profile_) {
+    TabRestoreService* tab_restore_service =
+        TabRestoreServiceFactory::GetForProfile(profile_);
+    if (tab_restore_service)
+      tab_restore_service->RemoveObserver(this);
+  }
   profile_ = NULL;
 }
 
@@ -733,7 +739,8 @@ void JumpList::OnSegmentUsageAvailable(
   // RecentlyClosedTabsHandler::TabRestoreServiceChanged() to emulate it.
   const int kRecentlyClosedCount = 4;
   recently_closed_pages_.clear();
-  TabRestoreService* tab_restore_service = profile_->GetTabRestoreService();
+  TabRestoreService* tab_restore_service =
+      TabRestoreServiceFactory::GetForProfile(profile_);
   const TabRestoreService::Entries& entries = tab_restore_service->entries();
   for (TabRestoreService::Entries::const_iterator it = entries.begin();
        it != entries.end(); ++it) {

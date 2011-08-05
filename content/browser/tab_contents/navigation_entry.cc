@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,10 +8,9 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/url_constants.h"
 #include "content/browser/site_instance.h"
-#include "content/browser/tab_contents/navigation_controller.h"
 #include "content/common/content_constants.h"
+#include "content/common/url_constants.h"
 #include "grit/app_resources.h"
 #include "net/base/net_util.h"
 #include "ui/base/resource/resource_bundle.h"

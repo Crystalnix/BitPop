@@ -127,7 +127,21 @@ bool NativeBackendKWallet::AddLogin(const PasswordForm& form) {
   PasswordFormList forms;
   GetLoginsList(&forms, form.signon_realm, wallet_handle);
 
-  forms.push_back(new PasswordForm(form));
+  // We search for a login to update, rather than unconditionally appending the
+  // login, because in some cases (especially involving sync) we can be asked to
+  // add a login that already exists. In these cases we want to just update.
+  bool updated = false;
+  for (size_t i = 0; i < forms.size(); ++i) {
+    // Use the more restrictive removal comparison, so that we never have
+    // duplicate logins that would all be removed together by RemoveLogin().
+    if (CompareForms(form, *forms[i], false)) {
+      *forms[i] = form;
+      updated = true;
+    }
+  }
+  if (!updated)
+    forms.push_back(new PasswordForm(form));
+
   bool ok = SetLoginsList(forms, form.signon_realm, wallet_handle);
 
   STLDeleteElements(&forms);
@@ -508,6 +522,15 @@ void NativeBackendKWallet::DeserializeValue(const string& signon_realm,
   if (!pickle.ReadSize(&iter, &count)) {
     LOG(ERROR) << "Failed to deserialize KWallet entry "
                << "(realm: " << signon_realm << ")";
+    return;
+  }
+
+  if (count > 0xFFFF) {
+    // Trying to pin down the cause of http://crbug.com/80728 (or fix it).
+    // This is a very large number of passwords to be saved for a single realm.
+    // It is almost certainly a corrupt pickle and not real data. Ignore it.
+    LOG(ERROR) << "Suspiciously large number of entries in KWallet entry "
+               << "(" << count << "; realm: " << signon_realm << ")";
     return;
   }
 

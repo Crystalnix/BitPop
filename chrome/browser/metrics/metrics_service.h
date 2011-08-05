@@ -17,9 +17,9 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/common/metrics_helpers.h"
-#include "chrome/common/net/url_fetcher.h"
 #include "content/common/notification_observer.h"
 #include "content/common/notification_registrar.h"
+#include "content/common/url_fetcher.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/external_metrics.h"
@@ -31,6 +31,7 @@ class DictionaryValue;
 class ListValue;
 class HistogramSynchronizer;
 class MetricsLogBase;
+class MetricsReportingScheduler;
 class PrefService;
 class TemplateURLModel;
 
@@ -39,12 +40,6 @@ namespace npapi {
 struct WebPluginInfo;
 }
 }
-
-// Forward declaration of the xmlNode to avoid having tons of gyp files
-// needing to depend on the libxml third party lib.
-struct _xmlNode;
-typedef struct _xmlNode xmlNode;
-typedef xmlNode* xmlNodePtr;
 
 
 class MetricsService : public NotificationObserver,
@@ -86,6 +81,10 @@ class MetricsService : public NotificationObserver,
   void Start();
   void StartRecordingOnly();
   void Stop();
+
+  // Returns the client ID for this client, or the empty string if metrics
+  // recording is not currently running.
+  std::string GetClientId();
 
   // At startup, prefs needs to be called with a list of all the pref names and
   // types we'll be using.
@@ -196,10 +195,10 @@ class MetricsService : public NotificationObserver,
   // Constructs a new, empty current_log_.
   void StartRecording();
 
-  // Called to stop recording user experience metrics.  The caller takes
-  // ownership of the resulting MetricsLog object via the log parameter,
-  // or passes in NULL to indicate that the log should simply be deleted.
-  void StopRecording(MetricsLogBase** log);
+  // Called to stop recording user experience metrics.
+  // Adds any last information to current_log_ and then moves it to pending_log_
+  // for upload.
+  void StopRecording();
 
   // Deletes pending_log_ and current_log_, and pushes their text into the
   // appropriate unsent_log vectors.  Called when Chrome shuts down.
@@ -209,15 +208,16 @@ class MetricsService : public NotificationObserver,
   // next run.  Note that IF this text is "too large," we just dicard it.
   void PushPendingLogTextToUnsentOngoingLogs();
 
-  // Start timer for next log transmission.
-  void StartLogTransmissionTimer();
+  // Ensures that scheduler is running, assuming the current settings are such
+  // that metrics should be reported. If not, this is a no-op.
+  void StartSchedulerIfNecessary();
 
-  // Internal function to collect process memory information.
-  void LogTransmissionTimerDone();
+  // Starts the process of uploading metrics data.
+  void StartScheduledUpload();
 
   // Do not call OnMemoryDetailCollectionDone() or
-  // OnHistogramSynchronizationDone() directly.
-  // Use StartLogTransmissionTimer() to schedule a call.
+  // OnHistogramSynchronizationDone() directly; use
+  // StartSchedulerIfNecessary() to schedule a call.
   void OnMemoryDetailCollectionDone();
   void OnHistogramSynchronizationDone();
 
@@ -225,10 +225,6 @@ class MetricsService : public NotificationObserver,
   // and makes it the pending log.  If pending_log_ is not NULL,
   // MakePendingLog does nothing and returns.
   void MakePendingLog();
-
-  // Determines from state_ and permissions set out by the server whether the
-  // pending_log_ should be sent or discarded.
-  bool ServerPermitsTransmission() const;
 
   // Check to see if there are any unsent logs from previous sessions.
   bool unsent_logs() const {
@@ -261,12 +257,12 @@ class MetricsService : public NotificationObserver,
                                   const GURL& url,
                                   const net::URLRequestStatus& status,
                                   int response_code,
-                                  const ResponseCookies& cookies,
+                                  const net::ResponseCookies& cookies,
                                   const std::string& data);
 
-  // Called by OnURLFetchComplete to handle the case when the server returned
-  // a response code not equal to 200.
-  void HandleBadResponseCode();
+  // Logs debugging details, for the case where the server returns a response
+  // code other than 200.
+  void LogBadResponseCode();
 
   // Records a window-related notification.
   void LogWindowChange(NotificationType type,
@@ -345,12 +341,6 @@ class MetricsService : public NotificationObserver,
   bool recording_active_;
   bool reporting_active_;
 
-  // The variable server_permits_upload_ is set true when the response
-  // data forbids uploading.  This should coinside with the "die roll"
-  // with probability in the upload tag of the response data came out
-  // affirmative.
-  bool server_permits_upload_;
-
   // The progession of states made by the browser are recorded in the following
   // state.
   State state_;
@@ -409,14 +399,12 @@ class MetricsService : public NotificationObserver,
   // at creation time from the prefs.
   scoped_ptr<DictionaryValue> profile_dictionary_;
 
-  // The interval between consecutive log transmissions (to avoid hogging the
-  // outbound network link).  This is usually also the duration for which we
-  // build up a log, but if other unsent-logs from previous sessions exist, we
-  // quickly transmit those unsent logs while we continue to build a log.
-  base::TimeDelta interlog_duration_;
+  // The scheduler for determining when uploads should happen.
+  scoped_ptr<MetricsReportingScheduler> scheduler_;
 
-  // Indicate that a timer for sending the next log has already been queued.
-  bool timer_pending_;
+  // Indicates that an asynchronous reporting step is running.
+  // This is used only for debugging.
+  bool waiting_for_asynchronus_reporting_step_;
 
 #if defined(OS_CHROMEOS)
   // The external metric service is used to log ChromeOS UMA events.

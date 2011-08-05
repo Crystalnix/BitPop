@@ -15,6 +15,7 @@
 #include "base/process.h"
 #include "base/shared_memory.h"
 #include "base/string16.h"
+#include "base/stringprintf.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/common/common_param_traits.h"
@@ -23,17 +24,17 @@
 #include "chrome/common/search_provider.h"
 #include "chrome/common/thumbnail_score.h"
 #include "chrome/common/translate_errors.h"
-#include "chrome/common/view_types.h"
 #include "content/common/common_param_traits.h"
 #include "ipc/ipc_message_macros.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCache.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
-#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/rect.h"
 
 // Singly-included section for enums and custom IPC traits.
 #ifndef CHROME_COMMON_RENDER_MESSAGES_H_
 #define CHROME_COMMON_RENDER_MESSAGES_H_
+
+class SkBitmap;
 
 // Command values for the cmd parameter of the
 // ViewHost_JavaScriptStressTestControl message. For each command the parameter
@@ -92,7 +93,6 @@ IPC_ENUM_TRAITS(InstantCompleteBehavior)
 IPC_ENUM_TRAITS(search_provider::OSDDType)
 IPC_ENUM_TRAITS(search_provider::InstallState)
 IPC_ENUM_TRAITS(TranslateErrors::Type)
-IPC_ENUM_TRAITS(ViewType::Type)
 IPC_ENUM_TRAITS(WebKit::WebConsoleMessage::Level)
 
 IPC_STRUCT_TRAITS_BEGIN(ThumbnailScore)
@@ -178,9 +178,6 @@ IPC_MESSAGE_CONTROL2(ViewMsg_SetContentSettingsForCurrentURL,
 // Tells the render view to load all blocked plugins.
 IPC_MESSAGE_ROUTED0(ViewMsg_LoadBlockedPlugins)
 
-// Used to instruct the RenderView to go into "view source" mode.
-IPC_MESSAGE_ROUTED0(ViewMsg_EnableViewSourceMode)
-
 // Get all savable resource links from current webpage, include main
 // frame and sub-frame.
 IPC_MESSAGE_ROUTED1(ViewMsg_GetAllSavableResourceLinksForCurrentPage,
@@ -200,6 +197,12 @@ IPC_MESSAGE_CONTROL0(ViewMsg_GetCacheResourceStats)
 // Asks the renderer to send back Histograms.
 IPC_MESSAGE_CONTROL1(ViewMsg_GetRendererHistograms,
                      int /* sequence number of Renderer Histograms. */)
+
+// Tells the renderer to create a FieldTrial, and by using a 100% probability
+// for the FieldTrial, forces the FieldTrial to have assigned group name.
+IPC_MESSAGE_CONTROL2(ViewMsg_SetFieldTrialGroup,
+                     std::string /* field trial name */,
+                     std::string /* group name that was assigned. */)
 
 #if defined(USE_TCMALLOC)
 // Asks the renderer to send back tcmalloc stats.
@@ -232,14 +235,6 @@ IPC_MESSAGE_ROUTED4(ViewMsg_DetermineIfPageSupportsInstant,
                     int /* selection_start */,
                     int /* selection_end */)
 
-// Tell the renderer which browser window it's being attached to.
-IPC_MESSAGE_ROUTED1(ViewMsg_UpdateBrowserWindowId,
-                    int /* id of browser window */)
-
-// Tell the renderer which type this view is.
-IPC_MESSAGE_ROUTED1(ViewMsg_NotifyRenderViewType,
-                    ViewType::Type /* view_type */)
-
 // Tells the renderer to translate the page contents from one language to
 // another.
 IPC_MESSAGE_ROUTED4(ViewMsg_TranslatePage,
@@ -254,6 +249,12 @@ IPC_MESSAGE_ROUTED4(ViewMsg_TranslatePage,
 // contents.
 IPC_MESSAGE_ROUTED1(ViewMsg_RevertTranslation,
                     int /* page id */)
+
+// Tells a renderer if it's currently being prerendered.  Must only be set
+// to true before any navigation occurs, and only set to false at most once
+// after that.
+IPC_MESSAGE_ROUTED1(ViewMsg_SetIsPrerendering,
+                    bool /* whether the RenderView is prerendering */)
 
 // Sent on process startup to indicate whether this process is running in
 // incognito mode.
@@ -283,6 +284,61 @@ IPC_MESSAGE_CONTROL1(ViewHostMsg_UpdatedCacheStats,
 IPC_MESSAGE_ROUTED2(ViewHostMsg_ContentBlocked,
                     ContentSettingsType, /* type of blocked content */
                     std::string /* resource identifier */)
+
+// Sent by the renderer process to check whether access to web databases is
+// granted by content settings.
+IPC_SYNC_MESSAGE_CONTROL5_1(ViewHostMsg_AllowDatabase,
+                            int /* render_view_id */,
+                            GURL /* origin_url */,
+                            GURL /* top origin url */,
+                            string16 /* database name */,
+                            string16 /* database display name */,
+                            bool /* allowed */)
+
+// Sent by the renderer process to check whether access to DOM Storage is
+// granted by content settings.
+IPC_SYNC_MESSAGE_CONTROL4_1(ViewHostMsg_AllowDOMStorage,
+                            int /* render_view_id */,
+                            GURL /* origin_url */,
+                            GURL /* top origin url */,
+                            DOMStorageType /* type */,
+                            bool /* allowed */)
+
+// Sent by the renderer process to check whether access to FileSystem is
+// granted by content settings.
+IPC_SYNC_MESSAGE_CONTROL3_1(ViewHostMsg_AllowFileSystem,
+                            int /* render_view_id */,
+                            GURL /* origin_url */,
+                            GURL /* top origin url */,
+                            bool /* allowed */)
+
+// Sent by the renderer process to check whether access to Indexed DBis
+// granted by content settings.
+IPC_SYNC_MESSAGE_CONTROL4_1(ViewHostMsg_AllowIndexedDB,
+                            int /* render_view_id */,
+                            GURL /* origin_url */,
+                            GURL /* top origin url */,
+                            string16 /* database name */,
+                            bool /* allowed */)
+
+// Gets the content setting for a plugin.
+// If |setting| is set to CONTENT_SETTING_BLOCK, the plug-in is
+// blocked by the content settings for |policy_url|. It still
+// appears in navigator.plugins in Javascript though, and can be
+// loaded via click-to-play.
+//
+// If |setting| is set to CONTENT_SETTING_ALLOW, the domain is
+// explicitly white-listed for the plug-in, or the user has chosen
+// not to block nonsandboxed plugins.
+//
+// If |setting| is set to CONTENT_SETTING_DEFAULT, the plug-in is
+// neither blocked nor white-listed, which means that it's allowed
+// by default and can still be blocked if it's non-sandboxed.
+//
+IPC_SYNC_MESSAGE_CONTROL2_1(ViewHostMsg_GetPluginContentSetting,
+                            GURL /* policy_url */,
+                            std::string  /* resource */,
+                            ContentSetting /* setting */)
 
 // Specifies the URL as the first parameter (a wstring) and thumbnail as
 // binary data as the second parameter.
@@ -335,10 +391,6 @@ IPC_SYNC_MESSAGE_ROUTED2_1(ViewHostMsg_GetSearchProviderInstallState,
                            GURL /* inquiry url */,
                            search_provider::InstallState /* install */)
 
-// Send back a string to be recorded by UserMetrics.
-IPC_MESSAGE_CONTROL1(ViewHostMsg_UserMetricsRecordAction,
-                     std::string /* action */)
-
 // Send back histograms as vector of pickled-histogram strings.
 IPC_MESSAGE_CONTROL2(ViewHostMsg_RendererHistograms,
                      int, /* sequence number of Renderer Histograms. */
@@ -361,13 +413,21 @@ IPC_MESSAGE_CONTROL2(ViewHostMsg_V8HeapStats,
 IPC_MESSAGE_CONTROL1(ViewHostMsg_DnsPrefetch,
                      std::vector<std::string> /* hostnames */)
 
-// Requests the outdated plugins policy.
-// |policy| is one of ALLOW, BLOCK or ASK. Anything else is an error.
-// ALLOW means that outdated plugins are allowed, and BLOCK that they should
-// be blocked. The default is ASK, which blocks the plugin initially but allows
-// the user to start them manually.
-IPC_SYNC_MESSAGE_ROUTED0_1(ViewHostMsg_GetOutdatedPluginsPolicy,
-                           ContentSetting   /* policy */)
+// Requests the plugin policies.
+//
+// |outdated_policy| determines what to do about outdated plugins.
+// |authorize_policy| determines what to do about plugins that require
+// authorization to run.
+//
+// Both values can be ALLOW or ASK. |outdated_policy| can also be BLOCK.
+// Anything else is an error.
+// ALLOW means that the plugin should just run, as a normal plugin.
+// BLOCK means that the plugin should not run nor be allowed to run at all.
+// ASK means that the plugin should be initially blocked and the user should
+// be asked whether he wants to run the plugin.
+IPC_SYNC_MESSAGE_CONTROL0_2(ViewHostMsg_GetPluginPolicies,
+                            ContentSetting   /* outdated_policy */,
+                            ContentSetting   /* authorize_policy */)
 
 // Notifies when a plugin couldn't be loaded because it's outdated.
 IPC_MESSAGE_ROUTED2(ViewHostMsg_BlockedOutdatedPlugin,
@@ -385,17 +445,9 @@ IPC_MESSAGE_ROUTED3(ViewHostMsg_SendSerializedHtmlData,
                     int32 /* complete status */)
 
 // Provide the browser process with information about the WebCore resource
-// cache.
+// cache and current renderer framerate.
 IPC_MESSAGE_CONTROL1(ViewHostMsg_ResourceTypeStats,
                      WebKit::WebCache::ResourceTypeStats)
-
-// Message sent from renderer to the browser to update the state of a command.
-// The |command| parameter is a RenderViewCommand. The |checked_state| parameter
-// is a CommandCheckedState.
-IPC_MESSAGE_ROUTED3(ViewHostMsg_CommandStateChanged,
-                    int /* command */,
-                    bool /* is_enabled */,
-                    int /* checked_state */)
 
 
 // Notifies the browser of the language (ISO 639_1 code language, such as fr,
@@ -409,6 +461,25 @@ IPC_MESSAGE_ROUTED4(ViewHostMsg_PageTranslated,
                     std::string           /* the original language */,
                     std::string           /* the translated language */,
                     TranslateErrors::Type /* the error type if available */)
+
+// Message sent from the renderer to the browser to notify it of events which
+// may lead to the cancellation of a prerender. The message is sent only when
+// the renderer is prerendering.
+IPC_MESSAGE_ROUTED0(ViewHostMsg_MaybeCancelPrerenderForHTML5Media)
+
+// Message sent from the renderer to the browser to notify it of a
+// window.print() call which should cancel the prerender. The message is sent
+// only when the renderer is prerendering.
+IPC_MESSAGE_ROUTED0(ViewHostMsg_CancelPrerenderForPrinting)
+
+// Sent by the renderer to check if a URL has permission to trigger a clipboard
+// read/write operation from the DOM.
+IPC_SYNC_MESSAGE_ROUTED1_1(ViewHostMsg_CanTriggerClipboardRead,
+                           GURL /* url */,
+                           bool /* allowed */)
+IPC_SYNC_MESSAGE_ROUTED1_1(ViewHostMsg_CanTriggerClipboardWrite,
+                           GURL /* url */,
+                           bool /* allowed */)
 
 // Suggest results -----------------------------------------------------------
 

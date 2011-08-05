@@ -10,11 +10,11 @@
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/logging.h"
-#include "base/memory/scoped_temp_dir.h"
-#include "crypto/nss_util.h"
-#include "crypto/rsa_private_key.h"
+#include "base/scoped_temp_dir.h"
 #include "chrome/browser/chromeos/login/mock_owner_key_utils.h"
 #include "content/browser/browser_thread.h"
+#include "crypto/nss_util.h"
+#include "crypto/rsa_private_key.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -27,6 +27,69 @@ using ::testing::SetArgumentPointee;
 using ::testing::_;
 
 namespace chromeos {
+
+////////////////////////////////////////////////////////////////////////////////
+// MockKeyLoadObserver
+
+MockKeyLoadObserver::~MockKeyLoadObserver() {
+  DCHECK(observed_);
+}
+
+void MockKeyLoadObserver::Observe(NotificationType type,
+                                  const NotificationSource& source,
+                                  const NotificationDetails& details) {
+  LOG(INFO) << "Observed key fetch event";
+  if (type == NotificationType::OWNER_KEY_FETCH_ATTEMPT_SUCCEEDED) {
+    DCHECK(success_expected_);
+    observed_ = true;
+    if (quit_on_observe_)
+      MessageLoop::current()->Quit();
+  } else if (type == NotificationType::OWNER_KEY_FETCH_ATTEMPT_FAILED) {
+    DCHECK(!success_expected_);
+    observed_ = true;
+    if (quit_on_observe_)
+      MessageLoop::current()->Quit();
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// MockKeyUser
+
+void MockKeyUser::OnKeyOpComplete(const OwnerManager::KeyOpCode return_code,
+                                  const std::vector<uint8>& payload) {
+  DCHECK_EQ(expected_, return_code);
+  if (quit_on_callback_)
+    MessageLoop::current()->Quit();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// MockKeyUpdateUser
+
+void MockKeyUpdateUser::OnKeyUpdated() {
+  MessageLoop::current()->Quit();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// MockSigner
+
+MockSigner::MockSigner(const OwnerManager::KeyOpCode expected,
+                       const std::vector<uint8>& sig)
+    : expected_code_(expected),
+      expected_sig_(sig) {
+}
+
+MockSigner::~MockSigner() {}
+
+void MockSigner::OnKeyOpComplete(const OwnerManager::KeyOpCode return_code,
+                                 const std::vector<uint8>& payload) {
+  DCHECK_EQ(expected_code_, return_code);
+  for (uint32 i = 0; i < payload.size(); ++i)
+    DCHECK_EQ(expected_sig_[i], payload[i]);
+  MessageLoop::current()->Quit();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// OwnerManagerTest
 
 class OwnerManagerTest : public ::testing::Test {
  public:
@@ -77,7 +140,6 @@ class OwnerManagerTest : public ::testing::Test {
 
   MockKeyUtils* mock_;
   MockInjector injector_;
-
 };
 
 TEST_F(OwnerManagerTest, UpdateOwnerKey) {

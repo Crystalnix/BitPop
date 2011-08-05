@@ -5,6 +5,7 @@
 #include "content/browser/tab_contents/tab_contents_observer.h"
 
 #include "content/browser/renderer_host/render_view_host.h"
+#include "content/browser/tab_contents/navigation_details.h"
 #include "content/browser/tab_contents/tab_contents.h"
 
 TabContentsObserver::Registrar::Registrar(TabContentsObserver* observer)
@@ -25,16 +26,21 @@ void TabContentsObserver::Registrar::Observe(TabContents* tab) {
     tab_->AddObserver(observer_);
 }
 
-void TabContentsObserver::NavigateToPendingEntry() {
+void TabContentsObserver::RenderViewCreated(RenderViewHost* render_view_host) {
+}
+
+void TabContentsObserver::NavigateToPendingEntry(
+    const GURL& url,
+    NavigationController::ReloadType reload_type) {
 }
 
 void TabContentsObserver::DidNavigateMainFramePostCommit(
-    const NavigationController::LoadCommittedDetails& details,
+    const content::LoadCommittedDetails& details,
     const ViewHostMsg_FrameNavigate_Params& params) {
 }
 
 void TabContentsObserver::DidNavigateAnyFramePostCommit(
-    const NavigationController::LoadCommittedDetails& details,
+    const content::LoadCommittedDetails& details,
     const ViewHostMsg_FrameNavigate_Params& params) {
 }
 
@@ -42,10 +48,13 @@ void TabContentsObserver::DidStartProvisionalLoadForFrame(
     int64 frame_id,
     bool is_main_frame,
     const GURL& validated_url,
-    bool is_error_page) {
+    bool is_error_page,
+    RenderViewHost* render_view_host) {
 }
 
-void TabContentsObserver::ProvisionalChangeToMainFrameUrl(const GURL& url) {
+void TabContentsObserver::ProvisionalChangeToMainFrameUrl(
+    const GURL& url,
+    bool has_opener_set) {
 }
 
 void TabContentsObserver::DidCommitProvisionalLoadForFrame(
@@ -65,6 +74,12 @@ void TabContentsObserver::DocumentLoadedInFrame(int64 frame_id) {
 }
 
 void TabContentsObserver::DidFinishLoad(int64 frame_id) {
+}
+
+void TabContentsObserver::DidGetUserGesture() {
+}
+
+void TabContentsObserver::DidBecomeSelected() {
 }
 
 void TabContentsObserver::DidStartLoading() {

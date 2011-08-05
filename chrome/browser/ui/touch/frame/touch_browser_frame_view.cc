@@ -18,15 +18,17 @@
 #include "content/browser/tab_contents/tab_contents_view.h"
 #include "content/common/notification_service.h"
 #include "content/common/notification_type.h"
+#include "content/common/view_messages.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/transform.h"
 #include "views/controls/button/image_button.h"
 #include "views/controls/textfield/textfield.h"
 #include "views/focus/focus_manager.h"
 
 namespace {
 
-const int kKeyboardHeight = 300;
+const int kKeyboardHeight = 360;
 const int kKeyboardSlideDuration = 500;  // In milliseconds
 
 PropertyAccessor<bool>* GetFocusedStateAccessor() {
@@ -40,6 +42,10 @@ bool TabContentsHasFocus(const TabContents* contents) {
 }
 
 }  // namespace
+
+// static
+const char TouchBrowserFrameView::kViewClassName[] =
+    "browser/ui/touch/frame/TouchBrowserFrameView";
 
 ///////////////////////////////////////////////////////////////////////////////
 // TouchBrowserFrameView, public:
@@ -59,6 +65,9 @@ TouchBrowserFrameView::TouchBrowserFrameView(BrowserFrame* frame,
   registrar_.Add(this,
                  NotificationType::TAB_CONTENTS_DESTROYED,
                  NotificationService::AllSources());
+  registrar_.Add(this,
+                 NotificationType::HIDE_KEYBOARD_INVOKED,
+                 NotificationService::AllSources());
 
   browser_view->browser()->tabstrip_model()->AddObserver(this);
 
@@ -69,6 +78,10 @@ TouchBrowserFrameView::TouchBrowserFrameView(BrowserFrame* frame,
 
 TouchBrowserFrameView::~TouchBrowserFrameView() {
   browser_view()->browser()->tabstrip_model()->RemoveObserver(this);
+}
+
+std::string TouchBrowserFrameView::GetClassName() const {
+  return kViewClassName;
 }
 
 void TouchBrowserFrameView::Layout() {
@@ -134,7 +147,8 @@ void TouchBrowserFrameView::InitVirtualKeyboard() {
   Profile* keyboard_profile = browser_view()->browser()->profile();
   DCHECK(keyboard_profile) << "Profile required for virtual keyboard.";
 
-  keyboard_ = new KeyboardContainerView(keyboard_profile);
+  keyboard_ = new KeyboardContainerView(keyboard_profile,
+      browser_view()->browser());
   keyboard_->SetVisible(false);
   AddChildView(keyboard_);
 }
@@ -203,10 +217,10 @@ bool TouchBrowserFrameView::HitTest(const gfx::Point& point) const {
   return false;
 }
 
-void TouchBrowserFrameView::TabSelectedAt(TabContentsWrapper* old_contents,
-                                          TabContentsWrapper* new_contents,
-                                          int index,
-                                          bool user_gesture) {
+void TouchBrowserFrameView::ActiveTabChanged(TabContentsWrapper* old_contents,
+                                             TabContentsWrapper* new_contents,
+                                             int index,
+                                             bool user_gesture) {
   if (new_contents == old_contents)
     return;
 
@@ -239,24 +253,49 @@ void TouchBrowserFrameView::Observe(NotificationType type,
     GetFocusedStateAccessor()->SetProperty(
         source_tab->property_bag(), editable);
   } else if (type == NotificationType::NAV_ENTRY_COMMITTED) {
+    NavigationController* controller =
+        Source<NavigationController>(source).ptr();
     Browser* source_browser = Browser::GetBrowserForController(
-        Source<NavigationController>(source).ptr(), NULL);
+        controller, NULL);
+
     // If the Browser for the keyboard has navigated, re-evaluate the visibility
     // of the keyboard.
+    TouchBrowserFrameView::VirtualKeyboardType keyboard_type = NONE;
+    views::View* view = GetFocusManager()->GetFocusedView();
+    if (view) {
+      if (view->GetClassName() == views::Textfield::kViewClassName)
+        keyboard_type = GENERIC;
+      if (view->GetClassName() == RenderWidgetHostViewViews::kViewClassName) {
+        // Reset the state of the focused field in the current tab.
+        GetFocusedStateAccessor()->SetProperty(
+            controller->tab_contents()->property_bag(), false);
+      }
+    }
     if (source_browser == browser)
-      UpdateKeyboardAndLayout(DecideKeyboardStateForView(
-          GetFocusManager()->GetFocusedView()) == GENERIC);
+      UpdateKeyboardAndLayout(keyboard_type == GENERIC);
   } else if (type == NotificationType::TAB_CONTENTS_DESTROYED) {
     GetFocusedStateAccessor()->DeleteProperty(
         Source<TabContents>(source).ptr()->property_bag());
+  } else if (type == NotificationType::PREF_CHANGED) {
+    OpaqueBrowserFrameView::Observe(type, source, details);
+  } else if (type == NotificationType::HIDE_KEYBOARD_INVOKED) {
+    TabContents* tab_contents =
+        browser_view()->browser()->GetSelectedTabContents();
+    if (tab_contents) {
+      GetFocusedStateAccessor()->SetProperty(tab_contents->property_bag(),
+                                             false);
+    }
+    UpdateKeyboardAndLayout(false);
   }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // ui::AnimationDelegate implementation
 void TouchBrowserFrameView::AnimationProgressed(const ui::Animation* anim) {
-  keyboard_->SetTranslateY(
+  ui::Transform transform;
+  transform.SetTranslateY(
       ui::Tween::ValueBetween(anim->GetCurrentValue(), kKeyboardHeight, 0));
+  keyboard_->SetTransform(transform);
   browser_view()->set_clip_y(
       ui::Tween::ValueBetween(anim->GetCurrentValue(), 0, kKeyboardHeight));
   SchedulePaint();
@@ -273,7 +312,8 @@ void TouchBrowserFrameView::AnimationEnded(const ui::Animation* animation) {
     // the renderer scrolls when necessary to keep the textfield visible.
     RenderViewHost* host =
         browser_view()->browser()->GetSelectedTabContents()->render_view_host();
-    host->ScrollFocusedEditableNodeIntoView();
+    host->Send(new ViewMsg_ScrollFocusedEditableNodeIntoView(
+        host->routing_id()));
   }
   SchedulePaint();
 }

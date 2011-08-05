@@ -21,7 +21,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/platform_font_gtk.h"
 #include "views/controls/button/menu_button.h"
-#include "views/widget/widget_gtk.h"
+#include "views/widget/widget.h"
 
 namespace {
 
@@ -39,6 +39,8 @@ LanguageSwitchMenu::LanguageSwitchMenu()
       ALLOW_THIS_IN_INITIALIZER_LIST(menu_model_submenu_(this)),
       menu_alignment_(views::Menu2::ALIGN_TOPRIGHT) {
 }
+
+LanguageSwitchMenu::~LanguageSwitchMenu() {}
 
 void LanguageSwitchMenu::InitLanguageMenu() {
   // Update LanguageList to contain entries in current locale.

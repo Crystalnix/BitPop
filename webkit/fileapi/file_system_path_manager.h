@@ -6,7 +6,7 @@
 #define WEBKIT_FILEAPI_FILE_SYSTEM_PATH_MANAGER_H_
 #pragma once
 
-#include "base/callback.h"
+#include "base/callback_old.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "webkit/fileapi/file_system_types.h"
@@ -21,17 +21,9 @@ class MessageLoopProxy;
 namespace fileapi {
 
 class ExternalFileSystemMountPointProvider;
+class FileSystemFileUtil;
 class SandboxMountPointProvider;
 
-// TODO(kinuko): Probably this module must be called FileSystemPathUtil
-// or something similar.
-
-// An interface to construct or crack sandboxed filesystem paths.
-// Currently each sandboxed filesystem path looks like:
-//
-//   <profile_dir>/FileSystem/<origin_identifier>/<type>/chrome-<unique>/...
-//
-// <type> is either one of "Temporary" or "Persistent".
 class FileSystemPathManager {
  public:
   FileSystemPathManager(
@@ -40,7 +32,7 @@ class FileSystemPathManager {
       scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy,
       bool is_incognito,
       bool allow_file_access_from_files);
-  ~FileSystemPathManager();
+  virtual ~FileSystemPathManager();
 
   // Callback for GetFileSystemRootPath.
   // If the request is accepted and the root filesystem for the origin exists
@@ -85,6 +77,8 @@ class FileSystemPathManager {
   // file element represented by |virtual_path|.
   bool IsAccessAllowed(const GURL& origin, FileSystemType type,
                        const FilePath& virtual_path);
+
+  FileSystemFileUtil* GetFileSystemFileUtil(FileSystemType type) const;
 
   SandboxMountPointProvider* sandbox_provider() const {
     return sandbox_provider_.get();

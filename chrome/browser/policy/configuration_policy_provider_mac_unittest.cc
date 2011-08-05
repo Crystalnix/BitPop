@@ -232,7 +232,7 @@ INSTANTIATE_TEST_CASE_P(
         PolicyTestParams::ForStringPolicy(
             kPolicyDefaultSearchProviderIconURL,
             key::kDefaultSearchProviderIconURL),
-        PolicyTestParams::ForStringPolicy(
+        PolicyTestParams::ForListPolicy(
             kPolicyDefaultSearchProviderEncodings,
             key::kDefaultSearchProviderEncodings),
         PolicyTestParams::ForStringPolicy(
@@ -329,6 +329,9 @@ INSTANTIATE_TEST_CASE_P(
             kPolicyAllowOutdatedPlugins,
             key::kAllowOutdatedPlugins),
         PolicyTestParams::ForBooleanPolicy(
+            kPolicyAlwaysAuthorizePlugins,
+            key::kAlwaysAuthorizePlugins),
+        PolicyTestParams::ForBooleanPolicy(
             kPolicyBookmarkBarEnabled,
             key::kBookmarkBarEnabled),
         PolicyTestParams::ForBooleanPolicy(
@@ -339,6 +342,9 @@ INSTANTIATE_TEST_CASE_P(
             key::kAllowFileSelectionDialogs),
         PolicyTestParams::ForListPolicy(
             kPolicyDisabledSchemes,
-            key::kDisabledSchemes)));
+            key::kDisabledSchemes),
+        PolicyTestParams::ForStringPolicy(
+            kPolicyDiskCacheDir,
+            key::kDiskCacheDir)));
 
 }  // namespace policy

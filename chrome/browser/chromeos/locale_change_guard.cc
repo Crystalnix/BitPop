@@ -8,13 +8,13 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "chrome/browser/notifications/notification_delegate.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/pref_names.h"
 #include "content/browser/tab_contents/tab_contents.h"
+#include "content/browser/user_metrics.h"
 #include "content/common/notification_service.h"
 #include "content/common/notification_source.h"
 #include "grit/generated_resources.h"
@@ -46,6 +46,8 @@ LocaleChangeGuard::LocaleChangeGuard(Profile* profile)
   registrar_.Add(this, NotificationType::OWNERSHIP_CHECKED,
                  NotificationService::AllSources());
 }
+
+LocaleChangeGuard::~LocaleChangeGuard() {}
 
 void LocaleChangeGuard::OnLogin() {
   registrar_.Add(this, NotificationType::LOAD_COMPLETED_MAIN_FRAME,

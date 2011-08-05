@@ -17,6 +17,7 @@
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
+#include "base/scoped_temp_dir.h"
 #include "base/string_piece.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
@@ -36,6 +37,7 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebURLError.h"
 #include "ui/gfx/gl/gl_context.h"
 #include "ui/gfx/gl/gl_implementation.h"
+#include "ui/gfx/gl/gl_surface.h"
 #include "webkit/appcache/web_application_cache_host_impl.h"
 #include "webkit/glue/media/video_renderer_impl.h"
 #include "webkit/glue/webkit_constants.h"
@@ -211,6 +213,9 @@ class TaskAdaptorHolder : public CancelableTask {
   scoped_ptr<webkit_support::TaskAdaptor> adaptor_;
 };
 
+webkit_support::GraphicsContext3DImplementation
+    g_graphics_context_3d_implementation = webkit_support::IN_PROCESS;
+
 }  // namespace
 
 namespace webkit_support {
@@ -320,7 +325,7 @@ WebKit::WebString GetWebKitRootDir() {
 void SetUpGLBindings(GLBindingPreferences bindingPref) {
   switch(bindingPref) {
     case GL_BINDING_DEFAULT:
-      gfx::GLContext::InitializeOneOff();
+      gfx::GLSurface::InitializeOneOff();
       break;
     case GL_BINDING_SOFTWARE_RENDERER:
       gfx::InitializeGLBindings(gfx::kGLImplementationOSMesaGL);
@@ -328,6 +333,14 @@ void SetUpGLBindings(GLBindingPreferences bindingPref) {
     default:
       NOTREACHED();
   }
+}
+
+void SetGraphicsContext3DImplementation(GraphicsContext3DImplementation impl) {
+  g_graphics_context_3d_implementation = impl;
+}
+
+GraphicsContext3DImplementation GetGraphicsContext3DImplementation() {
+  return g_graphics_context_3d_implementation;
 }
 
 void RegisterMockedURL(const WebKit::WebURL& url,
@@ -474,6 +487,26 @@ WebURL LocalFileToDataURL(const WebURL& fileUrl) {
   return WebURL(GURL(kDataUrlPrefix + contents_base64));
 }
 
+// A wrapper object for exporting ScopedTempDir to be used
+// by webkit layout tests.
+class ScopedTempDirectoryInternal : public ScopedTempDirectory {
+ public:
+   virtual bool CreateUniqueTempDir() {
+     return tempDirectory_.CreateUniqueTempDir();
+   }
+
+   virtual std::string path() const {
+     return tempDirectory_.path().MaybeAsASCII();
+   }
+
+ private:
+   ScopedTempDir tempDirectory_;
+};
+
+ScopedTempDirectory* CreateScopedTempDirectory() {
+  return new ScopedTempDirectoryInternal();
+}
+
 int64 GetCurrentTimeInMillisecond() {
   return base::TimeTicks::Now().ToInternalValue()
       / base::Time::kMicrosecondsPerMillisecond;
@@ -554,7 +587,7 @@ WebKit::WebThemeEngine* GetThemeEngine() {
 // DevTools
 WebURL GetDevToolsPathAsURL() {
   FilePath dirExe;
-  if (!webkit_glue::GetExeDirectory(&dirExe)) {
+  if (!PathService::Get(base::DIR_EXE, &dirExe)) {
       DCHECK(false);
       return WebURL();
   }

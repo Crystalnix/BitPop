@@ -9,6 +9,7 @@
 
 #include "base/memory/scoped_nsobject.h"
 #include "printing/printing_context.h"
+#include "printing/print_job_constants.h"
 
 #ifdef __OBJC__
 @class NSPrintInfo;
@@ -21,7 +22,7 @@ namespace printing {
 class PrintingContextMac : public PrintingContext {
  public:
   explicit PrintingContextMac(const std::string& app_locale);
-  ~PrintingContextMac();
+  virtual ~PrintingContextMac();
 
   // PrintingContext implementation.
   virtual void AskUserForSettings(gfx::NativeView parent_view,
@@ -49,7 +50,7 @@ class PrintingContextMac : public PrintingContext {
 
   // Updates |print_info_| to use the given printer.
   // Returns true if the printer was set else returns false.
-  bool SetPrinter(const std::string& printer_name);
+  bool SetPrinter(const std::string& device_name);
 
   // Sets |copies| in PMPrintSettings.
   // Returns true if the number of copies is set.
@@ -65,7 +66,7 @@ class PrintingContextMac : public PrintingContext {
 
   // Sets duplex mode in PMPrintSettings.
   // Returns true if duplex mode is set.
-  bool SetDuplexModeIsTwoSided(bool two_sided);
+  bool SetDuplexModeInPrintSettings(DuplexMode mode);
 
   // Sets output color mode in PMPrintSettings.
   // Returns true if color mode is set.

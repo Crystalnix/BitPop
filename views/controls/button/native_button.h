@@ -58,7 +58,7 @@ class NativeButtonBase : public Button {
   // Overridden from View:
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual void Layout() OVERRIDE;
-  virtual void SetEnabled(bool flag) OVERRIDE;
+  virtual void OnEnabledChanged() OVERRIDE;
   virtual void OnFocus() OVERRIDE;
   virtual void OnPaintFocusBorder(gfx::Canvas* canvas) OVERRIDE;
 
@@ -83,6 +83,9 @@ class NativeButtonBase : public Button {
   NativeButtonWrapper* native_wrapper_;
 
  private:
+  // Update all states.
+  void UpdateAllStates();
+
   // The button label.
   string16 label_;
 

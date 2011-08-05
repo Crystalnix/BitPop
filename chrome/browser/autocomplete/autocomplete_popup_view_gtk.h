@@ -7,6 +7,7 @@
 #pragma once
 
 #include <gtk/gtk.h>
+
 #include <map>
 #include <string>
 
@@ -16,13 +17,14 @@
 #include "chrome/browser/autocomplete/autocomplete_popup_view.h"
 #include "content/common/notification_observer.h"
 #include "content/common/notification_registrar.h"
+#include "ui/base/gtk/gtk_signal.h"
 #include "ui/gfx/font.h"
 #include "webkit/glue/window_open_disposition.h"
 
 class AutocompleteEditModel;
-class AutocompleteEditView;
 class AutocompletePopupModel;
 class GtkThemeService;
+class OmniboxView;
 class Profile;
 class SkBitmap;
 
@@ -30,11 +32,11 @@ class AutocompletePopupViewGtk : public AutocompletePopupView,
                                  public NotificationObserver {
  public:
   AutocompletePopupViewGtk(const gfx::Font& font,
-                           AutocompleteEditView* edit_view,
+                           OmniboxView* omnibox_view,
                            AutocompleteEditModel* edit_model,
                            Profile* profile,
                            GtkWidget* location_bar);
-  ~AutocompletePopupViewGtk();
+  virtual ~AutocompletePopupViewGtk();
 
   // Overridden from AutocompletePopupView:
   virtual bool IsOpen() const;
@@ -75,38 +77,20 @@ class AutocompletePopupViewGtk : public AutocompletePopupView,
 
   GdkPixbuf* IconForMatch(const AutocompleteMatch& match, bool selected);
 
-  static gboolean HandleExposeThunk(GtkWidget* widget, GdkEventExpose* event,
-                                    gpointer userdata) {
-    return reinterpret_cast<AutocompletePopupViewGtk*>(userdata)->
-        HandleExpose(widget, event);
-  }
-  gboolean HandleExpose(GtkWidget* widget, GdkEventExpose* event);
+  CHROMEGTK_CALLBACK_1(AutocompletePopupViewGtk, gboolean, HandleMotion,
+                       GdkEventMotion*);
 
-  static gboolean HandleMotionThunk(GtkWidget* widget, GdkEventMotion* event,
-                                    gpointer userdata) {
-    return reinterpret_cast<AutocompletePopupViewGtk*>(userdata)->
-        HandleMotion(widget, event);
-  }
-  gboolean HandleMotion(GtkWidget* widget, GdkEventMotion* event);
+  CHROMEGTK_CALLBACK_1(AutocompletePopupViewGtk, gboolean, HandleButtonPress,
+                       GdkEventButton*);
 
-  static gboolean HandleButtonPressThunk(GtkWidget* widget,
-                                         GdkEventButton* event,
-                                         gpointer userdata) {
-    return reinterpret_cast<AutocompletePopupViewGtk*>(userdata)->
-        HandleButtonPress(widget, event);
-  }
-  gboolean HandleButtonPress(GtkWidget* widget, GdkEventButton* event);
+  CHROMEGTK_CALLBACK_1(AutocompletePopupViewGtk, gboolean, HandleButtonRelease,
+                       GdkEventButton*);
 
-  static gboolean HandleButtonReleaseThunk(GtkWidget* widget,
-                                           GdkEventButton* event,
-                                           gpointer userdata) {
-    return reinterpret_cast<AutocompletePopupViewGtk*>(userdata)->
-        HandleButtonRelease(widget, event);
-  }
-  gboolean HandleButtonRelease(GtkWidget* widget, GdkEventButton* event);
+  CHROMEGTK_CALLBACK_1(AutocompletePopupViewGtk, gboolean, HandleExpose,
+                       GdkEventExpose*);
 
   scoped_ptr<AutocompletePopupModel> model_;
-  AutocompleteEditView* edit_view_;
+  OmniboxView* omnibox_view_;
   GtkWidget* location_bar_;
 
   // Our popup window, which is the only widget used, and we paint it on our

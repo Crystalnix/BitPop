@@ -54,7 +54,6 @@ class WizardWebPageViewTabContents : public TabContents {
   virtual void DidRunInsecureContent(const std::string& security_origin);
   virtual void DocumentLoadedInFrame(long long frame_id);
   virtual void DidFinishLoad(long long frame_id);
-  virtual void OnContentBlocked(ContentSettingsType type);
 
  private:
   WebPageDelegate* page_delegate_;
@@ -89,7 +88,8 @@ class WebPageDomView : public DOMView {
 // page rendered in it. While page is loaded spinner overlay is shown.
 class WebPageView : public views::View {
  public:
-  WebPageView() : throbber_(NULL), connecting_label_(NULL) {}
+  WebPageView();
+  virtual ~WebPageView();
 
   // Initialize view layout.
   void Init();

@@ -27,6 +27,7 @@
 
 namespace gfx {
 class GLContext;
+class GLSurface;
 }
 
 namespace gpu {
@@ -39,7 +40,9 @@ class ContextGroup;
 class GpuScheduler : public CommandBufferEngine {
  public:
   // If a group is not passed in one will be created.
-  GpuScheduler(CommandBuffer* command_buffer, gles2::ContextGroup* group);
+  GpuScheduler(CommandBuffer* command_buffer,
+               SurfaceManager* surface_manager,
+               gles2::ContextGroup* group);
 
   // This constructor is for unit tests.
   GpuScheduler(CommandBuffer* command_buffer,
@@ -61,7 +64,7 @@ class GpuScheduler : public CommandBufferEngine {
   void Destroy();
   void DestroyCommon();
 
-  virtual void ProcessCommands();
+  void PutChanged(bool sync);
 
   // Sets whether commands should be processed by this scheduler. Setting to
   // false unschedules. Setting to true reschedules. Whether or not the
@@ -107,6 +110,7 @@ class GpuScheduler : public CommandBufferEngine {
   // is also predicated on a flow control mechanism between the
   // renderer and GPU processes.
   uint64 swap_buffers_count() const;
+  uint64 acknowledged_swap_buffers_count() const;
   void set_acknowledged_swap_buffers_count(
       uint64 acknowledged_swap_buffers_count);
 
@@ -115,14 +119,14 @@ class GpuScheduler : public CommandBufferEngine {
 
   // Sets a callback that is called when a glResizeCHROMIUM command
   // is processed.
-  virtual void SetResizeCallback(Callback1<gfx::Size>::Type* callback);
+  void SetResizeCallback(Callback1<gfx::Size>::Type* callback);
 
   // Sets a callback which is called when a SwapBuffers command is processed.
   // Must be called after Initialize().
   // It is not defined on which thread this callback is called.
-  virtual void SetSwapBuffersCallback(Callback0::Type* callback);
+  void SetSwapBuffersCallback(Callback0::Type* callback);
 
-  virtual void SetCommandProcessedCallback(Callback0::Type* callback);
+  void SetCommandProcessedCallback(Callback0::Type* callback);
 
   // Sets a callback which is called after a Set/WaitLatch command is processed.
   // The bool parameter will be true for SetLatch, and false for a WaitLatch
@@ -135,9 +139,10 @@ class GpuScheduler : public CommandBufferEngine {
   gles2::GLES2Decoder* decoder() const { return decoder_.get(); }
 
  protected:
-  // Perform common initialization. Takes ownership of GLContext.
+  // Perform common initialization. Takes ownership of GLSurface and GLContext.
   bool InitializeCommon(
-      gfx::GLContext* context,
+      const scoped_refptr<gfx::GLSurface>& surface,
+      const scoped_refptr<gfx::GLContext>& context,
       const gfx::Size& size,
       const gles2::DisallowedExtensions& disallowed_extensions,
       const char* allowed_extensions,
@@ -152,7 +157,8 @@ class GpuScheduler : public CommandBufferEngine {
 
   // Called via a callback just before we are supposed to call the
   // user's swap buffers callback.
-  virtual void WillSwapBuffers();
+  void WillSwapBuffers();
+  void ProcessCommands();
 
   // The GpuScheduler holds a weak reference to the CommandBuffer. The
   // CommandBuffer owns the GpuScheduler and holds a strong reference to it

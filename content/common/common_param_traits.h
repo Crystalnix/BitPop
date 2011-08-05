@@ -16,6 +16,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/platform_file.h"
+#include "content/common/dom_storage_common.h"
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_message_utils.h"
 #include "net/base/ip_endpoint.h"
@@ -36,6 +37,10 @@ namespace net {
 class HttpResponseHeaders;
 class HostPortPair;
 class UploadData;
+}
+
+namespace ui {
+class Range;
 }
 
 namespace IPC {
@@ -105,11 +110,6 @@ struct ParamTraits<base::PlatformFileInfo> {
 };
 
 template <>
-struct SimilarTypeTraits<base::PlatformFileError> {
-  typedef int Type;
-};
-
-template <>
 struct ParamTraits<gfx::Point> {
   typedef gfx::Point param_type;
   static void Write(Message* m, const param_type& p);
@@ -165,6 +165,14 @@ struct ParamTraits<gfx::NativeWindow> {
   }
 };
 
+template <>
+struct ParamTraits<ui::Range> {
+  typedef ui::Range param_type;
+  static void Write(Message* m, const param_type& p);
+  static bool Read(const Message* m, void** iter, param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
+
 #if defined(OS_WIN)
 template<>
 struct ParamTraits<TransportDIB::Id> {
@@ -215,6 +223,16 @@ struct ParamTraits<SkBitmap> {
   static bool Read(const Message* m, void** iter, param_type* r);
 
   static void Log(const param_type& p, std::string* l);
+};
+
+template <>
+struct SimilarTypeTraits<base::PlatformFileError> {
+  typedef int Type;
+};
+
+template <>
+struct SimilarTypeTraits<DOMStorageType> {
+  typedef int Type;
 };
 
 }  // namespace IPC

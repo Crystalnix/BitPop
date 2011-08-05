@@ -62,21 +62,14 @@ class SSLConfigServiceManagerPref
     : public SSLConfigServiceManager,
       public NotificationObserver {
  public:
-  SSLConfigServiceManagerPref(PrefService* user_prefs,
-                              PrefService* local_state);
+  explicit SSLConfigServiceManagerPref(PrefService* local_state);
   virtual ~SSLConfigServiceManagerPref() {}
 
   virtual net::SSLConfigService* Get();
 
  private:
-  // Register user_prefs and local_state SSL preferences.
+  // Register local_state SSL preferences.
   static void RegisterPrefs(PrefService* prefs);
-
-  // Copy pref values to local_state from user_prefs if local_state doesn't have
-  // the pref value and user_prefs has the pref value. Remove them from
-  // user_prefs.
-  static void MigrateUserPrefs(PrefService* local_state,
-                               PrefService* user_prefs);
 
   // Callback for preference changes.  This will post the changes to the IO
   // thread with SetNewSSLConfig.
@@ -99,16 +92,11 @@ class SSLConfigServiceManagerPref
 };
 
 SSLConfigServiceManagerPref::SSLConfigServiceManagerPref(
-    PrefService* user_prefs, PrefService* local_state)
+    PrefService* local_state)
     : ssl_config_service_(new SSLConfigServicePref()) {
-  DCHECK(user_prefs);
   DCHECK(local_state);
 
-  RegisterPrefs(user_prefs);
   RegisterPrefs(local_state);
-
-  // TODO(rtenneti): remove migration code after 6 months.
-  MigrateUserPrefs(local_state, user_prefs);
 
   rev_checking_enabled_.Init(prefs::kCertRevocationCheckingEnabled,
                              local_state, this);
@@ -134,35 +122,6 @@ void SSLConfigServiceManagerPref::RegisterPrefs(PrefService* prefs) {
   if (!prefs->FindPreference(prefs::kTLS1Enabled)) {
     prefs->RegisterBooleanPref(prefs::kTLS1Enabled,
                                default_config.tls1_enabled);
-  }
-}
-
-// static
-void SSLConfigServiceManagerPref::MigrateUserPrefs(PrefService* local_state,
-                                                   PrefService* user_prefs) {
-  if (user_prefs->HasPrefPath(prefs::kCertRevocationCheckingEnabled)) {
-    if (!local_state->HasPrefPath(prefs::kCertRevocationCheckingEnabled)) {
-      // Migrate the kCertRevocationCheckingEnabled preference.
-      local_state->SetBoolean(prefs::kCertRevocationCheckingEnabled,
-          user_prefs->GetBoolean(prefs::kCertRevocationCheckingEnabled));
-    }
-    user_prefs->ClearPref(prefs::kCertRevocationCheckingEnabled);
-  }
-  if (user_prefs->HasPrefPath(prefs::kSSL3Enabled)) {
-    if (!local_state->HasPrefPath(prefs::kSSL3Enabled)) {
-      // Migrate the kSSL3Enabled preference.
-      local_state->SetBoolean(prefs::kSSL3Enabled,
-          user_prefs->GetBoolean(prefs::kSSL3Enabled));
-    }
-    user_prefs->ClearPref(prefs::kSSL3Enabled);
-  }
-  if (user_prefs->HasPrefPath(prefs::kTLS1Enabled)) {
-    if (!local_state->HasPrefPath(prefs::kTLS1Enabled)) {
-      // Migrate the kTLS1Enabled preference.
-      local_state->SetBoolean(prefs::kTLS1Enabled,
-          user_prefs->GetBoolean(prefs::kTLS1Enabled));
-    }
-    user_prefs->ClearPref(prefs::kTLS1Enabled);
   }
 }
 
@@ -202,7 +161,6 @@ void SSLConfigServiceManagerPref::GetSSLConfigFromPrefs(
 
 // static
 SSLConfigServiceManager* SSLConfigServiceManager::CreateDefaultManager(
-    PrefService* user_prefs,
     PrefService* local_state) {
-  return new SSLConfigServiceManagerPref(user_prefs, local_state);
+  return new SSLConfigServiceManagerPref(local_state);
 }

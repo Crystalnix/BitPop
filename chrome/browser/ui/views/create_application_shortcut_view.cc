@@ -8,10 +8,12 @@
 #include "base/utf_string_conversions.h"
 #include "base/win/windows_version.h"
 #include "chrome/browser/extensions/extension_tab_helper.h"
+#include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/browser/ui/web_applications/web_app_ui.h"
+#include "chrome/browser/ui/webui/extension_icon_source.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_resource.h"
@@ -20,6 +22,7 @@
 #include "content/browser/tab_contents/tab_contents_delegate.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
+#include "grit/theme_resources.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_request.h"
 #include "third_party/skia/include/core/SkRect.h"
@@ -186,7 +189,7 @@ void AppInfoView::OnPaint(gfx::Canvas* canvas) {
   inner_paint.setAntiAlias(true);
   inner_paint.setARGB(0xFF, 0xF8, 0xF8, 0xF8);
   canvas->AsCanvasSkia()->drawRoundRect(
-      inner_rect, SkIntToScalar(1.5), SkIntToScalar(1.5), inner_paint);
+      inner_rect, SkDoubleToScalar(1.5), SkDoubleToScalar(1.5), inner_paint);
 }
 
 }  // namespace
@@ -259,7 +262,7 @@ void CreateApplicationShortcutView::InitControls() {
         UTF16ToWide(l10n_util::GetStringUTF16(
             IDS_CREATE_SHORTCUTS_QUICK_LAUNCH_BAR_CHKBOX)),
       profile_->GetPrefs()->GetBoolean(prefs::kWebAppCreateInQuickLaunchBar));
-#elif defined(OS_LINUX)
+#elif defined(OS_POSIX)
   menu_check_box_ = AddCheckbox(
       UTF16ToWide(l10n_util::GetStringUTF16(IDS_CREATE_SHORTCUTS_MENU_CHKBOX)),
       profile_->GetPrefs()->GetBoolean(prefs::kWebAppCreateInAppsMenu));
@@ -453,7 +456,7 @@ void CreateUrlApplicationShortcutView::FetchIcon() {
   pending_download_ = new IconDownloadCallbackFunctor(this);
   DCHECK(pending_download_);
 
-  tab_contents_->tab_contents()->favicon_helper().DownloadImage(
+  tab_contents_->favicon_tab_helper()->DownloadImage(
       unprocessed_icons_.back().url,
       std::max(unprocessed_icons_.back().width,
                unprocessed_icons_.back().height),
@@ -519,11 +522,9 @@ CreateChromeApplicationShortcutView::~CreateChromeApplicationShortcutView() {}
 // Called by tracker_ when the app's icon is loaded.
 void CreateChromeApplicationShortcutView::OnImageLoaded(
     SkBitmap* image, const ExtensionResource& resource, int index) {
-  if (image->isNull()) {
-    NOTREACHED() << "Corrupt image in profile?";
-    return;
-  }
+  if (!image || image->isNull())
+    image = ExtensionIconSource::LoadImageByResourceId(IDR_APP_DEFAULT_ICON);
+
   shortcut_info_.favicon = *image;
   static_cast<AppInfoView*>(app_info_)->UpdateIcon(shortcut_info_.favicon);
 }
-

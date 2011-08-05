@@ -11,6 +11,7 @@
 #include <set>
 #include <vector>
 
+#include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop.h"
@@ -19,6 +20,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/sessions/session_state.h"
 #include "chrome/browser/sync/signin_manager.h"
+#include "chrome/browser/sync/sync_ui_util.h"
 
 using browser_sync::sessions::SyncSessionSnapshot;
 
@@ -131,7 +133,15 @@ bool ProfileSyncServiceHarness::SetupSync() {
       i < syncable::MODEL_TYPE_COUNT; ++i) {
     synced_datatypes.insert(syncable::ModelTypeFromInt(i));
   }
-  return SetupSync(synced_datatypes);
+  bool result = SetupSync(synced_datatypes);
+  if (result == false) {
+    std::string status = GetServiceStatus();
+    LOG(ERROR) << "Client " << id_ << ": SetupSync failed. Syncer status:\n"
+               << status;
+  } else {
+    VLOG(1) << "Client " << id_ << ": SetupSync successful.";
+  }
+  return result;
 }
 
 bool ProfileSyncServiceHarness::SetupSync(
@@ -151,9 +161,7 @@ bool ProfileSyncServiceHarness::SetupSync(
   service_->signin()->StartSignIn(username_, password_, "", "");
 
   // Wait for the OnBackendInitialized() callback.
-  wait_state_ = WAITING_FOR_ON_BACKEND_INITIALIZED;
-  if (!AwaitStatusChangeWithTimeout(kLiveSyncOperationTimeoutMs,
-      "Waiting for OnBackendInitialized().")) {
+  if (!AwaitBackendInitialized()) {
     LOG(ERROR) << "OnBackendInitialized() not seen after "
                << kLiveSyncOperationTimeoutMs / 1000
                << " seconds.";
@@ -173,6 +181,12 @@ bool ProfileSyncServiceHarness::SetupSync(
     LOG(ERROR) << "Initial sync cycle did not complete after "
                << kLiveSyncOperationTimeoutMs / 1000
                << " seconds.";
+    return false;
+  }
+
+  if (wait_state_ == SET_PASSPHRASE_FAILED) {
+    LOG(ERROR) << "A passphrase is required for decryption. Sync cannot proceed"
+                  " until SetPassphrase is called.";
     return false;
   }
 
@@ -196,7 +210,7 @@ bool ProfileSyncServiceHarness::RunStateChangeMachine() {
   WaitState original_wait_state = wait_state_;
   switch (wait_state_) {
     case WAITING_FOR_ON_BACKEND_INITIALIZED: {
-      LogClientInfo("WAITING_FOR_ON_BACKEND_INITIALIZED");
+      LogClientInfo("WAITING_FOR_ON_BACKEND_INITIALIZED", 1);
       if (service()->sync_initialized()) {
         // The sync backend is initialized.
         SignalStateCompleteWithNextState(WAITING_FOR_INITIAL_SYNC);
@@ -204,29 +218,45 @@ bool ProfileSyncServiceHarness::RunStateChangeMachine() {
       break;
     }
     case WAITING_FOR_INITIAL_SYNC: {
-      LogClientInfo("WAITING_FOR_INITIAL_SYNC");
+      LogClientInfo("WAITING_FOR_INITIAL_SYNC", 1);
       if (IsSynced()) {
         // The first sync cycle is now complete. We can start running tests.
         SignalStateCompleteWithNextState(FULLY_SYNCED);
+        break;
+      }
+      if (service()->passphrase_required_reason() ==
+              sync_api::REASON_SET_PASSPHRASE_FAILED) {
+        // A passphrase is required for decryption and we don't have it. Do not
+        // wait any more.
+        SignalStateCompleteWithNextState(SET_PASSPHRASE_FAILED);
+        break;
       }
       break;
     }
     case WAITING_FOR_SYNC_TO_FINISH: {
-      LogClientInfo("WAITING_FOR_SYNC_TO_FINISH");
-      if (!IsSynced()) {
-        // The client is not yet fully synced. Continue waiting.
-        if (!GetStatus().server_reachable) {
-          // The client cannot reach the sync server because the network is
-          // disabled. There is no need to wait anymore.
-          SignalStateCompleteWithNextState(SERVER_UNREACHABLE);
-        }
+      LogClientInfo("WAITING_FOR_SYNC_TO_FINISH", 1);
+      if (IsSynced()) {
+        // The sync cycle we were waiting for is complete.
+        SignalStateCompleteWithNextState(FULLY_SYNCED);
         break;
       }
-      SignalStateCompleteWithNextState(FULLY_SYNCED);
+      if (service()->passphrase_required_reason() ==
+              sync_api::REASON_SET_PASSPHRASE_FAILED) {
+        // A passphrase is required for decryption and we don't have it. Do not
+        // wait any more.
+        SignalStateCompleteWithNextState(SET_PASSPHRASE_FAILED);
+        break;
+      }
+      if (!GetStatus().server_reachable) {
+        // The client cannot reach the sync server because the network is
+        // disabled. There is no need to wait anymore.
+        SignalStateCompleteWithNextState(SERVER_UNREACHABLE);
+        break;
+      }
       break;
     }
     case WAITING_FOR_UPDATES: {
-      LogClientInfo("WAITING_FOR_UPDATES");
+      LogClientInfo("WAITING_FOR_UPDATES", 1);
       DCHECK(timestamp_match_partner_);
       if (!MatchesOtherClient(timestamp_match_partner_)) {
         // The client is not yet fully synced; keep waiting until we converge.
@@ -238,27 +268,50 @@ bool ProfileSyncServiceHarness::RunStateChangeMachine() {
       SignalStateCompleteWithNextState(FULLY_SYNCED);
       break;
     }
+    case WAITING_FOR_PASSPHRASE_REQUIRED: {
+      LogClientInfo("WAITING_FOR_PASSPHRASE_REQUIRED", 1);
+      if (service()->IsPassphraseRequired()) {
+        // A passphrase is now required. Wait for it to be accepted.
+        SignalStateCompleteWithNextState(WAITING_FOR_PASSPHRASE_ACCEPTED);
+      }
+      break;
+    }
     case WAITING_FOR_PASSPHRASE_ACCEPTED: {
-      LogClientInfo("WAITING_FOR_PASSPHRASE_ACCEPTED");
-      // TODO(atwilson): After ProfileSyncService::OnPassphraseAccepted() is
-      // fixed, add an extra check to make sure that the value of
-      // service()->observed_passphrase_required() is false.
-      if (service()->ShouldPushChanges()) {
+      LogClientInfo("WAITING_FOR_PASSPHRASE_ACCEPTED", 1);
+      if (service()->ShouldPushChanges() &&
+          !service()->IsPassphraseRequired()) {
         // The passphrase has been accepted, and sync has been restarted.
         SignalStateCompleteWithNextState(FULLY_SYNCED);
       }
       break;
     }
     case WAITING_FOR_ENCRYPTION: {
-      LogClientInfo("WAITING_FOR_ENCRYPTION");
-      if (IsTypeEncrypted(waiting_for_encryption_type_)) {
-        // Encryption is complete for the type we are waiting on.
+      LogClientInfo("WAITING_FOR_ENCRYPTION", 1);
+      if (IsSynced() &&
+          IsTypeEncrypted(waiting_for_encryption_type_) &&
+          GetLastSessionSnapshot()->num_conflicting_updates == 0) {
+        // Encryption is now complete for the the type in which we were waiting.
+        SignalStateCompleteWithNextState(FULLY_SYNCED);
+        break;
+      }
+      if (!GetStatus().server_reachable) {
+        // The client cannot reach the sync server because the network is
+        // disabled. There is no need to wait anymore.
+        SignalStateCompleteWithNextState(SERVER_UNREACHABLE);
+        break;
+      }
+      break;
+    }
+    case WAITING_FOR_SYNC_CONFIGURATION: {
+      LogClientInfo("WAITING_FOR_SYNC_CONFIGURATION", 1);
+      if (service()->ShouldPushChanges()) {
+        // The Datatype manager is configured and sync is fully initialized.
         SignalStateCompleteWithNextState(FULLY_SYNCED);
       }
       break;
     }
     case SERVER_UNREACHABLE: {
-      LogClientInfo("SERVER_UNREACHABLE");
+      LogClientInfo("SERVER_UNREACHABLE", 1);
       if (GetStatus().server_reachable) {
         // The client was offline due to the network being disabled, but is now
         // back online. Wait for the pending sync cycle to complete.
@@ -266,14 +319,20 @@ bool ProfileSyncServiceHarness::RunStateChangeMachine() {
       }
       break;
     }
+    case SET_PASSPHRASE_FAILED: {
+      // A passphrase is required for decryption. There is nothing the sync
+      // client can do until SetPassphrase() is called.
+      LogClientInfo("SET_PASSPHRASE_FAILED", 1);
+      break;
+    }
     case FULLY_SYNCED: {
       // The client is online and fully synced. There is nothing to do.
-      LogClientInfo("FULLY_SYNCED");
+      LogClientInfo("FULLY_SYNCED", 1);
       break;
     }
     case SYNC_DISABLED: {
       // Syncing is disabled for the client. There is nothing to do.
-      LogClientInfo("SYNC_DISABLED");
+      LogClientInfo("SYNC_DISABLED", 1);
       break;
     }
     default:
@@ -288,29 +347,77 @@ void ProfileSyncServiceHarness::OnStateChanged() {
   RunStateChangeMachine();
 }
 
-bool ProfileSyncServiceHarness::AwaitPassphraseAccepted() {
-  LogClientInfo("AwaitPassphraseAccepted");
+bool ProfileSyncServiceHarness::AwaitPassphraseRequired() {
+  LogClientInfo("AwaitPassphraseRequired", 1);
   if (wait_state_ == SYNC_DISABLED) {
     LOG(ERROR) << "Sync disabled for Client " << id_ << ".";
     return false;
   }
 
-  // TODO(atwilson): After ProfileSyncService::OnPassphraseAccepted() is
-  // fixed, add an extra check to make sure that the value of
-  // service()->observed_passphrase_required() is false.
-  if (service()->ShouldPushChanges()) {
+  if (service()->IsPassphraseRequired()) {
+    // It's already true that a passphrase is required; don't wait.
+    return true;
+  }
+
+  wait_state_ = WAITING_FOR_PASSPHRASE_REQUIRED;
+  return AwaitStatusChangeWithTimeout(kLiveSyncOperationTimeoutMs,
+                                      "Waiting for passphrase to be required.");
+}
+
+bool ProfileSyncServiceHarness::AwaitPassphraseAccepted() {
+  LogClientInfo("AwaitPassphraseAccepted", 1);
+  if (wait_state_ == SYNC_DISABLED) {
+    LOG(ERROR) << "Sync disabled for Client " << id_ << ".";
+    return false;
+  }
+
+  if (service()->ShouldPushChanges() &&
+      !service()->IsPassphraseRequired()) {
     // Passphrase is already accepted; don't wait.
     return true;
   }
 
   wait_state_ = WAITING_FOR_PASSPHRASE_ACCEPTED;
   return AwaitStatusChangeWithTimeout(kLiveSyncOperationTimeoutMs,
-                                      "Waiting for passphrase accepted.");
+                                      "Waiting for passphrase to be accepted.");
+}
+
+bool ProfileSyncServiceHarness::AwaitBackendInitialized() {
+  LogClientInfo("AwaitBackendInitialized", 1);
+  if (service()->sync_initialized()) {
+    // The sync backend host has already been initialized; don't wait.
+    return true;
+  }
+
+  wait_state_ = WAITING_FOR_ON_BACKEND_INITIALIZED;
+  return AwaitStatusChangeWithTimeout(kLiveSyncOperationTimeoutMs,
+                                      "Waiting for OnBackendInitialized().");
+}
+
+bool ProfileSyncServiceHarness::AwaitSyncRestart() {
+  LogClientInfo("AwaitSyncRestart", 1);
+  if (service()->ShouldPushChanges()) {
+    // Sync has already been restarted; don't wait.
+    return true;
+  }
+
+  // Wait for the sync backend to be initialized.
+  if (!AwaitBackendInitialized()) {
+    LOG(ERROR) << "OnBackendInitialized() not seen after "
+               << kLiveSyncOperationTimeoutMs / 1000
+               << " seconds.";
+    return false;
+  }
+
+  // Wait for sync configuration to complete.
+  wait_state_ = WAITING_FOR_SYNC_CONFIGURATION;
+  return AwaitStatusChangeWithTimeout(kLiveSyncOperationTimeoutMs,
+                                      "Waiting for sync configuration.");
 }
 
 bool ProfileSyncServiceHarness::AwaitSyncCycleCompletion(
     const std::string& reason) {
-  LogClientInfo("AwaitSyncCycleCompletion");
+  LogClientInfo("AwaitSyncCycleCompletion", 1);
   if (wait_state_ == SYNC_DISABLED) {
     LOG(ERROR) << "Sync disabled for Client " << id_ << ".";
     return false;
@@ -345,7 +452,7 @@ bool ProfileSyncServiceHarness::AwaitSyncCycleCompletion(
 
 bool ProfileSyncServiceHarness::AwaitMutualSyncCycleCompletion(
     ProfileSyncServiceHarness* partner) {
-  LogClientInfo("AwaitMutualSyncCycleCompletion");
+  LogClientInfo("AwaitMutualSyncCycleCompletion", 1);
   if (!AwaitSyncCycleCompletion("Sync cycle completion on active client."))
     return false;
   return partner->WaitUntilTimestampMatches(this,
@@ -354,7 +461,7 @@ bool ProfileSyncServiceHarness::AwaitMutualSyncCycleCompletion(
 
 bool ProfileSyncServiceHarness::AwaitGroupSyncCycleCompletion(
     std::vector<ProfileSyncServiceHarness*>& partners) {
-  LogClientInfo("AwaitGroupSyncCycleCompletion");
+  LogClientInfo("AwaitGroupSyncCycleCompletion", 1);
   if (!AwaitSyncCycleCompletion("Sync cycle completion on active client."))
     return false;
   bool return_value = true;
@@ -385,7 +492,7 @@ bool ProfileSyncServiceHarness::AwaitQuiescence(
 
 bool ProfileSyncServiceHarness::WaitUntilTimestampMatches(
     ProfileSyncServiceHarness* partner, const std::string& reason) {
-  LogClientInfo("WaitUntilTimestampMatches");
+  LogClientInfo("WaitUntilTimestampMatches", 1);
   if (wait_state_ == SYNC_DISABLED) {
     LOG(ERROR) << "Sync disabled for Client " << id_ << ".";
     return false;
@@ -406,7 +513,7 @@ bool ProfileSyncServiceHarness::WaitUntilTimestampMatches(
 bool ProfileSyncServiceHarness::AwaitStatusChangeWithTimeout(
     int timeout_milliseconds,
     const std::string& reason) {
-  LogClientInfo("AwaitStatusChangeWithTimeout");
+  LogClientInfo("AwaitStatusChangeWithTimeout", 1);
   if (wait_state_ == SYNC_DISABLED) {
     LOG(ERROR) << "Sync disabled for Client " << id_ << ".";
     return false;
@@ -424,10 +531,10 @@ bool ProfileSyncServiceHarness::AwaitStatusChangeWithTimeout(
   loop->Run();
   loop->SetNestableTasksAllowed(did_allow_nestable_tasks);
   if (timeout_signal->Abort()) {
-    LogClientInfo("AwaitStatusChangeWithTimeout succeeded");
+    LogClientInfo("AwaitStatusChangeWithTimeout succeeded", 1);
     return true;
   } else {
-    LogClientInfo("AwaitStatusChangeWithTimeout timed out");
+    LogClientInfo("AwaitStatusChangeWithTimeout timed out", 0);
     return false;
   }
 }
@@ -438,19 +545,22 @@ ProfileSyncService::Status ProfileSyncServiceHarness::GetStatus() {
 }
 
 bool ProfileSyncServiceHarness::IsSynced() {
-  LogClientInfo("IsSynced");
+  LogClientInfo("IsSynced", 1);
   if (service() == NULL)
     return false;
   const SyncSessionSnapshot* snap = GetLastSessionSnapshot();
   // TODO(rsimha): Remove additional checks of snap->has_more_to_sync and
   // snap->unsynced_count once http://crbug.com/48989 is fixed.
   return (snap &&
-          snap->num_conflicting_updates == 0 &&  // We can decrypt everything.
+          snap->num_blocking_conflicting_updates == 0 &&
           ServiceIsPushingChanges() &&
           GetStatus().notifications_enabled &&
           !service()->HasUnsyncedItems() &&
           !snap->has_more_to_sync &&
-          snap->unsynced_count == 0);
+          snap->unsynced_count == 0 &&
+          !service()->HasPendingBackendMigration() &&
+          service()->passphrase_required_reason() !=
+              sync_api::REASON_SET_PASSPHRASE_FAILED);
 }
 
 bool ProfileSyncServiceHarness::MatchesOtherClient(
@@ -487,82 +597,117 @@ const SyncSessionSnapshot*
   return NULL;
 }
 
-void ProfileSyncServiceHarness::EnableSyncForDatatype(
+bool ProfileSyncServiceHarness::EnableSyncForDatatype(
     syncable::ModelType datatype) {
-  LogClientInfo("EnableSyncForDatatype");
+  LogClientInfo("EnableSyncForDatatype", 1);
+
   syncable::ModelTypeSet synced_datatypes;
   if (wait_state_ == SYNC_DISABLED) {
-    wait_state_ = WAITING_FOR_ON_BACKEND_INITIALIZED;
     synced_datatypes.insert(datatype);
-    DCHECK(SetupSync(synced_datatypes)) << "Reinitialization of Client " << id_
-                                        << " failed.";
-  } else {
-    DCHECK(service() != NULL) << "EnableSyncForDatatype(): service() is null.";
-    service()->GetPreferredDataTypes(&synced_datatypes);
-    syncable::ModelTypeSet::iterator it = synced_datatypes.find(
-        syncable::ModelTypeFromInt(datatype));
-    if (it == synced_datatypes.end()) {
-      synced_datatypes.insert(syncable::ModelTypeFromInt(datatype));
-      service()->OnUserChoseDatatypes(false, synced_datatypes);
-      wait_state_ = WAITING_FOR_SYNC_TO_FINISH;
-      AwaitSyncCycleCompletion("Waiting for datatype configuration.");
-      VLOG(1) << "EnableSyncForDatatype(): Enabled sync for datatype "
-              << syncable::ModelTypeToString(datatype) << " on Client " << id_;
-    } else {
-      VLOG(1) << "EnableSyncForDatatype(): Sync already enabled for datatype "
-              << syncable::ModelTypeToString(datatype) << " on Client " << id_;
-    }
+    return SetupSync(synced_datatypes);
   }
-}
 
-void ProfileSyncServiceHarness::DisableSyncForDatatype(
-    syncable::ModelType datatype) {
-  LogClientInfo("DisableSyncForDatatype");
-  syncable::ModelTypeSet synced_datatypes;
-  DCHECK(service() != NULL) << "DisableSyncForDatatype(): service() is null.";
+  if (service() == NULL) {
+    LOG(ERROR) << "EnableSyncForDatatype(): service() is null.";
+    return false;
+  }
+
   service()->GetPreferredDataTypes(&synced_datatypes);
   syncable::ModelTypeSet::iterator it = synced_datatypes.find(datatype);
   if (it != synced_datatypes.end()) {
-    synced_datatypes.erase(it);
-    service()->OnUserChoseDatatypes(false, synced_datatypes);
-    AwaitSyncCycleCompletion("Waiting for datatype configuration.");
-    VLOG(1) << "DisableSyncForDatatype(): Disabled sync for datatype "
-            << syncable::ModelTypeToString(datatype) << " on Client " << id_;
-  } else {
+    VLOG(1) << "EnableSyncForDatatype(): Sync already enabled for datatype "
+            << syncable::ModelTypeToString(datatype)
+            << " on Client " << id_ << ".";
+    return true;
+  }
+
+  synced_datatypes.insert(syncable::ModelTypeFromInt(datatype));
+  service()->OnUserChoseDatatypes(false, synced_datatypes);
+  if (AwaitSyncCycleCompletion("Datatype configuration.")) {
+    VLOG(1) << "EnableSyncForDatatype(): Enabled sync for datatype "
+            << syncable::ModelTypeToString(datatype)
+            << " on Client " << id_ << ".";
+    return true;
+  }
+
+  LogClientInfo("EnableSyncForDatatype failed", 0);
+  return false;
+}
+
+bool ProfileSyncServiceHarness::DisableSyncForDatatype(
+    syncable::ModelType datatype) {
+  LogClientInfo("DisableSyncForDatatype", 1);
+
+  syncable::ModelTypeSet synced_datatypes;
+  if (service() == NULL) {
+    LOG(ERROR) << "DisableSyncForDatatype(): service() is null.";
+    return false;
+  }
+
+  service()->GetPreferredDataTypes(&synced_datatypes);
+  syncable::ModelTypeSet::iterator it = synced_datatypes.find(datatype);
+  if (it == synced_datatypes.end()) {
     VLOG(1) << "DisableSyncForDatatype(): Sync already disabled for datatype "
-            << syncable::ModelTypeToString(datatype) << " on Client " << id_;
+            << syncable::ModelTypeToString(datatype)
+            << " on Client " << id_ << ".";
+    return true;
   }
+
+  synced_datatypes.erase(it);
+  service()->OnUserChoseDatatypes(false, synced_datatypes);
+  if (AwaitSyncCycleCompletion("Datatype reconfiguration.")) {
+    VLOG(1) << "DisableSyncForDatatype(): Disabled sync for datatype "
+            << syncable::ModelTypeToString(datatype)
+            << " on Client " << id_ << ".";
+    return true;
+  }
+
+  LogClientInfo("DisableSyncForDatatype failed", 0);
+  return false;
 }
 
-void ProfileSyncServiceHarness::EnableSyncForAllDatatypes() {
-  LogClientInfo("EnableSyncForAllDatatypes");
+bool ProfileSyncServiceHarness::EnableSyncForAllDatatypes() {
+  LogClientInfo("EnableSyncForAllDatatypes", 1);
+
   if (wait_state_ == SYNC_DISABLED) {
-    wait_state_ = WAITING_FOR_ON_BACKEND_INITIALIZED;
-    DCHECK(SetupSync()) << "Reinitialization of Client " << id_ << " failed.";
-  } else {
-    syncable::ModelTypeSet synced_datatypes;
-    for (int i = syncable::FIRST_REAL_MODEL_TYPE;
-        i < syncable::MODEL_TYPE_COUNT; ++i) {
-      synced_datatypes.insert(syncable::ModelTypeFromInt(i));
-    }
-    DCHECK(service() != NULL) << "EnableSyncForAllDatatypes(): service() is "
-                                 " null.";
-    service()->OnUserChoseDatatypes(true, synced_datatypes);
-    wait_state_ = WAITING_FOR_SYNC_TO_FINISH;
-    AwaitSyncCycleCompletion("Waiting for datatype configuration.");
-    VLOG(1) << "EnableSyncForAllDatatypes(): Enabled sync for all datatypes on "
-               "Client " << id_;
+    return SetupSync();
   }
+
+  if (service() == NULL) {
+    LOG(ERROR) << "EnableSyncForAllDatatypes(): service() is null.";
+    return false;
+  }
+
+  syncable::ModelTypeSet synced_datatypes;
+  for (int i = syncable::FIRST_REAL_MODEL_TYPE;
+       i < syncable::MODEL_TYPE_COUNT;
+       ++i) {
+    synced_datatypes.insert(syncable::ModelTypeFromInt(i));
+  }
+  service()->OnUserChoseDatatypes(true, synced_datatypes);
+  if (AwaitSyncCycleCompletion("Datatype reconfiguration.")) {
+    VLOG(1) << "EnableSyncForAllDatatypes(): Enabled sync for all datatypes on "
+               "Client " << id_ << ".";
+    return true;
+  }
+
+  LogClientInfo("EnableSyncForAllDatatypes failed", 0);
+  return false;
 }
 
-void ProfileSyncServiceHarness::DisableSyncForAllDatatypes() {
-  LogClientInfo("DisableSyncForAllDatatypes");
-  DCHECK(service() != NULL) << "EnableSyncForAllDatatypes(): service() is "
-                               "null.";
+bool ProfileSyncServiceHarness::DisableSyncForAllDatatypes() {
+  LogClientInfo("DisableSyncForAllDatatypes", 1);
+
+  if (service() == NULL) {
+    LOG(ERROR) << "DisableSyncForAllDatatypes(): service() is null.";
+    return false;
+  }
+
   service()->DisableForUser();
   wait_state_ = SYNC_DISABLED;
   VLOG(1) << "DisableSyncForAllDatatypes(): Disabled sync for all datatypes on "
              "Client " << id_;
+  return true;
 }
 
 std::string ProfileSyncServiceHarness::GetUpdatedTimestamp(
@@ -572,30 +717,38 @@ std::string ProfileSyncServiceHarness::GetUpdatedTimestamp(
   return snap->download_progress_markers[model_type];
 }
 
-void ProfileSyncServiceHarness::LogClientInfo(const std::string& message) {
+void ProfileSyncServiceHarness::LogClientInfo(const std::string& message,
+                                              int log_level) {
   if (service()) {
     const SyncSessionSnapshot* snap = GetLastSessionSnapshot();
     if (snap) {
-      VLOG(1) << "Client " << id_ << ": " << message
-              << ": num_updates_downloaded : "
-              << snap->syncer_status.num_updates_downloaded_total
-              << ", has_more_to_sync: " << snap->has_more_to_sync
-              << ", unsynced_count: " << snap->unsynced_count
-              << ", num_conflicting_updates: " << snap->num_conflicting_updates
-              << ", has_unsynced_items: "
-              << service()->HasUnsyncedItems()
-              << ", observed_passphrase_required: "
-              << service()->observed_passphrase_required()
-              << ", notifications_enabled: "
-              << GetStatus().notifications_enabled
-              << ", service_is_pushing_changes: " << ServiceIsPushingChanges();
+      VLOG(log_level) << "Client " << id_ << ": " << message
+                      << ": num_updates_downloaded : "
+                      << snap->syncer_status.num_updates_downloaded_total
+                      << ", has_more_to_sync: " << snap->has_more_to_sync
+                      << ", unsynced_count: " << snap->unsynced_count
+                      << ", num_blocking_conflicting_updates: "
+                      << snap->num_blocking_conflicting_updates
+                      << ", num_conflicting_updates: "
+                      << snap->num_conflicting_updates
+                      << ", has_unsynced_items: "
+                      << service()->HasUnsyncedItems()
+                      << ", passphrase_required_reason: "
+                      << sync_api::PassphraseRequiredReasonToString(
+                            service()->passphrase_required_reason())
+                      << ", notifications_enabled: "
+                      << GetStatus().notifications_enabled
+                      << ", service_is_pushing_changes: "
+                      << ServiceIsPushingChanges()
+                      << ", has_pending_backend_migration: "
+                      << service()->HasPendingBackendMigration();
     } else {
-      VLOG(1) << "Client " << id_ << ": " << message
-              << ": Sync session snapshot not available.";
+      VLOG(log_level) << "Client " << id_ << ": " << message
+                      << ": Sync session snapshot not available.";
     }
   } else {
-    VLOG(1) << "Client " << id_ << ": " << message
-            << ": Sync service not available.";
+    VLOG(log_level) << "Client " << id_ << ": " << message
+                    << ": Sync service not available.";
   }
 }
 
@@ -609,8 +762,19 @@ bool ProfileSyncServiceHarness::EnableEncryptionForType(
   service_->EncryptDataTypes(encrypted_types);
 
   // Wait some time to let the enryption finish.
+  return WaitForTypeEncryption(type);
+}
+
+bool ProfileSyncServiceHarness::WaitForTypeEncryption(
+    syncable::ModelType type) {
+  if (IsSynced() &&
+      IsTypeEncrypted(type) &&
+      GetLastSessionSnapshot()->num_conflicting_updates == 0) {
+    // Encryption is already complete for |type|; do not wait.
+    return true;
+  }
+
   std::string reason = "Waiting for encryption.";
-  DCHECK_EQ(FULLY_SYNCED, wait_state_);
   wait_state_ = WAITING_FOR_ENCRYPTION;
   waiting_for_encryption_type_ = type;
   if (!AwaitStatusChangeWithTimeout(kLiveSyncOperationTimeoutMs, reason)) {
@@ -619,7 +783,6 @@ bool ProfileSyncServiceHarness::EnableEncryptionForType(
                << " seconds.";
     return false;
   }
-
   return IsTypeEncrypted(type);
 }
 
@@ -630,4 +793,12 @@ bool ProfileSyncServiceHarness::IsTypeEncrypted(syncable::ModelType type) {
     return false;
   }
   return true;
+}
+
+std::string ProfileSyncServiceHarness::GetServiceStatus() {
+  DictionaryValue value;
+  sync_ui_util::ConstructAboutInformation(service_, &value);
+  std::string service_status;
+  base::JSONWriter::Write(&value, true, &service_status);
+  return service_status;
 }

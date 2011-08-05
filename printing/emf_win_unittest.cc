@@ -12,8 +12,8 @@
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/path_service.h"
+#include "base/scoped_temp_dir.h"
 #include "base/win/scoped_hdc.h"
 #include "printing/printing_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -136,7 +136,7 @@ TEST_F(EmfPrintingTest, PageBreak) {
     EXPECT_TRUE(emf.context() != NULL);
     int pages = 3;
     while (pages) {
-      EXPECT_TRUE(emf.StartPage(gfx::Size(), gfx::Point(), 1));
+      EXPECT_TRUE(emf.StartPage(gfx::Size(), gfx::Rect(), 1));
       ::Rectangle(emf.context(), 10, 10, 190, 190);
       EXPECT_TRUE(emf.FinishPage());
       --pages;

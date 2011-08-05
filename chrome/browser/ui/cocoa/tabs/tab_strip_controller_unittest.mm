@@ -4,6 +4,8 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include <vector>
+
 #import "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/cocoa/browser_test_helper.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
@@ -16,17 +18,18 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 
-@interface TestTabStripControllerDelegate :
-  NSObject<TabStripControllerDelegate> {
+@interface TestTabStripControllerDelegate
+    : NSObject<TabStripControllerDelegate> {
 }
 @end
 
 @implementation TestTabStripControllerDelegate
-- (void)onSelectTabWithContents:(TabContents*)contents {
+- (void)onActivateTabWithContents:(TabContents*)contents {
 }
 - (void)onReplaceTabWithContents:(TabContents*)contents {
 }
-- (void)onSelectedTabChange:(TabStripModelObserver::TabChangeType)change {
+- (void)onTabChanged:(TabStripModelObserver::TabChangeType)change
+        withContents:(TabContents*)contents {
 }
 - (void)onTabDetachedWithContents:(TabContents*)contents {
 }
@@ -77,7 +80,7 @@ class TestTabStripDelegate : public TabStripModelDelegate {
   }
   virtual void RestoreTab() {}
 
-  virtual bool CanCloseContentsAt(int index) { return true; }
+  virtual bool CanCloseContents(std::vector<int>* indices) { return true; }
 
   virtual bool CanBookmarkAllTabs() const { return false; }
 
@@ -88,6 +91,10 @@ class TestTabStripDelegate : public TabStripModelDelegate {
   virtual bool UseVerticalTabs() const { return false; }
 
   virtual void ToggleUseVerticalTabs() {}
+
+  virtual bool UseCompactNavigationBar() const { return false; }
+
+  virtual void ToggleUseCompactNavigationBar() {}
 
   virtual bool LargeIconsPermitted() const { return true; }
 };
@@ -135,7 +142,7 @@ class TabStripControllerTest : public CocoaTest {
     browser_helper_.CloseBrowserWindow();
     // The call to CocoaTest::TearDown() deletes the Browser and TabStripModel
     // objects, so we first have to delete the controller, which refers to them.
-    controller_.reset(nil);
+    controller_.reset();
     model_ = NULL;
     CocoaTest::TearDown();
   }

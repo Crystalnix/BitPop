@@ -4,6 +4,7 @@
 
 #include "chrome/browser/chromeos/input_method/xkeyboard.h"
 
+#include <queue>
 #include <utility>
 
 #include <X11/XKBlib.h>
@@ -18,6 +19,7 @@
 #include "base/process_util.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
+#include "content/browser/browser_thread.h"
 
 namespace chromeos {
 namespace input_method {
@@ -48,18 +50,22 @@ const char* kKeepRightAltOverlays[] = {
   "et",
   "es",
   "en_US_altgr_intl",
+  "de_neo",
   "nl",
   "no",
   "tr",
   "lt",
   "pt_PT",
+  "en_GB_dvorak",
   "fr",
   "bg",
   "pt_BR",
+  "en_fr_hybrid_CA",
   "hr",
   "da",
   "fi",
   "fr_CA",
+  "ko",
   "sv",
   "sk",
   "de",
@@ -133,11 +139,23 @@ class XKeyboard {
   // Sets the current keyboard layout to |layout_name|. This function does not
   // change the current mapping of the modifier keys. Returns true on success.
   bool SetLayout(const std::string& layout_name) {
-    if (SetLayoutInternal(layout_name, current_modifier_map_)) {
+    if (SetLayoutInternal(layout_name, current_modifier_map_, false)) {
       current_layout_name_ = layout_name;
       return true;
     }
     return false;
+  }
+
+  // Sets the current keyboard layout to |current_layout_name_| again.
+  // See crosbug.com/15851 for details.
+  bool ReapplyLayout() {
+    if (current_layout_name_.empty()) {
+      LOG(ERROR) << "Can't reapply XKB layout: layout unknown";
+      return false;
+    }
+    VLOG(1) << "ReapplyLayout: setting to " << current_layout_name_;
+    return SetLayoutInternal(
+        current_layout_name_, current_modifier_map_, true /* force */);
   }
 
   // Remaps modifier keys. This function does not change the current keyboard
@@ -145,7 +163,7 @@ class XKeyboard {
   bool RemapModifierKeys(const ModifierMap& modifier_map) {
     const std::string layout_name = current_layout_name_.empty() ?
         kDefaultLayoutName : current_layout_name_;
-    if (SetLayoutInternal(layout_name, modifier_map)) {
+    if (SetLayoutInternal(layout_name, modifier_map, false)) {
       current_layout_name_ = layout_name;
       current_modifier_map_ = modifier_map;
       return true;
@@ -206,23 +224,24 @@ class XKeyboard {
   // This function is used by SetLayout() and RemapModifierKeys(). Calls
   // setxkbmap command if needed, and updates the last_full_layout_name_ cache.
   bool SetLayoutInternal(const std::string& layout_name,
-                         const ModifierMap& modifier_map) {
+                         const ModifierMap& modifier_map,
+                         bool force) {
     if (!CrosLibrary::Get()->EnsureLoaded()) {
       // We should not try to change a layout inside ui_tests.
       return false;
     }
 
-    const std::string layouts_to_set = CreateFullXkbLayoutName(
+    const std::string layout_to_set = CreateFullXkbLayoutName(
         layout_name, modifier_map);
-    if (layouts_to_set.empty()) {
+    if (layout_to_set.empty()) {
       return false;
     }
 
     if (!current_layout_name_.empty()) {
       const std::string current_layout = CreateFullXkbLayoutName(
           current_layout_name_, current_modifier_map_);
-      if (current_layout == layouts_to_set) {
-        DLOG(INFO) << "The requested layout is already set: " << layouts_to_set;
+      if (!force && (current_layout == layout_to_set)) {
+        DLOG(INFO) << "The requested layout is already set: " << layout_to_set;
         return true;
       }
     }
@@ -233,26 +252,47 @@ class XKeyboard {
       SetCapsLockEnabled(false);
     }
 
-    ExecuteSetLayoutCommand(layouts_to_set);
+    // TODO(yusukes): Revert to VLOG(1) when crosbug.com/15851 is resolved.
+    LOG(WARNING) << (force ? "Reapply" : "Set")
+                 << " layout: " << layout_to_set;
+
+    const bool start_execution = execute_queue_.empty();
+    // If no setxkbmap command is in flight (i.e. start_execution is true),
+    // start the first one by explicitly calling MaybeExecuteSetLayoutCommand().
+    // If one or more setxkbmap commands are already in flight, just push the
+    // layout name to the queue. setxkbmap command for the layout will be called
+    // via OnSetLayoutFinish() callback later.
+    execute_queue_.push(layout_to_set);
+    if (start_execution) {
+      MaybeExecuteSetLayoutCommand();
+    }
     return true;
   }
 
-  // Executes 'setxkbmap -layout ...' command asynchronously.
+  // Executes 'setxkbmap -layout ...' command asynchronously using a layout name
+  // in the |execute_queue_|. Do nothing if the queue is empty.
   // TODO(yusukes): Use libxkbfile.so instead of the command (crosbug.com/13105)
-  void ExecuteSetLayoutCommand(const std::string& layouts_to_set) {
+  void MaybeExecuteSetLayoutCommand() {
+    if (execute_queue_.empty()) {
+      return;
+    }
+    const std::string layout_to_set = execute_queue_.front();
+
     std::vector<std::string> argv;
     base::file_handle_mapping_vector fds_to_remap;
     base::ProcessHandle handle = base::kNullProcessHandle;
 
     argv.push_back(kSetxkbmapCommand);
     argv.push_back("-layout");
-    argv.push_back(layouts_to_set);
+    argv.push_back(layout_to_set);
+    argv.push_back("-synch");
     const bool result = base::LaunchApp(argv,
                                         fds_to_remap,  // No remapping.
                                         false,  // Don't wait.
                                         &handle);
     if (!result) {
-      LOG(ERROR) << "Failed to execute setxkbmap: " << layouts_to_set;
+      LOG(ERROR) << "Failed to execute setxkbmap: " << layout_to_set;
+      execute_queue_ = std::queue<std::string>();  // clear the queue.
       return;
     }
 
@@ -262,16 +302,27 @@ class XKeyboard {
     g_child_watch_add(pid,
                       reinterpret_cast<GChildWatchFunc>(OnSetLayoutFinish),
                       this);
+    VLOG(1) << "ExecuteSetLayoutCommand: " << layout_to_set << ": pid=" << pid;
   }
 
   static void OnSetLayoutFinish(GPid pid, gint status, XKeyboard* self) {
-    DLOG(INFO) << "OnSetLayoutFinish: pid=" << pid;
+    CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    VLOG(1) << "OnSetLayoutFinish: pid=" << pid;
+    if (self->execute_queue_.empty()) {
+      LOG(ERROR) << "OnSetLayoutFinish: execute_queue_ is empty. "
+                 << "base::LaunchApp failed? pid=" << pid;
+      return;
+    }
+    self->execute_queue_.pop();
+    self->MaybeExecuteSetLayoutCommand();
   }
 
   // The XKB layout name which we set last time like "us" and "us(dvorak)".
   std::string current_layout_name_;
   // The mapping of modifier keys we set last time.
   ModifierMap current_modifier_map_;
+  // A queue for executing setxkbmap one by one.
+  std::queue<std::string> execute_queue_;
 
   DISALLOW_COPY_AND_ASSIGN(XKeyboard);
 };
@@ -385,6 +436,10 @@ bool ContainsModifierKeyAsReplacement(
 
 bool SetCurrentKeyboardLayoutByName(const std::string& layout_name) {
   return XKeyboard::GetInstance()->SetLayout(layout_name);
+}
+
+bool ReapplyCurrentKeyboardLayout() {
+  return XKeyboard::GetInstance()->ReapplyLayout();
 }
 
 bool RemapModifierKeys(const ModifierMap& modifier_map) {

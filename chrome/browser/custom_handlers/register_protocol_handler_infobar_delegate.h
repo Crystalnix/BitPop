@@ -7,10 +7,9 @@
 #pragma once
 
 #include "base/string16.h"
+#include "chrome/browser/custom_handlers/protocol_handler.h"
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
 
-class SkBitmap;
-class ProtocolHandler;
 class ProtocolHandlerRegistry;
 class TabContents;
 
@@ -20,12 +19,11 @@ class RegisterProtocolHandlerInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
   RegisterProtocolHandlerInfoBarDelegate(TabContents* tab_contents,
                                          ProtocolHandlerRegistry* registry,
-                                         ProtocolHandler* handler);
+                                         ProtocolHandler handler);
 
   // ConfirmInfoBarDelegate:
-  virtual bool ShouldExpire(const NavigationController::LoadCommittedDetails&
+  virtual bool ShouldExpire(const content::LoadCommittedDetails&
       details) const OVERRIDE;
-  virtual void InfoBarClosed() OVERRIDE;
   virtual Type GetInfoBarType() const OVERRIDE;
   virtual string16 GetMessageText() const OVERRIDE;
   virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
@@ -37,7 +35,7 @@ class RegisterProtocolHandlerInfoBarDelegate : public ConfirmInfoBarDelegate {
  private:
   TabContents* tab_contents_;
   ProtocolHandlerRegistry* registry_;
-  ProtocolHandler* handler_;
+  ProtocolHandler handler_;
 
   DISALLOW_COPY_AND_ASSIGN(RegisterProtocolHandlerInfoBarDelegate);
 };

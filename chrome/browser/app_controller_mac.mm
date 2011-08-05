@@ -7,6 +7,7 @@
 #include "base/auto_reset.h"
 #include "base/command_line.h"
 #include "base/file_path.h"
+#include "base/mac/foundation_util.h"
 #include "base/mac/mac_util.h"
 #include "base/message_loop.h"
 #include "base/string_number_conversions.h"
@@ -18,12 +19,13 @@
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/download/download_manager.h"
 #include "chrome/browser/instant/instant_confirm_dialog.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/printing/print_job_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/sessions/session_service.h"
+#include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
+#include "chrome/browser/sessions/tab_restore_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/sync_ui_util.h"
 #include "chrome/browser/sync/sync_ui_util_mac.h"
@@ -42,7 +44,6 @@
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_window_controller.h"
 #include "chrome/browser/ui/cocoa/task_manager_mac.h"
-#include "chrome/browser/ui/options/options_window.h"
 #include "chrome/common/app_mode_common_mac.h"
 #include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/chrome_switches.h"
@@ -50,6 +51,7 @@
 #include "chrome/common/url_constants.h"
 #include "content/browser/browser_thread.h"
 #include "content/browser/tab_contents/tab_contents.h"
+#include "content/browser/user_metrics.h"
 #include "content/common/notification_service.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -109,6 +111,12 @@ Browser* ActivateOrCreateBrowser(Profile* profile) {
   return CreateBrowser(profile);
 }
 
+CFStringRef BaseBundleID_CFString() {
+  NSString* base_bundle_id =
+      [NSString stringWithUTF8String:base::mac::BaseBundleID()];
+  return base::mac::NSToCFCast(base_bundle_id);
+}
+
 // This task synchronizes preferences (under "org.chromium.Chromium" or
 // "com.google.Chrome"), in particular, writes them out to disk.
 class PrefsSyncTask : public Task {
@@ -116,7 +124,7 @@ class PrefsSyncTask : public Task {
   PrefsSyncTask() {}
   virtual ~PrefsSyncTask() {}
   virtual void Run() {
-    if (!CFPreferencesAppSynchronize(app_mode::kAppPrefsID))
+    if (!CFPreferencesAppSynchronize(BaseBundleID_CFString()))
       LOG(WARNING) << "Error recording application bundle path.";
   }
 };
@@ -133,7 +141,7 @@ void RecordLastRunAppBundlePath() {
       chrome::GetVersionedDirectory().DirName().DirName().DirName();
   CFPreferencesSetAppValue(app_mode::kLastRunAppBundlePathPrefsKey,
                            base::SysUTF8ToCFStringRef(appBundlePath.value()),
-                           app_mode::kAppPrefsID);
+                           BaseBundleID_CFString());
 
   // Sync after a delay avoid I/O contention on startup; 1500 ms is plenty.
   BrowserThread::PostDelayedTask(BrowserThread::FILE, FROM_HERE,
@@ -323,7 +331,7 @@ void RecordLastRunAppBundlePath() {
     // proper shutdown. If we don't do this, Chrome won't shut down cleanly,
     // and may end up crashing when some thread tries to use the IO thread (or
     // another thread) that is no longer valid.
-    [self defaultProfile]->ResetTabRestoreService();
+    TabRestoreServiceFactory::ResetForProfile([self defaultProfile]);
   }
 }
 
@@ -492,7 +500,8 @@ void RecordLastRunAppBundlePath() {
   // when all the browser windows get closed.
   BrowserList::StartKeepAlive();
 
-  bookmarkMenuBridge_.reset(new BookmarkMenuBridge([self defaultProfile]));
+  bookmarkMenuBridge_.reset(new BookmarkMenuBridge([self defaultProfile],
+      [[[NSApp mainMenu] itemWithTag:IDC_BOOKMARKS_MENU] submenu]));
   historyMenuBridge_.reset(new HistoryMenuBridge([self defaultProfile]));
 
   [self setUpdateCheckInterval];
@@ -630,7 +639,8 @@ void RecordLastRunAppBundlePath() {
 // Checks with the TabRestoreService to see if there's anything there to
 // restore and returns YES if so.
 - (BOOL)canRestoreTab {
-  TabRestoreService* service = [self defaultProfile]->GetTabRestoreService();
+  TabRestoreService* service =
+      TabRestoreServiceFactory::GetForProfile([self defaultProfile]);
   return service && !service->entries().empty();
 }
 
@@ -785,8 +795,7 @@ void RecordLastRunAppBundlePath() {
       break;
     }
     case IDC_SHOW_BOOKMARK_MANAGER:
-      UserMetrics::RecordAction(UserMetricsAction("ShowBookmarkManager"),
-                                defaultProfile);
+      UserMetrics::RecordAction(UserMetricsAction("ShowBookmarkManager"));
       if (Browser* browser = ActivateBrowser(defaultProfile)) {
         // Open a bookmark manager tab.
         browser->OpenBookmarkManager();
@@ -847,8 +856,7 @@ void RecordLastRunAppBundlePath() {
           ProfileSyncService::START_FROM_WRENCH);
       break;
     case IDC_TASK_MANAGER:
-      UserMetrics::RecordAction(UserMetricsAction("TaskManager"),
-                                defaultProfile);
+      UserMetrics::RecordAction(UserMetricsAction("TaskManager"));
       TaskManagerMac::Show(false);
       break;
     case IDC_OPTIONS:
@@ -877,7 +885,7 @@ void RecordLastRunAppBundlePath() {
     browser = BrowserList::GetLastActive();
   }
   const Extension* extension = applications.GetExtension(tag);
-  browser->OpenApplicationTab(profile, extension, NULL);
+  browser->OpenApplicationTab(profile, extension, NEW_FOREGROUND_TAB);
 }
 
 // Same as |-commandDispatch:|, but executes commands using a disposition
@@ -921,7 +929,7 @@ void RecordLastRunAppBundlePath() {
         doneOnce = YES;
         if (base::mac::WasLaunchedAsHiddenLoginItem()) {
           SessionService* sessionService =
-              [self defaultProfile]->GetSessionService();
+              SessionServiceFactory::GetForProfile([self defaultProfile]);
           if (sessionService &&
               sessionService->RestoreIfNecessary(std::vector<GURL>()))
             return NO;
@@ -1161,6 +1169,10 @@ void RecordLastRunAppBundlePath() {
 
 - (void)clearStartupUrls {
   startupUrls_.clear();
+}
+
+- (BookmarkMenuBridge*)bookmarkMenuBridge {
+  return bookmarkMenuBridge_.get();
 }
 
 @end  // @implementation AppController

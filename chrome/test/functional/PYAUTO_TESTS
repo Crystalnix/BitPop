@@ -28,12 +28,17 @@
   'CONTINUOUS': {
     'all': [
       'autofill',
-      '-autofill.AutofillTest.testComparePhoneNumbers',
-      # crbug.com/77969
+      # crbug.com/83655
+      '-autofill.AutofillTest.testAutofillInvalid',
+      # crbug.com/83686
       '-autofill.AutofillTest.testFillProfileCrazyCharacters',
-      '-autofill.AutofillTest.testNoAutofillForReadOnlyFields',
-      # crbug.com/79802
-      '-autofill.AutofillTest.testWhitespacesAndSeparatorCharsStrippedForValidCCNums',
+      # crbug.com/77113 - M13 feature.
+      '-autofill.AutofillTest.testProfileWithEmailInOtherFieldNotSaved',
+      # crbug.com/81271
+      '-autofill.AutofillTest.testMergeAggregatedProfilesWithSameAddress',
+      '-autofill.AutofillTest.testProfilesNotMergedWhenNoMinAddressData',
+      # crbug.com/83686 - M13 feature.
+      '-autofill.AutofillTest.testSegmentNumbersNotSupportedInDOMUI',
       'bookmark_bar',
       'bookmarks',
       'browser',
@@ -41,89 +46,74 @@
       'codesign',
       'content',
       '-content.ContentTest.testTopSitesContent',  # crbug.com/71824
-      '-content.ContentTest.testLocalFileBasics',  # crbug.com/75533
       'cookies',
       'crash_reporter',
       'databases',
-      # crbug.com/66714
+      # crbug.com/84060
+      '-databases.DatabasesTest.testIncognitoCannotReadRegularDatabase',
       '-databases.DatabasesTest.testIncognitoDBPersistentAcrossTabs',
+      '-databases.DatabasesTest.testIncognitoDatabaseNotPersistent',
+      '-databases.DatabasesTest.testRegularCannotReadIncognitoDatabase',
       'downloads',
-      # crbug.com/67233
-      '-downloads.DownloadsTest.testDownloadIncognitoAndRegular',
+      'execute_javascript',
+      'extensions',
       'find_in_page',
+      # crbug.com/84638
+      '-find_in_page.FindMatchTests.testSearchInPDF',
       # Turkish I problem. crbug.com/60638
       '-find_in_page.FindMatchTests.testLocalizationAndCaseOrder',
-      'execute_javascript',
       'history',
       'https',
-      # crbug.com/77777
-      '-imports',
+      'imports',
       'infobars',
-      # crbug.com/72664
-      '-infobars.InfobarTest.testPluginCrashForMultiTabs',
       'instant',
-      # crbug.com/76639
-      '-instant.InstantTest.testInstantLoadsFor100CharsLongQuery',
+      # crbug.com/83459
+      '-instant.InstantTest.testPreFetchInstantURLSetsNoCookies',
       'navigation',
       'notifications',
-      # crbug.com/66072
-      '-notifications.NotificationsTest.testNotificationOrderAfterClosingOne',
-      '-notifications.NotificationsTest.testKillNotificationProcess',
-      # crbug.com/79826
-      '-notifications.NotificationsTest.testCreateSimpleNotification',
-      '-notifications.NotificationsTest.testNotificationReplacement',
-      '-notifications.NotificationsTest.testNotificationWithPropertyMissing',
       'ntp',
       'omnibox',
       '-omnibox.OmniboxTest.testHistoryResult',  # crbug.com/71715
-      # crbug.com/73078
-      '-passwords',
+      'passwords',
       'pdf',
       'plugins',
       'plugins_check',
       'popups',
-      # Browser crash with popups - crbug.com/79777
-      '-browser.BrowserTest.testKillAndReloadSharedProcess',
-      '-browser.BrowserTest.testPopupSharesProcess',
-      '-popups.PopupsTest.testAllowPopupsFromExternalSite',
-      '-popups.PopupsTest.testLaunchBlockedPopup',
-      '-popups.PopupsTest.testLaunchBlockedPopupInIncognito',
+      # crbug.com/82629 - real bug.
       '-popups.PopupsTest.testPopupsLaunchUponBrowserBackButton',
-      '-popups.PopupsTest.testPopupsLaunchWhenTabIsClosed',
+      # crbug.com/47935
+      '-popups.PopupsTest.testBlockedPopupNotShowInHistory',
+      # crbug.com/83827
+      '-popups.PopupsTest.testUnblockedPopupShowsInHistory',
       'prefs',
       'search_engines',
-      # crbug.com/67628
-      '-search_engines.SearchEnginesTest.testTabToSearch',
-      # crbug.com/70439
-      '-search_engines.SearchEnginesTest.testAddSearchEngine',
-      '-search_engines.SearchEnginesTest.testEditSearchEngine',
-      '-search_engines.SearchEnginesTest.testSearchEngineSpecialChars',
       'shortcuts',
       'special_tabs',
-      # crbug.com/67851
+      # Flaky: crbug.com/67851
       '-special_tabs.SpecialTabsTest.testAboutDNSTab',
+      'sync',
+      '-sync',  # causes browser crash. crbug.com/84494
       'test_basic',
       'themes',
-      'sync',
     ],
 
     'win': [
-      # testBookmarkBarVisible fails on windows. crbug.com/42823
-      '-bookmark_bar.BookmarkBarTest.testBookmarkBarVisible',
-      # crbug.com/64664
-      '-databases.DatabasesTest.testReloadActiveTab',
-      '-databases.DatabasesTest.testModificationsPersistAfterRendererCrash',
       # Some download test fails on win official builder, only thru buildbot
       # when downloading the small zip file.
       # crbug.com/50481, crbug.com/54942
       '-downloads.DownloadsTest.testZip',
       '-downloads.DownloadsTest.testRemoveDownload',
-      '-prefs.PrefsTest.testDownloadDirPref',
-      # crbug.com/70694
+      # crbug.com/66072
+      '-notifications.NotificationsTest.testNotificationOrderAfterClosingOne',
+      # crbug.com/70694, crbug.com/73078
       '-passwords.PasswordTest.testInfoBarDisappearByReload',
       '-passwords.PasswordTest.testNeverSavePasswords',
       # crbug.com/67588
       '-passwords.PasswordTest.testSavedPasswordInTabsAndWindows',
+      '-prefs.PrefsTest.testDownloadDirPref',
+      # crbug.com/83820
+      '-passwords.PasswordTest.testInfoBarDisappearByNavigatingPage',
+      '-passwords.PasswordTest.testDisplayAndSavePasswordInfobar',
     ],
 
     'mac': [
@@ -134,8 +124,6 @@
       # codesign tests should run *after* signing. crbug.com/50481
       '-crash_reporter.CrashReporterTest.testRendererCrash',  # crbug.com/69464
       '-codesign',
-      # crbug.com/71158
-      '-databases.DatabasesTest.testModificationsPersistAfterRendererCrash',
       # crbug.com/75724
       '-downloads.DownloadsTest.testDeclineDangerousDownload',
       # crbug.com/75724
@@ -144,6 +132,8 @@
       '-downloads.DownloadsTest.testOpenWhenDone',
       '-downloads.DownloadsTest.testAlwaysOpenFileType',
       '-instant.InstantTest.testInstantNavigation',  # crbug.com/69090
+      # crbug.com/66072
+      '-notifications.NotificationsTest.testNotificationOrderAfterClosingOne',
       '-ntp.NTPTest.testLaunchAppNewWindow',  # crbug.com/79812
       # crbug.com/70437
       '-omnibox.OmniboxTest.testHistoryResult',
@@ -153,21 +143,14 @@
       '-search_engines.SearchEnginesTest.testDiscoverSearchEngine',
       # Keychain popups make sync tests difficult on Mac.  crbug.com/49378
       '-sync',
-      # crbug.com/78863
-      '-sync.SyncTest.testDisableAndEnableDatatype',
-      '-sync.SyncTest.testSignInToSync',
     ],
 
     'linux': [  # linux != chromeos
-      '-autofill.AutofillTest.testAutofillInvalid', # crbug.com/74843
       '-browser.BrowserTest.testWindowResize',  # crbug.com/44963
-      '-browser.BrowserTest.testFlashLoadsAfterKill',  # crbug.com/63039
-      # crbug.com/64664
-      '-databases.DatabasesTest.testReloadActiveTab',
-      '-databases.DatabasesTest.testModificationsPersistAfterRendererCrash',
-      # crbug.com/70694
-      '-passwords.PasswordTest.testInfoBarDisappearByReload',
-      '-passwords.PasswordTest.testNeverSavePasswords',
+      # System password manager obstructs password automation.
+      '-passwords',
+      # Gnome / kwallet popups on linux break sync tests.  crbug.com/80329
+      '-sync',
     ],
 
     # ChromeOS is linux, but note that this section does not include the
@@ -180,53 +163,31 @@
       'chromeos_security',
       'chromeos_update',
       'chromeos_wifi',
-      '-chromeos_basic.ChromeosBasic.testScreenLocker',
+      'chromeos_firmware_version_checker',
 
-      # crbug.com/42823
-      '-bookmark_bar.BookmarkBarTest.testBookmarkBarVisible',
       # you cannot resize browser window on chromeos
       '-browser.BrowserTest.testWindowResize',
+      # Flaky: crosbug.com/14394
+      '-browsing_data.BrowsingDataTest.testClearHistoryAndDownloads',
       # no codesign verification on chromeos
       '-codesign',
-      # crbug.com/64664
-      '-databases.DatabasesTest.testReloadActiveTab',
-      '-databases.DatabasesTest.testModificationsPersistAfterRendererCrash',
+      # Downloads panel stays even after declining a download.
+      # crosbug.com/14728
+      '-downloads.DownloadsTest.testDeclineDangerousDownload',
       # Need internal data dirs in autotest package. crosbug.com/6855
       '-find_in_page.FindMatchTests.testSearchInPDF',
       # Importer tests are invalid on chromeos since chrome is the only browser
       '-imports',
-      # crbug.com/70694
-      '-passwords.PasswordTest.testInfoBarDisappearByReload',
-      '-passwords.PasswordTest.testNeverSavePasswords',
-
-      # Needs internal data files.  crosbug.com/6855
-      '-browser.BrowserTest.testCanLoadFlash',
-      '-browser.BrowserTest.testFlashLoadsAfterKill',
-      '-browser.BrowserTest.testSingleFlashPluginProcess',
+      # Plugin crash infobar does not show up for file:/// flash urls
+      # crosbug.com/14971
       '-infobars.InfobarTest.testPluginCrashInfobar',
-      '-pdf',
-      '-plugins',
-
-      # Local http server not working on chromeos.  crosbug.com/12641
-      '-popups.PopupsTest.testMultiplePopups',
-      '-popups.PopupsTest.testPopupBlockedEverySec',
-      '-popups.PopupsTest.testPopupsLaunchUponBrowserBackButton',
-      '-test_basic.SimpleTest.testHTTP',
-
-      # file:/// urls not prompting geolocation infobar on chromeos.
-      # crosbug.com/13009
-      '-infobars.InfobarTest.testGeolocationInfobar',
-      '-infobars.InfobarTest.testGeolocationInfobarInMultipleTabsAndWindows',
-      '-prefs.PrefsTest.testGeolocationPref',
+      # Flaky: crosbug.com/14439
+      '-instant.InstantSettingsTest.testEnableDisableInstant',
 
       # Deal with i18n chars.  crosbug.com/12639
+      '-autofill.AutofillTest.testFillProfileCrazyCharacters',
       '-downloads.DownloadsTest.testCrazyFilenames',
       '-omnibox.OmniboxTest.testCrazyFilenames',
-
-      # Download shelf visibility automation broken on ChromeOS.
-      # crosbug.com/12644
-      '-downloads.DownloadsTest.testZip',
-      '-downloads.DownloadsTest.testZipInIncognito',
 
       # Session restore not working with PyAuto.  crosbug.com/12648
       '-prefs.PrefsTest.testNavigationStateOnSessionRestore',
@@ -236,34 +197,34 @@
       # crosbug.com/14256
       '-ntp.NTPTest.testLaunchAppFullScreen',
 
-      # Exclusions that have not been narrowed to other categories yet.
-      # crosbug.com/12653
-      '-autofill',
-      '-bookmark_bar',
-      '-bookmarks.BookmarksTest.testBookmarksPersistence',
-      '-browser.BrowserTest.testKillAndReloadSharedProcess',
-      '-browser.BrowserTest.testPopupSharesProcess',
-      '-browsing_data.BrowsingDataTest.testClearHistoryAndDownloads',
-      '-content.ContentTest.testHttpsPage',
-      '-cookies.CookiesTest.testAllowCookiesForASessionUsingExceptions',
-      '-cookies.CookiesTest.testAllowCookiesUsingExceptions',
-      '-cookies.CookiesTest.testBlockCookiesUsingExceptions',
-      '-cookies.CookiesTest.testCookiesFile',
-      '-crash_reporter',
-      '-history.HistoryTest.testFtpHistory',
-      '-history.HistoryTest.testHttpsHistory',
-      '-https.HTTPSTest.testSSLPageBasic',
-      '-instant',
-      '-notifications',
-      '-omnibox.OmniboxTest.testBookmarkResultInNewTabAndWindow',
+      # Content history broken in omnibox.  crosbug.com/14416
       '-omnibox.OmniboxTest.testContentHistory',
-      '-omnibox.OmniboxTest.testDifferentTypesOfResults',
-      '-omnibox.OmniboxTest.testFetchHistoryResultItems',
-      '-omnibox.OmniboxTest.testGoogleSearch',
-      '-omnibox.OmniboxTest.testInlinAutoComplete',
-      '-omnibox.OmniboxTest.testSuggest',
-      '-popups',
+
+      # onunload popups get created in the same window on chromeos
+      # crosbug.com/14924
+      '-popups.PopupsTest.testPopupsLaunchWhenTabIsClosed',
+
+      # Failing notifications tests  crbug.com/81624
+      '-notifications.NotificationsTest.testCloseNotification',
+      '-notifications.NotificationsTest.testCreateDenyCloseNotifications',
+      '-notifications.NotificationsTest.testNotificationOrderAfterClosingOne',
+      '-notifications.NotificationsTest.testAllowOnPermissionInfobar',
+      '-notifications.NotificationsTest.testClosePermissionInfobar',
+      '-notifications.NotificationsTest.testCloseTabWithPermissionInfobar',
+      '-notifications.NotificationsTest.testCrashTabWithPermissionInfobar',
+      '-notifications.NotificationsTest.testDenyOnPermissionInfobar',
+      '-notifications.NotificationsTest.testExitBrowserWithInfobar',
+      '-notifications.NotificationsTest.testIncognitoNotification',
+      '-notifications.NotificationsTest.testNavigateAwayWithPermissionInfobar',
+      '-notifications.NotificationsTest.testOriginPrefsNotSavedInIncognito',
+      '-notifications.NotificationsTest.testPermissionInfobarAppears',
+      '-notifications.NotificationsTest.testKillNotificationProcess',
+
+      # sync tests were running into a secondary passphrase. crosbug.com/15016.
       '-sync',
+
+      # crosbug.com/16977
+      '-chromeos_wifi.ChromeosWifi.testConnectToHiddenWiFiNonExistent',
     ],
   },
 
@@ -279,6 +240,8 @@
       '-translate.TranslateTest.testToggleTranslateOption',
       # crbug.com/70280
       '-translate.TranslateTest.testSeveralLanguages',
+      # This test fails due to crbug.com/85633
+      '-translate.TranslateTest.testSessionRestore',
     ],
 
     'win': [
@@ -292,9 +255,10 @@
     ],
 
     'chromeos': [
-      # Exclusions that have not been narrowed to other categories yet.
-      # crosbug.com/12653
-      '-translate',
+      # Session restore not working with PyAuto.  crosbug.com/12648
+      '-translate.TranslateTest.testSessionRestore',
+      # Deal with i18n chars.  crosbug.com/12639
+      '-translate.TranslateTest.testDownloadsNotTranslated',
     ],
   },
 
@@ -304,10 +268,10 @@
   # HTML5 media performance tests.
   'MEDIA_TESTS': {
     'linux': [
-      'media_playbacktime',
-      'media_perf',
-      'media_fps',
-      'media_event_simple_test',
+      'media.media_playbacktime',
+      'media.media_perf',
+      'media.media_fps',
+      'media.media_event_simple_test',
     ],
   },
 }

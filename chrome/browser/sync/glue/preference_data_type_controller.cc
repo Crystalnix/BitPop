@@ -5,6 +5,9 @@
 #include "chrome/browser/sync/glue/preference_data_type_controller.h"
 
 #include "base/metrics/histogram.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/sync/api/syncable_service.h"
+#include "chrome/browser/sync/glue/generic_change_processor.h"
 #include "chrome/browser/sync/profile_sync_factory.h"
 
 namespace browser_sync {
@@ -18,17 +21,19 @@ PreferenceDataTypeController::PreferenceDataTypeController(
                                  sync_service) {
 }
 
-PreferenceDataTypeController::~PreferenceDataTypeController() {}
+PreferenceDataTypeController::~PreferenceDataTypeController() {
+}
 
 syncable::ModelType PreferenceDataTypeController::type() const {
   return syncable::PREFERENCES;
 }
 
 void PreferenceDataTypeController::CreateSyncComponents() {
-  ProfileSyncFactory::SyncComponents sync_components = profile_sync_factory_->
-      CreatePreferenceSyncComponents(sync_service_, this);
-  model_associator_.reset(sync_components.model_associator);
-  change_processor_.reset(sync_components.change_processor);
+  ProfileSyncFactory::SyncComponents sync_components =
+      profile_sync_factory_->CreatePreferenceSyncComponents(sync_service_,
+                                                            this);
+  set_model_associator(sync_components.model_associator);
+  set_change_processor(sync_components.change_processor);
 }
 
 void PreferenceDataTypeController::RecordUnrecoverableError(

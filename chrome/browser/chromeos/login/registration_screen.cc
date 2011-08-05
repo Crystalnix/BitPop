@@ -9,6 +9,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/ui/views/handle_web_keyboard_event_gtk.h"
 #include "chrome/common/url_constants.h"
 #include "content/browser/child_process_security_policy.h"
 #include "content/browser/renderer_host/render_view_host.h"
@@ -17,7 +18,6 @@
 #include "googleurl/src/gurl.h"
 #include "net/url_request/url_request_about_job.h"
 #include "net/url_request/url_request_filter.h"
-#include "views/widget/widget_gtk.h"
 
 namespace chromeos {
 
@@ -35,8 +35,25 @@ const char kRegistrationSkippedUrl[] = "cros://register/skipped";
 }  // namespace
 
 ///////////////////////////////////////////////////////////////////////////////
+// RegistrationDomView, protected:
+
+TabContents* RegistrationDomView::CreateTabContents(
+    Profile* profile, SiteInstance* instance) {
+  return new WizardWebPageViewTabContents(profile,
+                                          instance,
+                                          page_delegate_);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// RegistrationView, protected:
+
+WebPageDomView* RegistrationView::dom_view() {
+  return dom_view_;
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // RegistrationScreen, public:
-RegistrationScreen::RegistrationScreen(WizardScreenDelegate* delegate)
+RegistrationScreen::RegistrationScreen(ViewScreenDelegate* delegate)
     : ViewScreen<RegistrationView>(delegate) {
   if (!host_page_url_.get())
     set_registration_host_page_url(GURL(kRegistrationHostPageUrl));
@@ -122,11 +139,7 @@ void RegistrationScreen::OnPageLoadFailed(const std::string& url) {
 
 void RegistrationScreen::HandleKeyboardEvent(
     const NativeWebKeyboardEvent& event) {
-  views::Widget* widget = view()->GetWidget();
-  if (widget && event.os_event && !event.skip_in_browser) {
-    views::KeyEvent views_event(reinterpret_cast<GdkEvent*>(event.os_event));
-    static_cast<views::WidgetGtk*>(widget)->HandleKeyboardEvent(views_event);
-  }
+  HandleWebKeyboardEvent(view()->GetWidget(), event);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -140,7 +153,7 @@ void RegistrationScreen::CloseScreen(ScreenObserver::ExitCodes code) {
     input_method::EnableInputMethods(
         locale, input_method::kKeyboardLayoutsOnly, "");
   }
-  delegate()->GetObserver(this)->OnExit(code);
+  delegate()->GetObserver()->OnExit(code);
 }
 
 // static

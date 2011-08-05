@@ -7,6 +7,11 @@
 //     --gtest_filter=ProxySettingsApiTest.ProxyFixedIndividualIncognitoOnly
 
 chrome.test.runTests([
+  // Verify that execution has started to make sure flaky timeouts are not
+  // caused by us.
+  function verifyTestsHaveStarted() {
+    chrome.test.succeed();
+  },
   function setIndividualProxies() {
     var httpProxy = {
       host: "1.1.1.1"
@@ -33,8 +38,8 @@ chrome.test.runTests([
     };
 
     var config = { rules: rules, mode: "fixed_servers" };
-    chrome.experimental.proxy.settings.set(
-        {'value': config, 'incognito': true},
+    chrome.proxy.settings.set(
+        {'value': config, 'scope': 'incognito_persistent'},
         chrome.test.callbackPass());
   }
 ]);

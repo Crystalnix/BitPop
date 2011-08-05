@@ -5,6 +5,7 @@
 #include "chrome/browser/chromeos/login/views_login_display.h"
 
 #include <algorithm>
+#include <vector>
 
 #include "base/stl_util-inl.h"
 #include "base/utf_string_conversions.h"
@@ -19,7 +20,6 @@
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "views/widget/widget_gtk.h"
 #include "views/window/window.h"
 
 namespace {
@@ -43,18 +43,10 @@ const int kCursorOffset = 5;
 // Otherwise, disables the tooltips.
 void EnableTooltipsIfNeeded(
     const std::vector<chromeos::UserController*>& controllers) {
-  std::map<std::string, int> visible_display_names;
-  for (size_t i = 0; i + 1 < controllers.size(); ++i) {
-    const std::string& display_name =
-        controllers[i]->user().GetDisplayName();
-    ++visible_display_names[display_name];
-  }
   for (size_t i = 0; i < controllers.size(); ++i) {
-    const std::string& display_name =
-        controllers[i]->user().GetDisplayName();
     bool show_tooltip = controllers[i]->is_new_user() ||
                         controllers[i]->is_guest() ||
-                        visible_display_names[display_name] > 1;
+                        controllers[i]->user().NeedsNameTooltip();
     controllers[i]->EnableNameTooltip(show_tooltip);
   }
 }
@@ -230,7 +222,7 @@ void ViewsLoginDisplay::ShowError(int error_msg_id,
   }
 
   bubble_ = MessageBubble::Show(
-      controllers_[selected_view_index_]->controls_window(),
+      controllers_[selected_view_index_]->controls_widget(),
       bounds,
       arrow,
       ResourceBundle::GetSharedInstance().GetBitmapNamed(IDR_WARNING),
@@ -302,7 +294,19 @@ void ViewsLoginDisplay::StartEnterpriseEnrollment() {
 // ViewsLoginDisplay, views::MessageBubbleDelegate implementation:
 //
 
-void ViewsLoginDisplay::OnHelpLinkActivated() {
+void ViewsLoginDisplay::BubbleClosing(Bubble* bubble, bool closed_by_escape) {
+  bubble_ = NULL;
+}
+
+bool ViewsLoginDisplay::CloseOnEscape() {
+  return true;
+}
+
+bool ViewsLoginDisplay::FadeInOnShow() {
+  return false;
+}
+
+void ViewsLoginDisplay::OnLinkActivated(size_t index) {
   ClearErrors();
   if (error_msg_id_ == IDS_LOGIN_ERROR_CAPTIVE_PORTAL) {
     delegate()->FixCaptivePortal();

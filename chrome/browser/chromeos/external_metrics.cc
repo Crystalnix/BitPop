@@ -20,7 +20,7 @@
 #include "base/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/metrics/metrics_service.h"
-#include "chrome/browser/metrics/user_metrics.h"
+#include "content/browser/user_metrics.h"
 #include "content/browser/browser_thread.h"
 
 namespace chromeos {
@@ -31,6 +31,8 @@ static const int kExternalMetricsCollectionIntervalMs = 30 * 1000;
 ExternalMetrics::ExternalMetrics()
     : test_recorder_(NULL) {
 }
+
+ExternalMetrics::~ExternalMetrics() {}
 
 void ExternalMetrics::Start() {
   // Register user actions external to the browser.

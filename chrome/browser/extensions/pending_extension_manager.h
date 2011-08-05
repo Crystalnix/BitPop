@@ -68,18 +68,13 @@ class PendingExtensionManager {
       const std::string& id,
       const GURL& update_url,
       PendingExtensionInfo::ShouldAllowInstallPredicate should_allow_install,
-      bool install_silently,
-      bool enable_on_install,
-      bool enable_incognito_on_install);
+      bool install_silently);
 
   // Given an extension id and an update URL, schedule the extension
   // to be fetched, installed, and activated.
   void AddFromExternalUpdateUrl(const std::string& id,
                                 const GURL& update_url,
                                 Extension::Location location);
-
-  // Add a default app, using the default update url.
-  void AddFromDefaultAppList(const std::string& id);
 
   // Add a pending extension record for an external CRX file.
   void AddFromExternalFile(
@@ -95,8 +90,6 @@ class PendingExtensionManager {
       PendingExtensionInfo::ShouldAllowInstallPredicate should_allow_install,
       bool is_from_sync,
       bool install_silently,
-      bool enable_on_install,
-      bool enable_incognito_on_install,
       Extension::Location install_source);
 
   // Add a pending extension record directly.  Used for unit tests that need

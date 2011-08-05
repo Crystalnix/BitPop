@@ -19,26 +19,18 @@
 #include "base/path_service.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/browser_process.h"
-#include "chrome/browser/net/resolve_proxy_msg_helper.h"
-#include "chrome/browser/net/url_request_tracking.h"
-#include "chrome/browser/plugin_download_helper.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/logging_chrome.h"
-#include "chrome/common/render_messages.h"
 #include "content/browser/browser_thread.h"
+#include "content/browser/content_browser_client.h"
+#include "content/browser/resolve_proxy_msg_helper.h"
 #include "content/browser/plugin_service.h"
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
 #include "content/browser/renderer_host/resource_message_filter.h"
 #include "content/common/plugin_messages.h"
 #include "content/common/resource_messages.h"
 #include "ipc/ipc_switches.h"
-#include "net/base/io_buffer.h"
-#include "net/url_request/url_request.h"
-#include "net/url_request/url_request_context.h"
-#include "net/url_request/url_request_context_getter.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/gl/gl_switches.h"
@@ -53,10 +45,24 @@
 #include "ui/gfx/rect.h"
 #endif
 
-static const char kDefaultPluginFinderURL[] =
-    "https://dl-ssl.google.com/edgedl/chrome/plugins/plugins2.xml";
-
 #if defined(OS_WIN)
+#include "webkit/plugins/npapi/webplugin_delegate_impl.h"
+
+namespace {
+
+void ReparentPluginWindowHelper(HWND window, HWND parent) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  int window_style = WS_CHILD;
+  if (!webkit::npapi::WebPluginDelegateImpl::IsDummyActivationWindow(window))
+    window_style |= WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
+
+  ::SetWindowLongPtr(window, GWL_STYLE, window_style);
+  ::SetParent(window, parent);
+}
+
+}  // namespace
+
 void PluginProcessHost::OnPluginWindowDestroyed(HWND window, HWND parent) {
   // The window is destroyed at this point, we just care about its parent, which
   // is the intermediate window we created.
@@ -69,19 +75,21 @@ void PluginProcessHost::OnPluginWindowDestroyed(HWND window, HWND parent) {
   PostMessage(parent, WM_CLOSE, 0, 0);
 }
 
-void PluginProcessHost::OnDownloadUrl(const std::string& url,
-                                      int source_pid,
-                                      gfx::NativeWindow caller_window) {
-  PluginDownloadUrlHelper* download_url_helper =
-      new PluginDownloadUrlHelper(url, source_pid, caller_window, NULL);
-  download_url_helper->InitiateDownload(
-      Profile::GetDefaultRequestContext()->GetURLRequestContext());
-}
-
 void PluginProcessHost::AddWindow(HWND window) {
   plugin_parent_windows_set_.insert(window);
 }
 
+void PluginProcessHost::OnReparentPluginWindow(HWND window, HWND parent) {
+  // Reparent only to our process.
+  DWORD process_id = 0;
+  ::GetWindowThreadProcessId(parent, &process_id);
+  if (process_id != ::GetCurrentProcessId())
+    return;
+
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      NewRunnableFunction(ReparentPluginWindowHelper, window, parent));
+}
 #endif  // defined(OS_WIN)
 
 #if defined(TOOLKIT_USES_GTK)
@@ -190,7 +198,6 @@ bool PluginProcessHost::Init(const webkit::npapi::WebPluginInfo& info,
     switches::kMemoryProfiling,
     switches::kNoSandbox,
     switches::kPluginStartupDialog,
-    switches::kSafePlugins,
     switches::kSilentDumpOnDCHECK,
     switches::kTestSandbox,
     switches::kUseGL,
@@ -213,8 +220,6 @@ bool PluginProcessHost::Init(const webkit::npapi::WebPluginInfo& info,
   }
 
   cmd_line->AppendSwitchASCII(switches::kProcessChannelID, channel_id());
-
-  SetCrashReporterCommandLine(cmd_line);
 
 #if defined(OS_POSIX)
   base::environment_vector env;
@@ -243,6 +248,13 @@ bool PluginProcessHost::Init(const webkit::npapi::WebPluginInfo& info,
 #endif
       cmd_line);
 
+  // The plugin needs to be shutdown gracefully, i.e. NP_Shutdown needs to be
+  // called on the plugin. The plugin process exits when it receives the
+  // OnChannelError notification indicating that the browser plugin channel has
+  // been destroyed.
+  SetTerminateChildOnShutdown(false);
+
+  content::GetContentClient()->browser()->PluginProcessHostCreated(this);
   AddFilter(new ResolveProxyMsgHelper(NULL));
 
   return true;
@@ -258,12 +270,11 @@ bool PluginProcessHost::OnMessageReceived(const IPC::Message& msg) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(PluginProcessHost, msg)
     IPC_MESSAGE_HANDLER(PluginProcessHostMsg_ChannelCreated, OnChannelCreated)
-    IPC_MESSAGE_HANDLER(PluginProcessHostMsg_GetPluginFinderUrl,
-                        OnGetPluginFinderUrl)
 #if defined(OS_WIN)
     IPC_MESSAGE_HANDLER(PluginProcessHostMsg_PluginWindowDestroyed,
                         OnPluginWindowDestroyed)
-    IPC_MESSAGE_HANDLER(PluginProcessHostMsg_DownloadUrl, OnDownloadUrl)
+    IPC_MESSAGE_HANDLER(PluginProcessHostMsg_ReparentPluginWindow,
+                        OnReparentPluginWindow)
 #endif
 #if defined(TOOLKIT_USES_GTK)
     IPC_MESSAGE_HANDLER(PluginProcessHostMsg_MapNativeViewId,
@@ -351,20 +362,4 @@ void PluginProcessHost::OnChannelCreated(
 
   client->OnChannelOpened(channel_handle);
   sent_requests_.pop();
-}
-
-void PluginProcessHost::OnGetPluginFinderUrl(std::string* plugin_finder_url) {
-  // TODO(bauerb): Move this method to MessageFilter.
-  if (!plugin_finder_url) {
-    NOTREACHED();
-    return;
-  }
-
-  if (!g_browser_process->plugin_finder_disabled()) {
-    // TODO(iyengar): Add the plumbing to retrieve the default
-    // plugin finder URL.
-    *plugin_finder_url = kDefaultPluginFinderURL;
-  } else {
-    plugin_finder_url->clear();
-  }
 }

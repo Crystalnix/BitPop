@@ -23,6 +23,7 @@
 #include "base/values.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/media/media_player.h"
 #include "chrome/browser/download/download_item.h"
 #include "chrome/browser/download/download_manager.h"
 #include "chrome/browser/download/download_util.h"
@@ -31,15 +32,15 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/browser/ui/webui/favicon_source.h"
-#include "chrome/browser/ui/webui/mediaplayer_ui.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/jstemplate_builder.h"
-#include "chrome/common/net/url_fetcher.h"
 #include "chrome/common/url_constants.h"
 #include "content/browser/browser_thread.h"
 #include "content/browser/tab_contents/tab_contents.h"
+#include "content/common/url_fetcher.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -61,6 +62,7 @@ static const int kPopupHeight = 36 * 2 + 29;
 static const char kPropertyPath[] = "path";
 static const char kPropertyTitle[] = "title";
 static const char kPropertyDirectory[] = "isDirectory";
+static const char kActiveDownloadAppName[] = "active-downloads";
 
 class ActiveDownloadsUIHTMLSource : public ChromeURLDataManager::DataSource {
  public:
@@ -109,7 +111,6 @@ class ActiveDownloadsHandler
   void HandlePauseToggleDownload(const ListValue* args);
   void HandleCancelDownload(const ListValue* args);
   void HandleAllowDownload(const ListValue* args);
-  void OpenNewPopupWindow(const ListValue* args);
   void OpenNewFullWindow(const ListValue* args);
   void PlayMediaFile(const ListValue* args);
 
@@ -119,8 +120,7 @@ class ActiveDownloadsHandler
   void UpdateDownloadList();
   void SendDownloads();
   void AddDownload(DownloadItem* item);
-
-  void OpenNewWindow(const ListValue* args, bool popup);
+  bool SelectTab(const GURL& url);
 
   Profile* profile_;
   TabContents* tab_contents_;
@@ -148,15 +148,13 @@ void ActiveDownloadsUIHTMLSource::StartDataRequest(const std::string& path,
                                               int request_id) {
   DictionaryValue localized_strings;
   localized_strings.SetString("allowdownload",
-      l10n_util::GetStringUTF16(IDS_FILEBROWSER_CONFIRM_DOWNLOAD));
+      l10n_util::GetStringUTF16(IDS_PROMPT_DANGEROUS_DOWNLOAD_EXTENSION));
   localized_strings.SetString("cancel",
       l10n_util::GetStringUTF16(IDS_DOWNLOAD_LINK_CANCEL));
-  localized_strings.SetString("confirmcancel",
-      l10n_util::GetStringUTF16(IDS_FILEBROWSER_CONFIRM_CANCEL));
-  localized_strings.SetString("confirmyes",
-      l10n_util::GetStringUTF16(IDS_FILEBROWSER_CONFIRM_YES));
-  localized_strings.SetString("open",
-      l10n_util::GetStringUTF16(IDS_FILEBROWSER_OPEN));
+  localized_strings.SetString("discard",
+      l10n_util::GetStringUTF16(IDS_DISCARD_DOWNLOAD));
+  localized_strings.SetString("continue",
+      l10n_util::GetStringUTF16(IDS_CONTINUE_EXTENSION_DOWNLOAD));
   localized_strings.SetString("pause",
       l10n_util::GetStringUTF16(IDS_DOWNLOAD_LINK_PAUSE));
   localized_strings.SetString("resume",
@@ -210,7 +208,7 @@ WebUIMessageHandler* ActiveDownloadsHandler::Attach(WebUI* web_ui) {
   // Create our favicon data source.
   profile_ = web_ui->GetProfile();
   profile_->GetChromeURLDataManager()->AddDataSource(
-      new FaviconSource(profile_));
+      new FaviconSource(profile_, FaviconSource::FAVICON));
   tab_contents_ = web_ui->tab_contents();
   return WebUIMessageHandler::Attach(web_ui);
 }
@@ -229,8 +227,6 @@ void ActiveDownloadsHandler::RegisterMessages() {
       NewCallback(this, &ActiveDownloadsHandler::HandleCancelDownload));
   web_ui_->RegisterMessageCallback("allowDownload",
       NewCallback(this, &ActiveDownloadsHandler::HandleAllowDownload));
-  web_ui_->RegisterMessageCallback("openNewPopupWindow",
-      NewCallback(this, &ActiveDownloadsHandler::OpenNewPopupWindow));
   web_ui_->RegisterMessageCallback("openNewFullWindow",
       NewCallback(this, &ActiveDownloadsHandler::OpenNewFullWindow));
   web_ui_->RegisterMessageCallback("playMediaFile",
@@ -276,26 +272,28 @@ void ActiveDownloadsHandler::HandleCancelDownload(const ListValue* args) {
   }
 }
 
+bool ActiveDownloadsHandler::SelectTab(const GURL& url) {
+  for (TabContentsIterator it; !it.done(); ++it) {
+    TabContents* tab_contents = it->tab_contents();
+    if (tab_contents->GetURL() == url) {
+      tab_contents->Activate();
+      return true;
+    }
+  }
+  return false;
+}
+
 void ActiveDownloadsHandler::OpenNewFullWindow(const ListValue* args) {
-  OpenNewWindow(args, false);
-}
-
-void ActiveDownloadsHandler::OpenNewPopupWindow(const ListValue* args) {
-  OpenNewWindow(args, true);
-}
-
-void ActiveDownloadsHandler::OpenNewWindow(const ListValue* args, bool popup) {
   std::string url = UTF16ToUTF8(ExtractStringValue(args));
-  Browser* browser = popup ?
-      Browser::CreateForType(Browser::TYPE_APP_PANEL, profile_) :
-      BrowserList::GetLastActive();
+
+  if (SelectTab(GURL(url)))
+    return;
+
+  Browser* browser = BrowserList::GetLastActive();
   browser::NavigateParams params(browser, GURL(url), PageTransition::LINK);
   params.disposition = NEW_FOREGROUND_TAB;
   browser::Navigate(&params);
-  // TODO(beng): The following two calls should be automatic by Navigate().
-  if (popup)
-    params.browser->window()->SetBounds(gfx::Rect(0, 0, 400, 300));
-  params.browser->window()->Show();
+  browser->window()->Show();
 }
 
 void ActiveDownloadsHandler::ModelChanged() {
@@ -391,7 +389,8 @@ Browser* ActiveDownloadsUI::OpenPopup(Profile* profile) {
 
   // Create new browser if no matching pop up is found.
   if (browser == NULL) {
-    browser = Browser::CreateForType(Browser::TYPE_APP_PANEL, profile);
+    browser = Browser::CreateForApp(Browser::TYPE_PANEL, kActiveDownloadAppName,
+                                    gfx::Rect(), profile);
 
     browser::NavigateParams params(
         browser,
@@ -400,16 +399,15 @@ Browser* ActiveDownloadsUI::OpenPopup(Profile* profile) {
     params.disposition = NEW_FOREGROUND_TAB;
     browser::Navigate(&params);
 
+    DCHECK_EQ(browser, params.browser);
     // TODO(beng): The following two calls should be automatic by Navigate().
-    params.browser->window()->SetBounds(gfx::Rect(kPopupLeft,
-                                                  kPopupTop,
-                                                  kPopupWidth,
-                                                  kPopupHeight));
-    params.browser->window()->Show();
-  } else {
-    browser->window()->Show();
+    browser->window()->SetBounds(gfx::Rect(kPopupLeft,
+                                           kPopupTop,
+                                           kPopupWidth,
+                                           kPopupHeight));
   }
 
+  browser->window()->Show();
   return browser;
 }
 
@@ -417,7 +415,7 @@ Browser* ActiveDownloadsUI::GetPopup(Profile* profile) {
   for (BrowserList::const_iterator it = BrowserList::begin();
        it != BrowserList::end();
        ++it) {
-    if (((*it)->type() == Browser::TYPE_APP_PANEL)) {
+    if ((*it)->is_type_panel() && (*it)->is_app()) {
       TabContents* tab_contents = (*it)->GetSelectedTabContents();
       DCHECK(tab_contents);
       if (!tab_contents)
@@ -425,8 +423,7 @@ Browser* ActiveDownloadsUI::GetPopup(Profile* profile) {
       const GURL& url = tab_contents->GetURL();
 
       if (url.SchemeIs(chrome::kChromeUIScheme) &&
-          url.host() == chrome::kChromeUIActiveDownloadsHost &&
-          (*it)->profile() == profile) {
+          url.host() == chrome::kChromeUIActiveDownloadsHost) {
         return (*it);
       }
     }

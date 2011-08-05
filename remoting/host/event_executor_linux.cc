@@ -26,7 +26,7 @@ namespace {
 // A class to generate events on Linux.
 class EventExecutorLinux : public EventExecutor {
  public:
-  EventExecutorLinux(MessageLoopForUI* message_loop, Capturer* capturer);
+  EventExecutorLinux(MessageLoop* message_loop, Capturer* capturer);
   virtual ~EventExecutorLinux() {};
 
   virtual void InjectKeyEvent(const KeyEvent* event, Task* done) OVERRIDE;
@@ -34,7 +34,7 @@ class EventExecutorLinux : public EventExecutor {
 
  private:
   bool Init();
-  MessageLoopForUI* message_loop_;
+  MessageLoop* message_loop_;
   Capturer* capturer_;
 
   // X11 graphics context.
@@ -234,10 +234,10 @@ int ChromotocolKeycodeToX11Keysym(int32_t keycode) {
 }
 
 EventExecutorLinux::EventExecutorLinux(
-    MessageLoopForUI* message_loop, Capturer* capturer)
+    MessageLoop* message_loop, Capturer* capturer)
     : message_loop_(message_loop),
       capturer_(capturer),
-      display_(message_loop->GetDisplay()),
+      display_(XOpenDisplay(NULL)),
       root_window_(BadValue),
       width_(0),
       height_(0) {
@@ -277,13 +277,16 @@ bool EventExecutorLinux::Init() {
 }
 
 void EventExecutorLinux::InjectKeyEvent(const KeyEvent* event, Task* done) {
+  base::ScopedTaskRunner done_runner(done);
+
   if (MessageLoop::current() != message_loop_) {
     message_loop_->PostTask(
         FROM_HERE,
         NewRunnableMethod(this, &EventExecutorLinux::InjectKeyEvent,
-                          event, done));
+                          event, done_runner.Release()));
     return;
   }
+
   // TODO(ajwong): This will only work for QWERTY keyboards.
   int keysym = ChromotocolKeycodeToX11Keysym(event->keycode());
 
@@ -304,20 +307,21 @@ void EventExecutorLinux::InjectKeyEvent(const KeyEvent* event, Task* done) {
           << " sending keysym: " << keysym
           << " to keycode: " << keycode;
   XTestFakeKeyEvent(display_, keycode, event->pressed(), CurrentTime);
-
-  done->Run();
-  delete done;
+  XFlush(display_);
 }
 
 void EventExecutorLinux::InjectMouseEvent(const MouseEvent* event,
                                           Task* done) {
+  base::ScopedTaskRunner done_runner(done);
+
   if (MessageLoop::current() != message_loop_) {
     message_loop_->PostTask(
         FROM_HERE,
         NewRunnableMethod(this, &EventExecutorLinux::InjectMouseEvent,
-                          event, done));
+                          event, done_runner.Release()));
     return;
   }
+
   if (event->has_x() && event->has_y()) {
     if (event->x() < 0 || event->y() < 0 ||
         event->x() > width_ || event->y() > height_) {
@@ -332,6 +336,7 @@ void EventExecutorLinux::InjectMouseEvent(const MouseEvent* event,
     XTestFakeMotionEvent(display_, DefaultScreen(display_),
                          event->x(), event->y(),
                          CurrentTime);
+    XFlush(display_);
   }
 
   if (event->has_button() && event->has_button_down()) {
@@ -347,19 +352,17 @@ void EventExecutorLinux::InjectMouseEvent(const MouseEvent* event,
             << " received, sending down " << button_number;
     XTestFakeButtonEvent(display_, button_number, event->button_down(),
                          CurrentTime);
+    XFlush(display_);
   }
 
   if (event->has_wheel_offset_x() && event->has_wheel_offset_y()) {
     NOTIMPLEMENTED() << "No scroll wheel support yet.";
   }
-
-  done->Run();
-  delete done;
 }
 
 }  // namespace
 
-EventExecutor* EventExecutor::Create(MessageLoopForUI* message_loop,
+EventExecutor* EventExecutor::Create(MessageLoop* message_loop,
                                      Capturer* capturer) {
   return new EventExecutorLinux(message_loop, capturer);
 }
@@ -367,4 +370,3 @@ EventExecutor* EventExecutor::Create(MessageLoopForUI* message_loop,
 }  // namespace remoting
 
 DISABLE_RUNNABLE_METHOD_REFCOUNT(remoting::EventExecutorLinux);
-

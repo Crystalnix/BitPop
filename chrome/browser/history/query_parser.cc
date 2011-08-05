@@ -6,13 +6,11 @@
 
 #include <algorithm>
 
+#include "base/compiler_specific.h"
 #include "base/i18n/break_iterator.h"
+#include "base/i18n/case_conversion.h"
 #include "base/logging.h"
-#include "base/memory/scoped_vector.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
-#include "ui/base/l10n/l10n_util.h"
-#include "unicode/uscript.h"
+#include "base/stl_util-inl.h"
 
 namespace {
 
@@ -33,8 +31,7 @@ bool SnippetIntersects(const Snippet::MatchPosition& mp1,
 
 // Coalesces match positions in |matches| after index that intersect the match
 // position at |index|.
-void CoalesceMatchesFrom(size_t index,
-                         Snippet::MatchPositions* matches) {
+void CoalesceMatchesFrom(size_t index, Snippet::MatchPositions* matches) {
   Snippet::MatchPosition& mp = (*matches)[index];
   for (Snippet::MatchPositions::iterator i = matches->begin() + index + 1;
        i != matches->end(); ) {
@@ -57,6 +54,16 @@ void CoalseAndSortMatchPositions(Snippet::MatchPositions* matches) {
     CoalesceMatchesFrom(i, matches);
 }
 
+// Returns true if the character is considered a quote.
+bool IsQueryQuote(wchar_t ch) {
+  return ch == '"' ||
+         ch == 0xab ||    // left pointing double angle bracket
+         ch == 0xbb ||    // right pointing double angle bracket
+         ch == 0x201c ||  // left double quotation mark
+         ch == 0x201d ||  // right double quotation mark
+         ch == 0x201e;    // double low-9 quotation mark
+}
+
 }  // namespace
 
 // Inheritance structure:
@@ -67,25 +74,54 @@ void CoalseAndSortMatchPositions(Snippet::MatchPositions* matches) {
 // A QueryNodeWord is a single word in the query.
 class QueryNodeWord : public QueryNode {
  public:
-  explicit QueryNodeWord(const string16& word)
-      : word_(word), literal_(false) {}
-  virtual ~QueryNodeWord() {}
-  virtual int AppendToSQLiteQuery(string16* query) const;
-  virtual bool IsWord() const { return true; }
+  explicit QueryNodeWord(const string16& word);
+  virtual ~QueryNodeWord();
 
   const string16& word() const { return word_; }
+
   void set_literal(bool literal) { literal_ = literal; }
 
-  virtual bool HasMatchIn(const std::vector<QueryWord>& words,
-                          Snippet::MatchPositions* match_positions) const;
-
-  virtual bool Matches(const string16& word, bool exact) const;
-  virtual void AppendWords(std::vector<string16>* words) const;
+  // QueryNode:
+  virtual int AppendToSQLiteQuery(string16* query) const OVERRIDE;
+  virtual bool IsWord() const OVERRIDE;
+  virtual bool Matches(const string16& word, bool exact) const OVERRIDE;
+  virtual bool HasMatchIn(
+      const std::vector<QueryWord>& words,
+      Snippet::MatchPositions* match_positions) const OVERRIDE;
+  virtual void AppendWords(std::vector<string16>* words) const OVERRIDE;
 
  private:
   string16 word_;
   bool literal_;
+
+  DISALLOW_COPY_AND_ASSIGN(QueryNodeWord);
 };
+
+QueryNodeWord::QueryNodeWord(const string16& word)
+    : word_(word),
+      literal_(false) {}
+
+QueryNodeWord::~QueryNodeWord() {}
+
+int QueryNodeWord::AppendToSQLiteQuery(string16* query) const {
+  query->append(word_);
+
+  // Use prefix search if we're not literal and long enough.
+  if (!literal_ && QueryParser::IsWordLongEnoughForPrefixSearch(word_))
+    *query += L'*';
+  return 1;
+}
+
+bool QueryNodeWord::IsWord() const {
+  return true;
+}
+
+bool QueryNodeWord::Matches(const string16& word, bool exact) const {
+  if (exact || !QueryParser::IsWordLongEnoughForPrefixSearch(word_))
+    return word == word_;
+  return word.size() >= word_.size() &&
+         (word_.compare(0, word_.size(), word, 0, word_.size()) == 0);
+}
 
 bool QueryNodeWord::HasMatchIn(const std::vector<QueryWord>& words,
                                Snippet::MatchPositions* match_positions) const {
@@ -101,67 +137,51 @@ bool QueryNodeWord::HasMatchIn(const std::vector<QueryWord>& words,
   return false;
 }
 
-bool QueryNodeWord::Matches(const string16& word, bool exact) const {
-  if (exact || !QueryParser::IsWordLongEnoughForPrefixSearch(word_))
-    return word == word_;
-  return word.size() >= word_.size() &&
-         (word_.compare(0, word_.size(), word, 0, word_.size()) == 0);
-}
-
 void QueryNodeWord::AppendWords(std::vector<string16>* words) const {
   words->push_back(word_);
 }
 
-int QueryNodeWord::AppendToSQLiteQuery(string16* query) const {
-  query->append(word_);
-
-  // Use prefix search if we're not literal and long enough.
-  if (!literal_ && QueryParser::IsWordLongEnoughForPrefixSearch(word_))
-    *query += L'*';
-  return 1;
-}
-
-// A QueryNodeList has a collection of child QueryNodes
-// which it cleans up after.
+// A QueryNodeList has a collection of QueryNodes which are deleted in the end.
 class QueryNodeList : public QueryNode {
  public:
+  typedef std::vector<QueryNode*> QueryNodeVector;
+
+  QueryNodeList();
   virtual ~QueryNodeList();
 
-  virtual int AppendToSQLiteQuery(string16* query) const {
-    return AppendChildrenToString(query);
-  }
-  virtual bool IsWord() const { return false; }
-
-  void AddChild(QueryNode* node) { children_.push_back(node); }
-
-  typedef std::vector<QueryNode*> QueryNodeVector;
   QueryNodeVector* children() { return &children_; }
+
+  void AddChild(QueryNode* node);
 
   // Remove empty subnodes left over from other parsing.
   void RemoveEmptySubnodes();
 
-  // QueryNodeList is never used with Matches or HasMatchIn.
-  virtual bool Matches(const string16& word, bool exact) const {
-    NOTREACHED();
-    return false;
-  }
-  virtual bool HasMatchIn(const std::vector<QueryWord>& words,
-                          Snippet::MatchPositions* match_positions) const {
-    NOTREACHED();
-    return false;
-  }
-  virtual void AppendWords(std::vector<string16>* words) const;
+  // QueryNode:
+  virtual int AppendToSQLiteQuery(string16* query) const OVERRIDE;
+  virtual bool IsWord() const OVERRIDE;
+  virtual bool Matches(const string16& word, bool exact) const OVERRIDE;
+  virtual bool HasMatchIn(
+      const std::vector<QueryWord>& words,
+      Snippet::MatchPositions* match_positions) const OVERRIDE;
+  virtual void AppendWords(std::vector<string16>* words) const OVERRIDE;
 
  protected:
   int AppendChildrenToString(string16* query) const;
 
   QueryNodeVector children_;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(QueryNodeList);
 };
 
+QueryNodeList::QueryNodeList() {}
+
 QueryNodeList::~QueryNodeList() {
-  for (QueryNodeVector::iterator node = children_.begin();
-       node != children_.end(); ++node)
-    delete *node;
+  STLDeleteElements(&children_);
+}
+
+void QueryNodeList::AddChild(QueryNode* node) {
+  children_.push_back(node);
 }
 
 void QueryNodeList::RemoveEmptySubnodes() {
@@ -177,6 +197,25 @@ void QueryNodeList::RemoveEmptySubnodes() {
       delete list_node;
     }
   }
+}
+
+int QueryNodeList::AppendToSQLiteQuery(string16* query) const {
+  return AppendChildrenToString(query);
+}
+
+bool QueryNodeList::IsWord() const {
+  return false;
+}
+
+bool QueryNodeList::Matches(const string16& word, bool exact) const {
+  NOTREACHED();
+  return false;
+}
+
+bool QueryNodeList::HasMatchIn(const std::vector<QueryWord>& words,
+                               Snippet::MatchPositions* match_positions) const {
+  NOTREACHED();
+  return false;
 }
 
 void QueryNodeList::AppendWords(std::vector<string16>* words) const {
@@ -198,21 +237,28 @@ int QueryNodeList::AppendChildrenToString(string16* query) const {
 // A QueryNodePhrase is a phrase query ("quoted").
 class QueryNodePhrase : public QueryNodeList {
  public:
-  virtual int AppendToSQLiteQuery(string16* query) const {
-    query->push_back(L'"');
-    int num_words = AppendChildrenToString(query);
-    query->push_back(L'"');
-    return num_words;
-  }
+  QueryNodePhrase();
+  virtual ~QueryNodePhrase();
 
-  virtual bool Matches(const string16& word, bool exact) const;
-  virtual bool HasMatchIn(const std::vector<QueryWord>& words,
-                          Snippet::MatchPositions* match_positions) const;
+  // QueryNodeList:
+  virtual int AppendToSQLiteQuery(string16* query) const OVERRIDE;
+  virtual bool HasMatchIn(
+      const std::vector<QueryWord>& words,
+      Snippet::MatchPositions* match_positions) const OVERRIDE;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(QueryNodePhrase);
 };
 
-bool QueryNodePhrase::Matches(const string16& word, bool exact) const {
-  NOTREACHED();
-  return false;
+QueryNodePhrase::QueryNodePhrase() {}
+
+QueryNodePhrase::~QueryNodePhrase() {}
+
+int QueryNodePhrase::AppendToSQLiteQuery(string16* query) const {
+  query->push_back(L'"');
+  int num_words = AppendChildrenToString(query);
+  query->push_back(L'"');
+  return num_words;
 }
 
 bool QueryNodePhrase::HasMatchIn(
@@ -240,8 +286,7 @@ bool QueryNodePhrase::HasMatchIn(
   return false;
 }
 
-QueryParser::QueryParser() {
-}
+QueryParser::QueryParser() {}
 
 // static
 bool QueryParser::IsWordLongEnoughForPrefixSearch(const string16& word) {
@@ -255,38 +300,26 @@ bool QueryParser::IsWordLongEnoughForPrefixSearch(const string16& word) {
   return word.size() >= minimum_length;
 }
 
-// Returns true if the character is considered a quote.
-static bool IsQueryQuote(wchar_t ch) {
-  return ch == '"' ||
-         ch == 0xab ||    // left pointing double angle bracket
-         ch == 0xbb ||    // right pointing double angle bracket
-         ch == 0x201c ||  // left double quotation mark
-         ch == 0x201d ||  // right double quotation mark
-         ch == 0x201e;    // double low-9 quotation mark
-}
-
-int QueryParser::ParseQuery(const string16& query,
-                            string16* sqlite_query) {
+int QueryParser::ParseQuery(const string16& query, string16* sqlite_query) {
   QueryNodeList root;
   if (!ParseQueryImpl(query, &root))
     return 0;
   return root.AppendToSQLiteQuery(sqlite_query);
 }
 
-void QueryParser::ParseQuery(const string16& query,
-                             std::vector<QueryNode*>* nodes) {
-  QueryNodeList root;
-  if (ParseQueryImpl(l10n_util::ToLower(query), &root))
-    nodes->swap(*root.children());
-}
-
-
-void QueryParser::ExtractQueryWords(const string16& query,
-                                    std::vector<string16>* words) {
+void QueryParser::ParseQueryWords(const string16& query,
+                                  std::vector<string16>* words) {
   QueryNodeList root;
   if (!ParseQueryImpl(query, &root))
     return;
   root.AppendWords(words);
+}
+
+void QueryParser::ParseQueryNodes(const string16& query,
+                                  std::vector<QueryNode*>* nodes) {
+  QueryNodeList root;
+  if (ParseQueryImpl(base::i18n::ToLower(query), &root))
+    nodes->swap(*root.children());
 }
 
 bool QueryParser::DoesQueryMatch(const string16& text,
@@ -296,7 +329,7 @@ bool QueryParser::DoesQueryMatch(const string16& text,
     return false;
 
   std::vector<QueryWord> query_words;
-  string16 lower_text = l10n_util::ToLower(text);
+  string16 lower_text = base::i18n::ToLower(text);
   ExtractQueryWords(lower_text, &query_words);
 
   if (query_words.empty())
@@ -320,9 +353,8 @@ bool QueryParser::DoesQueryMatch(const string16& text,
   return true;
 }
 
-bool QueryParser::ParseQueryImpl(const string16& query,
-                                QueryNodeList* root) {
-  base::BreakIterator iter(&query, base::BreakIterator::BREAK_WORD);
+bool QueryParser::ParseQueryImpl(const string16& query, QueryNodeList* root) {
+  base::i18n::BreakIterator iter(query, base::i18n::BreakIterator::BREAK_WORD);
   // TODO(evanm): support a locale here
   if (!iter.Init())
     return false;
@@ -338,9 +370,7 @@ bool QueryParser::ParseQueryImpl(const string16& query,
     // is not necessarily a word, but could also be a sequence of punctuation
     // or whitespace.
     if (iter.IsWord()) {
-      string16 word = iter.GetString();
-
-      QueryNodeWord* word_node = new QueryNodeWord(word);
+      QueryNodeWord* word_node = new QueryNodeWord(iter.GetString());
       if (in_quotes)
         word_node->set_literal(true);
       query_stack.back()->AddChild(word_node);
@@ -365,7 +395,7 @@ bool QueryParser::ParseQueryImpl(const string16& query,
 
 void QueryParser::ExtractQueryWords(const string16& text,
                                     std::vector<QueryWord>* words) {
-  base::BreakIterator iter(&text, base::BreakIterator::BREAK_WORD);
+  base::i18n::BreakIterator iter(text, base::i18n::BreakIterator::BREAK_WORD);
   // TODO(evanm): support a locale here
   if (!iter.Init())
     return;

@@ -5,11 +5,15 @@
 #include "chrome/browser/chromeos/login/user_image_view.h"
 
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/login/default_images_view.h"
 #include "chrome/browser/chromeos/login/default_user_images.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/rounded_rect_painter.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/policy/profile_policy_connector.h"
+#include "chrome/browser/policy/profile_policy_connector_factory.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -21,6 +25,12 @@
 #include "views/layout/grid_layout.h"
 
 namespace {
+
+// The delay of triggering initialization of the user policy subsystem
+// after the user image selection screen is initialized. This makes sure that
+// user policy network requests are made while the system is idle waiting for
+// user input.
+const int64 kPolicyServiceInitializationDelayMilliseconds = 400;
 
 // Margin in pixels from the left and right borders of screen's contents.
 const int kHorizontalMargin = 10;
@@ -47,6 +57,19 @@ views::View* CreateSplitter(const SkColor& color) {
   views::View* splitter = new views::View();
   splitter->set_background(views::Background::CreateSolidBackground(color));
   return splitter;
+}
+
+void TriggerPolicyFetch() {
+  // Notify all the profiles that the system is idle enough now for a policy
+  // fetch. (The policy fetch will happen after some delay, see implementation.)
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  std::vector<Profile*> profiles = profile_manager->GetLoadedProfiles();
+  std::vector<Profile*>::iterator it;
+  for (it = profiles.begin(); it != profiles.end(); ++it) {
+    policy::ProfilePolicyConnectorFactory::GetForProfile(*it)->
+        ScheduleServiceInitialization(
+            kPolicyServiceInitializationDelayMilliseconds);
+  }
 }
 
 }  // namespace
@@ -86,7 +109,20 @@ void UserImageView::Init() {
 
   ok_button_ = new login::WideButton(
       this, UTF16ToWide(l10n_util::GetStringUTF16(IDS_OK)));
+  ok_button_->SetFocusable(true);
   ok_button_->SetEnabled(false);
+
+  accel_ok_ = views::Accelerator(ui::VKEY_RETURN, false, false, false);
+  accel_up_ = views::Accelerator(ui::VKEY_UP, false, false, false);
+  accel_down_ = views::Accelerator(ui::VKEY_DOWN, false, false, false);
+  accel_left_ = views::Accelerator(ui::VKEY_LEFT, false, false, false);
+  accel_right_ = views::Accelerator(ui::VKEY_RIGHT, false, false, false);
+
+  AddAccelerator(accel_ok_);
+  AddAccelerator(accel_up_);
+  AddAccelerator(accel_down_);
+  AddAccelerator(accel_left_);
+  AddAccelerator(accel_right_);
 
   InitLayout();
 
@@ -98,6 +134,8 @@ void UserImageView::Init() {
   int image_index = user_manager->GetUserDefaultImageIndex(logged_in_user);
 
   default_images_view_->SetDefaultImageIndex(image_index);
+
+  TriggerPolicyFetch();
 }
 
 void UserImageView::InitLayout() {
@@ -190,19 +228,46 @@ gfx::Size UserImageView::GetPreferredSize() {
   return gfx::Size(width(), height());
 }
 
+void UserImageView::NotifyDelegateOfImageSelected() {
+  DCHECK(delegate_);
+  DCHECK(default_images_view_);
+  DCHECK(take_photo_view_);
+  if (default_images_view_->GetDefaultImageIndex() == -1) {
+    delegate_->OnPhotoTaken(take_photo_view_->GetImage());
+  } else {
+    delegate_->OnDefaultImageSelected(
+        default_images_view_->GetDefaultImageIndex());
+  }
+}
+
 void UserImageView::ButtonPressed(
     views::Button* sender, const views::Event& event) {
   DCHECK(delegate_);
-  if (sender == ok_button_) {
-    if (default_images_view_->GetDefaultImageIndex() == -1) {
-      delegate_->OnPhotoTaken(take_photo_view_->GetImage());
-    } else {
-      delegate_->OnDefaultImageSelected(
-          default_images_view_->GetDefaultImageIndex());
-    }
-  } else {
+  if (sender == ok_button_)
+    NotifyDelegateOfImageSelected();
+  else
     NOTREACHED();
+}
+
+bool UserImageView::AcceleratorPressed(const views::Accelerator& accel) {
+  if (accel == accel_ok_) {
+    if (IsCapturing())
+      take_photo_view_->CaptureImage();
+    else
+      NotifyDelegateOfImageSelected();
+  } else if (accel == accel_up_) {
+    default_images_view_->SelectPreviousRowImage();
+  } else if (accel == accel_down_) {
+    default_images_view_->SelectNextRowImage();
+  } else if (accel == accel_left_) {
+    default_images_view_->SelectPreviousImage();
+  } else if (accel == accel_right_) {
+    default_images_view_->SelectNextImage();
+  } else {
+    return false;
   }
+
+  return true;
 }
 
 void UserImageView::OnCapturingStarted() {

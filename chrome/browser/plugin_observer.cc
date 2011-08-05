@@ -7,18 +7,18 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "chrome/browser/plugin_installer_infobar_delegate.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
 #include "chrome/browser/tab_contents/simple_alert_infobar_delegate.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/browser/user_metrics.h"
 #include "content/common/view_messages.h"
 #include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "webkit/plugins/npapi/default_plugin_shared.h"
@@ -38,9 +38,8 @@ class PluginInfoBarDelegate : public ConfirmInfoBarDelegate {
   virtual ~PluginInfoBarDelegate();
 
   // ConfirmInfoBarDelegate:
-  virtual void InfoBarClosed();
-  virtual bool Cancel();
-  virtual bool LinkClicked(WindowOpenDisposition disposition);
+  virtual bool Cancel() OVERRIDE;
+  virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
 
   virtual std::string GetLearnMoreURL() const = 0;
 
@@ -49,7 +48,7 @@ class PluginInfoBarDelegate : public ConfirmInfoBarDelegate {
 
  private:
   // ConfirmInfoBarDelegate:
-  virtual SkBitmap* GetIcon() const;
+  virtual gfx::Image* GetIcon() const;
   virtual string16 GetLinkText();
 
   DISALLOW_COPY_AND_ASSIGN(PluginInfoBarDelegate);
@@ -65,12 +64,9 @@ PluginInfoBarDelegate::PluginInfoBarDelegate(TabContents* tab_contents,
 PluginInfoBarDelegate::~PluginInfoBarDelegate() {
 }
 
-void PluginInfoBarDelegate::InfoBarClosed() {
-  delete this;
-}
-
 bool PluginInfoBarDelegate::Cancel() {
-  tab_contents_->render_view_host()->LoadBlockedPlugins();
+  tab_contents_->render_view_host()->Send(new ViewMsg_LoadBlockedPlugins(
+      tab_contents_->render_view_host()->routing_id()));
   return true;
 }
 
@@ -80,8 +76,8 @@ bool PluginInfoBarDelegate::LinkClicked(WindowOpenDisposition disposition) {
   return false;
 }
 
-SkBitmap* PluginInfoBarDelegate::GetIcon() const {
-  return ResourceBundle::GetSharedInstance().GetBitmapNamed(
+gfx::Image* PluginInfoBarDelegate::GetIcon() const {
+  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
       IDR_INFOBAR_PLUGIN_INSTALL);
 }
 
@@ -101,14 +97,13 @@ class BlockedPluginInfoBarDelegate : public PluginInfoBarDelegate {
   virtual ~BlockedPluginInfoBarDelegate();
 
   // PluginInfoBarDelegate:
-  virtual string16 GetMessageText() const;
-  virtual string16 GetButtonLabel(InfoBarButton button) const;
-  virtual bool Accept();
-  virtual bool Cancel();
-  virtual void InfoBarClosed();
-  virtual void InfoBarDismissed();
-  virtual bool LinkClicked(WindowOpenDisposition disposition);
-  virtual std::string GetLearnMoreURL() const;
+  virtual string16 GetMessageText() const OVERRIDE;
+  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual bool Accept() OVERRIDE;
+  virtual bool Cancel() OVERRIDE;
+  virtual void InfoBarDismissed() OVERRIDE;
+  virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
+  virtual std::string GetLearnMoreURL() const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(BlockedPluginInfoBarDelegate);
 };
@@ -134,6 +129,7 @@ BlockedPluginInfoBarDelegate::BlockedPluginInfoBarDelegate(
 }
 
 BlockedPluginInfoBarDelegate::~BlockedPluginInfoBarDelegate() {
+  UserMetrics::RecordAction(UserMetricsAction("BlockedPluginInfobar.Closed"));
 }
 
 std::string BlockedPluginInfoBarDelegate::GetLearnMoreURL() const {
@@ -170,11 +166,6 @@ void BlockedPluginInfoBarDelegate::InfoBarDismissed() {
       UserMetricsAction("BlockedPluginInfobar.Dismissed"));
 }
 
-void BlockedPluginInfoBarDelegate::InfoBarClosed() {
-  UserMetrics::RecordAction(UserMetricsAction("BlockedPluginInfobar.Closed"));
-  PluginInfoBarDelegate::InfoBarClosed();
-}
-
 bool BlockedPluginInfoBarDelegate::LinkClicked(
     WindowOpenDisposition disposition) {
   UserMetrics::RecordAction(
@@ -194,14 +185,13 @@ class OutdatedPluginInfoBarDelegate : public PluginInfoBarDelegate {
   virtual ~OutdatedPluginInfoBarDelegate();
 
   // PluginInfoBarDelegate:
-  virtual string16 GetMessageText() const;
-  virtual string16 GetButtonLabel(InfoBarButton button) const;
-  virtual bool Accept();
-  virtual bool Cancel();
-  virtual void InfoBarClosed();
-  virtual void InfoBarDismissed();
-  virtual bool LinkClicked(WindowOpenDisposition disposition);
-  virtual std::string GetLearnMoreURL() const;
+  virtual string16 GetMessageText() const OVERRIDE;
+  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual bool Accept() OVERRIDE;
+  virtual bool Cancel() OVERRIDE;
+  virtual void InfoBarDismissed() OVERRIDE;
+  virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
+  virtual std::string GetLearnMoreURL() const OVERRIDE;
 
   GURL update_url_;
 
@@ -237,6 +227,7 @@ OutdatedPluginInfoBarDelegate::OutdatedPluginInfoBarDelegate(
 }
 
 OutdatedPluginInfoBarDelegate::~OutdatedPluginInfoBarDelegate() {
+  UserMetrics::RecordAction(UserMetricsAction("OutdatedPluginInfobar.Closed"));
 }
 
 std::string OutdatedPluginInfoBarDelegate::GetLearnMoreURL() const {
@@ -271,11 +262,6 @@ void OutdatedPluginInfoBarDelegate::InfoBarDismissed() {
       UserMetricsAction("OutdatedPluginInfobar.Dismissed"));
 }
 
-void OutdatedPluginInfoBarDelegate::InfoBarClosed() {
-  UserMetrics::RecordAction(UserMetricsAction("OutdatedPluginInfobar.Closed"));
-  PluginInfoBarDelegate::InfoBarClosed();
-}
-
 bool OutdatedPluginInfoBarDelegate::LinkClicked(
     WindowOpenDisposition disposition) {
   UserMetrics::RecordAction(
@@ -288,8 +274,9 @@ bool OutdatedPluginInfoBarDelegate::LinkClicked(
 
 // PluginObserver -------------------------------------------------------------
 
-PluginObserver::PluginObserver(TabContents* tab_contents)
-    : TabContentsObserver(tab_contents) {
+PluginObserver::PluginObserver(TabContentsWrapper* tab_contents)
+    : TabContentsObserver(tab_contents->tab_contents()),
+      tab_contents_(tab_contents) {
 }
 
 PluginObserver::~PluginObserver() {
@@ -317,17 +304,17 @@ void PluginObserver::OnMissingPluginStatus(int status) {
   // TODO(PORT): pull in when plug-ins work
 #if defined(OS_WIN)
   if (status == webkit::npapi::default_plugin::MISSING_PLUGIN_AVAILABLE) {
-    tab_contents()->AddInfoBar(
+    tab_contents_->AddInfoBar(
         new PluginInstallerInfoBarDelegate(tab_contents()));
     return;
   }
 
   DCHECK_EQ(webkit::npapi::default_plugin::MISSING_PLUGIN_USER_STARTED_DOWNLOAD,
             status);
-  for (size_t i = 0; i < tab_contents()->infobar_count(); ++i) {
-    InfoBarDelegate* delegate = tab_contents()->GetInfoBarDelegateAt(i);
+  for (size_t i = 0; i < tab_contents_->infobar_count(); ++i) {
+    InfoBarDelegate* delegate = tab_contents_->GetInfoBarDelegateAt(i);
     if (delegate->AsPluginInstallerInfoBarDelegate() != NULL) {
-      tab_contents()->RemoveInfoBar(delegate);
+      tab_contents_->RemoveInfoBar(delegate);
       return;
     }
   }
@@ -351,19 +338,18 @@ void PluginObserver::OnCrashedPlugin(const FilePath& plugin_path) {
       plugin_name.erase(plugin_name.length() - kPluginExtension.length());
 #endif  // OS_MACOSX
   }
-  SkBitmap* crash_icon = ResourceBundle::GetSharedInstance().GetBitmapNamed(
+  gfx::Image* icon = &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
       IDR_INFOBAR_PLUGIN_CRASHED);
-  tab_contents()->AddInfoBar(new SimpleAlertInfoBarDelegate(tab_contents(),
-      crash_icon,
+  tab_contents_->AddInfoBar(new SimpleAlertInfoBarDelegate(tab_contents(),
+      icon,
       l10n_util::GetStringFUTF16(IDS_PLUGIN_CRASHED_PROMPT, plugin_name),
       true));
 }
 
 void PluginObserver::OnBlockedOutdatedPlugin(const string16& name,
                                              const GURL& update_url) {
-  tab_contents()->AddInfoBar(update_url.is_empty() ?
+  tab_contents_->AddInfoBar(update_url.is_empty() ?
       static_cast<InfoBarDelegate*>(new BlockedPluginInfoBarDelegate(
           tab_contents(), name)) :
       new OutdatedPluginInfoBarDelegate(tab_contents(), name, update_url));
 }
-

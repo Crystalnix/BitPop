@@ -6,47 +6,34 @@
 #define UI_GFX_GL_GL_CONTEXT_OSMESA_H_
 #pragma once
 
-#include "base/memory/scoped_ptr.h"
 #include "ui/gfx/gl/gl_context.h"
-#include "ui/gfx/size.h"
 
 typedef struct osmesa_context *OSMesaContext;
 
 namespace gfx {
 
+class GLSurface;
+
 // Encapsulates an OSMesa OpenGL context that uses software rendering.
-class OSMesaGLContext : public GLContext {
+class GLContextOSMesa : public GLContext {
  public:
-  OSMesaGLContext();
-  virtual ~OSMesaGLContext();
-
-  // Initialize an OSMesa GL context with the default 1 x 1 initial size.
-  bool Initialize(GLuint format, GLContext* shared_context);
-
-  // Resize the back buffer, preserving the old content. Does nothing if the
-  // size is unchanged.
-  void Resize(const gfx::Size& new_size);
-
-  const void* buffer() const {
-    return buffer_.get();
-  }
+  GLContextOSMesa();
+  virtual ~GLContextOSMesa();
 
   // Implement GLContext.
+  virtual bool Initialize(GLContext* shared_context,
+                          GLSurface* compatible_surface);
   virtual void Destroy();
-  virtual bool MakeCurrent();
-  virtual bool IsCurrent();
-  virtual bool IsOffscreen();
-  virtual bool SwapBuffers();
-  virtual gfx::Size GetSize();
+  virtual bool MakeCurrent(GLSurface* surface);
+  virtual void ReleaseCurrent(GLSurface* surface);
+  virtual bool IsCurrent(GLSurface* surface);
   virtual void* GetHandle();
   virtual void SetSwapInterval(int interval);
 
  private:
-  gfx::Size size_;
-  scoped_array<int32> buffer_;
   OSMesaContext context_;
 
-  DISALLOW_COPY_AND_ASSIGN(OSMesaGLContext);
+  DISALLOW_COPY_AND_ASSIGN(GLContextOSMesa);
 };
 
 }  // namespace gfx

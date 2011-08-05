@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,10 +10,10 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKitClient.h"
 #if defined(OS_WIN)
 #include "webkit/glue/webthemeengine_impl_win.h"
-#elif defined(OS_LINUX)
-#include "webkit/glue/webthemeengine_impl_linux.h"
 #elif defined(OS_MACOSX)
 #include "webkit/glue/webthemeengine_impl_mac.h"
+#elif defined(OS_POSIX)
+#include "webkit/glue/webthemeengine_impl_linux.h"
 #endif
 
 
@@ -36,6 +36,8 @@ class WebKitClientImpl : public WebKit::WebKitClient {
   virtual long databaseGetFileAttributes(
       const WebKit::WebString& vfs_file_name);
   virtual long long databaseGetFileSize(const WebKit::WebString& vfs_file_name);
+  virtual long long databaseGetSpaceAvailableForOrigin(
+      const WebKit::WebString& origin_identifier);
   virtual WebKit::WebString signedPublicKeyAndChallengeString(
       unsigned key_size_index, const WebKit::WebString& challenge,
       const WebKit::WebURL& url);
@@ -78,24 +80,18 @@ class WebKitClientImpl : public WebKit::WebKitClient {
   void SuspendSharedTimer();
   void ResumeSharedTimer();
 
-  // Hack for http://crbug.com/71735.
-  // TODO(jamesr): move this back to the private section once
-  // http://crbug.com/72007 is fixed.
+ private:
   void DoTimeout() {
     if (shared_timer_func_ && !shared_timer_suspended_)
       shared_timer_func_();
   }
 
- private:
   MessageLoop* main_loop_;
   base::OneShotTimer<WebKitClientImpl> shared_timer_;
   void (*shared_timer_func_)();
   double shared_timer_fire_time_;
   int shared_timer_suspended_;  // counter
-
-#if defined(OS_WIN) || defined(OS_LINUX) || defined(OS_MACOSX)
   WebThemeEngineImpl theme_engine_;
-#endif
 };
 
 }  // namespace webkit_glue

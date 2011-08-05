@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,9 +12,14 @@
 namespace remoting {
 
 struct ClientConfig {
+  ClientConfig();
+  ~ClientConfig();
+
   std::string host_jid;
   std::string username;
   std::string auth_token;
+  std::string auth_service;
+  std::string nonce;
 };
 
 }  // namespace remoting

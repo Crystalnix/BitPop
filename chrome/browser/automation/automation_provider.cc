@@ -26,16 +26,15 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/autocomplete/autocomplete_edit.h"
 #include "chrome/browser/autofill/autofill_manager.h"
-#include "chrome/browser/automation/automation_autocomplete_edit_tracker.h"
 #include "chrome/browser/automation/automation_browser_tracker.h"
 #include "chrome/browser/automation/automation_extension_tracker.h"
+#include "chrome/browser/automation/automation_omnibox_tracker.h"
 #include "chrome/browser/automation/automation_provider_list.h"
 #include "chrome/browser/automation/automation_provider_observers.h"
 #include "chrome/browser/automation/automation_resource_message_filter.h"
 #include "chrome/browser/automation/automation_tab_tracker.h"
 #include "chrome/browser/automation/automation_window_tracker.h"
 #include "chrome/browser/automation/ui_controls.h"
-#include "chrome/browser/blocked_content_container.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_storage.h"
 #include "chrome/browser/browser_process.h"
@@ -45,7 +44,6 @@
 #include "chrome/browser/debugger/devtools_manager.h"
 #include "chrome/browser/dom_operation_notification_details.h"
 #include "chrome/browser/download/download_item.h"
-#include "chrome/browser/download/download_shelf.h"
 #include "chrome/browser/download/save_package.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_browser_event_router.h"
@@ -56,7 +54,6 @@
 #include "chrome/browser/extensions/extension_tabs_module.h"
 #include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/extensions/user_script_master.h"
-#include "chrome/browser/io_thread.h"
 #include "chrome/browser/net/url_request_mock_util.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/prefs/pref_service.h"
@@ -84,6 +81,7 @@
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/automation/tab_proxy.h"
 #include "content/browser/browser_thread.h"
@@ -93,16 +91,19 @@
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/browser/tab_contents/tab_contents_view.h"
 #include "content/common/json_value_serializer.h"
+#include "content/common/view_messages.h"
 #include "net/proxy/proxy_config_service_fixed.h"
 #include "net/proxy/proxy_service.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebFindOptions.h"
 #include "webkit/glue/password_form.h"
 
 #if defined(OS_WIN)
 #include "chrome/browser/external_tab_container_win.h"
 #endif  // defined(OS_WIN)
 
+using WebKit::WebFindOptions;
 using base::Time;
 
 AutomationProvider::AutomationProvider(Profile* profile)
@@ -112,7 +113,7 @@ AutomationProvider::AutomationProvider(Profile* profile)
       is_connected_(false),
       initial_tab_loads_complete_(false),
       network_library_initialized_(true) {
-  TRACE_EVENT_BEGIN("AutomationProvider::AutomationProvider", 0, "");
+  TRACE_EVENT_BEGIN_ETW("AutomationProvider::AutomationProvider", 0, "");
 
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -120,15 +121,14 @@ AutomationProvider::AutomationProvider(Profile* profile)
   extension_tracker_.reset(new AutomationExtensionTracker(this));
   tab_tracker_.reset(new AutomationTabTracker(this));
   window_tracker_.reset(new AutomationWindowTracker(this));
-  autocomplete_edit_tracker_.reset(
-      new AutomationAutocompleteEditTracker(this));
+  automation_omnibox_tracker_.reset(new AutomationOmniboxTracker(this));
   new_tab_ui_load_observer_.reset(new NewTabUILoadObserver(this));
   metric_event_duration_observer_.reset(new MetricEventDurationObserver());
   extension_test_result_observer_.reset(
       new ExtensionTestResultNotificationObserver(this));
   g_browser_process->AddRefModule();
 
-  TRACE_EVENT_END("AutomationProvider::AutomationProvider", 0, "");
+  TRACE_EVENT_END_ETW("AutomationProvider::AutomationProvider", 0, "");
 }
 
 AutomationProvider::~AutomationProvider() {
@@ -139,7 +139,7 @@ AutomationProvider::~AutomationProvider() {
 }
 
 bool AutomationProvider::InitializeChannel(const std::string& channel_id) {
-  TRACE_EVENT_BEGIN("AutomationProvider::InitializeChannel", 0, "");
+  TRACE_EVENT_BEGIN_ETW("AutomationProvider::InitializeChannel", 0, "");
 
   channel_id_ = channel_id;
   std::string effective_channel_id = channel_id;
@@ -163,10 +163,9 @@ bool AutomationProvider::InitializeChannel(const std::string& channel_id) {
 
   channel_.reset(new IPC::SyncChannel(
       effective_channel_id,
-      use_named_interface ? IPC::Channel::MODE_NAMED_SERVER
-                          : IPC::Channel::MODE_CLIENT,
+      GetChannelMode(use_named_interface),
       this,
-      g_browser_process->io_thread()->message_loop(),
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
       true, g_browser_process->shutdown_event()));
   channel_->AddFilter(automation_resource_message_filter_);
 
@@ -179,9 +178,17 @@ bool AutomationProvider::InitializeChannel(const std::string& channel_id) {
     delete observer;
 #endif
 
-  TRACE_EVENT_END("AutomationProvider::InitializeChannel", 0, "");
+  TRACE_EVENT_END_ETW("AutomationProvider::InitializeChannel", 0, "");
 
   return true;
+}
+
+IPC::Channel::Mode AutomationProvider::GetChannelMode(
+    bool use_named_interface) {
+  if (use_named_interface)
+    return IPC::Channel::MODE_NAMED_SERVER;
+  else
+    return IPC::Channel::MODE_CLIENT;
 }
 
 std::string AutomationProvider::GetProtocolVersion() {
@@ -247,7 +254,7 @@ DictionaryValue* AutomationProvider::GetDictionaryFromDownloadItem(
 
   DictionaryValue* dl_item_value = new DictionaryValue;
   dl_item_value->SetInteger("id", static_cast<int>(download->id()));
-  dl_item_value->SetString("url", download->url().spec());
+  dl_item_value->SetString("url", download->GetURL().spec());
   dl_item_value->SetString("referrer_url", download->referrer_url().spec());
   dl_item_value->SetString("file_name",
                            download->GetFileNameToReportUser().value());
@@ -497,12 +504,14 @@ void AutomationProvider::SendFindRequest(
   if (wrapper)
     wrapper->find_tab_helper()->set_current_find_request_id(request_id);
 
-  tab_contents->render_view_host()->StartFinding(
-      FindInPageNotificationObserver::kFindInPageRequestId,
-      search_string,
-      forward,
-      match_case,
-      find_next);
+  WebFindOptions options;
+  options.forward = forward;
+  options.matchCase = match_case;
+  options.findNext = find_next;
+  tab_contents->render_view_host()->Send(new ViewMsg_Find(
+      tab_contents->render_view_host()->routing_id(),
+      FindInPageNotificationObserver::kFindInPageRequestId, search_string,
+      options));
 }
 
 class SetProxyConfigTask : public Task {
@@ -550,6 +559,10 @@ class SetProxyConfigTask : public Task {
     std::string pac_url;
     if (dict.GetString(automation::kJSONProxyPacUrl, &pac_url)) {
       pc->set_pac_url(GURL(pac_url));
+    }
+    bool pac_mandatory;
+    if (dict.GetBoolean(automation::kJSONProxyPacMandatory, &pac_mandatory)) {
+      pc->set_pac_mandatory(pac_mandatory);
     }
     std::string proxy_bypass_list;
     if (dict.GetString(automation::kJSONProxyBypassList, &proxy_bypass_list)) {
@@ -695,7 +708,7 @@ void AutomationProvider::StopAsync(int tab_handle) {
     return;
   }
 
-  view->Stop();
+  view->Send(new ViewMsg_Stop(view->routing_id()));
 }
 
 void AutomationProvider::OnSetPageFontSize(int tab_handle,
@@ -739,7 +752,8 @@ void AutomationProvider::JavaScriptStressTestControl(int tab_handle,
     return;
   }
 
-  view->JavaScriptStressTestControl(cmd, param);
+  view->Send(new ViewMsg_JavaScriptStressTestControl(
+      view->routing_id(), cmd, param));
 }
 
 RenderViewHost* AutomationProvider::GetViewForTab(int tab_handle) {
@@ -772,8 +786,9 @@ void AutomationProvider::InstallExtension(const FilePath& crx_path,
                                              AutomationMsg_InstallExtension::ID,
                                              reply_message);
 
-    scoped_refptr<CrxInstaller> installer(
-        new CrxInstaller(service, NULL));  // silent install, no UI
+    // Pass NULL for a silent install with no UI.
+    scoped_refptr<CrxInstaller> installer(service->MakeCrxInstaller(NULL));
+    installer->set_install_cause(extension_misc::INSTALL_CAUSE_AUTOMATION);
     installer->InstallCrx(crx_path);
   } else {
     AutomationMsg_InstallExtension::WriteReplyParams(
@@ -805,7 +820,8 @@ void AutomationProvider::InstallExtensionAndGetHandle(
 
     ExtensionInstallUI* client =
         (with_ui ? new ExtensionInstallUI(profile_) : NULL);
-    scoped_refptr<CrxInstaller> installer(new CrxInstaller(service, client));
+    scoped_refptr<CrxInstaller> installer(service->MakeCrxInstaller(client));
+    installer->set_install_cause(extension_misc::INSTALL_CAUSE_AUTOMATION);
     installer->InstallCrx(crx_path);
   } else {
     AutomationMsg_InstallExtensionAndGetHandle::WriteReplyParams(

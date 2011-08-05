@@ -11,10 +11,16 @@
   "permissions": [
     "fileBrowserHandler",
     "fileBrowserPrivate",
+    "mediaPlayerPrivate",
     "unlimitedStorage",
     "chrome://extension-icon/",
     "chrome://resources/"
   ],
+  "app": {
+    "launch": {
+      "local_path": "main.html"
+    }
+  },
   "file_browser_handlers": [
     {
       "id": "preview",

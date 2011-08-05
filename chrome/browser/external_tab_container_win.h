@@ -14,15 +14,18 @@
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/automation/automation_resource_message_filter.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
+#include "chrome/browser/tab_contents/infobar_container.h"
+#include "chrome/browser/ui/blocked_content/blocked_content_tab_helper_delegate.h"
+#include "chrome/browser/ui/download/download_tab_helper_delegate.h"
 #include "chrome/browser/ui/views/frame/browser_bubble_host.h"
-#include "chrome/browser/ui/views/infobars/infobar_container.h"
 #include "chrome/browser/ui/views/unhandled_keyboard_event_handler.h"
 #include "content/browser/tab_contents/tab_contents_delegate.h"
+#include "content/browser/tab_contents/tab_contents_observer.h"
 #include "content/common/navigation_types.h"
 #include "content/common/notification_observer.h"
 #include "content/common/notification_registrar.h"
 #include "views/accelerator.h"
-#include "views/widget/widget_win.h"
+#include "views/widget/native_widget_win.h"
 
 class AutomationProvider;
 class Browser;
@@ -41,12 +44,15 @@ class ViewProp;
 // external process. This class provides the FocusManger needed by the
 // TabContents as well as an implementation of TabContentsDelegate.
 class ExternalTabContainer : public TabContentsDelegate,
+                             public TabContentsObserver,
+                             public DownloadTabHelperDelegate,
                              public NotificationObserver,
-                             public views::WidgetWin,
+                             public views::NativeWidgetWin,
                              public base::RefCounted<ExternalTabContainer>,
                              public views::AcceleratorTarget,
                              public InfoBarContainer::Delegate,
-                             public BrowserBubbleHost {
+                             public BrowserBubbleHost,
+                             public BlockedContentTabHelperDelegate {
  public:
   typedef std::map<uintptr_t, scoped_refptr<ExternalTabContainer> > PendingTabs;
 
@@ -130,9 +136,6 @@ class ExternalTabContainer : public TabContentsDelegate,
   virtual bool IsPopup(const TabContents* source) const;
   virtual void UpdateTargetURL(TabContents* source, const GURL& url);
   virtual void ContentsZoomChange(bool zoom_in);
-  virtual void ForwardMessageToExternalHost(const std::string& message,
-                                            const std::string& origin,
-                                            const std::string& target);
   virtual bool IsExternalTabContainer() const;
   virtual gfx::NativeWindow GetFrameNativeWindow();
 
@@ -141,8 +144,6 @@ class ExternalTabContainer : public TabContentsDelegate,
   virtual void HandleKeyboardEvent(const NativeWebKeyboardEvent& event);
 
   virtual bool TakeFocus(bool reverse);
-
-  virtual bool CanDownload(int request_id);
 
   virtual bool OnGoToEntryOffset(int offset);
 
@@ -159,35 +160,42 @@ class ExternalTabContainer : public TabContentsDelegate,
   // parameter.
   virtual bool ExecuteContextMenuCommand(int command);
 
-  // Show a dialog with HTML content. |delegate| contains a pointer to the
-  // delegate who knows how to display the dialog (which file URL and JSON
-  // string input to use during initialization). |parent_window| is the window
-  // that should be parent of the dialog, or NULL for the default.
-  virtual void ShowHtmlDialog(HtmlDialogUIDelegate* delegate,
-                              gfx::NativeWindow parent_window);
-
   virtual void BeforeUnloadFired(TabContents* tab,
                                  bool proceed,
                                  bool* proceed_to_fire_unload);
 
   void ShowRepostFormWarningDialog(TabContents* tab_contents);
 
-  // Overriden from TabContentsDelegate::AutomationResourceRoutingDelegate
-  virtual void RegisterRenderViewHost(RenderViewHost* render_view_host);
-  virtual void UnregisterRenderViewHost(RenderViewHost* render_view_host);
+  void RegisterRenderViewHost(RenderViewHost* render_view_host);
+  void UnregisterRenderViewHost(RenderViewHost* render_view_host);
+
+  // Overridden from TabContentsObserver:
+  // IPC::Channel::Listener implementation.
+  virtual bool OnMessageReceived(const IPC::Message& message);
+
+  // Message handlers
+  void OnForwardMessageToExternalHost(const std::string& message,
+                                      const std::string& origin,
+                                      const std::string& target);
 
   // Overridden from NotificationObserver:
   virtual void Observe(NotificationType type,
                        const NotificationSource& source,
                        const NotificationDetails& details);
 
+  // Overridden from DownloadTabHelperDelegate:
+  virtual bool CanDownload(int request_id) OVERRIDE;
+  virtual void OnStartDownload(DownloadItem* download,
+                               TabContentsWrapper* tab) OVERRIDE;
+
   // Returns the ExternalTabContainer instance associated with the cookie
   // passed in. It also erases the corresponding reference from the map.
   // Returns NULL if we fail to find the cookie in the map.
   static scoped_refptr<ExternalTabContainer> RemovePendingTab(uintptr_t cookie);
 
-  // Overridden from views::WidgetWin:
-  virtual views::Window* GetWindow();
+  // Overridden from views::NativeWidgetWin:
+  virtual views::Window* GetContainingWindow() OVERRIDE;
+  virtual const views::Window* GetContainingWindow() const OVERRIDE;
 
   // Handles the specified |accelerator| being pressed.
   bool AcceleratorPressed(const views::Accelerator& accelerator);
@@ -211,13 +219,15 @@ class ExternalTabContainer : public TabContentsDelegate,
 
   virtual void TabContentsCreated(TabContents* new_contents);
 
-  virtual bool infobars_enabled();
-
   void RunUnloadHandlers(IPC::Message* reply_message);
+
+  // Overridden from BlockedContentTabHelperDelegate:
+  virtual TabContentsWrapper* GetConstrainingContentsWrapper(
+      TabContentsWrapper* source) OVERRIDE;
 
  protected:
   ~ExternalTabContainer();
-  // Overridden from views::WidgetWin:
+  // Overridden from views::NativeWidgetWin:
   virtual LRESULT OnCreate(LPCREATESTRUCT create_struct);
   virtual void OnDestroy();
   virtual void OnFinalMessage(HWND window);
@@ -271,6 +281,8 @@ class ExternalTabContainer : public TabContentsDelegate,
 
   NotificationRegistrar registrar_;
 
+  TabContentsObserver::Registrar tab_contents_registrar_;
+
   // A view to handle focus cycling
   TabContentsContainer* tab_contents_container_;
 
@@ -318,9 +330,6 @@ class ExternalTabContainer : public TabContentsDelegate,
   // Set to true if the ExternalTabContainer instance is waiting for an ack
   // from the host.
   bool pending_;
-
-  // Set to true if the ExternalTabContainer if infobars should be enabled.
-  bool infobars_enabled_;
 
   views::FocusManager* focus_manager_;
 

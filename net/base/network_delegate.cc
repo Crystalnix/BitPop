@@ -26,27 +26,54 @@ int NetworkDelegate::NotifyBeforeSendHeaders(uint64 request_id,
   return OnBeforeSendHeaders(request_id, callback, headers);
 }
 
+void NetworkDelegate::NotifyRequestSent(
+    uint64 request_id,
+    const HostPortPair& socket_address,
+    const HttpRequestHeaders& headers) {
+  DCHECK(CalledOnValidThread());
+  OnRequestSent(request_id, socket_address, headers);
+}
+
 void NetworkDelegate::NotifyResponseStarted(URLRequest* request) {
   DCHECK(CalledOnValidThread());
   DCHECK(request);
   OnResponseStarted(request);
 }
 
-void NetworkDelegate::NotifyReadCompleted(URLRequest* request, int bytes_read) {
+void NetworkDelegate::NotifyRawBytesRead(const URLRequest& request,
+                                         int bytes_read) {
+  DCHECK(CalledOnValidThread());
+  OnRawBytesRead(request, bytes_read);
+}
+
+void NetworkDelegate::NotifyBeforeRedirect(URLRequest* request,
+                                           const GURL& new_location) {
   DCHECK(CalledOnValidThread());
   DCHECK(request);
-  OnReadCompleted(request, bytes_read);
+  OnBeforeRedirect(request, new_location);
+}
+
+void NetworkDelegate::NotifyCompleted(URLRequest* request) {
+  DCHECK(CalledOnValidThread());
+  DCHECK(request);
+  OnCompleted(request);
 }
 
 void NetworkDelegate::NotifyURLRequestDestroyed(URLRequest* request) {
-  DCHECK(request);
-  return OnURLRequestDestroyed(request);
-}
-
-URLRequestJob* NetworkDelegate::MaybeCreateURLRequestJob(URLRequest* request) {
   DCHECK(CalledOnValidThread());
   DCHECK(request);
-  return OnMaybeCreateURLRequestJob(request);
+  OnURLRequestDestroyed(request);
+}
+
+void NetworkDelegate::NotifyHttpTransactionDestroyed(uint64 request_id) {
+  DCHECK(CalledOnValidThread());
+  OnHttpTransactionDestroyed(request_id);
+}
+
+void NetworkDelegate::NotifyPACScriptError(int line_number,
+                                           const string16& error) {
+  DCHECK(CalledOnValidThread());
+  OnPACScriptError(line_number, error);
 }
 
 }  // namespace net

@@ -321,19 +321,15 @@ on the following experimental APIs:
 
 <ul>
   <li>
-  <a href="experimental.clipboard.html">experimental.clipboard</a></li><li>
   <a href="experimental.contentSettings.misc.html">experimental.contentSettings.misc</a></li><li>
   <a href="experimental.debugger.html">experimental.debugger</a></li><li>
-  <a href="experimental.extension.html">experimental.extension</a></li><li>
+  <a href="experimental.devtools.audits.html">experimental.devtools.audits</a></li><li>
+  <a href="experimental.devtools.panels.html">experimental.devtools.panels</a></li><li>
+  <a href="experimental.devtools.resources.html">experimental.devtools.resources</a></li><li>
   <a href="experimental.infobars.html">experimental.infobars</a></li><li>
   <a href="experimental.processes.html">experimental.processes</a></li><li>
-  <a href="experimental.proxy.html">experimental.proxy</a></li><li>
   <a href="experimental.sidebar.html">experimental.sidebar</a></li><li>
   <a href="experimental.tts.html">experimental.tts</a></li><li>
-  <a href="experimental.webInspector.audits.html">experimental.webInspector.audits</a></li><li>
-  <a href="experimental.webInspector.inspectedWindow.html">experimental.webInspector.inspectedWindow</a></li><li>
-  <a href="experimental.webInspector.panels.html">experimental.webInspector.panels</a></li><li>
-  <a href="experimental.webInspector.resources.html">experimental.webInspector.resources</a></li><li>
   <a href="experimental.webNavigation.html">experimental.webNavigation</a></li><li>
   <a href="experimental.webRequest.html">experimental.webRequest</a></li>
 </ul>
@@ -523,7 +519,7 @@ For information on the standard APIs that extensions can use, see
 
               <div class="summary">
                 <!-- Note: intentionally longer 80 columns -->
-                <span class="subdued">chrome.bookmarks</span><span>onEvent</span><span class="subdued">.addListener</span>(function(<span>Type param1, Type param2</span>) <span class="subdued">{...}</span>);
+                <span class="subdued">chrome.bookmarks</span><span>onEvent</span><span class="subdued">.addListener</span>(function(<span>Type param1, Type param2</span>) <span class="subdued">{...}</span><span>, Type opt_param1, Type opt_param2</span>));
               </div>
 
               <div class="description">
@@ -532,9 +528,9 @@ For information on the standard APIs that extensions can use, see
                   A description from the json schema def of the event goes here.
                 </p>
 
-                <!-- PARAMETERS -->
+                <!-- LISTENER PARAMETERS -->
                 <div>
-                  <h4>Parameters</h4>
+                  <h4>Listener parameters</h4>
                   <dl>
                     <div>
                       <div>
@@ -542,8 +538,28 @@ For information on the standard APIs that extensions can use, see
                     </div>
                   </dl>
                 </div>
-              </div> <!-- /decription -->
 
+                <!-- EXTRA PARAMETERS -->
+                <div>
+                  <h4>Extra parameters to addListener</h4>
+                  <dl>
+                    <div>
+                      <div>
+                      </div>
+                    </div>
+                  </dl>
+                </div>
+
+                <!-- LISTENER RETURN VALUE -->
+                <h4>Listener returns</h4>
+                <dl>
+                  <div>
+                    <div>
+                    </div>
+                  </div>
+                </dl>
+
+              </div> <!-- /description -->
             </div> <!-- /apiItem -->
 
           </div> <!-- /apiGroup -->

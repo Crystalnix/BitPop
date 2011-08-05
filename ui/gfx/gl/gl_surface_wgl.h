@@ -17,6 +17,8 @@ class GLSurfaceWGL : public GLSurface {
   virtual ~GLSurfaceWGL();
 
   static bool InitializeOneOff();
+  static HDC GetDisplay();
+
  private:
   DISALLOW_COPY_AND_ASSIGN(GLSurfaceWGL);
 };
@@ -27,10 +29,8 @@ class NativeViewGLSurfaceWGL : public GLSurfaceWGL {
   explicit NativeViewGLSurfaceWGL(gfx::PluginWindowHandle window);
   virtual ~NativeViewGLSurfaceWGL();
 
-  // Initializes the GL context.
-  bool Initialize();
-
   // Implement GLSurface.
+  virtual bool Initialize();
   virtual void Destroy();
   virtual bool IsOffscreen();
   virtual bool SwapBuffers();
@@ -39,6 +39,7 @@ class NativeViewGLSurfaceWGL : public GLSurfaceWGL {
 
  private:
   gfx::PluginWindowHandle window_;
+  gfx::PluginWindowHandle child_window_;
   HDC device_context_;
 
   DISALLOW_COPY_AND_ASSIGN(NativeViewGLSurfaceWGL);
@@ -51,10 +52,8 @@ class PbufferGLSurfaceWGL : public GLSurfaceWGL {
   explicit PbufferGLSurfaceWGL(const gfx::Size& size);
   virtual ~PbufferGLSurfaceWGL();
 
-  // Initializes the GL context.
-  bool Initialize();
-
   // Implement GLSurface.
+  virtual bool Initialize();
   virtual void Destroy();
   virtual bool IsOffscreen();
   virtual bool SwapBuffers();

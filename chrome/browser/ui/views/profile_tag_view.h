@@ -10,30 +10,29 @@
 #include "views/view.h"
 
 class BrowserFrame;
+class ProfileMenuButton;
 
 namespace gfx {
 class Canvas;
 }
 
-namespace views {
-
-class ProfileMenuButton;
-
 // ProfileTag
 //
 // Displays the tinted button image underneath the ProfileMenuButton.
 
-class ProfileTagView : public View {
+class ProfileTagView : public views::View {
  public:
   // Height of profile tag.
   static const int kProfileTagHeight = 20;
 
   ProfileTagView(BrowserFrame* frame,
-                 views::ProfileMenuButton* profile_menu_button);
-  ~ProfileTagView() {}
+                 ProfileMenuButton* profile_menu_button);
+  virtual ~ProfileTagView();
 
   // Paint the profile tag background image on the given canvas.
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+
+  void set_is_signed_in(bool is_signed_in) { is_signed_in_ = is_signed_in; }
 
  private:
   // Create the bitmaps to be displayed on the frame behind the profile button.
@@ -49,17 +48,21 @@ class ProfileTagView : public View {
   SkBitmap inactive_profile_tag_center_;
   SkBitmap inactive_profile_tag_left_;
   SkBitmap inactive_profile_tag_right_;
+  // Bitmaps used for a themed profile background.
+  SkBitmap active_profile_tag_center_background_;
+  SkBitmap active_profile_tag_left_background_;
+  SkBitmap active_profile_tag_right_background_;
+
+  // True if the user is signed in to a personalized Chrome profile.
+  bool is_signed_in_;
 
   // The frame that hosts this view.
   BrowserFrame* frame_;
 
   // The button to be displayed above this view.
-  views::ProfileMenuButton* profile_menu_button_;
+  ProfileMenuButton* profile_menu_button_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileTagView);
 };
 
-}  // namespace views
-
 #endif  // CHROME_BROWSER_UI_VIEWS_PROFILE_TAG_VIEW_H_
-

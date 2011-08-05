@@ -11,10 +11,11 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/callback.h"
+#include "base/callback_old.h"
 #include "base/memory/linked_ptr.h"
 #include "base/timer.h"
 #include "content/browser/renderer_host/backing_store.h"
+#include "content/browser/tab_contents/tab_contents_observer.h"
 #include "content/common/notification_observer.h"
 #include "content/common/notification_registrar.h"
 
@@ -28,7 +29,8 @@ namespace history {
 class TopSites;
 }
 
-class ThumbnailGenerator : NotificationObserver {
+class ThumbnailGenerator : public NotificationObserver,
+                           public TabContentsObserver {
  public:
   typedef Callback1<const SkBitmap&>::Type ThumbnailReadyCallback;
   // The result of clipping. This can be used to determine if the
@@ -54,11 +56,10 @@ class ThumbnailGenerator : NotificationObserver {
 
   // This class will do nothing until you call StartThumbnailing.
   ThumbnailGenerator();
-  ~ThumbnailGenerator();
+  virtual ~ThumbnailGenerator();
 
-  // Ensures that we're properly hooked in to generated thumbnails. This can
-  // be called repeatedly and with wild abandon to no ill effect.
-  void StartThumbnailing();
+  // Starts taking thumbnails of the given tab contents.
+  void StartThumbnailing(TabContents* tab_contents);
 
   // This registers a callback that can receive the resulting SkBitmap
   // from the renderer when it is done rendering it.  This differs
@@ -122,6 +123,10 @@ class ThumbnailGenerator : NotificationObserver {
                                     history::TopSites* top_sites,
                                     const GURL& url);
 
+  // TabContentsObserver overrides.
+  virtual void DidStartLoading();
+  virtual void StopNavigation();
+
  private:
   virtual void WidgetDidReceivePaintAtSizeAck(
       RenderWidgetHost* widget,
@@ -147,6 +152,10 @@ class ThumbnailGenerator : NotificationObserver {
   typedef std::map<int,
                    linked_ptr<AsyncRequestInfo> > ThumbnailCallbackMap;
   ThumbnailCallbackMap callback_map_;
+
+  TabContentsObserver::Registrar tab_contents_observer_registrar_;
+
+  bool load_interrupted_;
 
   DISALLOW_COPY_AND_ASSIGN(ThumbnailGenerator);
 };

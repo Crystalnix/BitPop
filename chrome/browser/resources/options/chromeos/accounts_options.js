@@ -45,7 +45,7 @@ cr.define('options', function() {
           options.accounts.UserList.decorate(userList);
         }
       } else {
-        $('ownerOnlyWarning').classList.remove('hidden');
+        $('ownerOnlyWarning').hidden = false;
       }
 
       this.addEventListener('visibleChange', this.handleVisibleChange_);
@@ -76,11 +76,8 @@ cr.define('options', function() {
      */
     handleVisibleChange_: function(e) {
       if (this.visible) {
-        // fetchUserPictures calls back AccountsOptions.setUserPictures and
-        // triggers redraw.
-        chrome.send('fetchUserPictures', []);
-
         this.updateControls_();
+        $('userList').redraw();
       }
     },
 
@@ -123,17 +120,17 @@ cr.define('options', function() {
   };
 
   /**
+   * Returns whether we're currently in guest mode.
+   */
+  AccountsOptions.loggedInAsGuest = function() {
+    return localStrings.getString('logged_in_as_guest') == 'true';
+  };
+
+  /**
    * Returns whether the whitelist is managed by policy or not.
    */
   AccountsOptions.whitelistIsManaged = function() {
     return localStrings.getString('whitelist_is_managed') == 'true';
-  };
-
-  /**
-   * Updates user picture cache in UserList.
-   */
-  AccountsOptions.setUserPictures = function(cache) {
-    $('userList').setUserPictures(cache);
   };
 
   /**
@@ -144,6 +141,14 @@ cr.define('options', function() {
     for (var i = 0; i < users.length; ++i) {
       userList.addUser(users[i]);
     }
+  };
+
+  /**
+   * Update account picture.
+   */
+  AccountsOptions.updateAccountPicture = function(email, imageUrl) {
+    var userList = $('userList');
+    userList.updateAccountPicture(email, imageUrl);
   };
 
   // Export

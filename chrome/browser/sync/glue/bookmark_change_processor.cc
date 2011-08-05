@@ -11,7 +11,7 @@
 
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
-#include "chrome/browser/favicon_service.h"
+#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "content/browser/browser_thread.h"
@@ -95,7 +95,7 @@ void BookmarkChangeProcessor::RemoveSyncNodeHierarchy(
   sync_api::WriteTransaction trans(share_handle());
 
   // Later logic assumes that |topmost| has been unlinked.
-  DCHECK(!topmost->parent());
+  DCHECK(topmost->is_root());
 
   // A BookmarkModel deletion event means that |node| and all its children were
   // deleted. Sync backend expects children to be deleted individually, so we do
@@ -107,7 +107,7 @@ void BookmarkChangeProcessor::RemoveSyncNodeHierarchy(
   int index = 0;
   while (node) {
     // The top of |index_stack| should always be |node|'s index.
-    DCHECK(!node->parent() || (node->parent()->GetIndexOf(node) ==
+    DCHECK(node->is_root() || (node->parent()->GetIndexOf(node) ==
       index_stack.top()));
     if (index == node->child_count()) {
       // If we've processed all of |node|'s children, delete |node| and move
@@ -188,10 +188,10 @@ void BookmarkChangeProcessor::BookmarkNodeRemoved(BookmarkModel* model,
 }
 
 void BookmarkChangeProcessor::BookmarkNodeChanged(BookmarkModel* model,
-                                                    const BookmarkNode* node) {
+                                                  const BookmarkNode* node) {
   DCHECK(running());
   // We shouldn't see changes to the top-level nodes.
-  if (node == model->GetBookmarkBarNode() || node == model->other_node()) {
+  if (model->is_permanent_node(node)) {
     NOTREACHED() << "Saw update to permanent node!";
     return;
   }
@@ -225,7 +225,7 @@ void BookmarkChangeProcessor::BookmarkNodeMoved(BookmarkModel* model,
   DCHECK(running());
   const BookmarkNode* child = new_parent->GetChild(new_index);
   // We shouldn't see changes to the top-level nodes.
-  if (child == model->GetBookmarkBarNode() || child == model->other_node()) {
+  if (model->is_permanent_node(child)) {
     NOTREACHED() << "Saw update to permanent node!";
     return;
   }
@@ -247,8 +247,9 @@ void BookmarkChangeProcessor::BookmarkNodeMoved(BookmarkModel* model,
   }
 }
 
-void BookmarkChangeProcessor::BookmarkNodeFaviconLoaded(BookmarkModel* model,
-      const BookmarkNode* node) {
+void BookmarkChangeProcessor::BookmarkNodeFaviconChanged(
+    BookmarkModel* model,
+    const BookmarkNode* node) {
   DCHECK(running());
   BookmarkNodeChanged(model, node);
 }
@@ -384,7 +385,7 @@ void BookmarkChangeProcessor::ApplyChangesFromSyncModel(
         model_associator_->GetChromeNodeFromSyncId(changes[i].id);
     // Ignore changes to the permanent top-level nodes.  We only care about
     // their children.
-    if ((dst == model->GetBookmarkBarNode()) || (dst == model->other_node()))
+    if (model->is_permanent_node(dst))
       continue;
     if (changes[i].action ==
         sync_api::SyncManager::ChangeRecord::ACTION_DELETE) {
@@ -392,7 +393,6 @@ void BookmarkChangeProcessor::ApplyChangesFromSyncModel(
       DCHECK(i == 0 || changes[i-1].action == changes[i].action);
       // Children of a deleted node should not be deleted; they may be
       // reparented by a later change record.  Move them to a temporary place.
-      DCHECK(dst) << "Could not find node to be deleted";
       if (!dst) // Can't do anything if we can't find the chrome node.
         continue;
       const BookmarkNode* parent = dst->parent();

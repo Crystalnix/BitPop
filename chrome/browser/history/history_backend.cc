@@ -20,7 +20,7 @@
 #include "base/time.h"
 #include "chrome/browser/autocomplete/history_url_provider.h"
 #include "chrome/browser/bookmarks/bookmark_service.h"
-#include "chrome/browser/history/download_create_info.h"
+#include "chrome/browser/history/download_history_info.h"
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_publisher.h"
 #include "chrome/browser/history/in_memory_history_backend.h"
@@ -1132,13 +1132,13 @@ void HistoryBackend::UpdateDownloadPath(const FilePath& path,
 // Create a new download entry and pass back the db_handle to it.
 void HistoryBackend::CreateDownload(
     scoped_refptr<DownloadCreateRequest> request,
-    const DownloadCreateInfo& create_info) {
+    int32 id,
+    const DownloadHistoryInfo& history_info) {
   int64 db_handle = 0;
   if (!request->canceled()) {
     if (db_.get())
-      db_handle = db_->CreateDownload(create_info);
-    request->ForwardResult(DownloadCreateRequest::TupleType(create_info,
-                                                            db_handle));
+      db_handle = db_->CreateDownload(history_info);
+    request->ForwardResult(DownloadCreateRequest::TupleType(id, db_handle));
   }
 }
 
@@ -1312,16 +1312,16 @@ void HistoryBackend::QueryRedirectsTo(
       request->handle(), url, success, &request->value));
 }
 
-void HistoryBackend::GetVisitCountToHost(
-    scoped_refptr<GetVisitCountToHostRequest> request,
+void HistoryBackend::GetVisibleVisitCountToHost(
+    scoped_refptr<GetVisibleVisitCountToHostRequest> request,
     const GURL& url) {
   if (request->canceled())
     return;
   int count = 0;
   Time first_visit;
-  const bool success = (db_.get() && db_->GetVisitCountToHost(url, &count,
-                                                              &first_visit));
-  request->ForwardResult(GetVisitCountToHostRequest::TupleType(
+  const bool success = db_.get() &&
+      db_->GetVisibleVisitCountToHost(url, &count, &first_visit);
+  request->ForwardResult(GetVisibleVisitCountToHostRequest::TupleType(
       request->handle(), success, count, first_visit));
 }
 

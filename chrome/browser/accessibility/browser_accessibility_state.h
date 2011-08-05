@@ -20,10 +20,13 @@ template <typename T> struct DefaultSingletonTraits;
 // (1) On windows many screen reader detection mechinisms will give false
 // positives like relying on the SPI_GETSCREENREADER system parameter. In Chrome
 // we attempt to dynamically detect a MSAA client screen reader by calling
-// NotifiyWinEvent in WidgetWin with a custom ID and wait to see if the ID
+// NotifiyWinEvent in NativeWidgetWin with a custom ID and wait to see if the ID
 // is requested by a subsequent call to WM_GETOBJECT.
-// (2) On mac we detect if VoiceOver is running. This is stored in a preference
-// file for Universal Access with the key "voiceOverOnOffKey".
+// (2) On mac we detect dynamically if VoiceOver is running.  We rely upon the
+// undocumented accessibility attribute @"AXEnhancedUserInterface" which is set
+// when VoiceOver is launched and unset when VoiceOver is closed.  This is an
+// improvement over reading defaults preference values (which has no callback
+// mechanism).
 class BrowserAccessibilityState {
  public:
   // Returns the singleton instance.

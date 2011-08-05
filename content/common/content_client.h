@@ -9,10 +9,20 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "build/build_config.h"
 
+class CommandLine;
 class GURL;
 struct GPUInfo;
 struct PepperPluginInfo;
+
+namespace IPC {
+class Message;
+}
+
+namespace sandbox {
+class TargetPolicy;
+}
 
 namespace content {
 
@@ -47,6 +57,20 @@ class ContentClient {
 
   // Gives the embedder a chance to register its own pepper plugins.
   virtual void AddPepperPlugins(std::vector<PepperPluginInfo>* plugins) {}
+
+  // Returns whether the given message should be allowed to be sent from a
+  // swapped out renderer.
+  virtual bool CanSendWhileSwappedOut(const IPC::Message* msg);
+
+  // Returns whether the given message should be processed in the browser on
+  // behalf of a swapped out renderer.
+  virtual bool CanHandleWhileSwappedOut(const IPC::Message& msg);
+
+#if defined(OS_WIN)
+  // Allows the embedder to sandbox a plugin, and apply a custom policy.
+  virtual bool SandboxPlugin(CommandLine* command_line,
+                             sandbox::TargetPolicy* policy);
+#endif
 
  private:
   // The embedder API for participating in browser logic.

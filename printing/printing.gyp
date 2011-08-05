@@ -9,7 +9,7 @@
   'targets': [
     {
       'target_name': 'printing',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         '../app/app.gyp:app_base',  # Only required for Font support
         '../base/base.gyp:base',
@@ -38,6 +38,8 @@
         'image.h',
         'metafile.h',
         'metafile_impl.h',
+        'metafile_skia_wrapper.h',
+        'metafile_skia_wrapper.cc',
         'page_number.cc',
         'page_number.h',
         'page_overlays.cc',
@@ -89,7 +91,7 @@
         ],
       },
       'conditions': [
-        ['OS!="linux" and OS!="freebsd" and OS!="openbsd"',{
+        ['toolkit_uses_gtk == 0',{
             'sources/': [['exclude', '_cairo\\.cc$']]
         }],
         ['OS!="mac"', {'sources/': [['exclude', '_mac\\.(cc|mm?)$']]}],
@@ -97,11 +99,7 @@
           }, {  # else: OS=="win"
             'sources/': [['exclude', '_posix\\.cc$']]
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
-          'sources': [
-            'metafile_skia_wrapper.cc',
-            'metafile_skia_wrapper.h',
-          ],
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             # For FT_Init_FreeType and friends.
             '../build/linux/system.gyp:freetype2',
@@ -110,8 +108,10 @@
           ],
         }],
         ['OS=="mac"',
-          {'sources/': [['exclude', 'pdf_metafile_skia\\.(cc|h)$']]}
-        ],
+          {'sources/': [
+            ['exclude', 'pdf_metafile_skia\\.(cc|h)$'],
+            ['exclude', 'metafile_skia_wrapper\\.(cc|h)$'],
+        ]}],
         ['OS=="win"', {
           'defines': [
             # PRINT_BACKEND_AVAILABLE disables the default dummy implementation
@@ -125,6 +125,16 @@
           ],
         }],
         ['use_cups==1', {
+          'dependencies': [
+            'cups',
+          ],
+          'conditions': [
+            ['OS!="mac"', {
+              'dependencies': [
+                '../build/linux/system.gyp:libgcrypt',
+              ],
+            }],
+          ],
           'defines': [
             # PRINT_BACKEND_AVAILABLE disables the default dummy implementation
             # of the print backend and enables a custom implementation instead.
@@ -134,22 +144,6 @@
             'backend/cups_helper.cc',
             'backend/cups_helper.h',
             'backend/print_backend_cups.cc',
-          ],
-          'conditions': [
-            ['OS=="mac"', {
-              'link_settings': {
-                'libraries': [
-                  '$(SDKROOT)/usr/lib/libcups.dylib',
-                ]
-              },
-            }, {
-              'link_settings': {
-                'libraries': [
-                  '-lcups',
-                  '-lgcrypt',
-                ],
-              },
-            }],
           ],
         }],
       ],
@@ -178,26 +172,52 @@
         'units_unittest.cc',
       ],
       'conditions': [
-        ['OS!="linux"', {'sources/': [['exclude', '_cairo_unittest\\.cc$']]}],
+        ['toolkit_uses_gtk == 0', {'sources/': [['exclude', '_cairo_unittest\\.cc$']]}],
         ['OS!="mac"', {'sources/': [['exclude', '_mac_unittest\\.(cc|mm?)$']]}],
         ['OS!="win"', {'sources/': [['exclude', '_win_unittest\\.cc$']]
           }, {  # else: OS=="win"
             'sources/': [['exclude', '_cairo_unittest\\.cc$']]
           }
         ],
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
-            'dependencies': [
-              '../build/linux/system.gyp:gtk',
-           ],
-        }],
-        ['OS=="linux"', {
+        ['toolkit_uses_gtk == 1', {
+          'dependencies': [
+            '../build/linux/system.gyp:gtk',
+          ],
           'conditions': [
-            ['linux_use_tcmalloc==1', {
+            ['linux_use_tcmalloc == 1', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],
             }],
           ],
+        }],
+      ],
+    },
+    {
+      'target_name': 'cups',
+      'type': 'none',
+      'conditions': [
+        ['use_cups==1', {
+          'direct_dependent_settings': {
+            'defines': [
+              'USE_CUPS',
+            ],
+            'conditions': [
+              ['OS=="mac"', {
+                'link_settings': {
+                  'libraries': [
+                    '$(SDKROOT)/usr/lib/libcups.dylib',
+                  ]
+                },
+              }, {
+                'link_settings': {
+                  'libraries': [
+                    '<!@(cups-config --libs)',
+                  ],
+                },
+              }],
+            ],
+          },
         }],
       ],
     },

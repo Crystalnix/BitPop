@@ -9,9 +9,10 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/metrics/histogram.h"
 #include "chrome/browser/content_settings/content_settings_details.h"
 #include "chrome/browser/content_settings/content_settings_pattern.h"
-#include "chrome/browser/metrics/user_metrics.h"
+#include "chrome/browser/content_settings/content_settings_utils.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
@@ -19,6 +20,7 @@
 #include "chrome/common/content_settings.h"
 #include "chrome/common/pref_names.h"
 #include "content/browser/browser_thread.h"
+#include "content/browser/user_metrics.h"
 #include "content/common/notification_details.h"
 #include "content/common/notification_service.h"
 #include "content/common/notification_source.h"
@@ -277,9 +279,8 @@ void PrefDefaultProvider::GetSettingsFromDictionary(
     settings->settings[CONTENT_SETTINGS_TYPE_COOKIES] = CONTENT_SETTING_BLOCK;
 
   settings->settings[CONTENT_SETTINGS_TYPE_PLUGINS] =
-      BaseProvider::ClickToPlayFixup(
-          CONTENT_SETTINGS_TYPE_PLUGINS,
-          settings->settings[CONTENT_SETTINGS_TYPE_PLUGINS]);
+      ClickToPlayFixup(CONTENT_SETTINGS_TYPE_PLUGINS,
+                       settings->settings[CONTENT_SETTINGS_TYPE_PLUGINS]);
 }
 
 void PrefDefaultProvider::NotifyObservers(
@@ -313,12 +314,14 @@ void PrefDefaultProvider::RegisterUserPrefs(PrefService* prefs) {
   DictionaryValue* default_content_settings = new DictionaryValue();
   SetDefaultContentSettings(default_content_settings);
   prefs->RegisterDictionaryPref(prefs::kDefaultContentSettings,
-                                default_content_settings);
+                                default_content_settings,
+                                PrefService::SYNCABLE_PREF);
 
   // Obsolete prefs, for migrations:
   prefs->RegisterIntegerPref(
       prefs::kDesktopNotificationDefaultContentSetting,
-          kDefaultSettings[CONTENT_SETTINGS_TYPE_NOTIFICATIONS]);
+      kDefaultSettings[CONTENT_SETTINGS_TYPE_NOTIFICATIONS],
+      PrefService::SYNCABLE_PREF);
 }
 
 // ////////////////////////////////////////////////////////////////////////////
@@ -327,13 +330,18 @@ void PrefDefaultProvider::RegisterUserPrefs(PrefService* prefs) {
 
 // static
 void PrefProvider::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterIntegerPref(prefs::kContentSettingsVersion,
-      ContentSettingsPattern::kContentSettingsPatternVersion);
-  prefs->RegisterDictionaryPref(prefs::kContentSettingsPatterns);
+  prefs->RegisterIntegerPref(
+      prefs::kContentSettingsVersion,
+      ContentSettingsPattern::kContentSettingsPatternVersion,
+      PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterDictionaryPref(prefs::kContentSettingsPatterns,
+                                PrefService::SYNCABLE_PREF);
 
   // Obsolete prefs, for migration:
-  prefs->RegisterListPref(prefs::kPopupWhitelistedHosts);
-  prefs->RegisterDictionaryPref(prefs::kPerHostContentSettings);
+  prefs->RegisterListPref(prefs::kPopupWhitelistedHosts,
+                          PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterDictionaryPref(prefs::kPerHostContentSettings,
+                                PrefService::UNSYNCABLE_PREF);
 }
 
 PrefProvider::PrefProvider(Profile* profile)
@@ -365,17 +373,17 @@ void PrefProvider::Init() {
   // Read exceptions.
   ReadExceptions(false);
 
+  if (!is_incognito()) {
+    UMA_HISTOGRAM_COUNTS("ContentSettings.NumberOfExceptions",
+                         host_content_settings()->size());
+  }
+
   pref_change_registrar_.Init(prefs);
   pref_change_registrar_.Add(prefs::kContentSettingsPatterns, this);
 
   notification_registrar_.Add(this, NotificationType::PROFILE_DESTROYED,
                               Source<Profile>(profile_));
   initializing_ = false;
-}
-
-bool PrefProvider::ContentSettingsTypeIsManaged(
-    ContentSettingsType content_type) {
-  return false;
 }
 
 void PrefProvider::SetContentSetting(
@@ -396,15 +404,13 @@ void PrefProvider::SetContentSetting(
          CommandLine::ForCurrentProcess()->HasSwitch(
             switches::kEnableClickToPlay));
 
-  const ContentSettingsPattern pattern(
-      requesting_pattern.CanonicalizePattern());
-
   bool early_exit = false;
-  std::string pattern_str(pattern.AsString());
+  std::string pattern_str(requesting_pattern.ToString());
   DictionaryValue* all_settings_dictionary = NULL;
 
   updating_preferences_ = true;
-  {  // Begin scope of update.
+  {
+    // Begin scope of update.
     // profile_ may be NULL in unit tests.
     DictionaryPrefUpdate update(profile_ ? profile_->GetPrefs() : NULL,
                                 prefs::kContentSettingsPatterns);
@@ -491,7 +497,7 @@ void PrefProvider::SetContentSetting(
   }  // End scope of update.
   updating_preferences_ = false;
 
-  NotifyObservers(ContentSettingsDetails(pattern, content_type, ""));
+  NotifyObservers(ContentSettingsDetails(requesting_pattern, content_type, ""));
 }
 
 void PrefProvider::ResetToDefaults() {
@@ -637,7 +643,7 @@ void PrefProvider::ReadExceptions(bool overwrite) {
     for (DictionaryValue::key_iterator i(mutable_settings->begin_keys());
          i != mutable_settings->end_keys(); ++i) {
       const std::string& pattern(*i);
-      if (!ContentSettingsPattern(pattern).IsValid())
+      if (!ContentSettingsPattern::LegacyFromString(pattern).IsValid())
         LOG(WARNING) << "Invalid pattern stored in content settings";
       DictionaryValue* pattern_settings_dictionary = NULL;
       bool found = mutable_settings->GetDictionaryWithoutPathExpansion(
@@ -667,7 +673,7 @@ void PrefProvider::CanonicalizeContentSettingsExceptions(
        i != all_settings_dictionary->end_keys(); ++i) {
     const std::string& pattern(*i);
     const std::string canonicalized_pattern =
-        ContentSettingsPattern(pattern).CanonicalizePattern();
+        ContentSettingsPattern::LegacyFromString(pattern).ToString();
 
     if (canonicalized_pattern.empty() || canonicalized_pattern == pattern)
       continue;
@@ -791,8 +797,9 @@ void PrefProvider::MigrateObsoletePerhostPref(PrefService* prefs) {
          i(all_settings_dictionary->begin_keys());
          i != all_settings_dictionary->end_keys(); ++i) {
       const std::string& host(*i);
-      ContentSettingsPattern pattern(
-          std::string(ContentSettingsPattern::kDomainWildcard) + host);
+      ContentSettingsPattern pattern =
+          ContentSettingsPattern::LegacyFromString(
+              std::string(ContentSettingsPattern::kDomainWildcard) + host);
       DictionaryValue* host_settings_dictionary = NULL;
       bool found = all_settings_dictionary->GetDictionaryWithoutPathExpansion(
           host, &host_settings_dictionary);
@@ -823,8 +830,8 @@ void PrefProvider::MigrateObsoletePopupsPref(PrefService* prefs) {
          i != whitelist_pref->end(); ++i) {
       std::string host;
       (*i)->GetAsString(&host);
-      SetContentSetting(ContentSettingsPattern(host),
-                        ContentSettingsPattern(host),
+      SetContentSetting(ContentSettingsPattern::LegacyFromString(host),
+                        ContentSettingsPattern::LegacyFromString(host),
                         CONTENT_SETTINGS_TYPE_POPUPS,
                         "",
                         CONTENT_SETTING_ALLOW);

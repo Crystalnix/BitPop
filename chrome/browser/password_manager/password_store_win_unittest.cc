@@ -3,21 +3,22 @@
 // found in the LICENSE file.
 
 #include <windows.h>
-#include <wincrypt.h>
 #include <string>
 #include <vector>
+#include <wincrypt.h>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/message_loop.h"
+#include "base/scoped_temp_dir.h"
 #include "base/stl_util-inl.h"
-#include "base/time.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/time.h"
+#include "chrome/browser/password_manager/ie7_password.h"
 #include "chrome/browser/password_manager/password_form_data.h"
 #include "chrome/browser/password_manager/password_store_consumer.h"
 #include "chrome/browser/password_manager/password_store_win.h"
-#include "chrome/browser/password_manager/ie7_password.h"
 #include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/webdata/web_data_service.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/signaling_task.h"
 #include "chrome/test/testing_profile.h"
@@ -168,10 +169,11 @@ TEST_F(PasswordStoreWinTest, DISABLED_ConvertIE7Login) {
 
   // Prentend that the migration has already taken place.
   profile_->GetPrefs()->RegisterBooleanPref(prefs::kLoginDatabaseMigrated,
-                                            true);
+                                            true,
+                                            PrefService::UNSYNCABLE_PREF);
 
   // Initializing the PasswordStore shouldn't trigger a migration.
-  scoped_refptr<PasswordStoreWin> store(
+  scoped_refptr<PasswordStore> store(
       new PasswordStoreWin(login_db_.release(), profile_.get(), wds_.get()));
   EXPECT_TRUE(store->Init());
 
@@ -220,15 +222,18 @@ TEST_F(PasswordStoreWinTest, DISABLED_ConvertIE7Login) {
   MessageLoop::current()->Run();
 
   STLDeleteElements(&forms);
+
+  store->Shutdown();
 }
 
 TEST_F(PasswordStoreWinTest, OutstandingWDSQueries) {
   // Prentend that the migration has already taken place.
   profile_->GetPrefs()->RegisterBooleanPref(prefs::kLoginDatabaseMigrated,
-                                            true);
+                                            true,
+                                            PrefService::UNSYNCABLE_PREF);
 
   // Initializing the PasswordStore shouldn't trigger a migration.
-  scoped_refptr<PasswordStoreWin> store(
+  scoped_refptr<PasswordStore> store(
       new PasswordStoreWin(login_db_.release(), profile_.get(), wds_.get()));
   EXPECT_TRUE(store->Init());
 
@@ -250,6 +255,7 @@ TEST_F(PasswordStoreWinTest, OutstandingWDSQueries) {
   store->GetLogins(*form, &consumer);
 
   // Release the PSW and the WDS before the query can return.
+  store->Shutdown();
   store = NULL;
   wds_->Shutdown();
   wds_ = NULL;
@@ -274,10 +280,11 @@ TEST_F(PasswordStoreWinTest, DISABLED_MultipleWDSQueriesOnDifferentThreads) {
 
   // Prentend that the migration has already taken place.
   profile_->GetPrefs()->RegisterBooleanPref(prefs::kLoginDatabaseMigrated,
-                                            true);
+                                            true,
+                                            PrefService::UNSYNCABLE_PREF);
 
   // Initializing the PasswordStore shouldn't trigger a migration.
-  scoped_refptr<PasswordStoreWin> store(
+  scoped_refptr<PasswordStore> store(
       new PasswordStoreWin(login_db_.release(), profile_.get(), wds_.get()));
   EXPECT_TRUE(store->Init());
 
@@ -338,6 +345,8 @@ TEST_F(PasswordStoreWinTest, DISABLED_MultipleWDSQueriesOnDifferentThreads) {
   MessageLoop::current()->Run();
 
   STLDeleteElements(&forms);
+
+  store->Shutdown();
 }
 
 TEST_F(PasswordStoreWinTest, Migration) {
@@ -426,7 +435,7 @@ TEST_F(PasswordStoreWinTest, Migration) {
   done.Wait();
 
   // Initializing the PasswordStore should trigger a migration.
-  scoped_refptr<PasswordStoreWin> store(
+  scoped_refptr<PasswordStore> store(
       new PasswordStoreWin(login_db_.release(), profile_.get(), wds_.get()));
   store->Init();
 
@@ -507,7 +516,7 @@ TEST_F(PasswordStoreWinTest, Migration) {
 }
 
 TEST_F(PasswordStoreWinTest, EmptyLogins) {
-  scoped_refptr<PasswordStoreWin> store(
+  scoped_refptr<PasswordStore> store(
       new PasswordStoreWin(login_db_.release(), profile_.get(), wds_.get()));
   store->Init();
 
@@ -539,10 +548,12 @@ TEST_F(PasswordStoreWinTest, EmptyLogins) {
 
   store->GetLogins(*form, &consumer);
   MessageLoop::current()->Run();
+
+  store->Shutdown();
 }
 
 TEST_F(PasswordStoreWinTest, EmptyBlacklistLogins) {
-  scoped_refptr<PasswordStoreWin> store(
+  scoped_refptr<PasswordStore> store(
       new PasswordStoreWin(login_db_.release(), profile_.get(), wds_.get()));
   store->Init();
 
@@ -560,10 +571,12 @@ TEST_F(PasswordStoreWinTest, EmptyBlacklistLogins) {
 
   store->GetBlacklistLogins(&consumer);
   MessageLoop::current()->Run();
+
+  store->Shutdown();
 }
 
 TEST_F(PasswordStoreWinTest, EmptyAutofillableLogins) {
-  scoped_refptr<PasswordStoreWin> store(
+  scoped_refptr<PasswordStore> store(
       new PasswordStoreWin(login_db_.release(), profile_.get(), wds_.get()));
   store->Init();
 
@@ -581,4 +594,6 @@ TEST_F(PasswordStoreWinTest, EmptyAutofillableLogins) {
 
   store->GetAutofillableLogins(&consumer);
   MessageLoop::current()->Run();
+
+  store->Shutdown();
 }

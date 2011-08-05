@@ -11,8 +11,11 @@
 #include <vector>
 
 #include "base/hash_tables.h"
-#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
+#include "base/memory/weak_ptr.h"
+#include "base/task.h"
+#include "base/threading/non_thread_safe.h"
 #include "base/time.h"
 #include "base/timer.h"
 #include "chrome/browser/prerender/prerender_contents.h"
@@ -36,9 +39,28 @@ struct hash<TabContents*> {
 
 namespace prerender {
 
+class PrerenderTracker;
+
+// Adds either a preload or a pending preload to the PrerenderManager.
+// Must be called on the UI thread.
+void HandleTag(
+    const base::WeakPtr<PrerenderManager>& prerender_manager,
+    int render_process_id,
+    int render_view_id,
+    const GURL& url,
+    const GURL& referrer);
+
+void DestroyPreloadForRenderView(
+    const base::WeakPtr<PrerenderManager>& prerender_manager_weak_ptr,
+    int child_id,
+    int route_id,
+    FinalStatus final_status);
+
 // PrerenderManager is responsible for initiating and keeping prerendered
-// views of webpages.
-class PrerenderManager : public base::RefCountedThreadSafe<PrerenderManager> {
+// views of webpages. All methods must be called on the UI thread unless
+// indicated otherwise.
+class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
+                         public base::NonThreadSafe {
  public:
   // PrerenderManagerMode is used in a UMA_HISTOGRAM, so please do not
   // add in the middle.
@@ -51,34 +73,54 @@ class PrerenderManager : public base::RefCountedThreadSafe<PrerenderManager> {
   };
 
   // Owned by a Profile object for the lifetime of the profile.
-  explicit PrerenderManager(Profile* profile);
+  PrerenderManager(Profile* profile, PrerenderTracker* prerender_tracker);
 
-  // Preloads the URL supplied.  alias_urls indicates URLs that redirect
-  // to the same URL to be preloaded. Returns true if the URL was added,
-  // false if it was not.
-  bool AddPreload(const GURL& url, const std::vector<GURL>& alias_urls,
-                  const GURL& referrer);
+  virtual ~PrerenderManager();
 
-  void AddPendingPreload(const std::pair<int, int>& child_route_id_pair,
-                         const GURL& url,
-                         const std::vector<GURL>& alias_urls,
-                         const GURL& referrer);
+  // Preloads |url| if valid.  |child_route_id_pair| identifies the
+  // RenderViewHost that the prerender request came from and is used to
+  // set the initial window size of the RenderViewHost used for prerendering.
+  // Returns true if the URL was added, false if it was not.
+  // If |child_route_id_pair| itself is prerendering, adds the preloads as
+  // a pending preload.
+  bool AddPreload(
+      const std::pair<int, int>& child_route_id_pair,
+      const GURL& url,
+      const GURL& referrer);
+
+  // Destroy all preloads for the given child route id pair and assign a final
+  // status to them.
+  virtual void DestroyPreloadForChildRouteIdPair(
+      const std::pair<int, int>& child_route_id_pair,
+      FinalStatus final_status);
 
   // For a given TabContents that wants to navigate to the URL supplied,
   // determines whether a preloaded version of the URL can be used,
   // and substitutes the prerendered RVH into the TabContents.  Returns
   // whether or not a prerendered RVH could be used or not.
-  bool MaybeUsePreloadedPage(TabContents* tc, const GURL& url);
+  bool MaybeUsePreloadedPage(TabContents* tab_contents,
+                             const GURL& url,
+                             bool has_opener_set);
 
-  // Allows PrerenderContents to remove itself when prerendering should
-  // be cancelled.
-  void RemoveEntry(PrerenderContents* entry);
+  // Moves a PrerenderContents to the pending delete list from the list of
+  // active prerenders when prerendering should be cancelled.
+  void MoveEntryToPendingDelete(PrerenderContents* entry);
+
+  // Checks if the PrerenderContents has been added to the pending delete list.
+  bool IsPendingDelete(PrerenderContents* entry) const;
 
   // Retrieves the PrerenderContents object for the specified URL, if it
   // has been prerendered.  The caller will then have ownership of the
   // PrerenderContents object and is responsible for freeing it.
   // Returns NULL if the specified URL has not been prerendered.
   PrerenderContents* GetEntry(const GURL& url);
+
+  // Identical to GetEntry, with one exception:
+  // The TabContents specified indicates the TC in which to swap the
+  // prerendering into.  If the TabContents specified is the one
+  // to doing the prerendered itself, will return NULL.
+  PrerenderContents* GetEntryButNotSpecifiedTC(const GURL& url,
+                                               TabContents* tc);
 
   // Records the perceived page load time for a page - effectively the time from
   // when the user navigates to a page to when it finishes loading. The actual
@@ -92,10 +134,12 @@ class PrerenderManager : public base::RefCountedThreadSafe<PrerenderManager> {
   // navigates to it. This must be called on the UI thread.
   void RecordTimeUntilUsed(base::TimeDelta time_until_used);
 
-  base::TimeDelta max_prerender_age() const { return max_prerender_age_; }
-  void set_max_prerender_age(base::TimeDelta td) { max_prerender_age_ = td; }
-  unsigned int max_elements() const { return max_elements_; }
-  void set_max_elements(unsigned int num) { max_elements_ = num; }
+  base::TimeDelta max_prerender_age() const;
+  void set_max_prerender_age(base::TimeDelta max_age);
+  size_t max_prerender_memory_mb() const;
+  void set_max_prerender_memory_mb(size_t prerender_memory_mb);
+  unsigned int max_elements() const;
+  void set_max_elements(unsigned int num);
 
   // Returns whether prerendering is currently enabled for this manager.
   // Must be called on the UI thread.
@@ -112,17 +156,29 @@ class PrerenderManager : public base::RefCountedThreadSafe<PrerenderManager> {
   static bool IsPrerenderingPossible();
   static bool IsControlGroup();
 
-  // The following static method can be called from any thread, but will result
-  // in posting a task to the UI thread if we are not in the UI thread.
-  static void RecordPrefetchTagObserved();
+  // Records that a prerender tag has been observed.
+  void RecordTagObserved();
+
+  // Query the list of current prerender pages to see if the given tab contents
+  // is prerendering a page.
+  bool IsTabContentsPrerendering(TabContents* tab_contents) const;
 
   // Maintaining and querying the set of TabContents belonging to this
   // PrerenderManager that are currently showing prerendered pages.
-  void MarkTabContentsAsPrerendered(TabContents* tc);
-  void MarkTabContentsAsWouldBePrerendered(TabContents* tc);
-  void MarkTabContentsAsNotPrerendered(TabContents* tc);
-  bool IsTabContentsPrerendered(TabContents* tc) const;
-  bool WouldTabContentsBePrerendered(TabContents* tc) const;
+  void MarkTabContentsAsPrerendered(TabContents* tab_contents);
+  void MarkTabContentsAsWouldBePrerendered(TabContents* tab_contents);
+  void MarkTabContentsAsNotPrerendered(TabContents* tab_contents);
+  bool IsTabContentsPrerendered(TabContents* tab_contents) const;
+  bool WouldTabContentsBePrerendered(TabContents* tab_contents) const;
+  bool IsOldRenderViewHost(const RenderViewHost* render_view_host) const;
+
+  // Records that some visible tab navigated (or was redirected) to the
+  // provided URL.
+  void RecordNavigation(const GURL& url);
+
+  // Checks whether navigation to the provided URL has occured in a visible
+  // tab recently.
+  bool HasRecentlyBeenNavigatedTo(const GURL& url);
 
   // Extracts a urlencoded URL stored in a url= query parameter from a URL
   // supplied, if available, and stores it in alias_url.  Returns whether or not
@@ -130,10 +186,11 @@ class PrerenderManager : public base::RefCountedThreadSafe<PrerenderManager> {
   static bool MaybeGetQueryStringBasedAliasURL(const GURL& url,
                                                GURL* alias_url);
 
+  // Returns true if the method given is invalid for prerendering.
+  static bool IsValidHttpMethod(const std::string& method);
+
  protected:
   struct PendingContentsData;
-
-  virtual ~PrerenderManager();
 
   void SetPrerenderContentsFactory(
       PrerenderContents::Factory* prerender_contents_factory);
@@ -148,15 +205,32 @@ class PrerenderManager : public base::RefCountedThreadSafe<PrerenderManager> {
   friend class base::RefCountedThreadSafe<PrerenderManager>;
 
   struct PrerenderContentsData;
+  struct NavigationRecord;
 
-  // Starts and stops scheduling periodic cleanups, respectively.
+  class OnCloseTabContentsDeleter;
+
+  // Adds a pending preload issued by the prerendering RenderView identified by
+  // |child_route_id_pair|.  If and when that prerendering RenderView is used,
+  // the specified prerender will start.
+  void AddPendingPreload(const std::pair<int, int>& child_route_id_pair,
+                         const GURL& url,
+                         const GURL& referrer);
+
+  // Starts scheduling periodic cleanups.
   void StartSchedulingPeriodicCleanups();
-  void StopSchedulingPeriodicCleanups();
+  // Stops scheduling periodic cleanups if they're no longer needed.
+  void MaybeStopSchedulingPeriodicCleanups();
 
-  // Deletes stale prerendered PrerenderContents.
+  // Deletes stale and cancelled prerendered PrerenderContents, as well as
+  // TabContents that have been replaced by prerendered TabContents.
   // Also identifies and kills PrerenderContents that use too much
   // resources.
   void PeriodicCleanup();
+
+  // Posts a task to call PeriodicCleanup.  Results in quicker destruction of
+  // objects.  If |this| is deleted before the task is run, the task will
+  // automatically be cancelled.
+  void PostCleanupTask();
 
   bool IsPrerenderElementFresh(const base::Time start) const;
   void DeleteOldEntries();
@@ -164,23 +238,46 @@ class PrerenderManager : public base::RefCountedThreadSafe<PrerenderManager> {
   virtual base::TimeTicks GetCurrentTimeTicks() const;
   virtual PrerenderContents* CreatePrerenderContents(
       const GURL& url,
-      const std::vector<GURL>& alias_urls,
       const GURL& referrer);
+
+  // Deletes any PrerenderContents that have been added to the pending delete
+  // list.
+  void DeletePendingDeleteEntries();
 
   // Finds the specified PrerenderContents and returns it, if it exists.
   // Returns NULL otherwise.  Unlike GetEntry, the PrerenderManager maintains
   // ownership of the PrerenderContents.
   PrerenderContents* FindEntry(const GURL& url);
 
-  static bool WithinWindow();
+  // Returns the iterator to the PrerenderContentsData entry that is being
+  // prerendered from the given child route id pair.
+  std::list<PrerenderContentsData>::iterator
+      FindPrerenderContentsForChildRouteIdPair(
+          const std::pair<int, int>& child_route_id_pair);
 
-  static void RecordPrefetchTagObservedOnUIThread();
+  // Returns whether the PrerenderManager is currently within the prerender
+  // window - effectively, up to 30 seconds after a prerender tag has been
+  // observed.
+  bool WithinWindow() const;
 
   // Called when removing a preload to ensure we clean up any pending preloads
   // that might remain in the map.
   void RemovePendingPreload(PrerenderContents* entry);
 
   bool DoesRateLimitAllowPrerender() const;
+
+  // Deletes old TabContents that have been replaced by prerendered ones.  This
+  // is needed because they're replaced in a callback from the old TabContents,
+  // so cannot immediately be deleted.
+  void DeleteOldTabContents();
+
+  // Cleans up old NavigationRecord's.
+  void CleanUpOldNavigations();
+
+  // Arrange for the given tab contents to be deleted asap. If deleter is not
+  // NULL, deletes that as well.
+  void ScheduleDeleteOldTabContents(TabContentsWrapper* tab,
+                                    OnCloseTabContentsDeleter* deleter);
 
   // Specifies whether prerendering is currently enabled for this
   // manager. The value can change dynamically during the lifetime
@@ -189,49 +286,44 @@ class PrerenderManager : public base::RefCountedThreadSafe<PrerenderManager> {
 
   Profile* profile_;
 
+  PrerenderTracker* prerender_tracker_;
+
   base::TimeDelta max_prerender_age_;
+  // Maximum amount of memory, in megabytes, that a single PrerenderContents
+  // can use before it's cancelled.
+  size_t max_prerender_memory_mb_;
   unsigned int max_elements_;
 
   // List of prerendered elements.
   std::list<PrerenderContentsData> prerender_list_;
 
+  // List of recent navigations in this profile, sorted by ascending
+  // navigate_time_.
+  std::list<NavigationRecord> navigations_;
+
+  // List of prerender elements to be deleted
+  std::list<PrerenderContents*> pending_delete_list_;
+
   // Set of TabContents which are currently displaying a prerendered page.
-  base::hash_set<TabContents*> prerendered_tc_set_;
+  base::hash_set<TabContents*> prerendered_tab_contents_set_;
 
   // Set of TabContents which would be displaying a prerendered page
   // (for the control group).
-  base::hash_set<TabContents*> would_be_prerendered_tc_set_;
+  base::hash_set<TabContents*> would_be_prerendered_tab_contents_set_;
 
   // Map of child/route id pairs to pending prerender data.
   typedef std::map<std::pair<int, int>, std::vector<PendingContentsData> >
       PendingPrerenderList;
   PendingPrerenderList pending_prerender_list_;
 
-  // Default maximum permitted elements to prerender.
-  static const unsigned int kDefaultMaxPrerenderElements = 1;
-
-  // Default maximum age a prerendered element may have, in seconds.
-  static const int kDefaultMaxPrerenderAgeSeconds = 20;
-
-  // Time window for which we will record windowed PLT's from the last
-  // observed link rel=prefetch tag.
-  static const int kWindowDurationSeconds = 30;
-
-  // Time interval at which periodic cleanups are performed.
-  static const int kPeriodicCleanupIntervalMs = 1000;
-
-  // Time interval before a new prerender is allowed.
-  static const int kMinTimeBetweenPrerendersMs = 500;
-
   scoped_ptr<PrerenderContents::Factory> prerender_contents_factory_;
 
   static PrerenderManagerMode mode_;
 
-  // The time when we last saw a prefetch request coming from a renderer.
+  // The time when we last saw a prerender request coming from a renderer.
   // This is used to record perceived PLT's for a certain amount of time
-  // from the point that we last saw a <link rel=prefetch> tag.
-  // This static variable should only be modified on the UI thread.
-  static base::TimeTicks last_prefetch_seen_time_;
+  // from the point that we last saw a <link rel=prerender> tag.
+  base::TimeTicks last_prerender_seen_time_;
 
   // A count of how many prerenders we do per session. Initialized to 0 then
   // incremented and emitted to a histogram on each successful prerender.
@@ -244,9 +336,16 @@ class PrerenderManager : public base::RefCountedThreadSafe<PrerenderManager> {
   // Track time of last prerender to limit prerender spam.
   base::TimeTicks last_prerender_start_time_;
 
+  std::list<TabContentsWrapper*> old_tab_contents_list_;
+
+  // Cancels pending tasks on deletion.
+  ScopedRunnableMethodFactory<PrerenderManager> runnable_method_factory_;
+
+  ScopedVector<OnCloseTabContentsDeleter> on_close_tab_contents_deleters_;
+
   DISALLOW_COPY_AND_ASSIGN(PrerenderManager);
 };
 
-}  // prerender
+}  // namespace prerender
 
 #endif  // CHROME_BROWSER_PRERENDER_PRERENDER_MANAGER_H_

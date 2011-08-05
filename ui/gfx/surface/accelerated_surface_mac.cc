@@ -8,6 +8,7 @@
 #include "base/mac/scoped_cftyperef.h"
 #include "ui/gfx/gl/gl_bindings.h"
 #include "ui/gfx/gl/gl_implementation.h"
+#include "ui/gfx/gl/gl_surface.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/surface/io_surface_support_mac.h"
 
@@ -26,7 +27,7 @@ bool AcceleratedSurface::Initialize(gfx::GLContext* share_context,
   allocate_fbo_ = allocate_fbo;
 
   // Ensure GL is initialized before trying to create an offscreen GL context.
-  if (!gfx::GLContext::InitializeOneOff())
+  if (!gfx::GLSurface::InitializeOneOff())
     return false;
 
   // Drawing to IOSurfaces via OpenGL only works with desktop GL and
@@ -34,9 +35,18 @@ bool AcceleratedSurface::Initialize(gfx::GLContext* share_context,
   if (gfx::GetGLImplementation() != gfx::kGLImplementationDesktopGL)
     return false;
 
-  gl_context_.reset(gfx::GLContext::CreateOffscreenGLContext(share_context));
-  if (!gl_context_.get())
+  gl_surface_ = gfx::GLSurface::CreateOffscreenGLSurface(gfx::Size(1, 1));
+  if (!gl_surface_.get()) {
+    Destroy();
     return false;
+  }
+
+  gl_context_ = gfx::GLContext::CreateGLContext(share_context,
+                                                gl_surface_.get());
+  if (!gl_context_.get()) {
+    Destroy();
+    return false;
+  }
 
   // Now we're ready to handle SetSurfaceSize calls, which will
   // allocate and/or reallocate the IOSurface and associated offscreen
@@ -56,9 +66,8 @@ void AcceleratedSurface::Destroy() {
   }
   transport_dib_.reset();
 
-  if (gl_context_.get())
-    gl_context_->Destroy();
-  gl_context_.reset();
+  gl_context_ = NULL;
+  gl_surface_ = NULL;
 }
 
 // Call after making changes to the surface which require a visual update.
@@ -188,11 +197,11 @@ bool AcceleratedSurface::SetupFrameBufferObject(GLenum target) {
 bool AcceleratedSurface::MakeCurrent() {
   if (!gl_context_.get())
     return false;
-  return gl_context_->MakeCurrent();
+  return gl_context_->MakeCurrent(gl_surface_.get());
 }
 
 void AcceleratedSurface::Clear(const gfx::Rect& rect) {
-  DCHECK(gl_context_->IsCurrent());
+  DCHECK(gl_context_->IsCurrent(gl_surface_.get()));
   glClearColor(0, 0, 0, 0);
   glViewport(0, 0, rect.width(), rect.height());
   glMatrixMode(GL_PROJECTION);
@@ -323,7 +332,7 @@ TransportDIB::Handle AcceleratedSurface::SetTransportDIBSize(
   }
 
   if (allocate_fbo_) {
-    DCHECK(gl_context_->IsCurrent());
+    DCHECK(gl_context_->IsCurrent(gl_surface_.get()));
     // Set up the render buffers and reserve enough space on the card for the
     // framebuffer texture.
     GLenum target = GL_TEXTURE_RECTANGLE_ARB;

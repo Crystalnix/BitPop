@@ -146,6 +146,7 @@ cr.define('options', function() {
       this.addEventListener('dragenter', this.handleDragEnter_.bind(this));
       this.addEventListener('dragover', this.handleDragOver_.bind(this));
       this.addEventListener('drop', this.handleDrop_.bind(this));
+      this.addEventListener('dragleave', this.handleDragLeave_.bind(this));
     },
 
     createItem: function(languageCode) {
@@ -156,8 +157,9 @@ cr.define('options', function() {
      * For each item, determines whether it's deletable.
      */
     updateDeletable: function() {
-      for (var i = 0; i < this.items.length; ++i) {
-        var item = this.getListItemByIndex(i);
+      var items = this.items;
+      for (var i = 0; i < items.length; ++i) {
+        var item = items[i];
         var languageCode = item.languageCode;
         var languageOptions = options.LanguageOptions.getInstance();
         item.deletable = languageOptions.languageIsDeletable(languageCode);
@@ -273,6 +275,7 @@ cr.define('options', function() {
       // The drop is only successful on another ListItem.
       if (!(dropTarget instanceof ListItem) ||
           dropTarget == this.draggedItem) {
+        this.hideDropMarker_();
         return;
       }
       // Compute the drop postion. Should we move the dragged item to
@@ -282,8 +285,8 @@ cr.define('options', function() {
       var yRatio = dy / rect.height;
       var dropPos = yRatio <= .5 ? 'above' : 'below';
       this.dropPos = dropPos;
+      this.showDropMarker_(dropTarget, dropPos);
       e.preventDefault();
-      // TODO(satorux): Show the drop marker just like the bookmark manager.
     },
 
     /*
@@ -293,6 +296,7 @@ cr.define('options', function() {
      */
     handleDrop_: function(e) {
       var dropTarget = this.getTargetFromDropEvent_(e);
+      this.hideDropMarker_();
 
       // Delete the language from the original position.
       var languageCode = this.draggedItem.languageCode;
@@ -309,6 +313,49 @@ cr.define('options', function() {
       this.savePreference_();
     },
 
+    /*
+     * Handles the dragleave event.
+     * @param {Event} e The dragleave event
+     * @private
+     */
+    handleDragLeave_ : function(e) {
+      this.hideDropMarker_();
+    },
+
+    /*
+     * Shows and positions the marker to indicate the drop target.
+     * @param {HTMLElement} target The current target list item of drop
+     * @param {string} pos 'below' or 'above'
+     * @private
+     */
+    showDropMarker_ : function(target, pos) {
+      window.clearTimeout(this.hideDropMarkerTimer_);
+      var marker = $('language-options-list-dropmarker');
+      var rect = target.getBoundingClientRect();
+      var markerHeight = 8;
+      if (pos == 'above') {
+        marker.style.top = (rect.top - markerHeight/2) + 'px';
+      } else {
+        marker.style.top = (rect.bottom - markerHeight/2) + 'px';
+      }
+      marker.style.width = rect.width + 'px';
+      marker.style.left = rect.left + 'px';
+      marker.style.display = 'block';
+    },
+
+    /*
+     * Hides the drop marker.
+     * @private
+     */
+    hideDropMarker_ : function() {
+      // Hide the marker in a timeout to reduce flickering as we move between
+      // valid drop targets.
+      window.clearTimeout(this.hideDropMarkerTimer_);
+      this.hideDropMarkerTimer_ = window.setTimeout(function() {
+        $('language-options-list-dropmarker').style.display = '';
+      }, 100);
+    },
+
     /**
      * Handles preferred languages pref change.
      * @param {Event} e The change event object.
@@ -316,8 +363,14 @@ cr.define('options', function() {
      */
     handlePreferredLanguagesPrefChange_: function(e) {
       var languageCodesInCsv = e.value.value;
-      var languageCodes = this.filterBadLanguageCodes_(
-          languageCodesInCsv.split(','));
+      var languageCodes = languageCodesInCsv.split(',');
+
+      // Add the UI language to the initial list of languages.  This is to avoid
+      // a bug where the UI language would be removed from the preferred
+      // language list by sync on first login.
+      // See: crosbug.com/14283
+      languageCodes.push(navigator.language);
+      languageCodes = this.filterBadLanguageCodes_(languageCodes);
       this.load_(languageCodes);
     },
 

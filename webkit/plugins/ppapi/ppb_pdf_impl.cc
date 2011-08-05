@@ -61,6 +61,11 @@ static const ResourceImageInfo kResourceImageMap[] = {
   { PP_RESOURCEIMAGE_PDF_BUTTON_FTW, IDR_PDF_BUTTON_FTW },
   { PP_RESOURCEIMAGE_PDF_BUTTON_FTW_HOVER, IDR_PDF_BUTTON_FTW_HOVER },
   { PP_RESOURCEIMAGE_PDF_BUTTON_FTW_PRESSED, IDR_PDF_BUTTON_FTW_PRESSED },
+  { PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_END, IDR_PDF_BUTTON_ZOOMIN_END },
+  { PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_END_HOVER,
+      IDR_PDF_BUTTON_ZOOMIN_END_HOVER },
+  { PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_END_PRESSED,
+      IDR_PDF_BUTTON_ZOOMIN_END_PRESSED },
   { PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN, IDR_PDF_BUTTON_ZOOMIN },
   { PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_HOVER, IDR_PDF_BUTTON_ZOOMIN_HOVER },
   { PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_PRESSED, IDR_PDF_BUTTON_ZOOMIN_PRESSED },
@@ -153,7 +158,7 @@ PP_Resource GetResourceImage(PP_Instance instance_id,
 
   skia::PlatformCanvas* canvas = image_data->mapped_canvas();
   SkBitmap& ret_bitmap =
-      const_cast<SkBitmap&>(canvas->getTopPlatformDevice().accessBitmap(true));
+      const_cast<SkBitmap&>(skia::GetTopDevice(*canvas)->accessBitmap(true));
   if (!res_bitmap->copyTo(&ret_bitmap, SkBitmap::kARGB_8888_Config, NULL)) {
     return 0;
   }
@@ -343,4 +348,3 @@ bool PrivateFontFile::GetFontTable(uint32_t table,
 
 }  // namespace ppapi
 }  // namespace webkit
-

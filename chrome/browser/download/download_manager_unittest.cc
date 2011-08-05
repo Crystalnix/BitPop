@@ -10,6 +10,7 @@
 #include "base/stl_util-inl.h"
 #include "base/string_util.h"
 #include "build/build_config.h"
+#include "chrome/browser/download/download_create_info.h"
 #include "chrome/browser/download/download_file.h"
 #include "chrome/browser/download/download_file_manager.h"
 #include "chrome/browser/download/download_item.h"
@@ -18,7 +19,6 @@
 #include "chrome/browser/download/download_status_updater.h"
 #include "chrome/browser/download/download_util.h"
 #include "chrome/browser/download/mock_download_manager.h"
-#include "chrome/browser/history/download_create_info.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/testing_profile.h"
@@ -61,8 +61,8 @@ class DownloadManagerTest : public testing::Test {
     download_manager_->FileSelected(path, index, params);
   }
 
-  void AttachDownloadItem(DownloadCreateInfo* info) {
-    download_manager_->AttachDownloadItem(info);
+  void ContinueDownloadWithPath(DownloadItem* download, const FilePath& path) {
+    download_manager_->ContinueDownloadWithPath(download, path);
   }
 
   void OnDownloadError(int32 download_id, int64 size, int os_error) {
@@ -172,29 +172,21 @@ const struct {
   // Safe download, download finishes BEFORE file name determined.
   // Renamed twice (linear path through UI).  Crdownload file does not need
   // to be deleted.
-  { FILE_PATH_LITERAL("foo.zip"),
-    false, false, true, 2, },
+  { FILE_PATH_LITERAL("foo.zip"), false, false, true, 2, },
   // Dangerous download (file is dangerous or download URL is not safe or both),
   // download finishes BEFORE file name determined. Needs to be renamed only
   // once.
-  { FILE_PATH_LITERAL("Unconfirmed xxx.crdownload"),
-    true, false, true, 1, },
-  { FILE_PATH_LITERAL("Unconfirmed xxx.crdownload"),
-    false, true, true, 1, },
-  { FILE_PATH_LITERAL("Unconfirmed xxx.crdownload"),
-    true, true, true, 1, },
+  { FILE_PATH_LITERAL("Unconfirmed xxx.crdownload"), true, false, true, 1, },
+  { FILE_PATH_LITERAL("Unconfirmed xxx.crdownload"), false, true, true, 1, },
+  { FILE_PATH_LITERAL("Unconfirmed xxx.crdownload"), true, true, true, 1, },
   // Safe download, download finishes AFTER file name determined.
   // Needs to be renamed twice.
-  { FILE_PATH_LITERAL("foo.zip"),
-    false, false, false, 2, },
+  { FILE_PATH_LITERAL("foo.zip"), false, false, false, 2, },
   // Dangerous download, download finishes AFTER file name determined.
   // Needs to be renamed only once.
-  { FILE_PATH_LITERAL("Unconfirmed xxx.crdownload"),
-    true, false, false, 1, },
-  { FILE_PATH_LITERAL("Unconfirmed xxx.crdownload"),
-    false, true, false, 1, },
-  { FILE_PATH_LITERAL("Unconfirmed xxx.crdownload"),
-    true, true, false, 1, },
+  { FILE_PATH_LITERAL("Unconfirmed xxx.crdownload"), true, false, false, 1, },
+  { FILE_PATH_LITERAL("Unconfirmed xxx.crdownload"), false, true, false, 1, },
+  { FILE_PATH_LITERAL("Unconfirmed xxx.crdownload"), true, true, false, 1, },
 };
 
 class MockDownloadFile : public DownloadFile {
@@ -290,8 +282,6 @@ class ItemObserver : public DownloadItem::Observer {
 
 }  // namespace
 
-#if !defined(OS_CHROMEOS)
-
 TEST_F(DownloadManagerTest, StartDownload) {
   BrowserThread io_thread(BrowserThread::IO, &message_loop_);
   PrefService* prefs = profile_->GetPrefs();
@@ -304,38 +294,30 @@ TEST_F(DownloadManagerTest, StartDownload) {
                       kStartDownloadCases[i].prompt_for_download);
 
     SelectFileObserver observer(download_manager_);
-    DownloadCreateInfo* info = new DownloadCreateInfo;
+    // Normally, the download system takes ownership of info, and is
+    // responsible for deleting it.  In these unit tests, however, we
+    // don't call the function that deletes it, so we do so ourselves.
+    scoped_ptr<DownloadCreateInfo> info(new DownloadCreateInfo);
     info->download_id = static_cast<int>(i);
     info->prompt_user_for_save_location = kStartDownloadCases[i].save_as;
     info->url_chain.push_back(GURL(kStartDownloadCases[i].url));
     info->mime_type = kStartDownloadCases[i].mime_type;
-    download_manager_->CreateDownloadItem(info);
+    download_manager_->CreateDownloadItem(info.get());
 
-    DownloadFile* download_file(new DownloadFile(info, download_manager_));
+    DownloadFile* download_file(
+        new DownloadFile(info.get(), download_manager_));
     AddDownloadToFileManager(info->download_id, download_file);
     download_file->Initialize(false);
-    download_manager_->StartDownload(info);
+    download_manager_->StartDownload(info->download_id);
     message_loop_.RunAllPending();
 
-    // NOTE: At this point, |AttachDownloadItem| will have been run if we don't
-    // need to prompt the user, so |info| could have been destructed.
-    // This means that we can't check any of its values.
-    // However, SelectFileObserver will have recorded any attempt to open the
+    // SelectFileObserver will have recorded any attempt to open the
     // select file dialog.
+    // Note that DownloadManager::FileSelectionCanceled() is never called.
     EXPECT_EQ(kStartDownloadCases[i].expected_save_as,
               observer.ShowedFileDialogForId(i));
-
-    // If the Save As dialog pops up, it never reached
-    // DownloadManager::AttachDownloadItem(), and never deleted info or
-    // completed.  This cleans up info.
-    // Note that DownloadManager::FileSelectionCanceled() is never called.
-    if (observer.ShowedFileDialogForId(i)) {
-      delete info;
-    }
   }
 }
-
-#endif // !defined(OS_CHROMEOS)
 
 TEST_F(DownloadManagerTest, DownloadRenameTest) {
   using ::testing::_;
@@ -344,17 +326,17 @@ TEST_F(DownloadManagerTest, DownloadRenameTest) {
   using ::testing::Return;
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kDownloadRenameCases); ++i) {
-    // |info| will be destroyed in download_manager_.
-    DownloadCreateInfo* info(new DownloadCreateInfo);
+    // Normally, the download system takes ownership of info, and is
+    // responsible for deleting it.  In these unit tests, however, we
+    // don't call the function that deletes it, so we do so ourselves.
+    scoped_ptr<DownloadCreateInfo> info(new DownloadCreateInfo);
     info->download_id = static_cast<int>(i);
     info->prompt_user_for_save_location = false;
     info->url_chain.push_back(GURL());
-    info->is_dangerous_file = kDownloadRenameCases[i].is_dangerous_file;
-    info->is_dangerous_url = kDownloadRenameCases[i].is_dangerous_url;
-    FilePath new_path(kDownloadRenameCases[i].suggested_path);
+    const FilePath new_path(kDownloadRenameCases[i].suggested_path);
 
     MockDownloadFile* download_file(
-        new MockDownloadFile(info, download_manager_));
+        new MockDownloadFile(info.get(), download_manager_));
     AddDownloadToFileManager(info->download_id, download_file);
 
     // |download_file| is owned by DownloadFileManager.
@@ -374,14 +356,22 @@ TEST_F(DownloadManagerTest, DownloadRenameTest) {
               download_file, &MockDownloadFile::TestMultipleRename,
               2, new_path))));
     }
-    download_manager_->CreateDownloadItem(info);
+    download_manager_->CreateDownloadItem(info.get());
+    DownloadItem* download = GetActiveDownloadItem(i);
+    ASSERT_TRUE(download != NULL);
+    if (kDownloadRenameCases[i].is_dangerous_file)
+      download->MarkFileDangerous();
+    if (kDownloadRenameCases[i].is_dangerous_url)
+      download->MarkUrlDangerous();
 
+    int32* id_ptr = new int32;
+    *id_ptr = i;  // Deleted in FileSelected().
     if (kDownloadRenameCases[i].finish_before_rename) {
       OnAllDataSaved(i, 1024, std::string("fake_hash"));
       message_loop_.RunAllPending();
-      FileSelected(new_path, i, info);
+      FileSelected(new_path, i, id_ptr);
     } else {
-      FileSelected(new_path, i, info);
+      FileSelected(new_path, i, id_ptr);
       message_loop_.RunAllPending();
       OnAllDataSaved(i, 1024, std::string("fake_hash"));
     }
@@ -399,18 +389,18 @@ TEST_F(DownloadManagerTest, DownloadInterruptTest) {
   using ::testing::Invoke;
   using ::testing::Return;
 
-  // |info| will be destroyed in download_manager_.
-  DownloadCreateInfo* info(new DownloadCreateInfo);
+  // Normally, the download system takes ownership of info, and is
+  // responsible for deleting it.  In these unit tests, however, we
+  // don't call the function that deletes it, so we do so ourselves.
+  scoped_ptr<DownloadCreateInfo> info(new DownloadCreateInfo);
   info->download_id = static_cast<int>(0);
   info->prompt_user_for_save_location = false;
   info->url_chain.push_back(GURL());
-  info->is_dangerous_file = false;
-  info->is_dangerous_url = false;
   const FilePath new_path(FILE_PATH_LITERAL("foo.zip"));
   const FilePath cr_path(download_util::GetCrDownloadPath(new_path));
 
   MockDownloadFile* download_file(
-      new MockDownloadFile(info, download_manager_));
+      new MockDownloadFile(info.get(), download_manager_));
   AddDownloadToFileManager(info->download_id, download_file);
 
   // |download_file| is owned by DownloadFileManager.
@@ -419,7 +409,7 @@ TEST_F(DownloadManagerTest, DownloadInterruptTest) {
 
   EXPECT_CALL(*download_file, Rename(cr_path)).WillOnce(Return(true));
 
-  download_manager_->CreateDownloadItem(info);
+  download_manager_->CreateDownloadItem(info.get());
 
   DownloadItem* download = GetActiveDownloadItem(0);
   ASSERT_TRUE(download != NULL);
@@ -429,8 +419,7 @@ TEST_F(DownloadManagerTest, DownloadInterruptTest) {
 
   download_file->AppendDataToFile(kTestData, kTestDataLen);
 
-  info->path = new_path;
-  AttachDownloadItem(info);
+  ContinueDownloadWithPath(download, new_path);
   message_loop_.RunAllPending();
   EXPECT_TRUE(GetActiveDownloadItem(0) != NULL);
 
@@ -465,18 +454,18 @@ TEST_F(DownloadManagerTest, DownloadCancelTest) {
   using ::testing::Invoke;
   using ::testing::Return;
 
-  // |info| will be destroyed in download_manager_.
-  DownloadCreateInfo* info(new DownloadCreateInfo);
+  // Normally, the download system takes ownership of info, and is
+  // responsible for deleting it.  In these unit tests, however, we
+  // don't call the function that deletes it, so we do so ourselves.
+  scoped_ptr<DownloadCreateInfo> info(new DownloadCreateInfo);
   info->download_id = static_cast<int>(0);
   info->prompt_user_for_save_location = false;
   info->url_chain.push_back(GURL());
-  info->is_dangerous_file = false;
-  info->is_dangerous_url = false;
   const FilePath new_path(FILE_PATH_LITERAL("foo.zip"));
   const FilePath cr_path(download_util::GetCrDownloadPath(new_path));
 
   MockDownloadFile* download_file(
-      new MockDownloadFile(info, download_manager_));
+      new MockDownloadFile(info.get(), download_manager_));
   AddDownloadToFileManager(info->download_id, download_file);
 
   // |download_file| is owned by DownloadFileManager.
@@ -485,7 +474,7 @@ TEST_F(DownloadManagerTest, DownloadCancelTest) {
 
   EXPECT_CALL(*download_file, Rename(cr_path)).WillOnce(Return(true));
 
-  download_manager_->CreateDownloadItem(info);
+  download_manager_->CreateDownloadItem(info.get());
 
   DownloadItem* download = GetActiveDownloadItem(0);
   ASSERT_TRUE(download != NULL);
@@ -493,8 +482,7 @@ TEST_F(DownloadManagerTest, DownloadCancelTest) {
   EXPECT_EQ(DownloadItem::IN_PROGRESS, download->state());
   scoped_ptr<ItemObserver> observer(new ItemObserver(download));
 
-  info->path = new_path;
-  AttachDownloadItem(info);
+  ContinueDownloadWithPath(download, new_path);
   message_loop_.RunAllPending();
   EXPECT_TRUE(GetActiveDownloadItem(0) != NULL);
 
@@ -544,15 +532,15 @@ TEST_F(DownloadManagerTest, DownloadOverwriteTest) {
   EXPECT_NE(0, uniquifier);
   download_util::AppendNumberToPath(&unique_new_path, uniquifier);
 
-  // |info| will be destroyed in download_manager_.
-  DownloadCreateInfo* info(new DownloadCreateInfo);
+  // Normally, the download system takes ownership of info, and is
+  // responsible for deleting it.  In these unit tests, however, we
+  // don't call the function that deletes it, so we do so ourselves.
+  scoped_ptr<DownloadCreateInfo> info(new DownloadCreateInfo);
   info->download_id = static_cast<int>(0);
   info->prompt_user_for_save_location = true;
   info->url_chain.push_back(GURL());
-  info->is_dangerous_file = false;
-  info->is_dangerous_url = false;
 
-  download_manager_->CreateDownloadItem(info);
+  download_manager_->CreateDownloadItem(info.get());
 
   DownloadItem* download = GetActiveDownloadItem(0);
   ASSERT_TRUE(download != NULL);
@@ -565,15 +553,14 @@ TEST_F(DownloadManagerTest, DownloadOverwriteTest) {
   // name has been chosen, so we need to initialize the download file
   // properly.
   DownloadFile* download_file(
-      new DownloadFile(info, download_manager_));
+      new DownloadFile(info.get(), download_manager_));
   download_file->Rename(cr_path);
   // This creates the .crdownload version of the file.
   download_file->Initialize(false);
   // |download_file| is owned by DownloadFileManager.
   AddDownloadToFileManager(info->download_id, download_file);
 
-  info->path = new_path;
-  AttachDownloadItem(info);
+  ContinueDownloadWithPath(download, new_path);
   message_loop_.RunAllPending();
   EXPECT_TRUE(GetActiveDownloadItem(0) != NULL);
 

@@ -4,6 +4,8 @@
 
 #include "views/controls/link.h"
 
+#include "build/build_config.h"
+
 #if defined(OS_LINUX)
 #include <gdk/gdk.h>
 #endif
@@ -13,6 +15,7 @@
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/font.h"
+#include "views/controls/link_listener.h"
 #include "views/events/event.h"
 
 #if defined(OS_LINUX)
@@ -60,21 +63,17 @@ void GetColors(const SkColor* background_color,  // NULL means "use default"
 
 namespace views {
 
-#if defined(OS_WIN)
-static HCURSOR g_hand_cursor = NULL;
-#endif
-
 const char Link::kViewClassName[] = "views/Link";
 
 Link::Link() : Label(L""),
-               controller_(NULL),
+               listener_(NULL),
                highlighted_(false) {
   Init();
   SetFocusable(true);
 }
 
 Link::Link(const std::wstring& title) : Label(title),
-                                        controller_(NULL),
+                                        listener_(NULL),
                                         highlighted_(false) {
   Init();
   SetFocusable(true);
@@ -89,23 +88,36 @@ void Link::Init() {
 Link::~Link() {
 }
 
-void Link::SetController(LinkController* controller) {
-  controller_ = controller;
+void Link::OnEnabledChanged() {
+  ValidateStyle();
+  View::OnEnabledChanged();
 }
 
-const LinkController* Link::GetController() {
-  return controller_;
+std::string Link::GetClassName() const {
+  return kViewClassName;
+}
+
+gfx::NativeCursor Link::GetCursor(const MouseEvent& event) {
+  if (!IsEnabled())
+    return NULL;
+#if defined(OS_WIN)
+  static HCURSOR g_hand_cursor = LoadCursor(NULL, IDC_HAND);
+  return g_hand_cursor;
+#elif defined(OS_LINUX)
+  return gfx::GetCursor(GDK_HAND2);
+#endif
 }
 
 bool Link::OnMousePressed(const MouseEvent& event) {
-  if (!enabled_ || (!event.IsLeftMouseButton() && !event.IsMiddleMouseButton()))
+  if (!IsEnabled() ||
+      (!event.IsLeftMouseButton() && !event.IsMiddleMouseButton()))
     return false;
   SetHighlighted(true);
   return true;
 }
 
 bool Link::OnMouseDragged(const MouseEvent& event) {
-  SetHighlighted(enabled_ &&
+  SetHighlighted(IsEnabled() &&
                  (event.IsLeftMouseButton() || event.IsMiddleMouseButton()) &&
                  HitTest(event.location()));
   return true;
@@ -115,13 +127,14 @@ void Link::OnMouseReleased(const MouseEvent& event) {
   // Change the highlight first just in case this instance is deleted
   // while calling the controller
   OnMouseCaptureLost();
-  if (enabled_ && (event.IsLeftMouseButton() || event.IsMiddleMouseButton()) &&
+  if (IsEnabled() &&
+      (event.IsLeftMouseButton() || event.IsMiddleMouseButton()) &&
       HitTest(event.location())) {
     // Focus the link on click.
     RequestFocus();
 
-    if (controller_)
-      controller_->LinkActivated(this, event.flags());
+    if (listener_)
+      listener_->LinkClicked(this, event.flags());
   }
 }
 
@@ -140,8 +153,8 @@ bool Link::OnKeyPressed(const KeyEvent& event) {
   // Focus the link on key pressed.
   RequestFocus();
 
-  if (controller_)
-    controller_->LinkActivated(this, event.flags());
+  if (listener_)
+    listener_->LinkClicked(this, event.flags());
 
   return true;
 }
@@ -160,31 +173,6 @@ void Link::GetAccessibleState(ui::AccessibleViewState* state) {
 void Link::SetFont(const gfx::Font& font) {
   Label::SetFont(font);
   ValidateStyle();
-}
-
-void Link::SetEnabled(bool f) {
-  if (f != enabled_) {
-    enabled_ = f;
-    ValidateStyle();
-    SchedulePaint();
-  }
-}
-
-gfx::NativeCursor Link::GetCursorForPoint(ui::EventType event_type,
-                                          const gfx::Point& p) {
-  if (!enabled_)
-    return NULL;
-#if defined(OS_WIN)
-  if (!g_hand_cursor)
-    g_hand_cursor = LoadCursor(NULL, IDC_HAND);
-  return g_hand_cursor;
-#elif defined(OS_LINUX)
-  return gfx::GetCursor(GDK_HAND2);
-#endif
-}
-
-std::string Link::GetClassName() const {
-  return kViewClassName;
 }
 
 void Link::SetHighlightedColor(const SkColor& color) {
@@ -216,7 +204,7 @@ void Link::SetHighlighted(bool f) {
 }
 
 void Link::ValidateStyle() {
-  if (enabled_) {
+  if (IsEnabled()) {
     if (!(font().GetStyle() & gfx::Font::UNDERLINED)) {
       Label::SetFont(
           font().DeriveFont(0, font().GetStyle() | gfx::Font::UNDERLINED));

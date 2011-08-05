@@ -135,6 +135,8 @@ ResourceType::Type FromTargetType(WebURLRequest::TargetType type) {
       return ResourceType::SHARED_WORKER;
     case WebURLRequest::TargetIsPrefetch:
       return ResourceType::PREFETCH;
+    case WebURLRequest::TargetIsPrerender:
+      return ResourceType::PRERENDER;
     case WebURLRequest::TargetIsFavicon:
       return ResourceType::FAVICON;
     default:
@@ -225,6 +227,10 @@ void PopulateURLResponse(
         info.devtools_info->http_status_text));
     load_info.setEncodedDataLength(info.encoded_data_length);
 
+    load_info.setRequestHeadersText(WebString::fromUTF8(
+        info.devtools_info->request_headers_text));
+    load_info.setResponseHeadersText(WebString::fromUTF8(
+        info.devtools_info->response_headers_text));
     const HeadersVector& request_headers = info.devtools_info->request_headers;
     for (HeadersVector::const_iterator it = request_headers.begin();
          it != request_headers.end(); ++it) {
@@ -255,7 +261,7 @@ void PopulateURLResponse(
   std::string value;
   if (headers->EnumerateHeader(NULL, "content-disposition", &value)) {
     response->setSuggestedFileName(
-        net::GetSuggestedFilename(url, value, "", string16()));
+        net::GetSuggestedFilename(url, value, "", "", string16()));
   }
 
   Time time_val;
@@ -417,11 +423,6 @@ void WebURLLoaderImpl::Context::Start(
   HeaderFlattener flattener(load_flags);
   request.visitHTTPHeaderFields(&flattener);
 
-  // TODO(abarth): These are wrong!  I need to figure out how to get the right
-  //               strings here.  See: http://crbug.com/8706
-  std::string frame_origin = request.firstPartyForCookies().spec();
-  std::string main_frame_origin = request.firstPartyForCookies().spec();
-
   // TODO(brettw) this should take parameter encoding into account when
   // creating the GURLs.
 
@@ -430,8 +431,6 @@ void WebURLLoaderImpl::Context::Start(
   request_info.url = url;
   request_info.first_party_for_cookies = request.firstPartyForCookies();
   request_info.referrer = referrer_url;
-  request_info.frame_origin = frame_origin;
-  request_info.main_frame_origin = main_frame_origin;
   request_info.headers = flattener.GetBuffer();
   request_info.load_flags = load_flags;
   // requestor_pid only needs to be non-zero if the request originates outside

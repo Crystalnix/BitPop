@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_HISTORY_TOP_SITES_BACKEND_H_
 #pragma once
 
+#include "base/callback_old.h"
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -68,7 +69,7 @@ class TopSitesBackend
  private:
   friend class base::RefCountedThreadSafe<TopSitesBackend>;
 
-  ~TopSitesBackend();
+  virtual ~TopSitesBackend();
 
   // Invokes Init on the db_.
   void InitDBOnDBThread(const FilePath& path);

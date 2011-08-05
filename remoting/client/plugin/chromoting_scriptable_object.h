@@ -7,24 +7,18 @@
 //
 // interface ChromotingScriptableObject {
 //
-//   // Dimension of the desktop area.
-//   readonly attribute int desktopWidth;
-//   readonly attribute int desktopHeight;
+//   // Chromoting session API version (for this plugin).
+//   // This is compared with the javascript API version to verify that they are
+//   // compatible.
+//   readonly attribute unsigned short apiVersion;
+//
+//   // The oldest API version that we support.
+//   // This will differ from |apiVersion| if we decide to maintain backward
+//   // compatibility with older API versions.
+//   readonly attribute unsigned short apiMinVersion;
 //
 //   // Connection status.
 //   readonly attribute unsigned short status;
-//
-//   // Statistics.
-//   // Video Bandwidth in bytes per second.
-//   readonly attribute float videoBandwidth;
-//   // Latency for capturing in milliseconds.
-//   readonly attribute int videoCaptureLatency;
-//   // Latency for video encoding in milliseconds.
-//   readonly attribute int videoEncodeLatency;
-//   // Latency for video decoding in milliseconds.
-//   readonly attribute int videoDecodeLatency;
-//   // Latency for rendering in milliseconds.
-//   readonly attribute int videoRenderLatency;
 //
 //   // Constants for connection status.
 //   const unsigned short STATUS_UNKNOWN = 0;
@@ -36,6 +30,7 @@
 //
 //   // Connection quality.
 //   readonly attribute unsigned short quality;
+//
 //   // Constants for connection quality
 //   const unsigned short QUALITY_UNKNOWN = 0;
 //   const unsigned short QUALITY_GOOD = 1;
@@ -49,14 +44,7 @@
 //   // in the client UI.
 //   attribute Function debugInfo;
 //
-//   // JS callback function to send an XMPP IQ stanza for performing the
-//   // signaling in a jingle connection.  The callback function should be
-//   // of type void(string request_xml).
-//   attribute Function sendIq;
-//
-//   // Method for receiving an XMPP IQ stanza in response to a previous
-//   // sendIq() invocation. Other packets will be silently dropped.
-//   void onIq(string response_xml);
+//   attribute Function desktopSizeUpdate;
 //
 //   // This function is called when login information for the host machine is
 //   // needed.
@@ -69,17 +57,56 @@
 //   // later case |connection_status| is changed to STATUS_FAILED.
 //   attribute Function loginChallenge;
 //
+//   // JS callback function to send an XMPP IQ stanza for performing the
+//   // signaling in a jingle connection.  The callback function should be
+//   // of type void(string request_xml).
+//   attribute Function sendIq;
+//
+//   // Dimension of the desktop area.
+//   readonly attribute int desktopWidth;
+//   readonly attribute int desktopHeight;
+//
+//   // Statistics.
+//   // Video Bandwidth in bytes per second.
+//   readonly attribute float videoBandwidth;
+//   // Latency for capturing in milliseconds.
+//   readonly attribute int videoCaptureLatency;
+//   // Latency for video encoding in milliseconds.
+//   readonly attribute int videoEncodeLatency;
+//   // Latency for video decoding in milliseconds.
+//   readonly attribute int videoDecodeLatency;
+//   // Latency for rendering in milliseconds.
+//   readonly attribute int videoRenderLatency;
+//   // Latency between an event is sent and a corresponding video packet is
+//   // received.
+//   readonly attribute int roundTripLatency;
+//
 //   // Methods for establishing a Chromoting connection.
 //   //
-//   // Either use connect() or connectSandboxed(), not both. If using
-//   // connectSandboxed(), sendIq must be set, and responses to calls on
-//   // sendIq must be piped back into onIq().
-//   void connect(string username, string host_jid, string auth_token);
-//   void connectSandboxed();
+//   // When using the sandboxed versions, sendIq must be set and responses to
+//   // calls on sendIq must be piped back into onIq().
+//   //
+//   // Note that auth_token_with_service should be specified as
+//   // "auth_service:auth_token". For example, "oauth2:5/aBd123".
+//   void connect(string host_jid, string auth_token_with_service,
+//                optional string access_code);
+//   // Non-sandboxed version used for debugging/testing.
+//   // TODO(garykac): Remove this version once we no longer need it.
+//   void connectUnsandboxed(string host_jid, string username,
+//                           string xmpp_token, optional string access_code);
+//
+//   // Terminating a Chromoting connection.
 //   void disconnect();
 //
 //   // Method for submitting login information.
 //   void submitLoginInfo(string username, string password);
+//
+//   // Method for setting scale-to-fit.
+//   void setScaleToFit(bool scale_to_fit);
+//
+//   // Method for receiving an XMPP IQ stanza in response to a previous
+//   // sendIq() invocation. Other packets will be silently dropped.
+//   void onIq(string response_xml);
 // }
 
 #ifndef REMOTING_CLIENT_PLUGIN_CHROMOTING_SCRIPTABLE_OBJECT_H_
@@ -144,7 +171,7 @@ class ChromotingScriptableObject
   void SignalLoginChallenge();
 
   // Attaches the XmppProxy used for issuing and receivng IQ stanzas for
-  // initiaing a jingle connection from within the sandbox.
+  // initializing a jingle connection from within the sandbox.
   void AttachXmppProxy(PepperXmppProxy* xmpp_proxy);
 
   // Sends an IQ stanza, serialized as an xml string, into Javascript for
@@ -186,12 +213,15 @@ class ChromotingScriptableObject
   void SignalDesktopSizeChange();
 
   pp::Var DoConnect(const std::vector<pp::Var>& args, pp::Var* exception);
-  pp::Var DoConnectSandboxed(const std::vector<pp::Var>& args,
-                             pp::Var* exception);
+  pp::Var DoConnectUnsandboxed(const std::vector<pp::Var>& args,
+                               pp::Var* exception);
   pp::Var DoDisconnect(const std::vector<pp::Var>& args, pp::Var* exception);
 
   // This method is called by JS to provide login information.
   pp::Var DoSubmitLogin(const std::vector<pp::Var>& args, pp::Var* exception);
+
+  // This method is called by JS to set scale-to-fit.
+  pp::Var DoSetScaleToFit(const std::vector<pp::Var>& args, pp::Var* exception);
 
   // This method is caleld by Javascript to provide responses to sendIq()
   // requests when establishing a sandboxed Chromoting connection.

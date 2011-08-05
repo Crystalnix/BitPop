@@ -4,9 +4,12 @@ BrowserTest.ThirtyFourTabs
 SessionRestoreUITest.*
 # Buggy test; see http://crbug.com/6522
 DownloadTest.UnknownSize
-# Flakily hang on Linux, see http://crbug.com/46643
+# Flakily hang on Linux, Mac. See http://crbug.com/46643 and
+# http://crbug.com/29598.
 ErrorPageTest.DNSError_GoBack2AndForward
 ErrorPageTest.DNSError_GoBack2Forward2
+ErrorPageTest.DNSError_GoBack1
+ErrorPageTest.DNSError_GoBack2
 
 # Flaky timeout on Linux; see http://crbug.com/46781
 UnloadTest.*
@@ -68,3 +71,6 @@ BrowserTest.PosixSessionEnd
 # Fails flakily.
 # http://crbug.com/70323
 AutomatedUITestBase.ShowBookmarkBar
+
+# Video decoding under valgrind is really slow, see http://crbug.com/53825
+MediaTest.VideoBear*

@@ -49,13 +49,8 @@ bool GetBooleanPref(const char* pref_name) {
   return prefs->GetBoolean(pref_name);
 }
 
-int GetIntegerPref(const char* pref_name) {
-  Browser* browser = BrowserList::GetLastActive();
-  // Default to "safe" value.
-  if (!browser || !browser->profile())
-    return kNotificationCountPrefDefault;
-
-  PrefService* prefs = browser->profile()->GetPrefs();
+int GetIntegerLocalPref(const char* pref_name) {
+  PrefService* prefs = g_browser_process->local_state();
   return prefs->GetInteger(pref_name);
 }
 
@@ -68,12 +63,8 @@ void SetBooleanPref(const char* pref_name, bool value) {
   prefs->SetBoolean(pref_name, value);
 }
 
-void SetIntegerPref(const char* pref_name, int value) {
-  Browser* browser = BrowserList::GetLastActive();
-  if (!browser || !browser->profile())
-    return;
-
-  PrefService* prefs = browser->profile()->GetPrefs();
+void SetIntegerLocalPref(const char* pref_name, int value) {
+  PrefService* prefs = g_browser_process->local_state();
   prefs->SetInteger(pref_name, value);
 }
 
@@ -86,15 +77,15 @@ bool ShouldShow3gPromoNotification() {
 void SetShow3gPromoNotification(bool value) {
   SetBooleanPref(prefs::kShow3gPromoNotification, value);
 }
+
 // Returns prefs::kCarrierDealPromoShown which is number of times
-// carrier deal notification has been shown to user or -1
-// if there's no active browser.
+// carrier deal notification has been shown to users on this machine.
 int GetCarrierDealPromoShown() {
-  return GetIntegerPref(prefs::kCarrierDealPromoShown);
+  return GetIntegerLocalPref(prefs::kCarrierDealPromoShown);
 }
 
 void SetCarrierDealPromoShown(int value) {
-  SetIntegerPref(prefs::kCarrierDealPromoShown, value);
+  SetIntegerLocalPref(prefs::kCarrierDealPromoShown, value);
 }
 
 }  // namespace
@@ -112,12 +103,14 @@ NetworkMenuButton::NetworkMenuButton(StatusAreaHost* host)
       NetworkMenu(),
       icon_(NULL),
       right_badge_(NULL),
+      top_left_badge_(NULL),
       left_badge_(NULL),
       mobile_data_bubble_(NULL),
       check_for_promo_(true),
       was_sim_locked_(false),
       ALLOW_THIS_IN_INITIALIZER_LIST(animation_connecting_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)),
+      last_network_type_(TYPE_WIFI) {
   animation_connecting_.SetThrobDuration(kThrobDuration);
   animation_connecting_.SetTweenType(ui::Tween::LINEAR);
   NetworkLibrary* network_library = CrosLibrary::Get()->GetNetworkLibrary();
@@ -143,13 +136,19 @@ NetworkMenuButton::~NetworkMenuButton() {
     mobile_data_bubble_->Close();
 }
 
+// static
+void NetworkMenuButton::RegisterPrefs(PrefService* local_state) {
+  // Carrier deal notification shown count defaults to 0.
+  local_state->RegisterIntegerPref(prefs::kCarrierDealPromoShown, 0);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // NetworkMenuButton, ui::AnimationDelegate implementation:
 
 void NetworkMenuButton::AnimationProgressed(const ui::Animation* animation) {
   if (animation == &animation_connecting_) {
     SetIconOnly(IconForNetworkConnecting(
-        animation_connecting_.GetCurrentValue(), false));
+        animation_connecting_.GetCurrentValue(), last_network_type_));
     // No need to set the badge here, because it should already be set.
     SchedulePaint();
   } else {
@@ -211,6 +210,10 @@ bool NetworkMenuButton::IsBrowserMode() const {
   return host_->GetScreenMode() == StatusAreaHost::kBrowserMode;
 }
 
+views::MenuButton* NetworkMenuButton::GetMenuButton() {
+  return this;
+}
+
 gfx::NativeWindow NetworkMenuButton::GetNativeWindow() const {
   return host_->GetNativeWindow();
 }
@@ -234,22 +237,49 @@ void NetworkMenuButton::OnLocaleChanged() {
 ////////////////////////////////////////////////////////////////////////////////
 // MessageBubbleDelegate implementation:
 
-void NetworkMenuButton::OnHelpLinkActivated() {
-  // mobile_data_bubble_ will be set to NULL in callback.
-  if (mobile_data_bubble_)
+void NetworkMenuButton::BubbleClosing(Bubble* bubble, bool closed_by_escape) {
+  mobile_data_bubble_ = NULL;
+  deal_info_url_.clear();
+  deal_topup_url_.clear();
+}
+
+bool NetworkMenuButton::CloseOnEscape() {
+  return true;
+}
+
+bool NetworkMenuButton::FadeInOnShow() {
+  return false;
+}
+
+void NetworkMenuButton::OnLinkActivated(size_t index) {
+  // If we have deal info URL defined that means that there're
+  // 2 links in bubble. Let the user close it manually then thus giving ability
+  // to navigate to second link.
+  // mobile_data_bubble_ will be set to NULL in BubbleClosing callback.
+  if (deal_info_url_.empty() && mobile_data_bubble_)
     mobile_data_bubble_->Close();
-  if (!deal_url_.empty()) {
+
+  std::string deal_url_to_open;
+  if (index == 0) {
+    if (!deal_topup_url_.empty()) {
+      deal_url_to_open = deal_topup_url_;
+    } else {
+      const Network* cellular =
+          CrosLibrary::Get()->GetNetworkLibrary()->cellular_network();
+      if (!cellular)
+        return;
+      ShowTabbedNetworkSettings(cellular);
+      return;
+    }
+  } else if (index == 1) {
+    deal_url_to_open = deal_info_url_;
+  }
+
+  if (!deal_url_to_open.empty()) {
     Browser* browser = BrowserList::GetLastActive();
     if (!browser)
       return;
-    browser->ShowSingletonTab(GURL(deal_url_));
-    deal_url_.clear();
-  } else {
-    const Network* cellular =
-        CrosLibrary::Get()->GetNetworkLibrary()->cellular_network();
-    if (!cellular)
-      return;
-    ShowTabbedNetworkSettings(cellular);
+    browser->ShowSingletonTab(GURL(deal_url_to_open));
   }
 }
 
@@ -275,7 +305,7 @@ NetworkMenuButton::GetCarrierDeal(
   if (deal) {
     // Check deal for validity.
     int carrier_deal_promo_pref = GetCarrierDealPromoShown();
-    if (carrier_deal_promo_pref >= deal->notification_count)
+    if (carrier_deal_promo_pref >= deal->notification_count())
       return NULL;
     const std::string locale = g_browser_process->GetApplicationLocale();
     std::string deal_text = deal->GetLocalizedString(locale,
@@ -288,26 +318,27 @@ NetworkMenuButton::GetCarrierDeal(
 
 void NetworkMenuButton::SetIconAndBadges(const SkBitmap* icon,
                                          const SkBitmap* right_badge,
+                                         const SkBitmap* top_left_badge,
                                          const SkBitmap* left_badge) {
   icon_ = icon;
   right_badge_ = right_badge;
+  top_left_badge_ = top_left_badge;
   left_badge_ = left_badge;
-  SetIcon(IconForDisplay(icon_, right_badge_, NULL /*no top_left_icon*/,
-                         left_badge_));
+  SetIcon(IconForDisplay(icon_, right_badge_, top_left_badge_, left_badge_));
 }
 
 void NetworkMenuButton::SetIconOnly(const SkBitmap* icon) {
   icon_ = icon;
-  SetIcon(IconForDisplay(icon_, right_badge_, NULL /*no top_left_icon*/,
-                         left_badge_));
+  SetIcon(IconForDisplay(icon_, right_badge_, top_left_badge_, left_badge_));
 }
 
 void NetworkMenuButton::SetBadgesOnly(const SkBitmap* right_badge,
+                                      const SkBitmap* top_left_badge,
                                       const SkBitmap* left_badge) {
   right_badge_ = right_badge;
+  top_left_badge_ = top_left_badge;
   left_badge_ = left_badge;
-  SetIcon(IconForDisplay(icon_, right_badge_, NULL /*no top_left_icon*/,
-                         left_badge_));
+  SetIcon(IconForDisplay(icon_, right_badge_, top_left_badge_, left_badge_));
 }
 
 void NetworkMenuButton::SetNetworkIcon(NetworkLibrary* cros,
@@ -317,7 +348,7 @@ void NetworkMenuButton::SetNetworkIcon(NetworkLibrary* cros,
   if (!cros || !CrosLibrary::Get()->EnsureLoaded()) {
     SetIconAndBadges(rb.GetBitmapNamed(IDR_STATUSBAR_NETWORK_BARS0),
                      rb.GetBitmapNamed(IDR_STATUSBAR_NETWORK_WARNING),
-                     NULL);
+                     NULL, NULL);
     SetTooltipText(UTF16ToWide(l10n_util::GetStringUTF16(
         IDS_STATUSBAR_NETWORK_NO_NETWORK_TOOLTIP)));
     return;
@@ -325,28 +356,39 @@ void NetworkMenuButton::SetNetworkIcon(NetworkLibrary* cros,
 
   if (!cros->Connected() && !cros->Connecting()) {
     animation_connecting_.Stop();
-    SetIconAndBadges(rb.GetBitmapNamed(IDR_STATUSBAR_NETWORK_BARS0),
-                     rb.GetBitmapNamed(IDR_STATUSBAR_NETWORK_DISCONNECTED),
-                     NULL);
+    if (last_network_type_ == TYPE_WIFI) {
+      SetIconAndBadges(
+          rb.GetBitmapNamed(IDR_STATUSBAR_NETWORK_ARCS0), NULL, NULL, NULL);
+    } else {
+      SetIconAndBadges(
+          rb.GetBitmapNamed(IDR_STATUSBAR_NETWORK_BARS0),
+          rb.GetBitmapNamed(IDR_STATUSBAR_NETWORK_DISCONNECTED),
+          NULL, NULL);
+    }
     SetTooltipText(UTF16ToWide(l10n_util::GetStringUTF16(
         IDS_STATUSBAR_NETWORK_NO_NETWORK_TOOLTIP)));
     return;
   }
 
+  // Stash last network type away so we can show the right icon if we lose
+  // signal.
+  last_network_type_ = NetworkMenu::TypeForNetwork(network);
   if (cros->wifi_connecting() || cros->cellular_connecting()) {
     // Start the connecting animation if not running.
     if (!animation_connecting_.is_animating()) {
       animation_connecting_.Reset();
       animation_connecting_.StartThrobbing(-1);
-      SetIconOnly(IconForNetworkConnecting(0, false));
+      SetIconOnly(IconForNetworkConnecting(0, last_network_type_));
     }
     const WirelessNetwork* wireless = NULL;
     if (cros->wifi_connecting()) {
       wireless = cros->wifi_network();
-      SetBadgesOnly(NULL, NULL);
+      SetBadgesOnly(NULL, NULL, NULL);
     } else {  // cellular_connecting
       wireless = cros->cellular_network();
-      SetBadgesOnly(BadgeForNetworkTechnology(cros->cellular_network()), NULL);
+      SetBadgesOnly(BadgeForNetworkTechnology(cros->cellular_network()),
+                    BadgeForRoamingStatus(cros->cellular_network()),
+                    NULL);
     }
     SetTooltipText(UTF16ToWide(l10n_util::GetStringFUTF16(
         wireless->configuring() ? IDS_STATUSBAR_NETWORK_CONFIGURING_TOOLTIP
@@ -358,12 +400,13 @@ void NetworkMenuButton::SetNetworkIcon(NetworkLibrary* cros,
     // Only set the icon, if it is an active network that changed.
     if (network && network->is_active()) {
       const SkBitmap* right_badge(NULL);
+      const SkBitmap* top_left_badge(NULL);
       const SkBitmap* left_badge(NULL);
       if (cros->virtual_network())
         left_badge = rb.GetBitmapNamed(IDR_STATUSBAR_NETWORK_SECURE);
       if (network->type() == TYPE_ETHERNET) {
         SetIconAndBadges(rb.GetBitmapNamed(IDR_STATUSBAR_WIRED),
-                         right_badge, left_badge);
+                         right_badge, top_left_badge, left_badge);
         SetTooltipText(
             UTF16ToWide(l10n_util::GetStringFUTF16(
                 IDS_STATUSBAR_NETWORK_CONNECTED_TOOLTIP,
@@ -371,8 +414,8 @@ void NetworkMenuButton::SetNetworkIcon(NetworkLibrary* cros,
                     IDS_STATUSBAR_NETWORK_DEVICE_ETHERNET))));
       } else if (network->type() == TYPE_WIFI) {
         const WifiNetwork* wifi = static_cast<const WifiNetwork*>(network);
-        SetIconAndBadges(IconForNetworkStrength(wifi, false),
-                         right_badge, left_badge);
+        SetIconAndBadges(IconForNetworkStrength(wifi),
+                         right_badge, top_left_badge, left_badge);
         SetTooltipText(UTF16ToWide(l10n_util::GetStringFUTF16(
             IDS_STATUSBAR_NETWORK_CONNECTED_TOOLTIP,
             UTF8ToUTF16(wifi->name()))));
@@ -380,8 +423,9 @@ void NetworkMenuButton::SetNetworkIcon(NetworkLibrary* cros,
         const CellularNetwork* cellular =
             static_cast<const CellularNetwork*>(network);
         right_badge = BadgeForNetworkTechnology(cellular);
-        SetIconAndBadges(IconForNetworkStrength(cellular, false),
-                         right_badge, left_badge);
+        top_left_badge = BadgeForRoamingStatus(cellular);
+        SetIconAndBadges(IconForNetworkStrength(cellular),
+                         right_badge, top_left_badge, left_badge);
         SetTooltipText(UTF16ToWide(l10n_util::GetStringFUTF16(
             IDS_STATUSBAR_NETWORK_CONNECTED_TOOLTIP,
             UTF8ToUTF16(cellular->name()))));
@@ -437,7 +481,8 @@ void NetworkMenuButton::ShowOptionalMobileDataPromoNotification(
       carrier_deal_promo_pref = GetCarrierDealPromoShown();
       const std::string locale = g_browser_process->GetApplicationLocale();
       deal_text = deal->GetLocalizedString(locale, "notification_text");
-      deal_url_ = deal->top_up_url;
+      deal_info_url_ = deal->info_url();
+      deal_topup_url_ = deal->top_up_url();
     } else if (!ShouldShow3gPromoNotification()) {
       check_for_promo_ = false;
       return;
@@ -479,18 +524,22 @@ void NetworkMenuButton::ShowOptionalMobileDataPromoNotification(
 
     // Use deal URL if it's defined or general "Network Settings" URL.
     int link_message_id;
-    if (deal_url_.empty())
+    if (deal_topup_url_.empty())
       link_message_id = IDS_OFFLINE_NETWORK_SETTINGS;
     else
       link_message_id = IDS_STATUSBAR_NETWORK_VIEW_ACCOUNT;
 
-    mobile_data_bubble_ = MessageBubble::Show(
+    std::vector<std::wstring> links;
+    links.push_back(UTF16ToWide(l10n_util::GetStringUTF16(link_message_id)));
+    if (!deal_topup_url_.empty())
+      links.push_back(UTF16ToWide(l10n_util::GetStringUTF16(IDS_LEARN_MORE)));
+    mobile_data_bubble_ = MessageBubble::ShowWithLinks(
         GetWidget(),
         button_bounds,
         BubbleBorder::TOP_RIGHT ,
         ResourceBundle::GetSharedInstance().GetBitmapNamed(IDR_NOTIFICATION_3G),
         notification_text,
-        UTF16ToWide(l10n_util::GetStringUTF16(link_message_id)),
+        links,
         this);
 
     check_for_promo_ = false;

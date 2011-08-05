@@ -22,6 +22,7 @@
 #include "content/common/notification_type.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -34,13 +35,7 @@
 #include "views/controls/menu/menu_2.h"
 #include "views/controls/native/native_view_host.h"
 #include "views/painter.h"
-#include "views/widget/root_view.h"
-#if defined(OS_WIN)
-#include "views/widget/widget_win.h"
-#endif
-#if defined(OS_LINUX)
-#include "views/widget/widget_gtk.h"
-#endif
+#include "views/widget/widget.h"
 
 using views::Widget;
 
@@ -315,21 +310,25 @@ void BalloonViewImpl::Show(Balloon* balloon) {
   gfx::Rect contents_rect = GetContentsRectangle();
   html_contents_.reset(new BalloonViewHost(balloon));
   html_contents_->SetPreferredSize(gfx::Size(10000, 10000));
-  Widget::CreateParams params(Widget::CreateParams::TYPE_POPUP);
-  params.mirror_origin_in_rtl = false;
-  html_container_ = Widget::CreateWidget(params);
-  html_container_->SetAlwaysOnTop(true);
-  html_container_->Init(NULL, contents_rect);
+  html_container_ = new Widget;
+  Widget::InitParams params(Widget::InitParams::TYPE_POPUP);
+  params.bounds = contents_rect;
+  html_container_->Init(params);
   html_container_->SetContentsView(html_contents_->view());
 
   gfx::Rect balloon_rect(x(), y(), GetTotalWidth(), GetTotalHeight());
-  params.transparent = true;
-  frame_container_ = Widget::CreateWidget(params);
+  frame_container_ = new Widget;
   frame_container_->set_widget_delegate(this);
-  frame_container_->SetAlwaysOnTop(true);
-  frame_container_->Init(NULL, balloon_rect);
+  params.transparent = true;
+  params.bounds = balloon_rect;
+  frame_container_->Init(params);
   frame_container_->SetContentsView(this);
   frame_container_->MoveAboveWidget(html_container_);
+
+  // SetAlwaysOnTop should be called after MoveAboveWidget because otherwise
+  // the top-most flag will be removed.
+  html_container_->SetAlwaysOnTop(true);
+  frame_container_->SetAlwaysOnTop(true);
 
   close_button_->SetImage(views::CustomButton::BS_NORMAL,
                           rb.GetBitmapNamed(IDR_TAB_CLOSE));

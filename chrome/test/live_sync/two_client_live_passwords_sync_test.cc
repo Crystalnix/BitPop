@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/password_manager/password_form_data.h"
 #include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "chrome/browser/sync/sessions/session_state.h"
 #include "chrome/test/live_sync/live_passwords_sync_test.h"
@@ -12,33 +11,23 @@ using webkit_glue::PasswordForm;
 
 static const char* kValidPassphrase = "passphrase!";
 
-// TODO(rsimha): See http://crbug.com/78840.
-IN_PROC_BROWSER_TEST_F(TwoClientLivePasswordsSyncTest, FLAKY_Add) {
-
+IN_PROC_BROWSER_TEST_F(TwoClientLivePasswordsSyncTest, Add) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
+  ASSERT_TRUE(AllProfilesContainSamePasswordFormsAsVerifier());
 
   PasswordForm form = CreateTestPasswordForm(0);
   AddLogin(GetVerifierPasswordStore(), form);
+  ASSERT_EQ(1, GetVerifierPasswordCount());
   AddLogin(GetPasswordStore(0), form);
-
-  std::vector<PasswordForm> verifier_forms;
-  GetLogins(GetVerifierPasswordStore(), verifier_forms);
-  ASSERT_EQ(1U, verifier_forms.size());
+  ASSERT_EQ(1, GetPasswordCount(0));
 
   ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
-
-  std::vector<PasswordForm> forms0;
-  GetLogins(GetPasswordStore(0), forms0);
-  ASSERT_TRUE(ContainsSamePasswordForms(verifier_forms, forms0));
-
-  std::vector<PasswordForm> forms1;
-  GetLogins(GetPasswordStore(1), forms1);
-  ASSERT_TRUE(ContainsSamePasswordForms(verifier_forms, forms1));
+  ASSERT_TRUE(AllProfilesContainSamePasswordFormsAsVerifier());
 }
 
-// TODO(rsimha): See http://crbug.com/78840.
-IN_PROC_BROWSER_TEST_F(TwoClientLivePasswordsSyncTest, FLAKY_Race) {
+IN_PROC_BROWSER_TEST_F(TwoClientLivePasswordsSyncTest, Race) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
+  ASSERT_TRUE(AllProfilesContainSamePasswordForms());
 
   PasswordForm form0 = CreateTestPasswordForm(0);
   AddLogin(GetPasswordStore(0), form0);
@@ -48,20 +37,54 @@ IN_PROC_BROWSER_TEST_F(TwoClientLivePasswordsSyncTest, FLAKY_Race) {
   AddLogin(GetPasswordStore(1), form1);
 
   ASSERT_TRUE(AwaitQuiescence());
-
-  std::vector<PasswordForm> forms0;
-  GetLogins(GetPasswordStore(0), forms0);
-  ASSERT_EQ(1U, forms0.size());
-
-  std::vector<PasswordForm> forms1;
-  GetLogins(GetPasswordStore(1), forms1);
-  ASSERT_EQ(1U, forms1.size());
-
-  ASSERT_TRUE(ContainsSamePasswordForms(forms0, forms1));
+  ASSERT_TRUE(AllProfilesContainSamePasswordForms());
 }
 
-// TODO(rsimha): See http://crbug.com/78840.
-IN_PROC_BROWSER_TEST_F(TwoClientLivePasswordsSyncTest, FLAKY_SetPassphrase) {
+// TCM ID - 4577932.
+IN_PROC_BROWSER_TEST_F(TwoClientLivePasswordsSyncTest, DisablePasswords) {
+  ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
+  ASSERT_TRUE(AllProfilesContainSamePasswordFormsAsVerifier());
+
+  ASSERT_TRUE(GetClient(1)->DisableSyncForDatatype(syncable::PASSWORDS));
+  PasswordForm form = CreateTestPasswordForm(0);
+  AddLogin(GetVerifierPasswordStore(), form);
+  ASSERT_EQ(1, GetVerifierPasswordCount());
+  AddLogin(GetPasswordStore(0), form);
+  ASSERT_EQ(1, GetPasswordCount(0));
+
+  ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
+  ASSERT_TRUE(ProfileContainsSamePasswordFormsAsVerifier(0));
+  ASSERT_FALSE(ProfileContainsSamePasswordFormsAsVerifier(1));
+
+  ASSERT_TRUE(GetClient(1)->EnableSyncForDatatype(syncable::PASSWORDS));
+  ASSERT_TRUE(AwaitQuiescence());
+  ASSERT_TRUE(AllProfilesContainSamePasswordFormsAsVerifier());
+  ASSERT_EQ(1, GetPasswordCount(1));
+}
+
+// TCM ID - 4649281.
+IN_PROC_BROWSER_TEST_F(TwoClientLivePasswordsSyncTest, DisableSync) {
+  ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
+  ASSERT_TRUE(AllProfilesContainSamePasswordFormsAsVerifier());
+
+  ASSERT_TRUE(GetClient(1)->DisableSyncForAllDatatypes());
+  PasswordForm form = CreateTestPasswordForm(0);
+  AddLogin(GetVerifierPasswordStore(), form);
+  ASSERT_EQ(1, GetVerifierPasswordCount());
+  AddLogin(GetPasswordStore(0), form);
+  ASSERT_EQ(1, GetPasswordCount(0));
+
+  ASSERT_TRUE(GetClient(0)->AwaitSyncCycleCompletion("Added a password."));
+  ASSERT_TRUE(ProfileContainsSamePasswordFormsAsVerifier(0));
+  ASSERT_FALSE(ProfileContainsSamePasswordFormsAsVerifier(1));
+
+  ASSERT_TRUE(GetClient(1)->EnableSyncForAllDatatypes());
+  ASSERT_TRUE(AwaitQuiescence());
+  ASSERT_TRUE(AllProfilesContainSamePasswordFormsAsVerifier());
+  ASSERT_EQ(1, GetPasswordCount(1));
+}
+
+IN_PROC_BROWSER_TEST_F(TwoClientLivePasswordsSyncTest, SetPassphrase) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
   SetPassphrase(0, kValidPassphrase, true);
@@ -70,11 +93,11 @@ IN_PROC_BROWSER_TEST_F(TwoClientLivePasswordsSyncTest, FLAKY_SetPassphrase) {
 
   SetPassphrase(1, kValidPassphrase, false);
   ASSERT_TRUE(GetClient(1)->AwaitPassphraseAccepted());
+  ASSERT_TRUE(GetClient(1)->AwaitSyncCycleCompletion("Set passphrase."));
 }
 
-// TODO(rsimha): See http://crbug.com/78840.
 IN_PROC_BROWSER_TEST_F(TwoClientLivePasswordsSyncTest,
-                       FLAKY_SetPassphraseAndAddPassword) {
+                       SetPassphraseAndAddPassword) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
   SetPassphrase(0, kValidPassphrase, true);
@@ -86,19 +109,13 @@ IN_PROC_BROWSER_TEST_F(TwoClientLivePasswordsSyncTest,
 
   PasswordForm form = CreateTestPasswordForm(0);
   AddLogin(GetPasswordStore(0), form);
-
-  std::vector<PasswordForm> forms0;
-  GetLogins(GetPasswordStore(0), forms0);
-  ASSERT_EQ(1U, forms0.size());
+  ASSERT_EQ(1, GetPasswordCount(0));
 
   ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
-
-  std::vector<PasswordForm> forms1;
-  GetLogins(GetPasswordStore(1), forms1);
-  ASSERT_EQ(1U, forms1.size());
+  ASSERT_EQ(1, GetPasswordCount(1));
 }
 
-// TODO(rsimha): See http://crbug.com/78840.
+// TODO(rsimha): Flaky due to http://crbug.com/80180.
 IN_PROC_BROWSER_TEST_F(TwoClientLivePasswordsSyncTest,
                        FLAKY_SetPassphraseAndThenSetupSync) {
   ASSERT_TRUE(SetupClients()) << "SetupClients() failed.";
@@ -108,12 +125,13 @@ IN_PROC_BROWSER_TEST_F(TwoClientLivePasswordsSyncTest,
   ASSERT_TRUE(GetClient(0)->AwaitPassphraseAccepted());
   ASSERT_TRUE(GetClient(0)->AwaitSyncCycleCompletion("Initial sync."));
 
+  ASSERT_FALSE(GetClient(1)->SetupSync());
   SetPassphrase(1, kValidPassphrase, false);
-  ASSERT_TRUE(GetClient(1)->SetupSync());
   ASSERT_TRUE(GetClient(1)->AwaitPassphraseAccepted());
+  ASSERT_TRUE(GetClient(1)->AwaitSyncCycleCompletion("Initial sync."));
 }
 
-// TODO(rsimha): See http://crbug.com/78840.
+// TODO(rsimha): Flaky due to http://crbug.com/80180.
 IN_PROC_BROWSER_TEST_F(TwoClientLivePasswordsSyncTest,
                        FLAKY_SetPassphraseTwice) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
@@ -124,7 +142,9 @@ IN_PROC_BROWSER_TEST_F(TwoClientLivePasswordsSyncTest,
 
   SetPassphrase(1, kValidPassphrase, false);
   ASSERT_TRUE(GetClient(1)->AwaitPassphraseAccepted());
+  ASSERT_TRUE(GetClient(1)->AwaitSyncCycleCompletion("Set passphrase."));
 
   SetPassphrase(1, kValidPassphrase, false);
   ASSERT_TRUE(GetClient(1)->AwaitPassphraseAccepted());
+  ASSERT_TRUE(GetClient(1)->AwaitSyncCycleCompletion("Set passphrase again."));
 }

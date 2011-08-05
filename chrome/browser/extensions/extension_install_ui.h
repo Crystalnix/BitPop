@@ -74,17 +74,23 @@ class ExtensionInstallUI : public ImageLoadingTracker::Observer {
   virtual void OnImageLoaded(
       SkBitmap* image, const ExtensionResource& resource, int index);
 
+ protected:
+  friend class ExtensionWebstorePrivateApiTest;
+
+  // Disables showing UI (ErrorBox, etc.) for install failures. To be used only
+  // in tests.
+  static void DisableFailureUIForTests();
+
+ private:
+  friend class GalleryInstallApiTestObserver;
+
   // Show an infobar for a newly-installed theme.  previous_theme_id
   // should be empty if the previous theme was the system/default
   // theme.
-  //
-  // TODO(akalin): Find a better home for this (and
-  // GetNewThemeInstalledInfoBarDelegate()).
   static void ShowThemeInfoBar(
-      const std::string& previous_theme_id, bool previous_use_system_theme,
+      const std::string& previous_theme_id, bool previous_using_native_theme,
       const Extension* new_theme, Profile* profile);
 
- private:
   // Sets the icon that will be used in any UI. If |icon| is NULL, or contains
   // an empty bitmap, then a default icon will be used instead.
   void SetIcon(SkBitmap* icon);
@@ -100,14 +106,14 @@ class ExtensionInstallUI : public ImageLoadingTracker::Observer {
       TabContents* tab_contents,
       const Extension* new_theme,
       const std::string& previous_theme_id,
-      bool previous_use_system_theme);
+      bool previous_using_native_theme);
 
   Profile* profile_;
   MessageLoop* ui_loop_;
 
   // Used to undo theme installation.
   std::string previous_theme_id_;
-  bool previous_use_system_theme_;
+  bool previous_using_native_theme_;
 
   // The extensions installation icon.
   SkBitmap icon_;

@@ -82,6 +82,9 @@ IPC_STRUCT_BEGIN(PrintHostMsg_DidPreviewDocument_Params)
 
   // Store the expected pages count.
   IPC_STRUCT_MEMBER(int, expected_pages_count)
+
+  // Whether the preview can be modified.
+  IPC_STRUCT_MEMBER(bool, modifiable)
 IPC_STRUCT_END()
 
 // Parameters to describe a rendered page.
@@ -125,24 +128,30 @@ IPC_STRUCT_END()
 
 // Messages sent from the browser to the renderer.
 
+// Tells the render view to initiate print preview for the entire document.
+IPC_MESSAGE_ROUTED0(PrintMsg_InitiatePrintPreview)
+
+// Tells the render view to initiate printing or print preview for a particular
+// node, depending on which mode the render view is in.
 IPC_MESSAGE_ROUTED0(PrintMsg_PrintNodeUnderContextMenu)
 
 // Tells the renderer to print the print preview tab's PDF plugin without
-// showing the print dialog.
+// showing the print dialog. (This is the final step in the print preview
+// workflow.)
 IPC_MESSAGE_ROUTED1(PrintMsg_PrintForPrintPreview,
-                    DictionaryValue /* settings*/)
+                    DictionaryValue /* settings */)
 
 // Tells the render view to switch the CSS to print media type, renders every
 // requested pages and switch back the CSS to display media type.
 IPC_MESSAGE_ROUTED0(PrintMsg_PrintPages)
 
 // Tells the render view that printing is done so it can clean up.
-IPC_MESSAGE_ROUTED2(PrintMsg_PrintingDone,
-                    int /* document_cookie */,
+IPC_MESSAGE_ROUTED1(PrintMsg_PrintingDone,
                     bool /* success */)
 
 // Tells the render view to switch the CSS to print media type, renders every
-// requested pages for print preview using the given |settngs|.
+// requested pages for print preview using the given |settings|. This gets
+// called multiple times as the user updates settings.
 IPC_MESSAGE_ROUTED1(PrintMsg_PrintPreview,
                     DictionaryValue /* settings */)
 
@@ -202,14 +211,19 @@ IPC_MESSAGE_CONTROL1(PrintHostMsg_TempFileForPrintingWritten,
                      int /* fd in browser */)
 #endif
 
-// Asks the browser to do print preview for the node under the context menu.
-IPC_MESSAGE_ROUTED0(PrintHostMsg_PrintPreviewNodeUnderContextMenu)
-
-// Asks the browser to do print preview for window.print().
-IPC_MESSAGE_ROUTED0(PrintHostMsg_ScriptInitiatedPrintPreview)
+// Asks the browser to do print preview.
+IPC_MESSAGE_ROUTED0(PrintHostMsg_RequestPrintPreview)
 
 // Sends back to the browser the rendered "printed document" for preview that
 // was requested by a PrintMsg_PrintPreview message. The memory handle in this
 // message is already valid in the browser process.
 IPC_MESSAGE_ROUTED1(PrintHostMsg_PagesReadyForPreview,
                     PrintHostMsg_DidPreviewDocument_Params /* params */)
+
+// Tell the browser printing failed.
+IPC_MESSAGE_ROUTED1(PrintHostMsg_PrintingFailed,
+                    int /* document cookie */)
+
+// Tell the browser print preview failed.
+IPC_MESSAGE_ROUTED1(PrintHostMsg_PrintPreviewFailed,
+                    int /* document cookie */)

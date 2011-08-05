@@ -12,9 +12,9 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_callback_factory.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
+#include "base/scoped_temp_dir.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "googleurl/src/gurl.h"
@@ -23,8 +23,7 @@
 #include "webkit/fileapi/sandbox_mount_point_provider.h"
 #include "webkit/quota/special_storage_policy.h"
 
-using namespace fileapi;
-
+namespace fileapi {
 namespace {
 
 // PS stands for path separator.
@@ -46,21 +45,21 @@ const struct RootPathTest {
   const char* expected_path;
 } kRootPathTestCases[] = {
   { fileapi::kFileSystemTypeTemporary, "http://foo:1/",
-    "http_foo_1" PS "Temporary" },
+    "000" PS "t" },
   { fileapi::kFileSystemTypePersistent, "http://foo:1/",
-    "http_foo_1" PS "Persistent" },
+    "000" PS "p" },
   { fileapi::kFileSystemTypeTemporary, "http://bar.com/",
-    "http_bar.com_0" PS "Temporary" },
+    "001" PS "t" },
   { fileapi::kFileSystemTypePersistent, "http://bar.com/",
-    "http_bar.com_0" PS "Persistent" },
+    "001" PS "p" },
   { fileapi::kFileSystemTypeTemporary, "https://foo:2/",
-    "https_foo_2" PS "Temporary" },
+    "002" PS "t" },
   { fileapi::kFileSystemTypePersistent, "https://foo:2/",
-    "https_foo_2" PS "Persistent" },
+    "002" PS "p" },
   { fileapi::kFileSystemTypeTemporary, "https://bar.com/",
-    "https_bar.com_0" PS "Temporary" },
+    "003" PS "t" },
   { fileapi::kFileSystemTypePersistent, "https://bar.com/",
-    "https_bar.com_0" PS "Persistent" },
+    "003" PS "p" },
 #if defined(OS_CHROMEOS)
   { fileapi::kFileSystemTypeExternal, "chrome-extension://foo/",
     "chrome-extension__0" PS "External" },
@@ -74,9 +73,9 @@ const struct RootPathFileURITest {
   const char* virtual_path;
 } kRootPathFileURITestCases[] = {
   { fileapi::kFileSystemTypeTemporary, "file:///",
-    "file__0" PS "Temporary", NULL },
+    "000" PS "t", NULL },
   { fileapi::kFileSystemTypePersistent, "file:///",
-    "file__0" PS "Persistent", NULL },
+    "000" PS "p", NULL },
 #if defined(OS_CHROMEOS)
   { fileapi::kFileSystemTypeExternal, "chrome-extension://foo/",
     "chrome-extension__0" PS "External", "testing" },
@@ -108,21 +107,24 @@ const struct IsRestrictedNameTest {
   FilePath::StringType name;
   bool expected_dangerous;
 } kIsRestrictedNameTestCases[] = {
-  // Name that has restricted names in it.
-  { FILE_PATH_LITERAL("con"), true, },
-  { FILE_PATH_LITERAL("Con.txt"), true, },
-  { FILE_PATH_LITERAL("Prn.png"), true, },
-  { FILE_PATH_LITERAL("AUX"), true, },
-  { FILE_PATH_LITERAL("nUl."), true, },
-  { FILE_PATH_LITERAL("coM1"), true, },
-  { FILE_PATH_LITERAL("COM3.com"), true, },
-  { FILE_PATH_LITERAL("cOM7"), true, },
-  { FILE_PATH_LITERAL("com9"), true, },
-  { FILE_PATH_LITERAL("lpT1"), true, },
-  { FILE_PATH_LITERAL("LPT4.com"), true, },
-  { FILE_PATH_LITERAL("lPT8"), true, },
-  { FILE_PATH_LITERAL("lPT9"), true, },
-  // Similar but safe cases.
+
+  // Names that contain strings that used to be restricted, but are now allowed.
+  { FILE_PATH_LITERAL("con"), false, },
+  { FILE_PATH_LITERAL("Con.txt"), false, },
+  { FILE_PATH_LITERAL("Prn.png"), false, },
+  { FILE_PATH_LITERAL("AUX"), false, },
+  { FILE_PATH_LITERAL("nUl."), false, },
+  { FILE_PATH_LITERAL("coM1"), false, },
+  { FILE_PATH_LITERAL("COM3.com"), false, },
+  { FILE_PATH_LITERAL("cOM7"), false, },
+  { FILE_PATH_LITERAL("com9"), false, },
+  { FILE_PATH_LITERAL("lpT1"), false, },
+  { FILE_PATH_LITERAL("LPT4.com"), false, },
+  { FILE_PATH_LITERAL("lPT8"), false, },
+  { FILE_PATH_LITERAL("lPT9"), false, },
+  { FILE_PATH_LITERAL("com1."), false, },
+
+  // Similar cases that have always been allowed.
   { FILE_PATH_LITERAL("con3"), false, },
   { FILE_PATH_LITERAL("PrnImage.png"), false, },
   { FILE_PATH_LITERAL("AUXX"), false, },
@@ -132,14 +134,15 @@ const struct IsRestrictedNameTest {
   { FILE_PATH_LITERAL("lpT0"), false, },
   { FILE_PATH_LITERAL("LPT.com"), false, },
 
-  // Ends with period or whitespace.
-  { FILE_PATH_LITERAL("b "), true, },
-  { FILE_PATH_LITERAL("b\t"), true, },
-  { FILE_PATH_LITERAL("b\n"), true, },
-  { FILE_PATH_LITERAL("b\r\n"), true, },
-  { FILE_PATH_LITERAL("b."), true, },
-  { FILE_PATH_LITERAL("b.."), true, },
-  // Similar but safe cases.
+  // Ends with period or whitespace--used to be banned, now OK.
+  { FILE_PATH_LITERAL("b "), false, },
+  { FILE_PATH_LITERAL("b\t"), false, },
+  { FILE_PATH_LITERAL("b\n"), false, },
+  { FILE_PATH_LITERAL("b\r\n"), false, },
+  { FILE_PATH_LITERAL("b."), false, },
+  { FILE_PATH_LITERAL("b.."), false, },
+
+  // Similar cases that have always been allowed.
   { FILE_PATH_LITERAL("b c"), false, },
   { FILE_PATH_LITERAL("b\tc"), false, },
   { FILE_PATH_LITERAL("b\nc"), false, },
@@ -149,27 +152,47 @@ const struct IsRestrictedNameTest {
   { FILE_PATH_LITERAL("b..c"), false, },
 
   // Name that has restricted chars in it.
+  { FILE_PATH_LITERAL("\\"), true, },
+  { FILE_PATH_LITERAL("/"), true, },
   { FILE_PATH_LITERAL("a\\b"), true, },
   { FILE_PATH_LITERAL("a/b"), true, },
-  { FILE_PATH_LITERAL("a<b"), true, },
-  { FILE_PATH_LITERAL("a>b"), true, },
-  { FILE_PATH_LITERAL("a:b"), true, },
-  { FILE_PATH_LITERAL("a?b"), true, },
-  { FILE_PATH_LITERAL("a|b"), true, },
   { FILE_PATH_LITERAL("ab\\"), true, },
-  { FILE_PATH_LITERAL("ab/.txt"), true, },
-  { FILE_PATH_LITERAL("ab<.txt"), true, },
-  { FILE_PATH_LITERAL("ab>.txt"), true, },
-  { FILE_PATH_LITERAL("ab:.txt"), true, },
-  { FILE_PATH_LITERAL("ab?.txt"), true, },
-  { FILE_PATH_LITERAL("ab|.txt"), true, },
+  { FILE_PATH_LITERAL("ab/"), true, },
   { FILE_PATH_LITERAL("\\ab"), true, },
   { FILE_PATH_LITERAL("/ab"), true, },
-  { FILE_PATH_LITERAL("<ab"), true, },
-  { FILE_PATH_LITERAL(">ab"), true, },
-  { FILE_PATH_LITERAL(":ab"), true, },
-  { FILE_PATH_LITERAL("?ab"), true, },
-  { FILE_PATH_LITERAL("|ab"), true, },
+  { FILE_PATH_LITERAL("ab/.txt"), true, },
+  { FILE_PATH_LITERAL("ab\\.txt"), true, },
+
+  // Names that contain chars that were formerly restricted, now OK.
+  { FILE_PATH_LITERAL("a<b"), false, },
+  { FILE_PATH_LITERAL("a>b"), false, },
+  { FILE_PATH_LITERAL("a:b"), false, },
+  { FILE_PATH_LITERAL("a?b"), false, },
+  { FILE_PATH_LITERAL("a|b"), false, },
+  { FILE_PATH_LITERAL("ab<.txt"), false, },
+  { FILE_PATH_LITERAL("ab>.txt"), false, },
+  { FILE_PATH_LITERAL("ab:.txt"), false, },
+  { FILE_PATH_LITERAL("ab?.txt"), false, },
+  { FILE_PATH_LITERAL("ab|.txt"), false, },
+  { FILE_PATH_LITERAL("<ab"), false, },
+  { FILE_PATH_LITERAL(">ab"), false, },
+  { FILE_PATH_LITERAL(":ab"), false, },
+  { FILE_PATH_LITERAL("?ab"), false, },
+  { FILE_PATH_LITERAL("|ab"), false, },
+
+  // Names that are restricted still.
+  { FILE_PATH_LITERAL(".."), true, },
+  { FILE_PATH_LITERAL("."), true, },
+
+  // Similar but safe cases.
+  { FILE_PATH_LITERAL(" ."), false, },
+  { FILE_PATH_LITERAL(". "), false, },
+  { FILE_PATH_LITERAL(" . "), false, },
+  { FILE_PATH_LITERAL(" .."), false, },
+  { FILE_PATH_LITERAL(".. "), false, },
+  { FILE_PATH_LITERAL(" .. "), false, },
+  { FILE_PATH_LITERAL("b."), false, },
+  { FILE_PATH_LITERAL(".b"), false, },
 };
 
 FilePath UTF8ToFilePath(const std::string& str) {
@@ -256,7 +279,7 @@ class FileSystemPathManagerTest : public testing::Test {
   FilePath data_path() { return data_dir_.path(); }
   FilePath file_system_path() {
     return data_dir_.path().Append(
-        SandboxMountPointProvider::kFileSystemDirectory);
+        SandboxMountPointProvider::kNewFileSystemDirectory);
   }
   FilePath external_file_system_path() {
     return UTF8ToFilePath(std::string(fileapi::kExternalDir));
@@ -295,7 +318,7 @@ TEST_F(FileSystemPathManagerTest, GetRootPathCreateAndExamine) {
     if (kRootPathTestCases[i].type != fileapi::kFileSystemTypeExternal) {
       FilePath expected = file_system_path().AppendASCII(
           kRootPathTestCases[i].expected_path);
-      EXPECT_EQ(expected.value(), root_path.DirName().value());
+      EXPECT_EQ(expected.value(), root_path.value());
       EXPECT_TRUE(file_util::DirectoryExists(root_path));
     } else {
       // External file system root path is virtual one and does not match
@@ -326,16 +349,17 @@ TEST_F(FileSystemPathManagerTest, GetRootPathCreateAndExamine) {
 TEST_F(FileSystemPathManagerTest, GetRootPathCreateAndExamineWithNewManager) {
   std::vector<FilePath> returned_root_path(
       ARRAYSIZE_UNSAFE(kRootPathTestCases));
-  scoped_ptr<FileSystemPathManager> manager1(NewPathManager(false, false));
-  scoped_ptr<FileSystemPathManager> manager2(NewPathManager(false, false));
+  scoped_ptr<FileSystemPathManager> manager(NewPathManager(false, false));
 
   GURL origin_url("http://foo.com:1/");
 
   FilePath root_path1;
-  EXPECT_TRUE(GetRootPath(manager1.get(), origin_url,
+  EXPECT_TRUE(GetRootPath(manager.get(), origin_url,
                           kFileSystemTypeTemporary, true, &root_path1));
+
+  manager.reset(NewPathManager(false, false));
   FilePath root_path2;
-  EXPECT_TRUE(GetRootPath(manager2.get(), origin_url,
+  EXPECT_TRUE(GetRootPath(manager.get(), origin_url,
                           kFileSystemTypeTemporary, false, &root_path2));
 
   EXPECT_EQ(root_path1.value(), root_path2.value());
@@ -396,7 +420,7 @@ TEST_F(FileSystemPathManagerTest, GetRootPathFileURIWithAllowFlag) {
     if (kRootPathFileURITestCases[i].type != fileapi::kFileSystemTypeExternal) {
       FilePath expected = file_system_path().AppendASCII(
           kRootPathFileURITestCases[i].expected_path);
-      EXPECT_EQ(expected.value(), root_path.DirName().value());
+      EXPECT_EQ(expected.value(), root_path.value());
       EXPECT_TRUE(file_util::DirectoryExists(root_path));
     } else {
       EXPECT_EQ(external_file_path_root().value(), root_path.value());
@@ -414,3 +438,5 @@ TEST_F(FileSystemPathManagerTest, IsRestrictedName) {
               manager->IsRestrictedFileName(kFileSystemTypeTemporary, name));
   }
 }
+
+}  // namespace fileapi

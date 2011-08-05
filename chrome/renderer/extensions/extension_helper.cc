@@ -12,9 +12,9 @@
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/renderer/extensions/event_bindings.h"
 #include "chrome/renderer/extensions/extension_dispatcher.h"
 #include "chrome/renderer/extensions/extension_process_bindings.h"
-#include "chrome/renderer/extensions/renderer_extension_bindings.h"
 #include "chrome/renderer/extensions/user_script_idle_scheduler.h"
 #include "chrome/renderer/extensions/user_script_slave.h"
 #include "content/common/json_value_serializer.h"
@@ -109,8 +109,10 @@ bool ExtensionHelper::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ExtensionMsg_MessageInvoke, OnExtensionMessageInvoke)
     IPC_MESSAGE_HANDLER(ExtensionMsg_ExecuteCode, OnExecuteCode)
     IPC_MESSAGE_HANDLER(ExtensionMsg_GetApplicationInfo, OnGetApplicationInfo)
-    IPC_MESSAGE_HANDLER(ViewMsg_UpdateBrowserWindowId, OnUpdateBrowserWindowId)
-    IPC_MESSAGE_HANDLER(ViewMsg_NotifyRenderViewType, OnNotifyRendererViewType)
+    IPC_MESSAGE_HANDLER(ExtensionMsg_UpdateBrowserWindowId,
+                        OnUpdateBrowserWindowId)
+    IPC_MESSAGE_HANDLER(ExtensionMsg_NotifyRenderViewType,
+                        OnNotifyRendererViewType)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -182,7 +184,7 @@ void ExtensionHelper::OnExtensionMessageInvoke(const std::string& extension_id,
                                                const std::string& function_name,
                                                const ListValue& args,
                                                const GURL& event_url) {
-  RendererExtensionBindings::Invoke(
+  EventBindings::CallFunction(
       extension_id, function_name, args, render_view(), event_url);
 }
 

@@ -5,14 +5,12 @@
 #include "net/base/transport_security_state.h"
 
 #include "base/base64.h"
-#include "base/command_line.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/sha1.h"
 #include "base/string_number_conversions.h"
-#include "base/string_split.h"
 #include "base/string_tokenizer.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
@@ -20,14 +18,17 @@
 #include "crypto/sha2.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/dns_util.h"
-#include "net/base/net_switches.h"
 
 namespace net {
 
 const long int TransportSecurityState::kMaxHSTSAgeSecs = 86400 * 365;  // 1 year
 
-TransportSecurityState::TransportSecurityState()
+TransportSecurityState::TransportSecurityState(const std::string& hsts_hosts)
     : delegate_(NULL) {
+  if (!hsts_hosts.empty()) {
+    bool dirty;
+    Deserialise(hsts_hosts, &dirty, &forced_hosts_);
+  }
 }
 
 static std::string HashHost(const std::string& canonicalized_host) {
@@ -45,9 +46,11 @@ void TransportSecurityState::EnableHost(const std::string& host,
   // TODO(cevans) -- we likely want to permit a host to override a built-in,
   // for at least the case where the override is stricter (i.e. includes
   // subdomains, or includes certificate pinning).
-  DomainState temp;
-  if (IsPreloadedSTS(canonicalized_host, true, &temp))
+  DomainState out;
+  if (IsPreloadedSTS(canonicalized_host, true, &out) &&
+      canonicalized_host == CanonicalizeHost(out.domain)) {
     return;
+  }
 
   // Use the original creation date if we already have this host.
   DomainState state_copy(state);
@@ -78,31 +81,43 @@ bool TransportSecurityState::DeleteHost(const std::string& host) {
   return false;
 }
 
-// IncludeNUL converts a char* to a std::string and includes the terminating
-// NUL in the result.
-static std::string IncludeNUL(const char* in) {
-  return std::string(in, strlen(in) + 1);
+bool TransportSecurityState::HasPinsForHost(DomainState* result,
+                                            const std::string& host,
+                                            bool sni_available) {
+  return HasMetadata(result, host, sni_available) &&
+         !result->public_key_hashes.empty();
 }
 
 bool TransportSecurityState::IsEnabledForHost(DomainState* result,
                                               const std::string& host,
                                               bool sni_available) {
+  return HasMetadata(result, host, sni_available) &&
+         result->mode != DomainState::MODE_NONE;
+}
+
+bool TransportSecurityState::HasMetadata(DomainState* result,
+                                         const std::string& host,
+                                         bool sni_available) {
+  *result = DomainState();
+
   const std::string canonicalized_host = CanonicalizeHost(host);
   if (canonicalized_host.empty())
     return false;
 
-  if (IsPreloadedSTS(canonicalized_host, sni_available, result))
-    return result->mode != DomainState::MODE_NONE;
-
-  *result = DomainState();
+  bool has_preload = IsPreloadedSTS(canonicalized_host, sni_available, result);
+  std::string canonicalized_preload = CanonicalizeHost(result->domain);
 
   base::Time current_time(base::Time::Now());
 
   for (size_t i = 0; canonicalized_host[i]; i += canonicalized_host[i] + 1) {
-    std::string hashed_domain(HashHost(IncludeNUL(&canonicalized_host[i])));
+    std::string host_sub_chunk(&canonicalized_host[i],
+                               canonicalized_host.size() - i);
+    // Exact match of a preload always wins.
+    if (has_preload && host_sub_chunk == canonicalized_preload)
+      return true;
 
     std::map<std::string, DomainState>::iterator j =
-        enabled_hosts_.find(hashed_domain);
+        enabled_hosts_.find(HashHost(host_sub_chunk));
     if (j == enabled_hosts_.end())
       continue;
 
@@ -113,8 +128,7 @@ bool TransportSecurityState::IsEnabledForHost(DomainState* result,
     }
 
     *result = j->second;
-    result->domain = DNSDomainToString(
-        canonicalized_host.substr(i, canonicalized_host.size() - i));
+    result->domain = DNSDomainToString(host_sub_chunk);
 
     // If we matched the domain exactly, it doesn't matter what the value of
     // include_subdomains is.
@@ -336,6 +350,21 @@ bool TransportSecurityState::LoadEntries(const std::string& input,
   return Deserialise(input, dirty, &enabled_hosts_);
 }
 
+static bool AddHash(const std::string& type_and_base64,
+                    std::vector<SHA1Fingerprint>* out) {
+  std::string hash_str;
+  if (type_and_base64.find("sha1/") == 0 &&
+      base::Base64Decode(type_and_base64.substr(5, type_and_base64.size() - 5),
+                         &hash_str) &&
+      hash_str.size() == base::SHA1_LENGTH) {
+    SHA1Fingerprint hash;
+    memcpy(hash.data, hash_str.data(), sizeof(hash.data));
+    out->push_back(hash);
+    return true;
+  }
+  return false;
+}
+
 // static
 bool TransportSecurityState::Deserialise(
     const std::string& input,
@@ -373,17 +402,8 @@ bool TransportSecurityState::Deserialise(
       size_t num_pins = pins_list->GetSize();
       for (size_t i = 0; i < num_pins; ++i) {
         std::string type_and_base64;
-        std::string hash_str;
-        SHA1Fingerprint hash;
-        if (pins_list->GetString(i, &type_and_base64) &&
-            type_and_base64.find("sha1/") == 0 &&
-            base::Base64Decode(
-                type_and_base64.substr(5, type_and_base64.size() - 5),
-                &hash_str) &&
-            hash_str.size() == base::SHA1_LENGTH) {
-          memcpy(hash.data, hash_str.data(), sizeof(hash.data));
-          public_key_hashes.push_back(hash);
-        }
+        if (pins_list->GetString(i, &type_and_base64))
+          AddHash(type_and_base64, &public_key_hashes);
       }
     }
 
@@ -482,87 +502,167 @@ std::string TransportSecurityState::CanonicalizeHost(const std::string& host) {
   return new_host;
 }
 
+struct HSTSPreload {
+  uint8 length;
+  bool include_subdomains;
+  char dns_name[30];
+  bool https_required;
+  const char** required_hashes;
+};
+
+static bool HasPreload(const struct HSTSPreload* entries, size_t num_entries,
+                       const std::string& canonicalized_host, size_t i,
+                       TransportSecurityState::DomainState* out, bool* ret) {
+  for (size_t j = 0; j < num_entries; j++) {
+    if (entries[j].length == canonicalized_host.size() - i &&
+        memcmp(entries[j].dns_name, &canonicalized_host[i],
+               entries[j].length) == 0) {
+      if (!entries[j].include_subdomains && i != 0) {
+        *ret = false;
+      } else {
+        out->include_subdomains = entries[j].include_subdomains;
+        *ret = true;
+        if (!entries[j].https_required)
+          out->mode = TransportSecurityState::DomainState::MODE_NONE;
+        if (entries[j].required_hashes) {
+          const char** hash = entries[j].required_hashes;
+          while (*hash) {
+            bool ok = AddHash(*hash, &out->public_key_hashes);
+            DCHECK(ok);
+            hash++;
+          }
+        }
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
 // IsPreloadedSTS returns true if the canonicalized hostname should always be
 // considered to have STS enabled.
-// static
 bool TransportSecurityState::IsPreloadedSTS(
     const std::string& canonicalized_host,
     bool sni_available,
     DomainState* out) {
   out->preloaded = true;
   out->mode = DomainState::MODE_STRICT;
-  out->created = base::Time::FromTimeT(0);
-  out->expiry = out->created;
   out->include_subdomains = false;
 
-  std::map<std::string, DomainState> hosts;
-  std::string cmd_line_hsts =
-      CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-          switches::kHstsHosts);
-  if (!cmd_line_hsts.empty()) {
-    bool dirty;
-    Deserialise(cmd_line_hsts, &dirty, &hosts);
-  }
+  // These hashes are base64 encodings of SHA1 hashes for cert public keys.
+  static const char kCertPKHashVerisignClass3[] =
+      "sha1/4n972HfV354KP560yw4uqe/baXc=";
+  static const char kCertPKHashVerisignClass3G3[] =
+      "sha1/IvGeLsbqzPxdI0b0wuj2xVTdXgc=";
+  static const char kCertPKHashGoogle1024[] =
+      "sha1/QMVAHW+MuvCLAO3vse6H0AWzuc0=";
+  static const char kCertPKHashGoogle2048[] =
+      "sha1/AbkhxY0L343gKf+cki7NVWp+ozk=";
+  static const char kCertPKHashEquifaxSecureCA[] =
+      "sha1/SOZo+SvSspXXR9gjIBBPM5iQn9Q=";
+  static const char* kGoogleAcceptableCerts[] = {
+    kCertPKHashVerisignClass3,
+    kCertPKHashVerisignClass3G3,
+    kCertPKHashGoogle1024,
+    kCertPKHashGoogle2048,
+    kCertPKHashEquifaxSecureCA,
+    0,
+  };
 
   // In the medium term this list is likely to just be hardcoded here. This,
   // slightly odd, form removes the need for additional relocations records.
-  static const struct {
-    uint8 length;
-    bool include_subdomains;
-    char dns_name[30];
-  } kPreloadedSTS[] = {
-    {16, false, "\003www\006paypal\003com"},
-    {16, false, "\003www\006elanex\003biz"},
-    {12, true,  "\006jottit\003com"},
-    {19, true,  "\015sunshinepress\003org"},
-    {21, false, "\003www\013noisebridge\003net"},
-    {10, false, "\004neg9\003org"},
-    {12, true, "\006riseup\003net"},
-    {11, false, "\006factor\002cc"},
-    {22, false, "\007members\010mayfirst\003org"},
-    {22, false, "\007support\010mayfirst\003org"},
-    {17, false, "\002id\010mayfirst\003org"},
-    {20, false, "\005lists\010mayfirst\003org"},
-    {19, true, "\015splendidbacon\003com"},
-    {19, true, "\006health\006google\003com"},
-    {21, true, "\010checkout\006google\003com"},
-    {19, true, "\006chrome\006google\003com"},
-    {26, false, "\006latest\006chrome\006google\003com"},
-    {28, false, "\016aladdinschools\007appspot\003com"},
-    {14, true, "\011ottospora\002nl"},
-    {17, true, "\004docs\006google\003com"},
-    {18, true, "\005sites\006google\003com"},
-    {25, true, "\014spreadsheets\006google\003com"},
-    {22, false, "\011appengine\006google\003com"},
-    {25, false, "\003www\017paycheckrecords\003com"},
-    {20, true, "\006market\007android\003com"},
-    {14, false, "\010lastpass\003com"},
-    {18, false, "\003www\010lastpass\003com"},
-    {14, true, "\010keyerror\003com"},
-    {22, true, "\011encrypted\006google\003com"},
-    {13, false, "\010entropia\002de"},
-    {17, false, "\003www\010entropia\002de"},
-    {21, true, "\010accounts\006google\003com"},
+  static const struct HSTSPreload kPreloadedSTS[] = {
+    // (*.)google.com, iff using SSL must use an acceptable certificate.
+    {12, true, "\006google\003com", false, kGoogleAcceptableCerts },
+    // Now we force HTTPS for subtrees of google.com.
+    {19, true, "\006health\006google\003com", true, kGoogleAcceptableCerts },
+    {21, true, "\010checkout\006google\003com", true, kGoogleAcceptableCerts },
+    {19, true, "\006chrome\006google\003com", true, kGoogleAcceptableCerts },
+    {26, false, "\006latest\006chrome\006google\003com", true, 0 },
+    {17, true, "\004docs\006google\003com", true, kGoogleAcceptableCerts },
+    {18, true, "\005sites\006google\003com", true, kGoogleAcceptableCerts },
+    {25, true, "\014spreadsheets\006google\003com", true,
+     kGoogleAcceptableCerts },
+    {22, false, "\011appengine\006google\003com", true,
+     kGoogleAcceptableCerts },
+    {22, true, "\011encrypted\006google\003com", true, kGoogleAcceptableCerts },
+    {21, true, "\010accounts\006google\003com", true, kGoogleAcceptableCerts },
+    {21, true, "\010profiles\006google\003com", true, kGoogleAcceptableCerts },
+    {17, true, "\004mail\006google\003com", true, kGoogleAcceptableCerts },
+    {23, true, "\012talkgadget\006google\003com", true,
+     kGoogleAcceptableCerts },
+    // Other Google-related domains that must use HTTPS.
+    {20, true, "\006market\007android\003com", true, kGoogleAcceptableCerts },
+    {26, true, "\003ssl\020google-analytics\003com", true,
+     kGoogleAcceptableCerts },
+    // Other Google-related domains that must use an acceptable certificate
+    // iff using SSL.
+    {11, true, "\005ytimg\003com", false, kGoogleAcceptableCerts },
+    {23, true, "\021googleusercontent\003com", false, kGoogleAcceptableCerts },
+    {13, true, "\007youtube\003com", false, kGoogleAcceptableCerts },
+    {16, true, "\012googleapis\003com", false, kGoogleAcceptableCerts },
+    {22, true, "\020googleadservices\003com", false, kGoogleAcceptableCerts },
+    {16, true, "\012googlecode\003com", false, kGoogleAcceptableCerts },
+    {13, true, "\007appspot\003com", false, kGoogleAcceptableCerts },
+    {23, true, "\021googlesyndication\003com", false, kGoogleAcceptableCerts },
+    {17, true, "\013doubleclick\003net", false, kGoogleAcceptableCerts },
+    {17, true, "\003ssl\007gstatic\003com", false, kGoogleAcceptableCerts },
+    // Exclude the learn.doubleclick.net subdomain because it uses a different
+    // CA.
+    {23, true, "\005learn\013doubleclick\003net", false, 0 },
+    // Now we force HTTPS for other sites that have requested it.
+    {16, false, "\003www\006paypal\003com", true, 0 },
+    {16, false, "\003www\006elanex\003biz", true, 0 },
+    {12, true,  "\006jottit\003com", true, 0 },
+    {19, true,  "\015sunshinepress\003org", true, 0 },
+    {21, false, "\003www\013noisebridge\003net", true, 0 },
+    {10, false, "\004neg9\003org", true, 0 },
+    {12, true, "\006riseup\003net", true, 0 },
+    {11, false, "\006factor\002cc", true, 0 },
+    {22, false, "\007members\010mayfirst\003org", true, 0 },
+    {22, false, "\007support\010mayfirst\003org", true, 0 },
+    {17, false, "\002id\010mayfirst\003org", true, 0 },
+    {20, false, "\005lists\010mayfirst\003org", true, 0 },
+    {19, true, "\015splendidbacon\003com", true, 0 },
+    {28, false, "\016aladdinschools\007appspot\003com", true, 0 },
+    {14, true, "\011ottospora\002nl", true, 0 },
+    {25, false, "\003www\017paycheckrecords\003com", true, 0 },
+    {14, false, "\010lastpass\003com", true, 0 },
+    {18, false, "\003www\010lastpass\003com", true, 0 },
+    {14, true, "\010keyerror\003com", true, 0 },
+    {13, false, "\010entropia\002de", true, 0 },
+    {17, false, "\003www\010entropia\002de", true, 0 },
+    {11, true, "\005romab\003com", true, 0 },
+    {16, false, "\012logentries\003com", true, 0 },
+    {20, false, "\003www\012logentries\003com", true, 0 },
+    {12, true, "\006stripe\003com", true, 0 },
+    {27, true, "\025cloudsecurityalliance\003org", true, 0 },
+    {15, true, "\005login\004sapo\002pt", true, 0 },
+    {19, true, "\015mattmccutchen\003net", true, 0 },
+    {11, true, "\006betnet\002fr", true, 0 },
+    {13, true, "\010uprotect\002it", true, 0 },
+    {14, false, "\010squareup\003com", true, 0 },
 #if defined(OS_CHROMEOS)
-    {17, true, "\004mail\006google\003com"},
-    {13, false, "\007twitter\003com"},
-    {17, false, "\003www\007twitter\003com"},
-    {17, false, "\003api\007twitter\003com"},
-    {17, false, "\003dev\007twitter\003com"},
-    {22, false, "\010business\007twitter\003com"},
+    {13, false, "\007twitter\003com", true, 0 },
+    {17, false, "\003www\007twitter\003com", true, 0 },
+    {17, false, "\003api\007twitter\003com", true, 0 },
+    {17, false, "\003dev\007twitter\003com", true, 0 },
+    {22, false, "\010business\007twitter\003com", true, 0 },
 #endif
   };
   static const size_t kNumPreloadedSTS = ARRAYSIZE_UNSAFE(kPreloadedSTS);
 
-  static const struct {
-    uint8 length;
-    bool include_subdomains;
-    char dns_name[30];
-  } kPreloadedSNISTS[] = {
-    {11, false, "\005gmail\003com"},
-    {16, false, "\012googlemail\003com"},
-    {15, false, "\003www\005gmail\003com"},
-    {20, false, "\003www\012googlemail\003com"},
+  static const struct HSTSPreload kPreloadedSNISTS[] = {
+    // These SNI-only domains must always use HTTPS.
+    {11, false, "\005gmail\003com", true, kGoogleAcceptableCerts },
+    {16, false, "\012googlemail\003com", true, kGoogleAcceptableCerts },
+    {15, false, "\003www\005gmail\003com", true, kGoogleAcceptableCerts },
+    {20, false, "\003www\012googlemail\003com", true, kGoogleAcceptableCerts },
+    // These SNI-only domains must use an acceptable certificate iff using
+    // HTTPS.
+    {22, true, "\020google-analytics\003com", false, kGoogleAcceptableCerts },
+    // www. requires SNI.
+    {18, true, "\014googlegroups\003com", false, kGoogleAcceptableCerts },
   };
   static const size_t kNumPreloadedSNISTS = ARRAYSIZE_UNSAFE(kPreloadedSNISTS);
 
@@ -571,33 +671,21 @@ bool TransportSecurityState::IsPreloadedSTS(
                                canonicalized_host.size() - i);
     out->domain = DNSDomainToString(host_sub_chunk);
     std::string hashed_host(HashHost(host_sub_chunk));
-    if (hosts.find(hashed_host) != hosts.end()) {
-      *out = hosts[hashed_host];
+    if (forced_hosts_.find(hashed_host) != forced_hosts_.end()) {
+      *out = forced_hosts_[hashed_host];
       out->domain = DNSDomainToString(host_sub_chunk);
       out->preloaded = true;
       return true;
     }
-    for (size_t j = 0; j < kNumPreloadedSTS; j++) {
-      if (kPreloadedSTS[j].length == canonicalized_host.size() - i &&
-          memcmp(kPreloadedSTS[j].dns_name, &canonicalized_host[i],
-                 kPreloadedSTS[j].length) == 0) {
-        if (!kPreloadedSTS[j].include_subdomains && i != 0)
-          return false;
-        out->include_subdomains = kPreloadedSTS[j].include_subdomains;
-        return true;
-      }
+    bool ret;
+    if (HasPreload(kPreloadedSTS, kNumPreloadedSTS, canonicalized_host, i, out,
+                   &ret)) {
+      return ret;
     }
-    if (sni_available) {
-      for (size_t j = 0; j < kNumPreloadedSNISTS; j++) {
-        if (kPreloadedSNISTS[j].length == canonicalized_host.size() - i &&
-            memcmp(kPreloadedSNISTS[j].dns_name, &canonicalized_host[i],
-                   kPreloadedSNISTS[j].length) == 0) {
-          if (!kPreloadedSNISTS[j].include_subdomains && i != 0)
-            return false;
-          out->include_subdomains = kPreloadedSNISTS[j].include_subdomains;
-          return true;
-        }
-      }
+    if (sni_available &&
+        HasPreload(kPreloadedSNISTS, kNumPreloadedSNISTS, canonicalized_host, i,
+                   out, &ret)) {
+      return ret;
     }
   }
 

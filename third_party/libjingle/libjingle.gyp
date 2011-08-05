@@ -31,7 +31,7 @@
     'dependencies': [
       '../expat/expat.gyp:expat',
       '../../base/base.gyp:base',
-      '../../net/net.gyp:net_base',
+      '../../net/net.gyp:net',
     ],
     'direct_dependent_settings': {
       'include_dirs': [
@@ -72,7 +72,7 @@
             'OSX',
           ],
         }],
-        ['OS=="linux" or OS=="mac" or OS=="freebsd" or OS=="openbsd"', {
+        ['os_posix == 1', {
           'defines': [
             'POSIX',
           ],
@@ -116,7 +116,7 @@
           'OSX',
         ],
       }],
-      ['OS=="linux" or OS=="mac" or OS=="freebsd" or OS=="openbsd"', {
+      ['os_posix == 1', {
         'defines': [
           'POSIX',
         ],
@@ -131,7 +131,7 @@
   'targets': [
     {
       'target_name': 'libjingle',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         'overrides/talk/base/basictypes.h',
         'overrides/talk/base/constructormagic.h',
@@ -324,7 +324,7 @@
             'source/talk/base/winping.h',
           ],
         }],
-        ['OS=="linux" or OS=="mac" or OS=="freebsd" or OS=="openbsd"', {
+        ['os_posix == 1', {
           'sources': [
             'source/talk/base/sslstreamadapter.cc',
             'source/talk/base/sslstreamadapter.h',
@@ -354,7 +354,7 @@
     # properly.
     {
       'target_name': 'libjingle_p2p',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         'source/talk/p2p/base/candidate.h',
         'source/talk/p2p/base/common.h',

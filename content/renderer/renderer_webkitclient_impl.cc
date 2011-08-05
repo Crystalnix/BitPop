@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,12 +20,12 @@
 #include "content/common/webmessageportchannel_impl.h"
 #include "content/plugin/npobject_util.h"
 #include "content/renderer/content_renderer_client.h"
+#include "content/renderer/gpu/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/renderer/render_thread.h"
 #include "content/renderer/render_view.h"
 #include "content/renderer/renderer_webaudiodevice_impl.h"
 #include "content/renderer/renderer_webidbfactory_impl.h"
 #include "content/renderer/renderer_webstoragenamespace_impl.h"
-#include "content/renderer/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/renderer/websharedworkerrepository_impl.h"
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_sync_message_filter.h"
@@ -40,8 +40,6 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebStorageEventDispatcher.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebVector.h"
-#include "ui/gfx/gl/gl_bindings_skia_in_process.h"
-#include "webkit/glue/gl_bindings_skia_cmd_buffer.h"
 #include "webkit/glue/simple_webmimeregistry_impl.h"
 #include "webkit/glue/webclipboard_impl.h"
 #include "webkit/glue/webfileutilities_impl.h"
@@ -58,12 +56,12 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/mac/WebSandboxSupport.h"
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
 #include <string>
 #include <map>
 
 #include "base/synchronization/lock.h"
-#include "content/renderer/renderer_sandbox_support_linux.h"
+#include "content/common/child_process_sandbox_support_linux.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/linux/WebSandboxSupport.h"
 #endif
 
@@ -115,8 +113,11 @@ class RendererWebKitClientImpl::SandboxSupport
 #if defined(OS_WIN)
   virtual bool ensureFontLoaded(HFONT);
 #elif defined(OS_MACOSX)
+  // TODO(jeremy): Remove once WebKit side of patch lands - crbug.com/72727 .
   virtual bool loadFont(NSFont* srcFont, ATSFontContainerRef* out);
-#elif defined(OS_LINUX)
+  virtual bool loadFont(
+      NSFont* srcFont, ATSFontContainerRef* container, uint32* fontID);
+#elif defined(OS_POSIX)
   virtual WebKit::WebString getFontFamilyForCharacters(
       const WebKit::WebUChar* characters,
       size_t numCharacters,
@@ -130,7 +131,7 @@ class RendererWebKitClientImpl::SandboxSupport
   // here. The key in this map is an array of 16-bit UTF16 values from WebKit.
   // The value is a string containing the correct font family.
   base::Lock unicode_font_families_mutex_;
-  std::map<std::string, std::string> unicode_font_families_;
+  std::map<string16, std::string> unicode_font_families_;
 #endif
 };
 
@@ -435,59 +436,75 @@ bool RendererWebKitClientImpl::SandboxSupport::ensureFontLoaded(HFONT font) {
   return RenderThread::current()->Send(new ViewHostMsg_PreCacheFont(logfont));
 }
 
-#elif defined(OS_LINUX)
+#elif defined(OS_MACOSX)
+
+// TODO(jeremy): Remove once WebKit side of patch lands - crbug.com/72727 .
+bool RendererWebKitClientImpl::SandboxSupport::loadFont(
+    NSFont* srcFont, ATSFontContainerRef* out) {
+  uint32 temp;
+  return loadFont(srcFont, out, &temp);
+}
+
+bool RendererWebKitClientImpl::SandboxSupport::loadFont(
+    NSFont* srcFont, ATSFontContainerRef* container, uint32* fontID) {
+  DCHECK(srcFont);
+  DCHECK(container);
+  DCHECK(fontID);
+
+  uint32 font_data_size;
+  FontDescriptor src_font_descriptor(srcFont);
+  base::SharedMemoryHandle font_data;
+  if (!RenderThread::current()->Send(new ViewHostMsg_LoadFont(
+        src_font_descriptor, &font_data_size, &font_data, fontID))) {
+    LOG(ERROR) << "Sending ViewHostMsg_LoadFont() IPC failed for " <<
+        src_font_descriptor.font_name;
+    *container = kATSFontContainerRefUnspecified;
+    *fontID = 0;
+    return false;
+  }
+
+  if (font_data_size == 0 || font_data == base::SharedMemory::NULLHandle() ||
+      *fontID == 0) {
+    LOG(ERROR) << "Bad response from ViewHostMsg_LoadFont() for " <<
+        src_font_descriptor.font_name;
+    *container = kATSFontContainerRefUnspecified;
+    *fontID = 0;
+    return false;
+  }
+
+  // TODO(jeremy): Need to call back into WebKit to make sure that the font
+  // isn't already activated, based on the font id.  If it's already
+  // activated, don't reactivate it here - crbug.com/72727 .
+  return FontLoader::ATSFontContainerFromBuffer(font_data, font_data_size,
+      container);
+}
+
+#elif defined(OS_POSIX)
 
 WebString RendererWebKitClientImpl::SandboxSupport::getFontFamilyForCharacters(
     const WebKit::WebUChar* characters,
     size_t num_characters,
     const char* preferred_locale) {
   base::AutoLock lock(unicode_font_families_mutex_);
-  const std::string key(reinterpret_cast<const char*>(characters),
-                        num_characters * sizeof(characters[0]));
-  const std::map<std::string, std::string>::const_iterator iter =
+  const string16 key(characters, num_characters);
+  const std::map<string16, std::string>::const_iterator iter =
       unicode_font_families_.find(key);
   if (iter != unicode_font_families_.end())
     return WebString::fromUTF8(iter->second);
 
   const std::string family_name =
-      renderer_sandbox_support::getFontFamilyForCharacters(characters,
-                                                           num_characters,
-                                                           preferred_locale);
+      child_process_sandbox_support::getFontFamilyForCharacters(
+          characters,
+          num_characters,
+          preferred_locale);
   unicode_font_families_.insert(make_pair(key, family_name));
   return WebString::fromUTF8(family_name);
 }
 
 void RendererWebKitClientImpl::SandboxSupport::getRenderStyleForStrike(
     const char* family, int sizeAndStyle, WebKit::WebFontRenderStyle* out) {
-  renderer_sandbox_support::getRenderStyleForStrike(family, sizeAndStyle, out);
-}
-
-#elif defined(OS_MACOSX)
-
-bool RendererWebKitClientImpl::SandboxSupport::loadFont(NSFont* srcFont,
-    ATSFontContainerRef* out) {
-  DCHECK(srcFont);
-  DCHECK(out);
-
-  uint32 font_data_size;
-  FontDescriptor src_font_descriptor(srcFont);
-  base::SharedMemoryHandle font_data;
-  if (!RenderThread::current()->Send(new ViewHostMsg_LoadFont(
-        src_font_descriptor, &font_data_size, &font_data))) {
-    LOG(ERROR) << "Sending ViewHostMsg_LoadFont() IPC failed for " <<
-        src_font_descriptor.font_name;
-    *out = kATSFontContainerRefUnspecified;
-    return false;
-  }
-
-  if (font_data_size == 0 || font_data == base::SharedMemory::NULLHandle()) {
-    LOG(ERROR) << "Bad response from ViewHostMsg_LoadFont() for " <<
-        src_font_descriptor.font_name;
-    *out = kATSFontContainerRefUnspecified;
-    return false;
-  }
-
-  return FontLoader::ATSFontContainerFromBuffer(font_data, font_data_size, out);
+  child_process_sandbox_support::getRenderStyleForStrike(family, sizeAndStyle,
+                                                         out);
 }
 
 #endif
@@ -496,22 +513,27 @@ bool RendererWebKitClientImpl::SandboxSupport::loadFont(NSFont* srcFont,
 
 WebKitClient::FileHandle RendererWebKitClientImpl::databaseOpenFile(
     const WebString& vfs_file_name, int desired_flags) {
-  return DatabaseUtil::databaseOpenFile(vfs_file_name, desired_flags);
+  return DatabaseUtil::DatabaseOpenFile(vfs_file_name, desired_flags);
 }
 
 int RendererWebKitClientImpl::databaseDeleteFile(
     const WebString& vfs_file_name, bool sync_dir) {
-  return DatabaseUtil::databaseDeleteFile(vfs_file_name, sync_dir);
+  return DatabaseUtil::DatabaseDeleteFile(vfs_file_name, sync_dir);
 }
 
 long RendererWebKitClientImpl::databaseGetFileAttributes(
     const WebString& vfs_file_name) {
-  return DatabaseUtil::databaseGetFileAttributes(vfs_file_name);
+  return DatabaseUtil::DatabaseGetFileAttributes(vfs_file_name);
 }
 
 long long RendererWebKitClientImpl::databaseGetFileSize(
     const WebString& vfs_file_name) {
-  return DatabaseUtil::databaseGetFileSize(vfs_file_name);
+  return DatabaseUtil::DatabaseGetFileSize(vfs_file_name);
+}
+
+long long RendererWebKitClientImpl::databaseGetSpaceAvailableForOrigin(
+    const WebString& origin_identifier) {
+  return DatabaseUtil::DatabaseGetSpaceAvailable(origin_identifier);
 }
 
 WebKit::WebSharedWorkerRepository*
@@ -530,11 +552,9 @@ RendererWebKitClientImpl::createGraphicsContext3D() {
   // layout tests (though not through this code) as well as for
   // debugging and bringing up new ports.
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kInProcessWebGL)) {
-    gfx::BindSkiaToInProcessGL();
     return new webkit::gpu::WebGraphicsContext3DInProcessImpl();
   } else {
 #if defined(ENABLE_GPU)
-    webkit_glue::BindSkiaToCommandBufferGL();
     return new WebGraphicsContext3DCommandBufferImpl();
 #else
     return NULL;
@@ -576,7 +596,8 @@ WebKit::WebString RendererWebKitClientImpl::signedPublicKeyAndChallengeString(
 //------------------------------------------------------------------------------
 
 WebBlobRegistry* RendererWebKitClientImpl::blobRegistry() {
-  if (!blob_registry_.get())
+  // RenderThread::current can be NULL when running some tests.
+  if (!blob_registry_.get() && RenderThread::current())
     blob_registry_.reset(new WebBlobRegistryImpl(RenderThread::current()));
   return blob_registry_.get();
 }

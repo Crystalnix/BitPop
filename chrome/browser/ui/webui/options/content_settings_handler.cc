@@ -4,6 +4,9 @@
 
 #include "chrome/browser/ui/webui/options/content_settings_handler.h"
 
+#include <string>
+#include <vector>
+
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/utf_string_conversions.h"
@@ -11,6 +14,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/content_settings_details.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
+#include "chrome/browser/custom_handlers/protocol_handler_registry.h"
 #include "chrome/browser/geolocation/geolocation_content_settings_map.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
@@ -29,33 +33,30 @@
 
 namespace {
 
+struct ContentSettingsTypeNameEntry {
+  ContentSettingsType type;
+  const char* name;
+};
+
 const char* kDisplayPattern = "displayPattern";
 const char* kSetting = "setting";
 const char* kOrigin = "origin";
 const char* kEmbeddingOrigin = "embeddingOrigin";
 
-const char* const kContentSettingsTypeGroupNames[] = {
-  "cookies",
-  "images",
-  "javascript",
-  "plugins",
-  "popups",
-  "location",
-  "notifications",
-  "prerender",
+const ContentSettingsTypeNameEntry kContentSettingsTypeGroupNames[] = {
+  {CONTENT_SETTINGS_TYPE_COOKIES, "cookies"},
+  {CONTENT_SETTINGS_TYPE_IMAGES, "images"},
+  {CONTENT_SETTINGS_TYPE_JAVASCRIPT, "javascript"},
+  {CONTENT_SETTINGS_TYPE_PLUGINS, "plugins"},
+  {CONTENT_SETTINGS_TYPE_POPUPS, "popups"},
+  {CONTENT_SETTINGS_TYPE_GEOLOCATION, "location"},
+  {CONTENT_SETTINGS_TYPE_NOTIFICATIONS, "notifications"},
 };
-COMPILE_ASSERT(arraysize(kContentSettingsTypeGroupNames) ==
-               CONTENT_SETTINGS_NUM_TYPES,
-               invalid_content_settings_type_group_names_size);
-
 
 ContentSettingsType ContentSettingsTypeFromGroupName(const std::string& name) {
-
-  for (int content_settings_type = CONTENT_SETTINGS_TYPE_COOKIES;
-       content_settings_type < CONTENT_SETTINGS_NUM_TYPES;
-       ++content_settings_type) {
-    if (name == kContentSettingsTypeGroupNames[content_settings_type])
-      return static_cast<ContentSettingsType>(content_settings_type);
+  for (size_t i = 0; i < arraysize(kContentSettingsTypeGroupNames); ++i) {
+    if (name == kContentSettingsTypeGroupNames[i].name)
+      return kContentSettingsTypeGroupNames[i].type;
   }
 
   NOTREACHED() << name << " is not a recognized content settings type.";
@@ -126,7 +127,7 @@ DictionaryValue* GetExceptionForPage(
   DictionaryValue* exception = new DictionaryValue();
   exception->Set(
       kDisplayPattern,
-      new StringValue(pattern.AsString()));
+      new StringValue(pattern.ToString()));
   exception->Set(
       kSetting,
       new StringValue(ContentSettingToString(setting)));
@@ -199,14 +200,15 @@ void ContentSettingsHandler::GetLocalizedValues(
     { "examplePattern", IDS_EXCEPTIONS_PATTERN_EXAMPLE },
     { "addNewExceptionInstructions", IDS_EXCEPTIONS_ADD_NEW_INSTRUCTIONS },
     { "manage_exceptions", IDS_EXCEPTIONS_MANAGE },
+    { "manage_handlers", IDS_HANDLERS_MANAGE },
     { "exceptionPatternHeader", IDS_EXCEPTIONS_PATTERN_HEADER },
     { "exceptionBehaviorHeader", IDS_EXCEPTIONS_ACTION_HEADER },
     // Cookies filter.
     { "cookies_tab_label", IDS_COOKIES_TAB_LABEL },
     { "cookies_header", IDS_COOKIES_HEADER },
     { "cookies_allow", IDS_COOKIES_ALLOW_RADIO },
-    { "cookies_ask", IDS_COOKIES_ASK_EVERY_TIME_RADIO },
     { "cookies_block", IDS_COOKIES_BLOCK_RADIO },
+    { "cookies_session_only", IDS_COOKIES_SESSION_ONLY_RADIO },
     { "cookies_block_3rd_party", IDS_COOKIES_BLOCK_3RDPARTY_CHKBOX },
     { "cookies_clear_when_close", IDS_COOKIES_CLEAR_WHEN_CLOSE_CHKBOX },
     { "cookies_lso_clear_when_close", IDS_COOKIES_LSO_CLEAR_WHEN_CLOSE_CHKBOX },
@@ -271,6 +273,7 @@ void ContentSettingsHandler::Initialize() {
       this, NotificationType::PROFILE_DESTROYED,
       NotificationService::AllSources());
 
+  UpdateHandlersEnabledRadios();
   UpdateAllExceptionsViewsFromModel();
   notification_registrar_.Add(
       this, NotificationType::CONTENT_SETTINGS_CHANGED,
@@ -280,6 +283,9 @@ void ContentSettingsHandler::Initialize() {
       NotificationService::AllSources());
   notification_registrar_.Add(
       this, NotificationType::DESKTOP_NOTIFICATION_SETTINGS_CHANGED,
+      NotificationService::AllSources());
+  notification_registrar_.Add(
+      this, NotificationType::PROTOCOL_HANDLER_REGISTRY_CHANGED,
       NotificationService::AllSources());
 
   PrefService* prefs = web_ui_->GetProfile()->GetPrefs();
@@ -337,6 +343,11 @@ void ContentSettingsHandler::Observe(NotificationType type,
       break;
     }
 
+    case NotificationType::PROTOCOL_HANDLER_REGISTRY_CHANGED: {
+      UpdateHandlersEnabledRadios();
+      break;
+    }
+
     default:
       OptionsPageUIHandler::Observe(type, source, details);
   }
@@ -381,6 +392,16 @@ bool ContentSettingsHandler::GetDefaultSettingManagedFromModel(
   } else {
     return GetContentSettingsMap()->IsDefaultContentSettingManaged(type);
   }
+}
+
+void ContentSettingsHandler::UpdateHandlersEnabledRadios() {
+#if defined(ENABLE_REGISTER_PROTOCOL_HANDLER)
+  DCHECK(web_ui_);
+  FundamentalValue handlers_enabled(GetProtocolHandlerRegistry()->enabled());
+
+  web_ui_->CallJavascriptFunction("ContentSettings.updateHandlersEnabledRadios",
+      handlers_enabled);
+#endif // defined(ENABLE_REGISTER_PROTOCOL_HANDLER)
 }
 
 void ContentSettingsHandler::UpdateAllExceptionsViewsFromModel() {
@@ -641,7 +662,7 @@ void ContentSettingsHandler::RemoveException(const ListValue* args) {
     // got destroyed before we received this message.
     if (settings_map) {
       settings_map->SetContentSetting(
-          ContentSettingsPattern(pattern),
+          ContentSettingsPattern::LegacyFromString(pattern),
           ContentSettingsTypeFromGroupName(type_string),
           "",
           CONTENT_SETTING_DEFAULT);
@@ -676,7 +697,8 @@ void ContentSettingsHandler::SetException(const ListValue* args) {
   if (!settings_map)
     return;
 
-  settings_map->SetContentSetting(ContentSettingsPattern(pattern),
+  settings_map->SetContentSetting(ContentSettingsPattern::LegacyFromString(
+                                      pattern),
                                   type,
                                   "",
                                   ContentSettingFromString(setting));
@@ -692,7 +714,8 @@ void ContentSettingsHandler::CheckExceptionPatternValidity(
   std::string pattern_string;
   CHECK(args->GetString(arg_i++, &pattern_string));
 
-  ContentSettingsPattern pattern(pattern_string);
+  ContentSettingsPattern pattern =
+      ContentSettingsPattern::LegacyFromString(pattern_string);
 
   scoped_ptr<Value> mode_value(Value::CreateStringValue(mode_string));
   scoped_ptr<Value> pattern_value(Value::CreateStringValue(pattern_string));
@@ -709,16 +732,21 @@ void ContentSettingsHandler::CheckExceptionPatternValidity(
 // static
 std::string ContentSettingsHandler::ContentSettingsTypeToGroupName(
     ContentSettingsType type) {
-  if (type < CONTENT_SETTINGS_TYPE_COOKIES ||
-      type >= CONTENT_SETTINGS_NUM_TYPES) {
-    NOTREACHED();
-    return "";
+  for (size_t i = 0; i < arraysize(kContentSettingsTypeGroupNames); ++i) {
+    if (type == kContentSettingsTypeGroupNames[i].type)
+      return kContentSettingsTypeGroupNames[i].name;
   }
-  return kContentSettingsTypeGroupNames[type];
+
+  NOTREACHED();
+  return std::string();
 }
 
 HostContentSettingsMap* ContentSettingsHandler::GetContentSettingsMap() {
   return web_ui_->GetProfile()->GetHostContentSettingsMap();
+}
+
+ProtocolHandlerRegistry* ContentSettingsHandler::GetProtocolHandlerRegistry() {
+  return web_ui_->GetProfile()->GetProtocolHandlerRegistry();
 }
 
 HostContentSettingsMap*

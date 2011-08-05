@@ -14,13 +14,11 @@
 #include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/autofill/autofill_scanner.h"
 #include "chrome/browser/autofill/autofill_type.h"
 #include "chrome/browser/autofill/field_types.h"
 #include "chrome/common/guid.h"
 #include "grit/generated_resources.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebRegularExpression.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebTextCaseSensitivity.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace {
@@ -157,41 +155,53 @@ CreditCard::CreditCard(const CreditCard& credit_card) : FormGroup() {
 
 CreditCard::~CreditCard() {}
 
-void CreditCard::GetPossibleFieldTypes(const string16& text,
-                                       FieldTypeSet* possible_types) const {
+void CreditCard::GetMatchingTypes(const string16& text,
+                                  FieldTypeSet* matching_types) const {
   if (IsNameOnCard(text))
-    possible_types->insert(CREDIT_CARD_NAME);
+    matching_types->insert(CREDIT_CARD_NAME);
 
   if (IsNumber(text))
-    possible_types->insert(CREDIT_CARD_NUMBER);
+    matching_types->insert(CREDIT_CARD_NUMBER);
 
   if (IsExpirationMonth(text))
-    possible_types->insert(CREDIT_CARD_EXP_MONTH);
+    matching_types->insert(CREDIT_CARD_EXP_MONTH);
 
   if (Is2DigitExpirationYear(text))
-    possible_types->insert(CREDIT_CARD_EXP_2_DIGIT_YEAR);
+    matching_types->insert(CREDIT_CARD_EXP_2_DIGIT_YEAR);
 
   if (Is4DigitExpirationYear(text))
-    possible_types->insert(CREDIT_CARD_EXP_4_DIGIT_YEAR);
+    matching_types->insert(CREDIT_CARD_EXP_4_DIGIT_YEAR);
+
+  if (text == GetInfo(CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR))
+    matching_types->insert(CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR);
+
+  if (text == GetInfo(CREDIT_CARD_EXP_DATE_4_DIGIT_YEAR))
+    matching_types->insert(CREDIT_CARD_EXP_DATE_4_DIGIT_YEAR);
 }
 
-void CreditCard::GetAvailableFieldTypes(FieldTypeSet* available_types) const {
-  DCHECK(available_types);
+void CreditCard::GetNonEmptyTypes(FieldTypeSet* non_empty_types) const {
+  DCHECK(non_empty_types);
 
   if (!name_on_card_.empty())
-    available_types->insert(CREDIT_CARD_NAME);
+    non_empty_types->insert(CREDIT_CARD_NAME);
 
   if (!number_.empty())
-    available_types->insert(CREDIT_CARD_NUMBER);
+    non_empty_types->insert(CREDIT_CARD_NUMBER);
 
   if (!ExpirationMonthAsString().empty())
-    available_types->insert(CREDIT_CARD_EXP_MONTH);
+    non_empty_types->insert(CREDIT_CARD_EXP_MONTH);
 
   if (!Expiration2DigitYearAsString().empty())
-    available_types->insert(CREDIT_CARD_EXP_2_DIGIT_YEAR);
+    non_empty_types->insert(CREDIT_CARD_EXP_2_DIGIT_YEAR);
 
   if (!Expiration4DigitYearAsString().empty())
-    available_types->insert(CREDIT_CARD_EXP_4_DIGIT_YEAR);
+    non_empty_types->insert(CREDIT_CARD_EXP_4_DIGIT_YEAR);
+
+  if (!GetInfo(CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR).empty())
+    non_empty_types->insert(CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR);
+
+  if (!GetInfo(CREDIT_CARD_EXP_DATE_4_DIGIT_YEAR).empty())
+    non_empty_types->insert(CREDIT_CARD_EXP_DATE_4_DIGIT_YEAR);
 }
 
 string16 CreditCard::GetInfo(AutofillFieldType type) const {
@@ -259,6 +269,14 @@ void CreditCard::SetInfo(AutofillFieldType type, const string16& value) {
       SetExpirationYearFromString(value);
       break;
 
+    case CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR:
+      // This is a read-only attribute.
+      break;
+
+    case CREDIT_CARD_EXP_DATE_4_DIGIT_YEAR:
+      // This is a read-only attribute.
+      break;
+
     case CREDIT_CARD_TYPE:
       // We determine the type based on the number.
       break;
@@ -302,22 +320,20 @@ const string16 CreditCard::Label() const {
 
 void CreditCard::SetInfoForMonthInputType(const string16& value) {
   // Check if |text| is "yyyy-mm" format first, and check normal month format.
-  WebKit::WebRegularExpression re(WebKit::WebString("^[0-9]{4}\\-[0-9]{1,2}$"),
-                                  WebKit::WebTextCaseInsensitive);
-  bool match = re.match(WebKit::WebString(StringToLowerASCII(value))) != -1;
-  if (match) {
-    std::vector<string16> year_month;
-    base::SplitString(value, L'-', &year_month);
-    DCHECK_EQ((int)year_month.size(), 2);
-    int num = 0;
-    bool converted = false;
-    converted = base::StringToInt(year_month[0], &num);
-    DCHECK(converted);
-    SetExpirationYear(num);
-    converted = base::StringToInt(year_month[1], &num);
-    DCHECK(converted);
-    SetExpirationMonth(num);
-  }
+  if (!autofill::MatchString(value, UTF8ToUTF16("^[0-9]{4}-[0-9]{1,2}$")))
+    return;
+
+  std::vector<string16> year_month;
+  base::SplitString(value, L'-', &year_month);
+  DCHECK_EQ((int)year_month.size(), 2);
+  int num = 0;
+  bool converted = false;
+  converted = base::StringToInt(year_month[0], &num);
+  DCHECK(converted);
+  SetExpirationYear(num);
+  converted = base::StringToInt(year_month[1], &num);
+  DCHECK(converted);
+  SetExpirationMonth(num);
 }
 
 string16 CreditCard::ObfuscatedNumber() const {
@@ -370,6 +386,10 @@ int CreditCard::Compare(const CreditCard& credit_card) const {
   }
 
   return 0;
+}
+
+int CreditCard::CompareMulti(const CreditCard& credit_card) const {
+  return Compare(credit_card);
 }
 
 bool CreditCard::operator==(const CreditCard& credit_card) const {
@@ -429,7 +449,7 @@ bool CreditCard::IsValidCreditCardNumber(const string16& text) {
 
 bool CreditCard::IsEmpty() const {
   FieldTypeSet types;
-  GetAvailableFieldTypes(&types);
+  GetNonEmptyTypes(&types);
   return types.empty();
 }
 

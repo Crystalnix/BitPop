@@ -45,10 +45,12 @@ SyncBackendHostForProfileSyncTest::~SyncBackendHostForProfileSyncTest() {}
 void SyncBackendHostForProfileSyncTest::ConfigureDataTypes(
     const DataTypeController::TypeMap& data_type_controllers,
     const syncable::ModelTypeSet& types,
-    CancelableTask* ready_task) {
+    sync_api::ConfigureReason reason,
+    CancelableTask* ready_task,
+    bool nigori_enabled) {
   SetAutofillMigrationState(syncable::MIGRATED);
-  SyncBackendHost::ConfigureDataTypes(
-      data_type_controllers, types, ready_task);
+  SyncBackendHost::ConfigureDataTypes(data_type_controllers, types,
+                                      reason, ready_task, nigori_enabled);
 }
 
 void SyncBackendHostForProfileSyncTest::
@@ -64,8 +66,8 @@ void SyncBackendHostForProfileSyncTest::
   }
   core_->HandleSyncCycleCompletedOnFrontendLoop(new SyncSessionSnapshot(
       SyncerStatus(), ErrorCounters(), 0, false,
-      sync_ended, download_progress_markers, false, false, 0, 0, false,
-      SyncSourceInfo()));
+      sync_ended, download_progress_markers, false, false, 0, 0, 0, false,
+      SyncSourceInfo(), 0));
 }
 
 sync_api::HttpPostProviderFactory*
@@ -121,13 +123,15 @@ void SyncBackendHostForProfileSyncTest::ProcessMessage(
     const std::string& name, const JsArgList& args,
     const JsEventHandler* sender) {
   if (name.find("delay") != name.npos) {
-    core_->RouteJsEvent(name, args, sender);
+    core_->RouteJsMessageReply(name, args, sender);
   } else {
-    core_->RouteJsEventOnFrontendLoop(name, args, sender);
+    core_->RouteJsMessageReplyOnFrontendLoop(name, args, sender);
   }
 }
 
-void SyncBackendHostForProfileSyncTest::StartConfiguration(Callback0::Type*) {
+void SyncBackendHostForProfileSyncTest::StartConfiguration(
+    Callback0::Type* callback) {
+  scoped_ptr<Callback0::Type> scoped_callback(callback);
   SyncBackendHost::FinishConfigureDataTypesOnFrontendLoop();
 }
 
@@ -225,7 +229,7 @@ void TestProfileSyncService::OnBackendInitialized() {
 
   ProfileSyncService::OnBackendInitialized();
   if (send_passphrase_required)
-    OnPassphraseRequired(true);
+    OnPassphraseRequired(sync_api::REASON_DECRYPTION);
 
   // TODO(akalin): Figure out a better way to do this.
   if (synchronous_backend_initialization_) {

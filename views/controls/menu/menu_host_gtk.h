@@ -8,7 +8,7 @@
 #pragma once
 
 #include "views/controls/menu/native_menu_host.h"
-#include "views/widget/widget_gtk.h"
+#include "views/widget/native_widget_gtk.h"
 
 namespace views {
 namespace internal {
@@ -16,7 +16,7 @@ class NativeMenuHostDelegate;
 }
 
 // NativeMenuHost implementation for Gtk.
-class MenuHostGtk : public WidgetGtk,
+class MenuHostGtk : public NativeWidgetGtk,
                     public NativeMenuHost {
  public:
   explicit MenuHostGtk(internal::NativeMenuHostDelegate* delegate);
@@ -24,14 +24,11 @@ class MenuHostGtk : public WidgetGtk,
 
  private:
   // Overridden from NativeMenuHost:
-  virtual void InitMenuHost(gfx::NativeWindow parent,
-                            const gfx::Rect& bounds) OVERRIDE;
   virtual void StartCapturing() OVERRIDE;
   virtual NativeWidget* AsNativeWidget() OVERRIDE;
 
-  // Overridden from WidgetGtk:
-  virtual RootView* CreateRootView() OVERRIDE;
-  virtual bool ShouldReleaseCaptureOnMouseReleased() const OVERRIDE;
+  // Overridden from NativeWidgetGtk:
+  virtual void InitNativeWidget(const Widget::InitParams& params) OVERRIDE;
   virtual void ReleaseMouseCapture() OVERRIDE;
   virtual void OnDestroy(GtkWidget* object) OVERRIDE;
   virtual void HandleGtkGrabBroke() OVERRIDE;
@@ -40,7 +37,7 @@ class MenuHostGtk : public WidgetGtk,
   // Have we done input grab?
   bool did_input_grab_;
 
-  scoped_ptr<internal::NativeMenuHostDelegate> delegate_;
+  internal::NativeMenuHostDelegate* delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(MenuHostGtk);
 };

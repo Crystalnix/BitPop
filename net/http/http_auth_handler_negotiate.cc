@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,8 +22,8 @@ HttpAuthHandlerNegotiate::Factory::Factory()
 #if defined(OS_WIN)
       max_token_length_(0),
       first_creation_(true),
-      is_unsupported_(false),
 #endif
+      is_unsupported_(false),
       auth_library_(NULL) {
 }
 
@@ -65,6 +65,12 @@ int HttpAuthHandlerNegotiate::Factory::CreateAuthHandler(
   handler->swap(tmp_handler);
   return OK;
 #elif defined(OS_POSIX)
+  if (is_unsupported_)
+    return ERR_UNSUPPORTED_AUTH_SCHEME;
+  if (!auth_library_->Init()) {
+    is_unsupported_ = true;
+    return ERR_UNSUPPORTED_AUTH_SCHEME;
+  }
   // TODO(ahendrickson): Move towards model of parsing in the factory
   //                     method and only constructing when valid.
   scoped_ptr<HttpAuthHandler> tmp_handler(
@@ -302,7 +308,7 @@ int HttpAuthHandlerNegotiate::DoResolveCanonicalNameComplete(int rv) {
 
   next_state_ = STATE_GENERATE_AUTH_TOKEN;
   spn_ = CreateSPN(address_list_, origin_);
-  address_list_.Reset();
+  address_list_ = AddressList();
   return rv;
 }
 

@@ -10,7 +10,7 @@
 
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_temp_dir.h"
+#include "base/scoped_temp_dir.h"
 #include "chrome/browser/utility_process_host.h"
 
 class DictionaryValue;
@@ -25,10 +25,14 @@ class SandboxedExtensionUnpackerClient
   //
   // extension_root - The path to the extension root inside of temp_dir.
   //
+  // original_manifest - The parsed but unmodified version of the manifest,
+  // with no modifications such as localization, etc.
+  //
   // extension - The extension that was unpacked. The client is responsible
   // for deleting this memory.
   virtual void OnUnpackSuccess(const FilePath& temp_dir,
                                const FilePath& extension_root,
+                               const DictionaryValue* original_manifest,
                                const Extension* extension) = 0;
   virtual void OnUnpackFailure(const std::string& error) = 0;
 
@@ -118,7 +122,7 @@ class SandboxedExtensionUnpacker : public UtilityProcessHost::Client {
     COULD_NOT_LOCALIZE_EXTENSION,
     INVALID_MANIFEST,
 
-    //SandboxedExtensionUnpacker::OnUnpackExtensionFailed()
+    // SandboxedExtensionUnpacker::OnUnpackExtensionFailed()
     UNPACKER_CLIENT_FAILED,
 
     // SandboxedExtensionUnpacker::OnProcessCrashed()
@@ -189,7 +193,7 @@ class SandboxedExtensionUnpacker : public UtilityProcessHost::Client {
   virtual void OnProcessCrashed(int exit_code);
 
   void ReportFailure(FailureReason reason, const std::string& message);
-  void ReportSuccess();
+  void ReportSuccess(const DictionaryValue& original_manifest);
 
   // Overwrites original manifest with safe result from utility process.
   // Returns NULL on error. Caller owns the returned object.
@@ -226,6 +230,9 @@ class SandboxedExtensionUnpacker : public UtilityProcessHost::Client {
 
   // The public key that was extracted from the CRX header.
   std::string public_key_;
+
+  // Time at which unpacking started. Used to compute the time unpacking takes.
+  base::TimeTicks unpack_start_time_;
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_SANDBOXED_EXTENSION_UNPACKER_H_

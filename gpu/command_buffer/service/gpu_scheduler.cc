@@ -5,17 +5,21 @@
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 
 #include "base/callback.h"
+#include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/debug/trace_event.h"
 #include "base/message_loop.h"
-#include "gpu/common/gpu_trace_event.h"
 #include "ui/gfx/gl/gl_context.h"
 #include "ui/gfx/gl/gl_bindings.h"
+#include "ui/gfx/gl/gl_surface.h"
+#include "ui/gfx/gl/gl_switches.h"
 
 using ::base::SharedMemory;
 
 namespace gpu {
 
 GpuScheduler::GpuScheduler(CommandBuffer* command_buffer,
+                           SurfaceManager* surface_manager,
                            gles2::ContextGroup* group)
     : command_buffer_(command_buffer),
       commands_per_update_(100),
@@ -26,7 +30,7 @@ GpuScheduler::GpuScheduler(CommandBuffer* command_buffer,
 #endif
       method_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
   DCHECK(command_buffer);
-  decoder_.reset(gles2::GLES2Decoder::Create(group));
+  decoder_.reset(gles2::GLES2Decoder::Create(surface_manager, group));
   decoder_->set_engine(this);
 }
 
@@ -52,7 +56,8 @@ GpuScheduler::~GpuScheduler() {
 }
 
 bool GpuScheduler::InitializeCommon(
-    gfx::GLContext* context,
+    const scoped_refptr<gfx::GLSurface>& surface,
+    const scoped_refptr<gfx::GLContext>& context,
     const gfx::Size& size,
     const gles2::DisallowedExtensions& disallowed_extensions,
     const char* allowed_extensions,
@@ -61,12 +66,22 @@ bool GpuScheduler::InitializeCommon(
     uint32 parent_texture_id) {
   DCHECK(context);
 
-  if (!context->MakeCurrent())
+  if (!context->MakeCurrent(surface))
     return false;
+
+#if !defined(OS_MACOSX)
+  // Set up swap interval for onscreen contexts.
+  if (!surface->IsOffscreen()) {
+    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableGpuVsync))
+      context->SetSwapInterval(0);
+    else
+      context->SetSwapInterval(1);
+  }
+#endif
 
   // Do not limit to a certain number of commands before scheduling another
   // update when rendering onscreen.
-  if (!context->IsOffscreen())
+  if (!surface->IsOffscreen())
     commands_per_update_ = INT_MAX;
 
   // Map the ring buffer and create the parser.
@@ -84,7 +99,10 @@ bool GpuScheduler::InitializeCommon(
   }
 
   // Initialize the decoder with either the view or pbuffer GLContext.
-  if (!decoder_->Initialize(context,
+  // TODO(apatrick): The GpuScheduler should know nothing about the surface the
+  // decoder is rendering to. Get rid of the surface parameter.
+  if (!decoder_->Initialize(surface,
+                            context,
                             size,
                             disallowed_extensions,
                             allowed_extensions,
@@ -117,8 +135,19 @@ const unsigned int kMaxOutstandingSwapBuffersCallsPerOnscreenContext = 1;
 }
 #endif
 
+void GpuScheduler::PutChanged(bool sync) {
+  TRACE_EVENT1("gpu", "GpuScheduler:PutChanged", "this", this);
+  CommandBuffer::State state = command_buffer_->GetState();
+  parser_->set_put(state.put_offset);
+
+  if (sync)
+    ProcessCommands();
+  else
+    ScheduleProcessCommands();
+}
+
 void GpuScheduler::ProcessCommands() {
-  GPU_TRACE_EVENT0("gpu", "GpuScheduler:ProcessCommands");
+  TRACE_EVENT1("gpu", "GpuScheduler:ProcessCommands", "this", this);
   CommandBuffer::State state = command_buffer_->GetState();
   if (state.error != error::kNoError)
     return;
@@ -134,14 +163,13 @@ void GpuScheduler::ProcessCommands() {
     }
   }
 
-  parser_->set_put(state.put_offset);
-
 #if defined(OS_MACOSX)
   bool do_rate_limiting = surface_.get() != NULL;
   // Don't swamp the browser process with SwapBuffers calls it can't handle.
   if (do_rate_limiting &&
       swap_buffers_count_ - acknowledged_swap_buffers_count_ >=
       kMaxOutstandingSwapBuffersCallsPerOnscreenContext) {
+    TRACE_EVENT0("gpu", "EarlyOut_OSX_Throttle");
     // Stop doing work on this command buffer. In the GPU process,
     // receipt of the GpuMsg_AcceleratedSurfaceBuffersSwappedACK
     // message causes ProcessCommands to be scheduled again.
@@ -151,13 +179,18 @@ void GpuScheduler::ProcessCommands() {
 
   error::Error error = error::kNoError;
   int commands_processed = 0;
-  while (commands_processed < commands_per_update_ && !parser_->IsEmpty()) {
+  while (commands_processed < commands_per_update_ &&
+         !parser_->IsEmpty()) {
     error = parser_->ProcessCommand();
-    if (error == error::kWaiting) {
-      break;
-    }
 
-    if (error::IsError(error)) {
+    // TODO(piman): various classes duplicate various pieces of state, leading
+    // to needlessly complex update logic. It should be possible to simply share
+    // the state across all of them.
+    command_buffer_->SetGetOffset(static_cast<int32>(parser_->get()));
+
+    if (error == error::kWaiting || error == error::kYield) {
+      break;
+    } else if (error::IsError(error)) {
       command_buffer_->SetParseError(error);
       return;
     }
@@ -171,8 +204,6 @@ void GpuScheduler::ProcessCommands() {
     }
   }
 
-  command_buffer_->SetGetOffset(static_cast<int32>(parser_->get()));
-
   if (unscheduled_count_ == 0 &&
       error != error::kWaiting &&
       !parser_->IsEmpty()) {
@@ -181,6 +212,9 @@ void GpuScheduler::ProcessCommands() {
 }
 
 void GpuScheduler::SetScheduled(bool scheduled) {
+  TRACE_EVENT2("gpu", "GpuScheduler:SetScheduled", "this", this,
+               "new unscheduled_count_",
+               unscheduled_count_ + (scheduled? -1 : 1));
   if (scheduled) {
     --unscheduled_count_;
     DCHECK_GE(unscheduled_count_, 0);

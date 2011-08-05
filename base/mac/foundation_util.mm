@@ -4,6 +4,9 @@
 
 #include "base/mac/foundation_util.h"
 
+#include <stdlib.h>
+#include <string.h>
+
 #include "base/file_path.h"
 #include "base/logging.h"
 #include "base/mac/scoped_cftyperef.h"
@@ -232,5 +235,110 @@ void NSObjectRelease(void* obj) {
   [nsobj release];
 }
 
+void* CFTypeRefToNSObjectAutorelease(CFTypeRef cf_object) {
+  // When GC is on, NSMakeCollectable marks cf_object for GC and autorelease
+  // is a no-op.
+  //
+  // In the traditional GC-less environment, NSMakeCollectable is a no-op,
+  // and cf_object is autoreleased, balancing out the caller's ownership claim.
+  //
+  // NSMakeCollectable returns nil when used on a NULL object.
+  return [NSMakeCollectable(cf_object) autorelease];
+}
+
+static const char* base_bundle_id;
+
+const char* BaseBundleID() {
+  if (base_bundle_id) {
+    return base_bundle_id;
+  }
+
+#if defined(GOOGLE_CHROME_BUILD)
+  return "com.google.Chrome";
+#else
+  return "org.chromium.Chromium";
+#endif
+}
+
+void SetBaseBundleID(const char* new_base_bundle_id) {
+  if (new_base_bundle_id != base_bundle_id) {
+    free((void*)base_bundle_id);
+    base_bundle_id = new_base_bundle_id ? strdup(new_base_bundle_id) : NULL;
+  }
+}
+
+// Definitions for the corresponding CF_TO_NS_CAST_DECL macros in
+// foundation_util.h.
+#define CF_TO_NS_CAST_DEFN(TypeCF, TypeNS) \
+\
+TypeNS* CFToNSCast(TypeCF##Ref cf_val) { \
+  DCHECK(!cf_val || TypeCF##GetTypeID() == CFGetTypeID(cf_val)); \
+  TypeNS* ns_val = \
+      const_cast<TypeNS*>(reinterpret_cast<const TypeNS*>(cf_val)); \
+  return ns_val; \
+} \
+\
+TypeCF##Ref NSToCFCast(TypeNS* ns_val) { \
+  TypeCF##Ref cf_val = reinterpret_cast<TypeCF##Ref>(ns_val); \
+  DCHECK(!cf_val || TypeCF##GetTypeID() == CFGetTypeID(cf_val)); \
+  return cf_val; \
+} \
+
+#define CF_TO_NS_MUTABLE_CAST_DEFN(name) \
+CF_TO_NS_CAST_DEFN(CF##name, NS##name) \
+\
+NSMutable##name* CFToNSCast(CFMutable##name##Ref cf_val) { \
+  DCHECK(!cf_val || CF##name##GetTypeID() == CFGetTypeID(cf_val)); \
+  NSMutable##name* ns_val = reinterpret_cast<NSMutable##name*>(cf_val); \
+  return ns_val; \
+} \
+\
+CFMutable##name##Ref NSToCFCast(NSMutable##name* ns_val) { \
+  CFMutable##name##Ref cf_val = \
+      reinterpret_cast<CFMutable##name##Ref>(ns_val); \
+  DCHECK(!cf_val || CF##name##GetTypeID() == CFGetTypeID(cf_val)); \
+  return cf_val; \
+} \
+
+CF_TO_NS_MUTABLE_CAST_DEFN(Array);
+CF_TO_NS_MUTABLE_CAST_DEFN(AttributedString);
+CF_TO_NS_CAST_DEFN(CFCalendar, NSCalendar);
+CF_TO_NS_MUTABLE_CAST_DEFN(CharacterSet);
+CF_TO_NS_MUTABLE_CAST_DEFN(Data);
+CF_TO_NS_CAST_DEFN(CFDate, NSDate);
+CF_TO_NS_MUTABLE_CAST_DEFN(Dictionary);
+CF_TO_NS_CAST_DEFN(CFError, NSError);
+CF_TO_NS_CAST_DEFN(CFLocale, NSLocale);
+CF_TO_NS_CAST_DEFN(CFNumber, NSNumber);
+CF_TO_NS_CAST_DEFN(CFRunLoopTimer, NSTimer);
+CF_TO_NS_CAST_DEFN(CFTimeZone, NSTimeZone);
+CF_TO_NS_MUTABLE_CAST_DEFN(Set);
+CF_TO_NS_CAST_DEFN(CFReadStream, NSInputStream);
+CF_TO_NS_CAST_DEFN(CFWriteStream, NSOutputStream);
+CF_TO_NS_MUTABLE_CAST_DEFN(String);
+CF_TO_NS_CAST_DEFN(CFURL, NSURL);
+
 }  // namespace mac
 }  // namespace base
+
+std::ostream& operator<<(std::ostream& o, const CFStringRef string) {
+  return o << base::SysCFStringRefToUTF8(string);
+}
+
+std::ostream& operator<<(std::ostream& o, const CFErrorRef err) {
+  base::mac::ScopedCFTypeRef<CFStringRef> desc(CFErrorCopyDescription(err));
+  base::mac::ScopedCFTypeRef<CFDictionaryRef> user_info(
+      CFErrorCopyUserInfo(err));
+  CFStringRef errorDesc = NULL;
+  if (user_info.get()) {
+    errorDesc = reinterpret_cast<CFStringRef>(
+        CFDictionaryGetValue(user_info.get(), kCFErrorDescriptionKey));
+  }
+  o << "Code: " << CFErrorGetCode(err)
+    << " Domain: " << CFErrorGetDomain(err)
+    << " Desc: " << desc.get();
+  if(errorDesc) {
+    o << "(" << errorDesc << ")";
+  }
+  return o;
+}

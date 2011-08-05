@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,7 @@
 #include "chrome/browser/extensions/extension_function.h"
 
 namespace views {
-  class RootView;
+class Widget;
 }  // namespace views
 
 // Base class for input APIs.
@@ -30,7 +30,36 @@ class SendKeyboardEventInputFunction : public InputFunction {
   DECLARE_EXTENSION_FUNCTION_NAME("experimental.input.sendKeyboardEvent");
 
  private:
-  views::RootView* GetRootView();
+  views::Widget* GetTopLevelWidget();
 };
+
+#if defined(TOUCH_UI)
+class HideKeyboardFunction : public AsyncExtensionFunction {
+ public:
+  virtual bool RunImpl();
+  DECLARE_EXTENSION_FUNCTION_NAME("experimental.input.hideKeyboard");
+};
+#endif
+
+#if defined(OS_CHROMEOS) && defined(TOUCH_UI)
+// Note that this experimental APIs are currently only available for
+// TOUCH_UI version of Chrome OS. Please also note that the version of Chrome
+// OS is always built with TOOLKIT_VIEWS.
+//
+// We may eventually support other platforms, especially non TOUCH_UI version
+// of Chrome OS.
+class SendHandwritingStrokeFunction : public SyncExtensionFunction {
+ public:
+  virtual bool RunImpl();
+  DECLARE_EXTENSION_FUNCTION_NAME("experimental.input.sendHandwritingStroke");
+};
+
+class CancelHandwritingStrokesFunction : public SyncExtensionFunction {
+ public:
+  virtual bool RunImpl();
+  DECLARE_EXTENSION_FUNCTION_NAME(
+      "experimental.input.cancelHandwritingStrokes");
+};
+#endif
 
 #endif  // CHROME_BROWSER_EXTENSIONS_EXTENSION_INPUT_API_H_

@@ -33,7 +33,9 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileSystem.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrameClient.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebIconURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNode.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebPageVisibilityState.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebTextDirection.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebViewClient.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNavigationType.h"
@@ -71,7 +73,7 @@ class WebUIBindings;
 struct ContextMenuMediaParams;
 struct PP_Flash_NetAddress;
 struct ViewHostMsg_RunFileChooser_Params;
-struct ViewMsg_ClosePage_Params;
+struct ViewMsg_SwapOut_Params;
 struct ViewMsg_Navigate_Params;
 struct ViewMsg_StopFinding_Params;
 struct WebDropData;
@@ -122,6 +124,7 @@ class WebDragData;
 class WebFrame;
 class WebGeolocationClient;
 class WebGeolocationServiceInterface;
+class WebIconURL;
 class WebImage;
 class WebInputElement;
 class WebKeyboardEvent;
@@ -198,7 +201,12 @@ class RenderView : public RenderWidget,
   // May return NULL when the view is closing.
   WebKit::WebView* webview() const;
 
-  bool is_prerendering() const { return is_prerendering_; }
+  // Called by a GraphicsContext associated with this view when swapbuffers
+  // is posted, completes or is aborted.
+  void OnViewContextSwapBuffersPosted();
+  void OnViewContextSwapBuffersComplete();
+  void OnViewContextSwapBuffersAborted();
+
   int page_id() const { return page_id_; }
   PepperPluginDelegateImpl* pepper_delegate() { return &pepper_delegate_; }
 
@@ -298,6 +306,9 @@ class RenderView : public RenderWidget,
   // Create a new plugin without checking the content settings.
   WebKit::WebPlugin* CreatePluginNoCheck(WebKit::WebFrame* frame,
                                          const WebKit::WebPluginParams& params);
+
+  // Informs the render view that a PPAPI plugin has gained or lost focus.
+  void PpapiPluginFocusChanged();
 
 #if defined(OS_MACOSX)
   // Informs the render view that the given plugin has gained or lost focus.
@@ -422,6 +433,7 @@ class RenderView : public RenderWidget,
                                        const WebKit::WebString& base_url,
                                        const WebKit::WebString& url,
                                        const WebKit::WebString& title);
+  virtual WebKit::WebPageVisibilityState visibilityState() const;
 
   // WebKit::WebFrameClient implementation -------------------------------------
 
@@ -490,8 +502,10 @@ class RenderView : public RenderWidget,
   virtual void didClearWindowObject(WebKit::WebFrame* frame);
   virtual void didCreateDocumentElement(WebKit::WebFrame* frame);
   virtual void didReceiveTitle(WebKit::WebFrame* frame,
-                               const WebKit::WebString& title);
-  virtual void didChangeIcons(WebKit::WebFrame*);
+                               const WebKit::WebString& title,
+                               WebKit::WebTextDirection direction);
+  virtual void didChangeIcon(WebKit::WebFrame*,
+                             WebKit::WebIconURL::Type) OVERRIDE;
   virtual void didFinishDocumentLoad(WebKit::WebFrame* frame);
   virtual void didHandleOnloadEvents(WebKit::WebFrame* frame);
   virtual void didFailLoad(WebKit::WebFrame* frame,
@@ -524,31 +538,17 @@ class RenderView : public RenderWidget,
       WebKit::WebFrame* frame,
       const WebKit::WebSecurityOrigin& origin,
       const WebKit::WebURL& target);
-
-  virtual bool allowImages(WebKit::WebFrame* frame, bool enabled_per_settings);
-  virtual bool allowPlugins(WebKit::WebFrame* frame, bool enabled_per_settings);
-  virtual bool allowScript(WebKit::WebFrame* frame, bool enabled_per_settings);
-  virtual bool allowDatabase(WebKit::WebFrame* frame,
-                             const WebKit::WebString& name,
-                             const WebKit::WebString& display_name,
-                             unsigned long estimated_size);
-  virtual void didNotAllowScript(WebKit::WebFrame* frame);
-  virtual void didNotAllowPlugins(WebKit::WebFrame* frame);
   virtual void didExhaustMemoryAvailableForScript(WebKit::WebFrame* frame);
   virtual void didCreateScriptContext(WebKit::WebFrame* frame);
   virtual void didDestroyScriptContext(WebKit::WebFrame* frame);
   virtual void didCreateIsolatedScriptContext(WebKit::WebFrame* frame);
-  virtual bool allowScriptExtension(WebKit::WebFrame*,
-                                    const WebKit::WebString& extension_name,
-                                    int extensionGroup);
   virtual void logCrossFramePropertyAccess(
       WebKit::WebFrame* frame,
       WebKit::WebFrame* target,
       bool cross_origin,
       const WebKit::WebString& property_name,
       unsigned long long event_id);
-  virtual void didChangeContentsSize(WebKit::WebFrame* frame,
-                                     const WebKit::WebSize& size);
+  virtual void didUpdateLayout(WebKit::WebFrame* frame);
   virtual void didChangeScrollOffset(WebKit::WebFrame* frame);
   virtual void reportFindInPageMatchCount(int request_id,
                                           int count,
@@ -589,7 +589,6 @@ class RenderView : public RenderWidget,
   // Please do not add your stuff randomly to the end here. If there is an
   // appropriate section, add it there. If not, there are some random functions
   // nearer to the top you can add it to.
-
   virtual void DidFlushPaint();
 
   // Cannot use std::set unfortunately since linked_ptr<> does not support
@@ -614,6 +613,15 @@ class RenderView : public RenderWidget,
   virtual void OnSetFocus(bool enable);
   virtual void OnWasHidden();
   virtual void OnWasRestored(bool needs_repainting);
+  virtual bool SupportsAsynchronousSwapBuffers() OVERRIDE;
+  virtual void OnImeSetComposition(
+      const string16& text,
+      const std::vector<WebKit::WebCompositionUnderline>& underlines,
+      int selection_start,
+      int selection_end) OVERRIDE;
+  virtual void OnImeConfirmComposition(const string16& text) OVERRIDE;
+  virtual ui::TextInputType GetTextInputType() OVERRIDE;
+  virtual bool CanComposeInline() OVERRIDE;
 
  private:
   // For unit tests.
@@ -695,10 +703,10 @@ class RenderView : public RenderWidget,
                WebKit::WebNavigationPolicy policy);
 
   bool RunJavaScriptMessage(int type,
-                            const std::wstring& message,
-                            const std::wstring& default_value,
+                            const string16& message,
+                            const string16& default_value,
                             const GURL& frame_url,
-                            std::wstring* result);
+                            string16* result);
 
   // Sends a message and runs a nested message loop.
   bool SendAndRunNestedMessageLoop(IPC::SyncMessage* message);
@@ -723,7 +731,7 @@ class RenderView : public RenderWidget,
                                    IPC::ChannelHandle handle);
   void OnCancelDownload(int32 download_id);
   void OnClearFocusedNode();
-  void OnClosePage(const ViewMsg_ClosePage_Params& params);
+  void OnClosePage();
 #if defined(ENABLE_FLAPPER_HACKS)
   void OnConnectTcpACK(int request_id,
                        IPC::PlatformFileForTransit socket_for_transit,
@@ -772,7 +780,6 @@ class RenderView : public RenderWidget,
   void OnFindReplyAck();
   void OnEnableAccessibility();
   void OnInstallMissingPlugin();
-  void OnDisplayPrerenderedPage();
   void OnMediaPlayerActionAt(const gfx::Point& location,
                              const WebKit::WebMediaPlayerAction& action);
   void OnMoveOrResizeStarted();
@@ -799,6 +806,9 @@ class RenderView : public RenderWidget,
   void OnSetWebUIProperty(const std::string& name, const std::string& value);
   void OnSetEditCommandsForNextKeyEvent(const EditCommands& edit_commands);
   void OnSetInitialFocus(bool reverse);
+#if defined(OS_MACOSX)
+  void OnSetInLiveResize(bool in_live_resize);
+#endif
   void OnScrollFocusedEditableNodeIntoView();
   void OnSetPageEncoding(const std::string& encoding_name);
   void OnSetRendererPrefs(const RendererPreferences& renderer_prefs);
@@ -810,6 +820,7 @@ class RenderView : public RenderWidget,
   void OnShouldClose();
   void OnStop();
   void OnStopFinding(const ViewMsg_StopFinding_Params& params);
+  void OnSwapOut(const ViewMsg_SwapOut_Params& params);
   void OnThemeChanged();
   void OnUndo();
   void OnUpdateTargetURLAck();
@@ -830,8 +841,7 @@ class RenderView : public RenderWidget,
                             const WebKit::WebURLError& original_error,
                             const std::string& html);
 
-  // Check whether the preferred size has changed. This is called periodically
-  // by preferred_size_change_timer_.
+  // Check whether the preferred size has changed.
   void CheckPreferredSize();
 
   // This callback is triggered when DownloadFavicon completes, either
@@ -860,13 +870,6 @@ class RenderView : public RenderWidget,
   // Should only be called if this object wraps a PluginDocument.
   WebKit::WebPlugin* GetWebPluginFromPluginDocument();
 
-  // Inserts a string of CSS in a particular frame. |id| can be specified to
-  // give the CSS style element an id, and (if specified) will replace the
-  // element with the same id.
-  void InsertCSS(const std::wstring& frame_xpath,
-                 const std::string& css,
-                 const std::string& id);
-
   // Returns false unless this is a top-level navigation that crosses origins.
   bool IsNonLocalTopLevelNavigation(const GURL& url,
                                     WebKit::WebFrame* frame,
@@ -883,7 +886,7 @@ class RenderView : public RenderWidget,
   // periodic timer so we don't send too many messages.
   void SyncNavigationState();
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
   void UpdateFontRenderingFromRendererPrefs();
 #else
   void UpdateFontRenderingFromRendererPrefs() {}
@@ -963,9 +966,6 @@ class RenderView : public RenderWidget,
   // Timer used to delay the updating of nav state (see SyncNavigationState).
   base::OneShotTimer<RenderView> nav_state_sync_timer_;
 
-  // True if the RenderView is currently prerendering a page.
-  bool is_prerendering_;
-
   // Page IDs ------------------------------------------------------------------
   //
   // Page IDs allow the browser to identify pages in each renderer process for
@@ -1040,10 +1040,9 @@ class RenderView : public RenderWidget,
   // when layout() recomputes but doesn't actually change sizes.
   gfx::Size preferred_size_;
 
-  // Nasty hack. WebKit does not send us events when the preferred size changes,
-  // so we must poll it. See also:
-  // https://bugs.webkit.org/show_bug.cgi?id=32807.
-  base::RepeatingTimer<RenderView> preferred_size_change_timer_;
+  // Used to delay determining the preferred size (to avoid intermediate
+  // states for the sizes).
+  base::OneShotTimer<RenderView> check_preferred_size_timer_;
 
 #if defined(OS_MACOSX)
   // Track the fake plugin window handles allocated on the browser side for

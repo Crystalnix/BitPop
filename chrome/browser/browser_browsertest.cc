@@ -35,6 +35,7 @@
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/common/notification_source.h"
+#include "content/common/notification_type.h"
 #include "content/common/page_transition_types.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -56,6 +57,9 @@ const char* kBeforeUnloadHTML =
 
 const char* kOpenNewBeforeUnloadPage =
     "w=window.open(); w.onbeforeunload=function(e){return 'foo'};";
+
+const FilePath::CharType* kBeforeUnloadFile =
+    FILE_PATH_LITERAL("beforeunload.html");
 
 const FilePath::CharType* kTitle1File = FILE_PATH_LITERAL("title1.html");
 const FilePath::CharType* kTitle2File = FILE_PATH_LITERAL("title2.html");
@@ -275,6 +279,35 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, ReloadThenCancelBeforeUnload) {
                                   ASCIIToUTF16("onbeforeunload=null;"));
 }
 
+// Test for crbug.com/80401.  Canceling a before unload dialog should reset
+// the URL to the previous page's URL.
+IN_PROC_BROWSER_TEST_F(BrowserTest, CancelBeforeUnloadResetsURL) {
+  GURL url(ui_test_utils::GetTestUrl(FilePath(FilePath::kCurrentDirectory),
+                                     FilePath(kBeforeUnloadFile)));
+  ui_test_utils::NavigateToURL(browser(), url);
+
+  // Navigate to a page that triggers a cross-site transition.
+  ASSERT_TRUE(test_server()->Start());
+  GURL url2(test_server()->GetURL("files/title1.html"));
+  browser()->OpenURL(url2, GURL(), CURRENT_TAB, PageTransition::TYPED);
+
+  // Cancel the dialog.
+  AppModalDialog* alert = ui_test_utils::WaitForAppModalDialog();
+  alert->CloseModalDialog();
+  EXPECT_FALSE(browser()->GetSelectedTabContents()->is_loading());
+
+  // Wait for the ShouldClose_ACK to arrive.  We can detect it by waiting for
+  // the pending RVH to be destroyed.
+  ui_test_utils::WaitForNotification(
+      NotificationType::RENDER_WIDGET_HOST_DESTROYED);
+  EXPECT_EQ(url.spec(), WideToUTF8(browser()->toolbar_model()->GetText()));
+
+  // Clear the beforeunload handler so the test can easily exit.
+  browser()->GetSelectedTabContents()->render_view_host()->
+      ExecuteJavascriptInWebFrame(string16(),
+                                  ASCIIToUTF16("onbeforeunload=null;"));
+}
+
 // Crashy on mac.  http://crbug.com/38522
 #if defined(OS_MACOSX)
 #define MAYBE_SingleBeforeUnloadAfterWindowClose \
@@ -444,7 +477,8 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, DISABLED_ConvertTabToAppShortcut) {
 
 // Test RenderView correctly send back favicon url for web page that redirects
 // to an anchor in javascript body.onload handler.
-IN_PROC_BROWSER_TEST_F(BrowserTest, FaviconOfOnloadRedirectToAnchorPage) {
+IN_PROC_BROWSER_TEST_F(BrowserTest,
+                       DISABLED_FaviconOfOnloadRedirectToAnchorPage) {
   ASSERT_TRUE(test_server()->Start());
   GURL url(test_server()->GetURL("files/onload_redirect_to_anchor.html"));
   GURL expected_favicon_url(test_server()->GetURL("files/test.png"));
@@ -456,8 +490,14 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, FaviconOfOnloadRedirectToAnchorPage) {
   EXPECT_EQ(expected_favicon_url.spec(), entry->favicon().url().spec());
 }
 
+#if defined(OS_MACOSX)
+// http://crbug.com/83828. On Mac 10.6, the failure rate is 14%
+#define MAYBE_FaviconChange FLAKY_FaviconChange
+#else
+#define MAYBE_FaviconChange FaviconChange
+#endif
 // Test that an icon can be changed from JS.
-IN_PROC_BROWSER_TEST_F(BrowserTest, FaviconChange) {
+IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_FaviconChange) {
   static const FilePath::CharType* kFile =
       FILE_PATH_LITERAL("onload_change_favicon.html");
   GURL file_url(ui_test_utils::GetTestUrl(FilePath(FilePath::kCurrentDirectory),
@@ -546,7 +586,6 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, AppIdSwitch) {
   ASSERT_NE(
       new_browser->app_name_.find(extension_app->id()),
       std::string::npos) << new_browser->app_name_;
-
 }
 #endif
 
@@ -694,8 +733,11 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, OpenAppWindowLikeNtp) {
   const Extension* extension_app = GetExtension();
 
   // Launch it in a window, as AppLauncherHandler::HandleLaunchApp() would.
-  TabContents* app_window = Browser::OpenApplication(
-      browser()->profile(), extension_app, extension_misc::LAUNCH_WINDOW, NULL);
+  TabContents* app_window =
+      Browser::OpenApplication(browser()->profile(),
+                               extension_app,
+                               extension_misc::LAUNCH_WINDOW,
+                               NEW_WINDOW);
   ASSERT_TRUE(app_window);
 
   // Apps launched in a window from the NTP do not have extension_app set in
@@ -718,7 +760,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, OpenAppWindowLikeNtp) {
   ASSERT_TRUE(new_browser);
   ASSERT_TRUE(new_browser != browser());
 
-  EXPECT_EQ(Browser::TYPE_APP, new_browser->type());
+  EXPECT_TRUE(new_browser->is_app());
 
   // The browser's app name should include the extension's id.
   std::string app_name = new_browser->app_name_;

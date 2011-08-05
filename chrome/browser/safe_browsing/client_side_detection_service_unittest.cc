@@ -12,16 +12,16 @@
 #include "base/file_util_proxy.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/message_loop.h"
 #include "base/platform_file.h"
+#include "base/scoped_temp_dir.h"
 #include "base/task.h"
 #include "base/time.h"
 #include "chrome/browser/safe_browsing/client_side_detection_service.h"
-#include "chrome/common/net/test_url_fetcher_factory.h"
-#include "chrome/common/net/url_fetcher.h"
 #include "chrome/common/safe_browsing/csd.pb.h"
 #include "content/browser/browser_thread.h"
+#include "content/common/test_url_fetcher_factory.h"
+#include "content/common/url_fetcher.h"
 #include "googleurl/src/gurl.h"
 #include "net/url_request/url_request_status.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -45,15 +45,6 @@ class ClientSideDetectionServiceTest : public testing::Test {
     URLFetcher::set_factory(NULL);
     file_thread_.reset();
     browser_thread_.reset();
-  }
-
-  base::PlatformFile GetModelFile() {
-    model_file_ = base::kInvalidPlatformFileValue;
-    csd_service_->GetModelFile(NewCallback(
-        this, &ClientSideDetectionServiceTest::GetModelFileDone));
-    // This method will block this thread until GetModelFileDone is called.
-    msg_loop_.Run();
-    return model_file_;
   }
 
   std::string ReadModelFile(base::PlatformFile model_file) {
@@ -155,11 +146,6 @@ class ClientSideDetectionServiceTest : public testing::Test {
   MessageLoop msg_loop_;
 
  private:
-  void GetModelFileDone(base::PlatformFile model_file) {
-    model_file_ = model_file;
-    msg_loop_.Quit();
-  }
-
   void SendRequestDone(GURL phishing_url, bool is_phishing) {
     ASSERT_EQ(phishing_url, phishing_url_);
     is_phishing_ = is_phishing;
@@ -167,44 +153,11 @@ class ClientSideDetectionServiceTest : public testing::Test {
   }
 
   scoped_ptr<BrowserThread> browser_thread_;
-  base::PlatformFile model_file_;
   scoped_ptr<BrowserThread> file_thread_;
 
   GURL phishing_url_;
   bool is_phishing_;
 };
-
-TEST_F(ClientSideDetectionServiceTest, TestFetchingModel) {
-  ScopedTempDir tmp_dir;
-  ASSERT_TRUE(tmp_dir.CreateUniqueTempDir());
-  FilePath model_path = tmp_dir.path().AppendASCII("model");
-
-  // The first time we create the csd service the model file does not exist so
-  // we expect there to be a fetch.
-  SetModelFetchResponse("BOGUS MODEL", true);
-  csd_service_.reset(ClientSideDetectionService::Create(model_path, NULL));
-  base::PlatformFile model_file = GetModelFile();
-  EXPECT_NE(model_file, base::kInvalidPlatformFileValue);
-  EXPECT_EQ(ReadModelFile(model_file), "BOGUS MODEL");
-
-  // If you call GetModelFile() multiple times you always get the same platform
-  // file back.  We don't re-open the file.
-  EXPECT_EQ(GetModelFile(), model_file);
-
-  // The second time the model already exists on disk.  In this case there
-  // should not be any fetch.  To ensure that we clear the factory.
-  factory_->ClearFakeReponses();
-  csd_service_.reset(ClientSideDetectionService::Create(model_path, NULL));
-  model_file = GetModelFile();
-  EXPECT_NE(model_file, base::kInvalidPlatformFileValue);
-  EXPECT_EQ(ReadModelFile(model_file), "BOGUS MODEL");
-
-  // If the model does not exist and the fetch fails we should get an error.
-  model_path = tmp_dir.path().AppendASCII("another_model");
-  SetModelFetchResponse("", false /* success */);
-  csd_service_.reset(ClientSideDetectionService::Create(model_path, NULL));
-  EXPECT_EQ(GetModelFile(), base::kInvalidPlatformFileValue);
-}
 
 TEST_F(ClientSideDetectionServiceTest, ServiceObjectDeletedBeforeCallbackDone) {
   SetModelFetchResponse("bogus model", true /* success */);

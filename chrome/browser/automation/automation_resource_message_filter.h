@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,11 +14,13 @@
 #include "net/base/completion_callback.h"
 #include "net/base/cookie_store.h"
 
-class URLRequestAutomationJob;
 class GURL;
+class BrowserMessageFilter;
+class URLRequestAutomationJob;
 
 namespace net {
 class CookieStore;
+class URLRequestContext;
 }  // namespace net
 
 // This class filters out incoming automation IPC messages for network
@@ -87,16 +89,20 @@ class AutomationResourceMessageFilter
   // The pending_view parameter should be true if network requests initiated by
   // this render view need to be paused waiting for an acknowledgement from
   // the external host.
-  static bool RegisterRenderView(int renderer_pid, int renderer_id,
-      int tab_handle, AutomationResourceMessageFilter* filter,
-      bool pending_view);
+  static bool RegisterRenderView(int renderer_pid,
+                                 int renderer_id,
+                                 int tab_handle,
+                                 AutomationResourceMessageFilter* filter,
+                                 bool pending_view);
   static void UnRegisterRenderView(int renderer_pid, int renderer_id);
 
   // Can be called from the UI thread.
   // Resumes pending render views, i.e. network requests issued by this view
   // can now be serviced.
-  static bool ResumePendingRenderView(int renderer_pid, int renderer_id,
-      int tab_handle, AutomationResourceMessageFilter* filter);
+  static bool ResumePendingRenderView(int renderer_pid,
+                                      int renderer_id,
+                                      int tab_handle,
+                                      AutomationResourceMessageFilter* filter);
 
   // Called only on the IO thread.
   static bool LookupRegisteredRenderView(
@@ -106,15 +112,24 @@ class AutomationResourceMessageFilter
   bool SendDownloadRequestToHost(int routing_id, int tab_handle,
                                  int request_id);
 
+  // If this returns true, then the get and set cookie IPCs should be sent to
+  // the following two functions.
+  static bool ShouldFilterCookieMessages(int render_process_id,
+                                         int render_view_id);
+
   // Retrieves cookies for the url passed in from the external host. The
   // callback passed in is notified on success or failure asynchronously.
-  // Returns true on success.
-  static bool GetCookiesForUrl(const GURL& url,
-                               net::CompletionCallback* callback);
+  static void GetCookiesForUrl(BrowserMessageFilter* filter,
+                               net::URLRequestContext* context,
+                               int render_process_id,
+                               IPC::Message* reply_msg,
+                               const GURL& url);
 
-  // Sets cookies on the URL in the external host. Returns true on success.
-  static bool SetCookiesForUrl(const GURL& url, const std::string& cookie_line,
-                               net::CompletionCallback* callback);
+  // Sets cookies on the URL in the external host.
+  static void SetCookiesForUrl(int render_process_id,
+                               int render_view_id,
+                               const GURL& url,
+                               const std::string& cookie_line);
 
   // This function gets invoked when we receive a response from the external
   // host for the cookie request sent in GetCookiesForUrl above. It sets the
@@ -138,13 +153,6 @@ class AutomationResourceMessageFilter
   static bool ResumePendingRenderViewInIOThread(
       int renderer_pid, int renderer_id, int tab_handle,
       AutomationResourceMessageFilter* filter);
-
-  // Helper function to execute the GetCookies completion callback with the
-  // response for the GetCookies request from the renderer.
-  static void OnGetCookiesHostResponseInternal(
-      int tab_handle, bool success, const GURL& url,
-      const std::string& cookies, net::CompletionCallback* callback,
-      net::CookieStore* cookie_store);
 
  private:
   void OnSetFilteredInet(bool enable);
@@ -177,7 +185,7 @@ class AutomationResourceMessageFilter
   };
 
   typedef std::map<RendererId, AutomationDetails> RenderViewMap;
-  typedef std::map<int, scoped_refptr<URLRequestAutomationJob> > RequestMap;
+  typedef std::map<int, URLRequestAutomationJob*> RequestMap;
 
   // The channel associated with the automation connection. This pointer is not
   // owned by this class.
@@ -216,4 +224,3 @@ class AutomationResourceMessageFilter
 };
 
 #endif  // CHROME_BROWSER_AUTOMATION_AUTOMATION_RESOURCE_MESSAGE_FILTER_H_
-

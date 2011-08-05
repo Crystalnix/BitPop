@@ -21,7 +21,7 @@
 #endif
 
 #if defined(OS_WIN)
-#include "views/window/window_win.h"
+#include "views/window/native_window_win.h"
 #endif
 
 namespace views {
@@ -64,8 +64,7 @@ const int kTitleCaptionSpacing = 5;
 // CustomFrameView, public:
 
 CustomFrameView::CustomFrameView(Window* frame)
-    : NonClientFrameView(),
-      ALLOW_THIS_IN_INITIALIZER_LIST(close_button_(new ImageButton(this))),
+    : ALLOW_THIS_IN_INITIALIZER_LIST(close_button_(new ImageButton(this))),
       ALLOW_THIS_IN_INITIALIZER_LIST(restore_button_(new ImageButton(this))),
       ALLOW_THIS_IN_INITIALIZER_LIST(maximize_button_(new ImageButton(this))),
       ALLOW_THIS_IN_INITIALIZER_LIST(minimize_button_(new ImageButton(this))),
@@ -237,7 +236,7 @@ gfx::Size CustomFrameView::GetPreferredSize() {
 
 void CustomFrameView::ButtonPressed(Button* sender, const views::Event& event) {
   if (sender == close_button_)
-    frame_->CloseWindow();
+    frame_->Close();
   else if (sender == minimize_button_)
     frame_->Minimize();
   else if (sender == maximize_button_)
@@ -398,7 +397,7 @@ void CustomFrameView::PaintMaximizedFrameBorder(gfx::Canvas* canvas) {
   // graphic, with the actual client edge clipped off the bottom.
   SkBitmap* titlebar_bottom = rb.GetBitmapNamed(IDR_APP_TOP_CENTER);
   int edge_height = titlebar_bottom->height() -
-                    ShouldShowClientEdge() ? kClientEdgeThickness : 0;
+                    (ShouldShowClientEdge() ? kClientEdgeThickness : 0);
   canvas->TileImageInt(*titlebar_bottom, 0,
       frame_->client_view()->y() - edge_height, width(), edge_height);
 }
@@ -569,7 +568,7 @@ void CustomFrameView::InitClass() {
   static bool initialized = false;
   if (!initialized) {
 #if defined(OS_WIN)
-    title_font_ = new gfx::Font(WindowWin::GetWindowTitleFont());
+    title_font_ = new gfx::Font(NativeWindowWin::GetWindowTitleFont());
 #elif defined(OS_LINUX)
     // TODO(ben): need to resolve what font this is.
     title_font_ = new gfx::Font();

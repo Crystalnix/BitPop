@@ -528,23 +528,6 @@ that trigger them.
 
 <tr>
   <td style="font-weight:bold">
-    <!-- IDS_EXTENSION_PROMPT_WARNING_DEBUGGER -->
-    Your data on all websites
-  </td>
-  <td>
-    <!-- HasEffectiveBrowsingHistoryPermission -->
-     "debugger" permission
-  </td>
-  <td>
-    <p>
-      The "debugger" permission is required by the
-      <a href="tabs.html"><code>chrome.debugger</code></a> module.
-    </p>
-  </td>
-</tr>
-
-<tr>
-  <td style="font-weight:bold">
     <!-- IDS_EXTENSION_PROMPT_WARNING_ALL_HOSTS -->
     Your data on all websites
   </td>
@@ -552,7 +535,8 @@ that trigger them.
     <!-- HasEffectiveAccessToAllHosts() -->
     Any of the following:
     <ul>
-      <li> "proxy" permission (experimental) </li>
+      <li> "debugger" permission </li>
+      <li> "proxy" permission </li>
       <li> A match pattern in the "permissions" field
         that matches all hosts </li>
       <li> A&nbsp;"content_scripts" field with a "matches" entry
@@ -562,8 +546,13 @@ that trigger them.
   </td>
   <td>
     <p>
+      The "debugger" permission is required by the experimental
+      <a href="experimental.debugger.html">debugger</a> module.
+    </p>
+
+    <p>
       The "proxy" permission is required by the
-      <a href="http://code.google.com/chrome/extensions/dev/experimental.proxy.html">experimental proxy</a> module.
+      <a href="proxy.html"><code>chrome.proxy</code></a> module.
     </p>
 
     <p>
@@ -647,6 +636,24 @@ that trigger them.
     without prompting the user for permission.
   </td>
 </tr>
+
+<tr>
+  <td style="font-weight:bold">
+    <!-- IDS_EXTENSION_PROMPT_WARNING_CLIPBOARD-->
+    Data you copy and paste
+  </td>
+  <td>
+    "clipboardRead" permission
+  </td>
+  <td>
+    Allows the extension to use the following editing commands with
+    <code>document.execCommand()</code>:
+    <ul>
+      <li> <code>"copy"</code> </li>
+      <li> <code>"cut"</code> </li>
+    </ul>
+  </td>
+</tr>
 </tbody></table>
 <p></p>
 
@@ -659,6 +666,7 @@ The following permissions don't result in a warning:
 
 <ul>
   <li>"chrome://favicon/"</li>
+  <li>"clipboardWrite"</li>
   <li>"contextMenus"</li>
   <li>"cookies"</li>
   <li>"experimental"</li>
@@ -806,7 +814,7 @@ by clicking the <b>chrome://extensions</b> page's
 
               <div class="summary">
                 <!-- Note: intentionally longer 80 columns -->
-                <span class="subdued">chrome.bookmarks</span><span>onEvent</span><span class="subdued">.addListener</span>(function(<span>Type param1, Type param2</span>) <span class="subdued">{...}</span>);
+                <span class="subdued">chrome.bookmarks</span><span>onEvent</span><span class="subdued">.addListener</span>(function(<span>Type param1, Type param2</span>) <span class="subdued">{...}</span><span>, Type opt_param1, Type opt_param2</span>));
               </div>
 
               <div class="description">
@@ -815,9 +823,9 @@ by clicking the <b>chrome://extensions</b> page's
                   A description from the json schema def of the event goes here.
                 </p>
 
-                <!-- PARAMETERS -->
+                <!-- LISTENER PARAMETERS -->
                 <div>
-                  <h4>Parameters</h4>
+                  <h4>Listener parameters</h4>
                   <dl>
                     <div>
                       <div>
@@ -825,8 +833,28 @@ by clicking the <b>chrome://extensions</b> page's
                     </div>
                   </dl>
                 </div>
-              </div> <!-- /decription -->
 
+                <!-- EXTRA PARAMETERS -->
+                <div>
+                  <h4>Extra parameters to addListener</h4>
+                  <dl>
+                    <div>
+                      <div>
+                      </div>
+                    </div>
+                  </dl>
+                </div>
+
+                <!-- LISTENER RETURN VALUE -->
+                <h4>Listener returns</h4>
+                <dl>
+                  <div>
+                    <div>
+                    </div>
+                  </div>
+                </dl>
+
+              </div> <!-- /description -->
             </div> <!-- /apiItem -->
 
           </div> <!-- /apiGroup -->

@@ -30,6 +30,7 @@
 #include "chrome/browser/ui/gtk/menu_gtk.h"
 #include "chrome/browser/ui/gtk/nine_box.h"
 #include "chrome/browser/ui/gtk/tabs/tab_strip_gtk.h"
+#include "chrome/browser/ui/gtk/unity_service.h"
 #include "chrome/browser/ui/toolbar/encoding_menu_controller.h"
 #include "chrome/browser/ui/toolbar/wrench_menu_model.h"
 #include "chrome/common/pref_names.h"
@@ -38,9 +39,11 @@
 #include "grit/app_resources.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/gtk_util.h"
+#include "ui/gfx/image.h"
 #include "ui/gfx/skbitmap_operations.h"
 
 namespace {
@@ -285,7 +288,7 @@ void BrowserTitlebar::Init() {
   gtk_box_pack_start(GTK_BOX(container_hbox_), titlebar_left_buttons_vbox_,
                      FALSE, FALSE, 0);
   if (browser_window_->browser()->profile()->IsOffTheRecord() &&
-      browser_window_->browser()->type() == Browser::TYPE_NORMAL) {
+      browser_window_->browser()->is_type_tabbed()) {
     titlebar_left_spy_frame_ = gtk_alignment_new(0.0, 0.0, 1.0, 1.0);
     gtk_widget_set_no_show_all(titlebar_left_spy_frame_, TRUE);
     gtk_alignment_set_padding(GTK_ALIGNMENT(titlebar_left_spy_frame_), 0,
@@ -314,7 +317,7 @@ void BrowserTitlebar::Init() {
 
   // We use an alignment to control the titlebar height.
   titlebar_alignment_ = gtk_alignment_new(0.0, 0.0, 1.0, 1.0);
-  if (browser_window_->browser()->type() == Browser::TYPE_NORMAL) {
+  if (browser_window_->browser()->is_type_tabbed()) {
     gtk_box_pack_start(GTK_BOX(container_hbox_), titlebar_alignment_, TRUE,
                        TRUE, 0);
 
@@ -446,7 +449,7 @@ void BrowserTitlebar::BuildButtons(const std::string& button_string) {
   // If we are in incognito mode, add the spy guy to either the end of the left
   // or the beginning of the right depending on which side has fewer buttons.
   if (browser_window_->browser()->profile()->IsOffTheRecord() &&
-      browser_window_->browser()->type() == Browser::TYPE_NORMAL) {
+      browser_window_->browser()->is_type_tabbed()) {
     GtkWidget* spy_guy = gtk_image_new_from_pixbuf(GetOTRAvatar());
     gtk_misc_set_alignment(GTK_MISC(spy_guy), 0.0, 1.0);
     gtk_widget_set_size_request(spy_guy, -1, 0);
@@ -522,18 +525,20 @@ CustomDrawButton* BrowserTitlebar::BuildTitlebarButton(int image,
 
 void BrowserTitlebar::UpdateCustomFrame(bool use_custom_frame) {
   using_custom_frame_ = use_custom_frame;
-  if (use_custom_frame) {
-    if (titlebar_left_buttons_vbox_)
-      gtk_widget_show_all(titlebar_left_buttons_vbox_);
-    if (titlebar_right_buttons_vbox_)
-      gtk_widget_show_all(titlebar_right_buttons_vbox_);
-  } else {
+  if (!use_custom_frame ||
+      (browser_window_->IsMaximized() && unity::IsRunning())) {
     if (titlebar_left_buttons_vbox_)
       gtk_widget_hide(titlebar_left_buttons_vbox_);
     if (titlebar_right_buttons_vbox_)
       gtk_widget_hide(titlebar_right_buttons_vbox_);
+  } else {
+    if (titlebar_left_buttons_vbox_)
+      gtk_widget_show_all(titlebar_left_buttons_vbox_);
+    if (titlebar_right_buttons_vbox_)
+      gtk_widget_show_all(titlebar_right_buttons_vbox_);
   }
   UpdateTitlebarAlignment();
+  UpdateMaximizeRestoreVisibility();
 }
 
 void BrowserTitlebar::UpdateTitleAndIcon() {
@@ -544,10 +549,9 @@ void BrowserTitlebar::UpdateTitleAndIcon() {
   string16 title = browser_window_->browser()->GetWindowTitleForCurrentTab();
   gtk_label_set_text(GTK_LABEL(app_mode_title_), UTF16ToUTF8(title).c_str());
 
-  // Note: this isn't browser_window_->browser()->type() & Browser::TYPE_APP
-  // because we want to exclude Browser::TYPE_APP_POPUP.
-  if (browser_window_->browser()->type() == Browser::TYPE_APP ||
-      browser_window_->browser()->type() == Browser::TYPE_APP_PANEL) {
+  // Note: we want to exclude the application popup window.
+  if (browser_window_->browser()->is_app() &&
+      !browser_window_->browser()->is_type_popup()) {
     // Update the system app icon.  We don't need to update the icon in the top
     // left of the custom frame, that will get updated when the throbber is
     // updated.
@@ -572,15 +576,14 @@ void BrowserTitlebar::UpdateThrobber(TabContents* tab_contents) {
   } else {
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
 
-    // Note: this isn't browser_window_->browser()->type() & Browser::TYPE_APP
-    // because we want to exclude Browser::TYPE_APP_POPUP.
-    if (browser_window_->browser()->type() == Browser::TYPE_APP ||
-        browser_window_->browser()->type() == Browser::TYPE_APP_PANEL) {
+    // Note: we want to exclude the application popup window.
+    if (browser_window_->browser()->is_app() &&
+        !browser_window_->browser()->is_type_popup()) {
       SkBitmap icon = browser_window_->browser()->GetCurrentPageIcon();
       if (icon.empty()) {
         // Fallback to the Chromium icon if the page has no icon.
         gtk_image_set_from_pixbuf(GTK_IMAGE(app_mode_favicon_),
-            rb.GetPixbufNamed(IDR_PRODUCT_LOGO_16));
+            rb.GetNativeImageNamed(IDR_PRODUCT_LOGO_16));
       } else {
         GdkPixbuf* icon_pixbuf = gfx::GdkPixbufFromSkBitmap(&icon);
         gtk_image_set_from_pixbuf(GTK_IMAGE(app_mode_favicon_), icon_pixbuf);
@@ -588,14 +591,14 @@ void BrowserTitlebar::UpdateThrobber(TabContents* tab_contents) {
       }
     } else {
       gtk_image_set_from_pixbuf(GTK_IMAGE(app_mode_favicon_),
-          rb.GetPixbufNamed(IDR_PRODUCT_LOGO_16));
+          rb.GetNativeImageNamed(IDR_PRODUCT_LOGO_16));
     }
     throbber_.Reset();
   }
 }
 
 void BrowserTitlebar::UpdateTitlebarAlignment() {
-  if (browser_window_->browser()->type() == Browser::TYPE_NORMAL) {
+  if (browser_window_->browser()->is_type_tabbed()) {
     int top_padding = 0;
     int side_padding = 0;
     int vertical_offset = kNormalVerticalOffset;
@@ -605,7 +608,8 @@ void BrowserTitlebar::UpdateTitlebarAlignment() {
         top_padding = kTitlebarHeight;
       } else if (using_custom_frame_ && browser_window_->IsMaximized()) {
         vertical_offset = 0;
-        side_padding = kMaximizedTabstripPadding;
+        if (!unity::IsRunning())
+          side_padding = kMaximizedTabstripPadding;
       }
     }
 
@@ -671,7 +675,7 @@ void BrowserTitlebar::UpdateTextColor() {
   if (!app_mode_title_)
     return;
 
-  if (theme_service_ && theme_service_->UseGtkTheme()) {
+  if (theme_service_ && theme_service_->UsingNativeTheme()) {
     // We don't really have any good options here.
     //
     // Colors from window manager themes aren't exposed in GTK; the window

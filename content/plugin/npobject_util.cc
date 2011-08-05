@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -192,11 +192,17 @@ void CreateNPVariantParam(const NPVariant& variant,
           // we were supposed to release the corresponding variant
           // (release==true), we should still do that.
           param->type = NPVARIANT_PARAM_SENDER_OBJECT_ROUTING_ID;
-          int route_id = channel->GenerateRouteID();
-          new NPObjectStub(
-              variant.value.objectValue, channel, route_id, containing_window,
-              page_url);
-          param->npobject_routing_id = route_id;
+          int route_id = channel->GetExistingRouteForNPObjectStub(
+              variant.value.objectValue);
+          if (route_id != MSG_ROUTING_NONE) {
+            param->npobject_routing_id = route_id;
+          } else {
+            route_id = channel->GenerateRouteID();
+            new NPObjectStub(
+                variant.value.objectValue, channel, route_id,
+                containing_window, page_url);
+            param->npobject_routing_id = route_id;
+          }
         } else {
           param->type = NPVARIANT_PARAM_VOID;
         }
@@ -216,6 +222,7 @@ bool CreateNPVariant(const NPVariant_Param& param,
                      NPVariant* result,
                      gfx::NativeViewId containing_window,
                      const GURL& page_url) {
+  NPObject* object = NULL;
   switch (param.type) {
     case NPVARIANT_PARAM_VOID:
       result->type = NPVariantType_Void;
@@ -235,20 +242,29 @@ bool CreateNPVariant(const NPVariant_Param& param,
       result->type = NPVariantType_Double;
       result->value.doubleValue = param.double_value;
       break;
-    case NPVARIANT_PARAM_STRING:
+    case NPVARIANT_PARAM_STRING: {
       result->type = NPVariantType_String;
-      result->value.stringValue.UTF8Characters =
-          static_cast<NPUTF8 *>(base::strdup(param.string_value.c_str()));
-      result->value.stringValue.UTF8Length =
-          static_cast<int>(param.string_value.size());
+      void* buffer = malloc(param.string_value.size());
+      size_t size = param.string_value.size();
+      result->value.stringValue.UTF8Characters = static_cast<NPUTF8*>(buffer);
+      memcpy(buffer, param.string_value.c_str(), size);
+      result->value.stringValue.UTF8Length = static_cast<int>(size);
       break;
+    }
     case NPVARIANT_PARAM_SENDER_OBJECT_ROUTING_ID:
       result->type = NPVariantType_Object;
-      result->value.objectValue =
-          NPObjectProxy::Create(channel,
-                                param.npobject_routing_id,
-                                containing_window,
-                                page_url);
+      object = channel->GetExistingNPObjectProxy(param.npobject_routing_id);
+      if (object) {
+        WebBindings::retainObject(object);
+        result->value.objectValue = object;
+      } else {
+        result->value.objectValue =
+            object = NPObjectProxy::Create(channel,
+                                           param.npobject_routing_id,
+                                           containing_window,
+                                           page_url);
+        result->value.objectValue = object;
+      }
       break;
     case NPVARIANT_PARAM_RECEIVER_OBJECT_ROUTING_ID: {
       NPObjectBase* npobject_base =

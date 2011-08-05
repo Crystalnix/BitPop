@@ -20,12 +20,11 @@
 #include "base/task.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
 #include "talk/xmpp/asyncsocket.h"
 
 namespace net {
-class ClientSocket;
 class IOBufferWithSize;
+class StreamSocket;
 }  // namespace net
 
 namespace notifier {
@@ -34,12 +33,10 @@ class ResolvingClientSocketFactory;
 
 class ChromeAsyncSocket : public buzz::AsyncSocket {
  public:
-  // Takes ownership of |client_socket_factory| but not |net_log|.
-  // |net_log| may be NULL.
+  // Takes ownership of |client_socket_factory|.
   ChromeAsyncSocket(ResolvingClientSocketFactory* client_socket_factory,
                     size_t read_buf_size,
-                    size_t write_buf_size,
-                    net::NetLog* net_log);
+                    size_t write_buf_size);
 
   // Does not raise any signals.
   virtual ~ChromeAsyncSocket();
@@ -185,7 +182,6 @@ class ChromeAsyncSocket : public buzz::AsyncSocket {
   net::CompletionCallbackImpl<ChromeAsyncSocket> ssl_connect_callback_;
 
   scoped_ptr<ResolvingClientSocketFactory> client_socket_factory_;
-  net::BoundNetLog bound_net_log_;
 
   // buzz::AsyncSocket state.
   buzz::AsyncSocket::State state_;
@@ -199,7 +195,7 @@ class ChromeAsyncSocket : public buzz::AsyncSocket {
   // NULL iff state() == STATE_CLOSED.
   //
   // TODO(akalin): Use ClientSocketPool.
-  scoped_ptr<net::ClientSocket> transport_socket_;
+  scoped_ptr<net::StreamSocket> transport_socket_;
 
   // State for the read loop.  |read_start_| <= |read_end_| <=
   // |read_buf_->size()|.  There's a read in flight (i.e.,

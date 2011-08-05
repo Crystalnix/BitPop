@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/command_line.h"
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
 #include "base/string_util.h"
@@ -17,21 +16,22 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/accessibility_events.h"
 #include "chrome/browser/alternate_nav_url_fetcher.h"
-#include "chrome/browser/autocomplete/autocomplete_edit_view_gtk.h"
 #include "chrome/browser/autocomplete/autocomplete_popup_model.h"
 #include "chrome/browser/command_updater.h"
-#include "chrome/browser/content_setting_bubble_model.h"
-#include "chrome/browser/content_setting_image_model.h"
+#include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/extension_browser_event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tabs_module.h"
+#include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/instant/instant_controller.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_model.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
+#include "chrome/browser/ui/content_settings/content_setting_image_model.h"
 #include "chrome/browser/ui/gtk/bookmarks/bookmark_bubble_gtk.h"
 #include "chrome/browser/ui/gtk/bookmarks/bookmark_utils_gtk.h"
 #include "chrome/browser/ui/gtk/cairo_cached_surface.h"
@@ -41,10 +41,11 @@
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/nine_box.h"
+#include "chrome/browser/ui/gtk/omnibox/omnibox_view_gtk.h"
 #include "chrome/browser/ui/gtk/rounded_window.h"
 #include "chrome/browser/ui/gtk/view_id_util.h"
 #include "chrome/browser/ui/omnibox/location_bar_util.h"
-#include "chrome/common/chrome_switches.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_action.h"
 #include "chrome/common/extensions/extension_resource.h"
@@ -54,6 +55,7 @@
 #include "content/common/page_transition_types.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "net/base/net_util.h"
 #include "ui/base/dragdrop/gtk_dnd_util.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -61,6 +63,7 @@
 #include "ui/gfx/canvas_skia_paint.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/gtk_util.h"
+#include "ui/gfx/image.h"
 #include "webkit/glue/window_open_disposition.h"
 
 namespace {
@@ -182,7 +185,7 @@ LocationBarViewGtk::~LocationBarViewGtk() {
 void LocationBarViewGtk::Init(bool popup_window_mode) {
   popup_window_mode_ = popup_window_mode;
 
-  // Create the widget first, so we can pass it to the AutocompleteEditViewGtk.
+  // Create the widget first, so we can pass it to the OmniboxViewGtk.
   hbox_.Own(gtk_hbox_new(FALSE, kInnerPadding));
   gtk_container_set_border_width(GTK_CONTAINER(hbox_.get()), kHboxBorder);
   // We will paint for the alignment, to paint the background and border.
@@ -191,13 +194,13 @@ void LocationBarViewGtk::Init(bool popup_window_mode) {
   // the home button on/off.
   gtk_widget_set_redraw_on_allocate(hbox_.get(), TRUE);
 
-  // Now initialize the AutocompleteEditViewGtk.
-  location_entry_.reset(new AutocompleteEditViewGtk(this,
-                                                    toolbar_model_,
-                                                    profile_,
-                                                    command_updater_,
-                                                    popup_window_mode_,
-                                                    hbox_.get()));
+  // Now initialize the OmniboxViewGtk.
+  location_entry_.reset(new OmniboxViewGtk(this,
+                                           toolbar_model_,
+                                           profile_,
+                                           command_updater_,
+                                           popup_window_mode_,
+                                           hbox_.get()));
   location_entry_->Init();
 
   g_signal_connect(hbox_.get(), "expose-event",
@@ -229,7 +232,7 @@ void LocationBarViewGtk::Init(bool popup_window_mode) {
   GtkWidget* tab_to_search_hbox = gtk_hbox_new(FALSE, 0);
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
   tab_to_search_magnifier_ = gtk_image_new_from_pixbuf(
-      rb.GetPixbufNamed(IDR_KEYWORD_SEARCH_MAGNIFIER));
+      rb.GetNativeImageNamed(IDR_KEYWORD_SEARCH_MAGNIFIER));
   gtk_box_pack_start(GTK_BOX(tab_to_search_hbox), tab_to_search_magnifier_,
                      FALSE, FALSE, 0);
   gtk_util::CenterWidgetInHBox(tab_to_search_hbox, tab_to_search_label_hbox,
@@ -268,7 +271,7 @@ void LocationBarViewGtk::Init(bool popup_window_mode) {
   tab_to_search_hint_leading_label_ = gtk_label_new(NULL);
   gtk_widget_set_sensitive(tab_to_search_hint_leading_label_, FALSE);
   tab_to_search_hint_icon_ = gtk_image_new_from_pixbuf(
-      rb.GetPixbufNamed(IDR_LOCATION_BAR_KEYWORD_HINT_TAB));
+      rb.GetNativeImageNamed(IDR_LOCATION_BAR_KEYWORD_HINT_TAB));
   tab_to_search_hint_trailing_label_ = gtk_label_new(NULL);
   gtk_widget_set_sensitive(tab_to_search_hint_trailing_label_, FALSE);
   gtk_box_pack_start(GTK_BOX(tab_to_search_hint_),
@@ -448,7 +451,7 @@ void LocationBarViewGtk::Update(const TabContents* contents) {
   UpdatePageActions();
   location_entry_->Update(contents);
   // The security level (background color) could have changed, etc.
-  if (theme_service_->UseGtkTheme()) {
+  if (theme_service_->UsingNativeTheme()) {
     // In GTK mode, we need our parent to redraw, as it draws the text entry
     // border.
     gtk_widget_queue_draw(widget()->parent);
@@ -558,7 +561,7 @@ void LocationBarViewGtk::OnSetFocus() {
 }
 
 SkBitmap LocationBarViewGtk::GetFavicon() const {
-  return GetTabContents()->GetFavicon();
+  return GetTabContentsWrapper()->favicon_tab_helper()->GetFavicon();
 }
 
 string16 LocationBarViewGtk::GetTitle() const {
@@ -698,11 +701,11 @@ void LocationBarViewGtk::Revert() {
   location_entry_->RevertAll();
 }
 
-const AutocompleteEditView* LocationBarViewGtk::location_entry() const {
+const OmniboxView* LocationBarViewGtk::location_entry() const {
   return location_entry_.get();
 }
 
-AutocompleteEditView* LocationBarViewGtk::location_entry() {
+OmniboxView* LocationBarViewGtk::location_entry() {
   return location_entry_.get();
 }
 
@@ -762,7 +765,7 @@ void LocationBarViewGtk::Observe(NotificationType type,
 
   DCHECK_EQ(type.value, NotificationType::BROWSER_THEME_CHANGED);
 
-  if (theme_service_->UseGtkTheme()) {
+  if (theme_service_->UsingNativeTheme()) {
     gtk_widget_modify_bg(tab_to_search_box_, GTK_STATE_NORMAL, NULL);
 
     GdkColor border_color = theme_service_->GetGdkColor(
@@ -832,7 +835,7 @@ gboolean LocationBarViewGtk::HandleExpose(GtkWidget* widget,
   // If we're not using GTK theming, draw our own border over the edge pixels
   // of the background.
   if (!profile_ ||
-      !GtkThemeService::GetFrom(profile_)->UseGtkTheme()) {
+      !GtkThemeService::GetFrom(profile_)->UsingNativeTheme()) {
     int left, center, right;
     if (popup_window_mode_) {
       left = right = IDR_LOCATIONBG_POPUPMODE_EDGE;
@@ -976,7 +979,7 @@ void LocationBarViewGtk::SetKeywordLabel(const string16& keyword) {
     } else {
       ResourceBundle& rb = ResourceBundle::GetSharedInstance();
       gtk_image_set_from_pixbuf(GTK_IMAGE(tab_to_search_magnifier_),
-                                rb.GetPixbufNamed(IDR_OMNIBOX_SEARCH));
+                                rb.GetNativeImageNamed(IDR_OMNIBOX_SEARCH));
     }
   }
 }
@@ -1153,7 +1156,7 @@ void LocationBarViewGtk::UpdateStarIcon() {
 }
 
 bool LocationBarViewGtk::ShouldOnlyShowLocation() {
-  return browser_->type() != Browser::TYPE_NORMAL;
+  return !browser_->is_type_tabbed();
 }
 
 void LocationBarViewGtk::AdjustChildrenVisibility() {
@@ -1231,7 +1234,7 @@ LocationBarViewGtk::ContentSettingImageViewGtk::ContentSettingImageViewGtk(
       label_(gtk_label_new(NULL)),
       parent_(parent),
       profile_(profile),
-      info_bubble_(NULL),
+      content_setting_bubble_(NULL),
       animation_(this),
       method_factory_(this) {
   gtk_alignment_set_padding(GTK_ALIGNMENT(alignment_.get()), 1, 1, 0, 0);
@@ -1250,8 +1253,7 @@ LocationBarViewGtk::ContentSettingImageViewGtk::ContentSettingImageViewGtk(
   gtk_box_pack_start(GTK_BOX(hbox_), image_.get(), FALSE, FALSE, 0);
   gtk_box_pack_start(GTK_BOX(hbox_), label_.get(), FALSE, FALSE, 0);
 
-  // The +1 accounts for the pixel that is devoted to drawing the border.
-  gtk_container_set_border_width(GTK_CONTAINER(hbox_), kHboxBorder + 1);
+  gtk_container_set_border_width(GTK_CONTAINER(hbox_), kHboxBorder);
 
   gtk_container_add(GTK_CONTAINER(event_box_.get()), hbox_);
   gtk_widget_hide(widget());
@@ -1265,8 +1267,8 @@ LocationBarViewGtk::ContentSettingImageViewGtk::~ContentSettingImageViewGtk() {
   event_box_.Destroy();
   alignment_.Destroy();
 
-  if (info_bubble_)
-    info_bubble_->Close();
+  if (content_setting_bubble_)
+    content_setting_bubble_->Close();
 }
 
 void LocationBarViewGtk::ContentSettingImageViewGtk::UpdateFromTabContents(
@@ -1285,8 +1287,11 @@ void LocationBarViewGtk::ContentSettingImageViewGtk::UpdateFromTabContents(
       content_setting_image_model_->get_tooltip().c_str());
   gtk_widget_show_all(widget());
 
-  TabSpecificContentSettings* content_settings = tab_contents ?
-      tab_contents->GetTabSpecificContentSettings() : NULL;
+  TabSpecificContentSettings* content_settings = NULL;
+  if (tab_contents) {
+    content_settings = TabContentsWrapper::GetCurrentWrapperForContents(
+        tab_contents)->content_settings();
+  }
   if (!content_settings || content_settings->IsBlockageIndicated(
       content_setting_image_model_->get_content_settings_type()))
     return;
@@ -1298,10 +1303,8 @@ void LocationBarViewGtk::ContentSettingImageViewGtk::UpdateFromTabContents(
 
   int label_string_id =
       content_setting_image_model_->explanatory_string_id();
-  // Check if the animation is enabled and if the string for animation is
-  // available. If there's no string for the content type, we don't animate.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableBlockContentAnimation) || !label_string_id)
+  // If there's no string for the content type, we don't animate.
+  if (!label_string_id)
     return;
 
   gtk_label_set_text(GTK_LABEL(label_.get()),
@@ -1358,25 +1361,18 @@ void LocationBarViewGtk::ContentSettingImageViewGtk::AnimationCanceled(
 
 gboolean LocationBarViewGtk::ContentSettingImageViewGtk::OnButtonPressed(
     GtkWidget* sender, GdkEvent* event) {
-  TabContents* tab_contents = parent_->GetTabContents();
+  TabContentsWrapper* tab_contents = parent_->GetTabContentsWrapper();
   if (!tab_contents)
     return TRUE;
   const ContentSettingsType content_settings_type =
       content_setting_image_model_->get_content_settings_type();
   if (content_settings_type == CONTENT_SETTINGS_TYPE_PRERENDER)
     return TRUE;
-  GURL url = tab_contents->GetURL();
-  std::wstring display_host;
-  net::AppendFormattedHost(url,
-      UTF8ToWide(profile_->GetPrefs()->GetString(prefs::kAcceptLanguages)),
-      &display_host,
-      NULL, NULL);
-
-  info_bubble_ = new ContentSettingBubbleGtk(
+  content_setting_bubble_ = new ContentSettingBubbleGtk(
       sender, this,
       ContentSettingBubbleModel::CreateContentSettingBubbleModel(
-          tab_contents, profile_, content_settings_type),
-      profile_, tab_contents);
+          parent_->browser(), tab_contents, profile_, content_settings_type),
+      profile_, tab_contents->tab_contents());
   return TRUE;
 }
 
@@ -1409,10 +1405,10 @@ gboolean LocationBarViewGtk::ContentSettingImageViewGtk::OnExpose(
   return FALSE;
 }
 
-void LocationBarViewGtk::ContentSettingImageViewGtk::InfoBubbleClosing(
-    InfoBubbleGtk* info_bubble,
+void LocationBarViewGtk::ContentSettingImageViewGtk::BubbleClosing(
+    BubbleGtk* bubble,
     bool closed_by_escape) {
-  info_bubble_ = NULL;
+  content_setting_bubble_ = NULL;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

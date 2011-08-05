@@ -4,6 +4,8 @@
 
 #include "chrome/renderer/extensions/event_bindings.h"
 
+#include <vector>
+
 #include "base/basictypes.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop.h"
@@ -17,6 +19,7 @@
 #include "chrome/renderer/extensions/js_only_v8_extensions.h"
 #include "content/renderer/render_thread.h"
 #include "content/renderer/render_view.h"
+#include "content/renderer/v8_value_converter.h"
 #include "googleurl/src/gurl.h"
 #include "grit/renderer_resources.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDataSource.h"
@@ -72,17 +75,17 @@ static EventListenerCounts& GetListenerCounts(const std::string& extension_id) {
 
 class ExtensionImpl : public ExtensionBase {
  public:
-  ExtensionImpl()
+  explicit ExtensionImpl(ExtensionDispatcher* dispatcher)
       : ExtensionBase(EventBindings::kName,
                       GetStringResource(IDR_EVENT_BINDINGS_JS),
-                      0, NULL) {
+                      0, NULL, dispatcher) {
   }
   ~ExtensionImpl() {}
 
   virtual v8::Handle<v8::FunctionTemplate> GetNativeFunction(
       v8::Handle<v8::String> name) {
     if (name->Equals(v8::String::New("AttachEvent"))) {
-      return v8::FunctionTemplate::New(AttachEvent);
+      return v8::FunctionTemplate::New(AttachEvent, v8::External::New(this));
     } else if (name->Equals(v8::String::New("DetachEvent"))) {
       return v8::FunctionTemplate::New(DetachEvent);
     } else if (name->Equals(v8::String::New("GetExternalFileEntry"))) {
@@ -102,13 +105,10 @@ class ExtensionImpl : public ExtensionBase {
       EventListenerCounts& listener_counts =
           GetListenerCounts(context_info->extension_id);
       std::string event_name(*v8::String::AsciiValue(args[0]));
-      bool has_permission =
-          ExtensionProcessBindings::CurrentContextHasPermission(event_name);
 
-      if (!has_permission) {
-        return ExtensionProcessBindings::ThrowPermissionDeniedException(
-            event_name);
-      }
+      ExtensionImpl* v8_extension = GetFromArguments<ExtensionImpl>(args);
+      if (!v8_extension->CheckPermissionForCurrentContext(event_name))
+        return v8::Undefined();
 
       if (++listener_counts[event_name] == 1) {
         EventBindings::GetRenderThread()->Send(
@@ -212,8 +212,8 @@ const char* EventBindings::kName = "chrome/EventBindings";
 const char* EventBindings::kTestingExtensionId =
     "oooooooooooooooooooooooooooooooo";
 
-v8::Extension* EventBindings::Get() {
-  static v8::Extension* extension = new ExtensionImpl();
+v8::Extension* EventBindings::Get(ExtensionDispatcher* dispatcher) {
+  static v8::Extension* extension = new ExtensionImpl(dispatcher);
   bindings_registered = true;
   return extension;
 }
@@ -382,14 +382,17 @@ void EventBindings::HandleContextDestroyed(WebFrame* frame) {
 // static
 void EventBindings::CallFunction(const std::string& extension_id,
                                  const std::string& function_name,
-                                 int argc, v8::Handle<v8::Value>* argv,
+                                 const ListValue& arguments,
                                  RenderView* render_view,
                                  const GURL& event_url) {
+  v8::HandleScope handle_scope;
+
   // We copy the context list, because calling into javascript may modify it
   // out from under us. We also guard against deleted contexts by checking if
   // they have been cleared first.
   ContextList contexts = GetContexts();
 
+  V8ValueConverter converter;
   for (ContextList::iterator it = contexts.begin();
        it != contexts.end(); ++it) {
     if (render_view && render_view != (*it)->render_view)
@@ -404,8 +407,16 @@ void EventBindings::CallFunction(const std::string& extension_id,
     if (!HasSufficientPermissions(it->get(), event_url))
       continue;
 
-    v8::Handle<v8::Value> retval = CallFunctionInContext((*it)->context,
-        function_name, argc, argv);
+    v8::Local<v8::Context> context(*((*it)->context));
+    std::vector<v8::Handle<v8::Value> > v8_arguments;
+    for (size_t i = 0; i < arguments.GetSize(); ++i) {
+      Value* item = NULL;
+      CHECK(arguments.Get(i, &item));
+      v8_arguments.push_back(converter.ToV8Value(item, context));
+    }
+
+    v8::Handle<v8::Value> retval = CallFunctionInContext(
+        context, function_name, v8_arguments.size(), &v8_arguments[0]);
     // In debug, the js will validate the event parameters and return a
     // string if a validation error has occured.
     // TODO(rafaelw): Consider only doing this check if function_name ==

@@ -146,14 +146,15 @@ bool InstallUtil::IsOSSupported() {
        (base::win::OSInfo::GetInstance()->service_pack().major >= 2));
 }
 
-void InstallUtil::WriteInstallerResult(bool system_install,
-                                       const std::wstring& state_key,
-                                       installer::InstallStatus status,
-                                       int string_resource_id,
-                                       const std::wstring* const launch_cmd) {
+void InstallUtil::AddInstallerResultItems(bool system_install,
+                                          const std::wstring& state_key,
+                                          installer::InstallStatus status,
+                                          int string_resource_id,
+                                          const std::wstring* const launch_cmd,
+                                          WorkItemList* install_list) {
+  DCHECK(install_list);
   const HKEY root = system_install ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
   DWORD installer_result = (GetInstallReturnCode(status) == 0) ? 0 : 1;
-  scoped_ptr<WorkItemList> install_list(WorkItem::CreateWorkItemList());
   install_list->AddCreateRegKeyWorkItem(root, state_key);
   install_list->AddSetRegValueWorkItem(root, state_key,
                                        installer::kInstallerResult,
@@ -170,8 +171,6 @@ void InstallUtil::WriteInstallerResult(bool system_install,
     install_list->AddSetRegValueWorkItem(root, state_key,
         installer::kInstallerSuccessLaunchCmdLine, *launch_cmd, true);
   }
-  if (!install_list->Do())
-    LOG(ERROR) << "Failed to record installer error information in registry.";
 }
 
 void InstallUtil::UpdateInstallerStage(bool system_install,
@@ -356,25 +355,10 @@ int InstallUtil::GetInstallReturnCode(installer::InstallStatus status) {
 }
 
 // static
-void InstallUtil::MakeUninstallCommand(const std::wstring& exe_path,
+void InstallUtil::MakeUninstallCommand(const std::wstring& program,
                                        const std::wstring& arguments,
                                        CommandLine* command_line) {
-  const bool no_program = exe_path.empty();
-
-  // Return a bunch of nothingness.
-  if (no_program && arguments.empty()) {
-    *command_line = CommandLine(CommandLine::NO_PROGRAM);
-  } else {
-    // Form a full command line string.
-    std::wstring command;
-    command.append(1, L'"')
-        .append(no_program ? L"" : exe_path)
-        .append(L"\" ")
-        .append(arguments);
-
-    // If we have a program name, return this complete command line.
-    *command_line = CommandLine::FromString(command);
-  }
+  *command_line = CommandLine::FromString(L"\"" + program + L"\" " + arguments);
 }
 
 std::wstring InstallUtil::GetCurrentDate() {

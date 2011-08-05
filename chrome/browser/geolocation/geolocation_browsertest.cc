@@ -3,9 +3,10 @@
 // found in the LICENSE file.
 
 #include "base/compiler_specific.h"
+#include "base/stringprintf.h"
 #include "base/string_number_conversions.h"
-#include "base/string_util.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/dom_operation_notification_details.h"
 #include "chrome/browser/geolocation/geolocation_content_settings_map.h"
 #include "chrome/browser/geolocation/geolocation_settings_state.h"
@@ -13,6 +14,7 @@
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/in_process_browser_test.h"
 #include "chrome/test/ui_test_utils.h"
@@ -45,7 +47,7 @@ class IFrameLoader : public NotificationObserver {
                    Source<NavigationController>(controller));
     registrar_.Add(this, NotificationType::DOM_OPERATION_RESPONSE,
                    NotificationService::AllSources());
-    std::string script = StringPrintf(
+    std::string script = base::StringPrintf(
         "window.domAutomationController.setAutomationId(0);"
         "window.domAutomationController.send(addIFrame(%d, \"%s\"));",
         iframe_id,
@@ -54,10 +56,10 @@ class IFrameLoader : public NotificationObserver {
         ExecuteJavascriptInWebFrame(string16(), UTF8ToUTF16(script));
     ui_test_utils::RunMessageLoop();
 
-    EXPECT_EQ(StringPrintf("\"%d\"", iframe_id), javascript_response_);
+    EXPECT_EQ(base::StringPrintf("\"%d\"", iframe_id), javascript_response_);
     registrar_.RemoveAll();
     // Now that we loaded the iframe, let's fetch its src.
-    script = StringPrintf(
+    script = base::StringPrintf(
         "window.domAutomationController.send(getIFrameSrc(%d))", iframe_id);
     std::string iframe_src;
     EXPECT_TRUE(ui_test_utils::ExecuteJavaScriptAndExtractString(
@@ -239,9 +241,8 @@ class GeolocationBrowserTest : public InProcessBrowserTest {
     LOG(WARNING) << "before navigate";
     if (options == INITIALIZATION_OFFTHERECORD) {
       ui_test_utils::OpenURLOffTheRecord(browser()->profile(), current_url_);
-      current_browser_ = BrowserList::FindBrowserWithType(
-          browser()->profile()->GetOffTheRecordProfile(), Browser::TYPE_NORMAL,
-          false);
+      current_browser_ = BrowserList::FindTabbedBrowser(
+          browser()->profile()->GetOffTheRecordProfile(), false);
     } else if (options == INITIALIZATION_NEWTAB) {
       current_browser_ = browser();
       current_browser_->NewTab();
@@ -306,9 +307,10 @@ class GeolocationBrowserTest : public InProcessBrowserTest {
   }
 
   void SetInfobarResponse(const GURL& requesting_url, bool allowed) {
-    TabContents* tab_contents = current_browser_->GetSelectedTabContents();
+    TabContentsWrapper* tab_contents_wrapper =
+        current_browser_->GetSelectedTabContentsWrapper();
     TabSpecificContentSettings* content_settings =
-        tab_contents->GetTabSpecificContentSettings();
+        tab_contents_wrapper->content_settings();
     const GeolocationSettingsState& settings_state =
         content_settings->geolocation_settings_state();
     size_t state_map_size = settings_state.state_map().size();
@@ -319,7 +321,7 @@ class GeolocationBrowserTest : public InProcessBrowserTest {
     else
       infobar_->AsConfirmInfoBarDelegate()->Cancel();
     WaitForNavigation();
-    tab_contents->RemoveInfoBar(infobar_);
+    tab_contents_wrapper->RemoveInfoBar(infobar_);
     LOG(WARNING) << "infobar response set";
     infobar_ = NULL;
     EXPECT_GT(settings_state.state_map().size(), state_map_size);
@@ -342,7 +344,7 @@ class GeolocationBrowserTest : public InProcessBrowserTest {
   void CheckStringValueFromJavascriptForTab(
       const std::string& expected, const std::string& function,
       TabContents* tab_contents) {
-    std::string script = StringPrintf(
+    std::string script = base::StringPrintf(
         "window.domAutomationController.send(%s)", function.c_str());
     std::string result;
     ASSERT_TRUE(ui_test_utils::ExecuteJavaScriptAndExtractString(
@@ -553,11 +555,11 @@ IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest,
   AddGeolocationWatch(true);
 
   size_t num_infobars_before_cancel =
-      current_browser_->GetSelectedTabContents()->infobar_count();
+      current_browser_->GetSelectedTabContentsWrapper()->infobar_count();
   // Change the iframe, and ensure the infobar is gone.
   IFrameLoader change_iframe_1(current_browser_, 1, current_url_);
   size_t num_infobars_after_cancel =
-      current_browser_->GetSelectedTabContents()->infobar_count();
+      current_browser_->GetSelectedTabContentsWrapper()->infobar_count();
   EXPECT_EQ(num_infobars_before_cancel, num_infobars_after_cancel + 1);
 }
 
@@ -602,7 +604,7 @@ IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest, TwoWatchesInOneFrame) {
   ASSERT_TRUE(Initialize(INITIALIZATION_NONE));
   // First, set the JavaScript to navigate when it receives |final_position|.
   const Geoposition final_position = GeopositionFromLatLong(3.17, 4.23);
-  std::string script = StringPrintf(
+  std::string script = base::StringPrintf(
       "window.domAutomationController.send(geoSetFinalPosition(%f, %f))",
       final_position.latitude, final_position.longitude);
   std::string js_result;

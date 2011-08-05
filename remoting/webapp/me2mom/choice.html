@@ -1,0 +1,193 @@
+<!doctype html>
+<!--
+Copyright (c) 2011 The Chromium Authors. All rights reserved.
+Use of this source code is governed by a BSD-style license that can be
+found in the LICENSE file.
+-->
+
+<html>
+
+  <head>
+    <link rel="stylesheet" type="text/css" href="main.css" />
+    <script type="text/javascript" src="remoting.js"></script>
+    <script type="text/javascript" src="oauth2.js"></script>
+    <title>Select Role</title>
+  </head>
+
+  <body onload="init();">
+
+    <!-- Auth panel -->
+    <div id="auth_panel">
+      OAuth2 Token: <span id="oauth2_status"></span>
+      <button onclick="remoting.oauth2.openOAuth2Window();"
+              id="oauth2_code_button">
+        Open OAuth2 Window
+      </button>
+      <button onclick="clearOAuth2();" id="oauth2_clear_button">
+        Clear
+      </button>
+      <form id='oauth2_form' action=""
+            onsubmit="authorizeOAuth2(this['oauth2_code'].value); return false;"
+            style="display:none">
+        <label for="auth2_code">OAuth2 Code (from window):</label>
+        <input type="text" name="oauth2_code" id="oauth2_code" />
+        <input type="submit"/>
+      </form>
+      <div id="email_div">
+        Current Email: <span id="current_email"></span>
+        <form id='new_email_form' action=""
+          onsubmit="setEmail(this); return false;">
+          <label for="new_email">New Email:</label>
+          <input type="text" name="new_email" id="new_email" />
+          <input type="submit" name="Set E-mail"/>
+        </form>
+      </div>
+      <div id="xmpp_div" style="display:none;">
+        XMPP Token: <span id="xmpp_status"></span>
+        <button onclick="clearXmpp();" id="xmpp_clear" style="display:none;">
+            Clear
+          </button>
+
+        <form id='xmpp_form' action=""
+          onsubmit="authorizeXmpp(this); return false;">
+          <label for="xmpp_username">Email:</label>
+          <input type="text" name="xmpp_username" id="xmpp_username" />
+          <label for="xmpp_password">App-specific Password:</label>
+          <input type="password" name="xmpp_password" id="xmpp_password" />
+          <div id="xmpp_captcha" style="display:none;">
+            <img style="display:block;" id="xmpp_captcha_img" />
+            <input type="hidden" name="xmpp_captcha_token" />
+            <input type="text" name="xmpp_captcha_result" />
+          </div>
+          <input type="submit"/>
+        </form>
+        <span id="xmpp_last_error" style="display:none"></span>
+        <iframe id="xmpp_error" style="display:none">
+          <p> No iframe support
+        </iframe>
+      </div>
+    </div>
+
+    <!-- Host UI -->
+    <div id="host">
+      <div id="plugin_wrapper">
+      </div>
+
+      <div id="unshared">
+        <p class="message">
+          Your desktop is currently unshared.
+        </p>
+        <button type="button"
+                class="ok"
+                onclick="tryShare();">
+          Start sharing
+        </button>
+        <p>
+          <a class="switch_mode"
+             href="#c"
+             onclick="setGlobalModePersistent('client');">
+            I want to connect to another computer instead...
+          </a>
+        </p>
+      </div>
+
+      <div id="preparing_to_share">
+        <p class="message">
+          Connecting...
+        </p>
+      </div>
+
+      <div id="ready_to_share">
+        <p class="message">
+          To begin sharing your desktop, read out the access code below to the
+          person who will be assisting you.
+        </p>
+        <p id="access_code_display">
+          FAILED!
+        </p>
+        <p class="message">
+          Waiting for connection...
+          <button type="button"
+                  class="cancel"
+                  onclick="cancelShare();">
+            Cancel
+          </button>
+        </p>
+        <p class="message mock">
+          (For this mock-up, this message will disappear automatically.)
+        </p>
+      </div>
+
+      <div id="shared">
+        <p class="message">
+          Your desktop is currently being shared.
+        </p>
+        <button type="button"
+                class="cancel"
+                onclick="cancelShare();">
+          Stop sharing
+        </button>
+      </div>
+
+    </div>
+
+    <!-- Client UI -->
+    <div id="client">
+
+      <div id="unconnected">
+        <p class="message">
+          To connect to another computer, enter the access code provided to you
+          by that computer's user.
+        </p>
+        <form action="" onsubmit="tryConnect(this['access_code_entry'].value);
+              return false;">
+          <input type="text"
+                 id="access_code_entry"/>
+          <button type="submit">
+            Connect
+          </button>
+        </form>
+        <a class="switch_mode"
+           href="#h"
+           onclick="setGlobalModePersistent('host');">
+          I want to share this computer instead...
+        </a>
+      </div>
+
+      <div id="connecting">
+        <p class="message">
+          Verifying access code...
+          <!-- TODO(jamiewalch): Implement Cancel, being careful when ignoring
+               the eventual server response not to ignore responses for any
+               subsequent requests.
+          <button type="button"
+                  class="cancel"
+                  onclick="cancelConnect();">
+            Cancel
+          </button>
+          -->
+        </p>
+      </div>
+
+      <div id="connect_failed">
+        <p class="message"
+           id="invalid_access_code">
+          Invalid access code.
+        </p>
+        <p class="message"
+           id="other_connect_error">
+          An error occurred. The server response was
+          <strong id="server_response"></strong>.
+        </p>
+        <button type="button"
+                class="ok"
+                onclick="setClientMode('unconnected');">
+          OK
+        </button>
+      </div>
+
+    </div>
+
+  </body>
+
+</html>

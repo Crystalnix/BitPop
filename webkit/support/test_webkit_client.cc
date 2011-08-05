@@ -5,15 +5,15 @@
 #include "webkit/support/test_webkit_client.h"
 
 #include "base/file_util.h"
-#include "base/memory/scoped_temp_dir.h"
-#include "base/path_service.h"
 #include "base/metrics/stats_counters.h"
+#include "base/path_service.h"
+#include "base/scoped_temp_dir.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
+#include "media/base/media.h"
 #include "net/base/cookie_monster.h"
 #include "net/http/http_cache.h"
 #include "net/test/test_server.h"
-#include "media/base/media.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCache.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebData.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDatabase.h"
@@ -21,8 +21,8 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBFactory.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBKey.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBKeyPath.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptController.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityPolicy.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSerializedScriptValue.h"
@@ -31,7 +31,7 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebStorageNamespace.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebURL.h"
-#include "ui/gfx/gl/gl_bindings_skia_in_process.h"
+#include "v8/include/v8.h"
 #include "webkit/appcache/web_application_cache_host_impl.h"
 #include "webkit/database/vfs_backend.h"
 #include "webkit/extensions/v8/gc_extension.h"
@@ -39,8 +39,10 @@
 #include "webkit/glue/webclipboard_impl.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/webkitclient_impl.h"
+#include "webkit/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 #include "webkit/gpu/webgraphicscontext3d_in_process_impl.h"
 #include "webkit/support/simple_database_system.h"
+#include "webkit/support/webkit_support.h"
 #include "webkit/support/weburl_loader_mock_factory.h"
 #include "webkit/tools/test_shell/mock_webclipboard_impl.h"
 #include "webkit/tools/test_shell/simple_appcache_system.h"
@@ -49,15 +51,14 @@
 #include "webkit/tools/test_shell/simple_webcookiejar_impl.h"
 #include "webkit/tools/test_shell/test_shell_request_context.h"
 #include "webkit/tools/test_shell/test_shell_webblobregistry_impl.h"
-#include "v8/include/v8.h"
 
 #if defined(OS_WIN)
 #include "third_party/WebKit/Source/WebKit/chromium/public/win/WebThemeEngine.h"
 #include "webkit/tools/test_shell/test_shell_webthemeengine.h"
-#elif defined(OS_LINUX)
-#include "third_party/WebKit/Source/WebKit/chromium/public/linux/WebThemeEngine.h"
 #elif defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
+#elif defined(OS_POSIX)
+#include "third_party/WebKit/Source/WebKit/chromium/public/linux/WebThemeEngine.h"
 #endif
 
 using WebKit::WebScriptController;
@@ -194,12 +195,19 @@ int TestWebKitClient::databaseDeleteFile(const WebKit::WebString& vfs_file_name,
 
 long TestWebKitClient::databaseGetFileAttributes(
     const WebKit::WebString& vfs_file_name) {
-  return SimpleDatabaseSystem::GetInstance()->GetFileAttributes(vfs_file_name);
+  return SimpleDatabaseSystem::GetInstance()->GetFileAttributes(
+      vfs_file_name);
 }
 
 long long TestWebKitClient::databaseGetFileSize(
     const WebKit::WebString& vfs_file_name) {
   return SimpleDatabaseSystem::GetInstance()->GetFileSize(vfs_file_name);
+}
+
+long long TestWebKitClient::databaseGetSpaceAvailableForOrigin(
+    const WebKit::WebString& origin_identifier) {
+  return SimpleDatabaseSystem::GetInstance()->GetSpaceAvailable(
+      origin_identifier);
 }
 
 unsigned long long TestWebKitClient::visitedLinkHash(const char* canonicalURL,
@@ -352,6 +360,13 @@ WebKit::WebSharedWorkerRepository* TestWebKitClient::sharedWorkerRepository() {
 }
 
 WebKit::WebGraphicsContext3D* TestWebKitClient::createGraphicsContext3D() {
-  gfx::BindSkiaToInProcessGL();
-  return new webkit::gpu::WebGraphicsContext3DInProcessImpl();
+  switch (webkit_support::GetGraphicsContext3DImplementation()) {
+    case webkit_support::IN_PROCESS:
+      return new webkit::gpu::WebGraphicsContext3DInProcessImpl();
+    case webkit_support::IN_PROCESS_COMMAND_BUFFER:
+      return new webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl();
+    default:
+      CHECK(false) << "Unknown GraphicsContext3D Implementation";
+      return NULL;
+  }
 }

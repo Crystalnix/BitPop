@@ -9,163 +9,112 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/gtest_prod_util.h"
 #include "base/string16.h"
 #include "chrome/browser/autofill/autofill_type.h"
 
 class AutofillField;
-class FormStructure;
-
-extern const char kEcmlShipToTitle[];
-extern const char kEcmlShipToFirstName[];
-extern const char kEcmlShipToMiddleName[];
-extern const char kEcmlShipToLastName[];
-extern const char kEcmlShipToNameSuffix[];
-extern const char kEcmlShipToCompanyName[];
-extern const char kEcmlShipToAddress1[];
-extern const char kEcmlShipToAddress2[];
-extern const char kEcmlShipToAddress3[];
-extern const char kEcmlShipToCity[];
-extern const char kEcmlShipToStateProv[];
-extern const char kEcmlShipToPostalCode[];
-extern const char kEcmlShipToCountry[];
-extern const char kEcmlShipToPhone[];
-extern const char kEcmlShipToEmail[];
-
-// billing name/address fields
-extern const char kEcmlBillToTitle[];
-extern const char kEcmlBillToFirstName[];
-extern const char kEcmlBillToMiddleName[];
-extern const char kEcmlBillToLastName[];
-extern const char kEcmlBillToNameSuffix[];
-extern const char kEcmlBillToCompanyName[];
-extern const char kEcmlBillToAddress1[];
-extern const char kEcmlBillToAddress2[];
-extern const char kEcmlBillToAddress3[];
-extern const char kEcmlBillToCity[];
-extern const char kEcmlBillToStateProv[];
-extern const char kEcmlBillToPostalCode[];
-extern const char kEcmlBillToCountry[];
-extern const char kEcmlBillToPhone[];
-extern const char kEcmlBillToEmail[];
-
-// credit card fields
-extern const char kEcmlCardHolder[];
-extern const char kEcmlCardType[];
-extern const char kEcmlCardNumber[];
-extern const char kEcmlCardVerification[];
-extern const char kEcmlCardExpireDay[];
-extern const char kEcmlCardExpireMonth[];
-extern const char kEcmlCardExpireYear[];
-
-enum FormFieldType {
-  kAddressType,
-  kCreditCardType,
-  kOtherFieldType
-};
+class AutofillScanner;
 
 // Represents a logical form field in a web form.  Classes that implement this
 // interface can identify themselves as a particular type of form field, e.g.
 // name, phone number, or address field.
 class FormField {
  public:
+  typedef FormField* ParseFunction(AutofillScanner* scanner, bool is_ecml);
+
   virtual ~FormField() {}
 
-  // Associates the available AutofillTypes of a FormField into
-  // |field_type_map|.
-  virtual bool GetFieldInfo(FieldTypeMap* field_type_map) const = 0;
-
-  // Returns the type of form field of the class implementing this interface.
-  virtual FormFieldType GetFormFieldType() const;
-
-  // Returns true if |field| contains the regexp |pattern| in the name or label.
-  // If |match_label_only| is true, then only the field's label is considered.
-  static bool Match(AutofillField* field,
-                    const string16& pattern,
-                    bool match_label_only);
-
-  // Parses a field using the different field views we know about.  |is_ecml|
-  // should be true when the field conforms to the ECML specification.
-  static FormField* ParseFormField(
-      std::vector<AutofillField*>::const_iterator* field,
-      bool is_ecml);
-
-  // Attempts to parse a text field with the given pattern; returns true on
-  // success, but doesn't return the actual text field itself.
-  static bool ParseText(std::vector<AutofillField*>::const_iterator* iter,
-                        const string16& pattern);
-
-  // Attempts to parse a text field with the given pattern.  Returns true on
-  // success and fills |dest| with a pointer to the field.
-  static bool ParseText(std::vector<AutofillField*>::const_iterator* iter,
-                        const string16& pattern,
-                        AutofillField** dest);
-
-  // Attempts to parse a text field with an empty name or label.  Returns true
-  // on success and fills |dest| with a pointer to the field.
-  static bool ParseEmptyText(std::vector<AutofillField*>::const_iterator* iter,
-                             AutofillField** dest);
-
-  // Attempts to parse a text field label with the given pattern.  Returns true
-  // on success and fills |dest| with a pointer to the field.
-  static bool ParseLabelText(std::vector<AutofillField*>::const_iterator* iter,
-                             const string16& pattern,
-                             AutofillField** dest);
-
-  // Attempts to parse a control with an empty label.
-  static bool ParseEmpty(std::vector<AutofillField*>::const_iterator* iter);
-
-  // Adds an association between a field and a type to |field_type_map|.
-  static bool Add(FieldTypeMap* field_type_map, AutofillField* field,
-                  const AutofillType& type);
+  // Classifies each field in |fields| with its heuristically detected type.
+  // The association is stored into |map|.  Each field has a derived unique name
+  // that is used as the key into the |map|.
+  static void ParseFormFields(const std::vector<AutofillField*>& fields,
+                              FieldTypeMap* map);
 
  protected:
+  // A bit-field used for matching specific parts of a field in question.
+  enum MatchType {
+    // Attributes.
+    MATCH_LABEL      = 1 << 0,
+    MATCH_NAME       = 1 << 1,
+
+    // Input types.
+    MATCH_TEXT       = 1 << 2,
+    MATCH_EMAIL      = 1 << 3,
+    MATCH_TELEPHONE  = 1 << 4,
+    MATCH_SELECT     = 1 << 5,
+    MATCH_ALL_INPUTS =
+        MATCH_TEXT | MATCH_EMAIL | MATCH_TELEPHONE | MATCH_SELECT,
+
+    // By default match label and name for input/text types.
+    MATCH_DEFAULT    = MATCH_LABEL | MATCH_NAME | MATCH_TEXT,
+  };
+
   // Only derived classes may instantiate.
   FormField() {}
 
-  // Note: ECML compliance checking has been modified to accommodate Google
-  // Checkout field name limitation. All ECML compliant web forms will be
-  // recognized correctly as such however the restrictions on having exactly
-  // ECML compliant names have been loosened to only require that field names
-  // be prefixed with an ECML compliant name in order to accommodate checkout.
-  // Additionally we allow the use of '.' as a word delimiter in addition to the
-  // ECML standard '_' (see FormField::FormField for details).
-  static string16 GetEcmlPattern(const char* ecml_name);
-  static string16 GetEcmlPattern(const char* ecml_name1,
-                                 const char* ecml_name2,
-                                 char pattern_operator);
+  // Attempts to parse a form field with the given pattern.  Returns true on
+  // success and fills |match| with a pointer to the field.
+  static bool ParseField(AutofillScanner* scanner,
+                         const string16& pattern,
+                         const AutofillField** match);
+
+  // Parses the stream of fields in |scanner| with regular expression |pattern|
+  // as specified in the |match_type| bit field (see |MatchType|).  If |match|
+  // is non-NULL and the pattern matches, the matched field is returned.
+  // A |true| result is returned in the case of a successful match, false
+  // otherwise.
+  static bool ParseFieldSpecifics(AutofillScanner* scanner,
+                                  const string16& pattern,
+                                  int match_type,
+                                  const AutofillField** match);
+
+  // Attempts to parse a field with an empty label.  Returns true
+  // on success and fills |match| with a pointer to the field.
+  static bool ParseEmptyLabel(AutofillScanner* scanner,
+                              const AutofillField** match);
+
+  // Adds an association between a field and a type to |map|.
+  static bool AddClassification(const AutofillField* field,
+                                AutofillFieldType type,
+                                FieldTypeMap* map);
+
+  // Derived classes must implement this interface to supply field type
+  // information.  |ParseFormFields| coordinates the parsing and extraction
+  // of types from an input vector of |AutofillField| objects and delegates
+  // the type extraction via this method.
+  virtual bool ClassifyField(FieldTypeMap* map) const = 0;
 
  private:
-  static bool ParseText(std::vector<AutofillField*>::const_iterator* iter,
-                        const string16& pattern,
-                        AutofillField** dest,
-                        bool match_label_only);
+  FRIEND_TEST_ALL_PREFIXES(FormFieldTest, Match);
 
-  // For empty strings we need to test that both label and name are empty.
-  static bool ParseLabelAndName(
-      std::vector<AutofillField*>::const_iterator* iter,
-      const string16& pattern,
-      AutofillField** dest);
-  static bool MatchName(AutofillField* field, const string16& pattern);
-  static bool MatchLabel(AutofillField* field, const string16& pattern);
+  // Matches |pattern| to the contents of the field at the head of the
+  // |scanner|.
+  // Returns |true| if a match is found according to |match_type|, and |false|
+  // otherwise.
+  static bool MatchAndAdvance(AutofillScanner* scanner,
+                              const string16& pattern,
+                              int match_type,
+                              const AutofillField** match);
+
+  // Matches the regular expression |pattern| against the components of |field|
+  // as specified in the |match_type| bit field (see |MatchType|).
+  static bool Match(const AutofillField* field,
+                    const string16& pattern,
+                    int match_type);
+
+  // Perform a "pass" over the |fields| where each pass uses the supplied
+  // |parse| method to match content to a given field type.
+  // |is_ecml| designates whether to match only ECML fields.
+  // |fields| is both an input and an output parameter.  Upon exit |fields|
+  // holds any remaining unclassified fields for further processing.
+  // Classification results of the proceessed fields are stored in |map|.
+  static void ParseFormFieldsPass(ParseFunction parse,
+                                  bool is_ecml,
+                                  std::vector<const AutofillField*>* fields,
+                                  FieldTypeMap* map);
 
   DISALLOW_COPY_AND_ASSIGN(FormField);
-};
-
-class FormFieldSet : public std::vector<FormField*> {
- public:
-  explicit FormFieldSet(FormStructure* form);
-
-  ~FormFieldSet() {
-    for (iterator i = begin(); i != end(); ++i)
-      delete *i;
-  }
-
- private:
-  // Checks if any of the labels are named according to the ECML standard.
-  // Returns true if at least one ECML named element is found.
-  bool CheckECML(FormStructure* fields);
-
-  DISALLOW_COPY_AND_ASSIGN(FormFieldSet);
 };
 
 #endif  // CHROME_BROWSER_AUTOFILL_FORM_FIELD_H_

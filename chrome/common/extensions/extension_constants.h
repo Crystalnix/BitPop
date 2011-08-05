@@ -17,6 +17,7 @@ namespace extension_manifest_keys {
   extern const char* kBrowseURLs;
   extern const char* kChromeURLOverrides;
   extern const char* kContentScripts;
+  extern const char* kContentSecurityPolicy;
   extern const char* kConvertedFromUserScript;
   extern const char* kCss;
   extern const char* kCurrentLocale;
@@ -24,6 +25,7 @@ namespace extension_manifest_keys {
   extern const char* kDescription;
   extern const char* kDevToolsPage;
   extern const char* kExcludeGlobs;
+  extern const char* kExcludeMatches;
   extern const char* kFileFilters;
   extern const char* kFileBrowserHandlers;
   extern const char* kHomepageURL;
@@ -128,11 +130,14 @@ namespace extension_manifest_errors {
   extern const char* kInvalidChromeURLOverrides;
   extern const char* kInvalidContentScript;
   extern const char* kInvalidContentScriptsList;
+  extern const char* kInvalidContentSecurityPolicy;
   extern const char* kInvalidCss;
   extern const char* kInvalidCssList;
   extern const char* kInvalidDefaultLocale;
   extern const char* kInvalidDescription;
   extern const char* kInvalidDevToolsPage;
+  extern const char* kInvalidExcludeMatch;
+  extern const char* kInvalidExcludeMatches;
   extern const char* kInvalidFileBrowserHandler;
   extern const char* kInvalidFileFiltersList;
   extern const char* kInvalidFileFilterValue;
@@ -363,6 +368,17 @@ namespace extension_misc {
   // stored.
   extern const char* kAccessExtensionPath;
 #endif
+
+  // What causes an extension to be installed? Used in histograms, so don't
+  // change existing values.
+  enum CrxInstallCause {
+    INSTALL_CAUSE_UNSET = 0,
+    INSTALL_CAUSE_USER_DOWNLOAD,
+    INSTALL_CAUSE_UPDATE,
+    INSTALL_CAUSE_EXTERNAL_FILE,
+    INSTALL_CAUSE_AUTOMATION,
+    NUM_INSTALL_CAUSES
+  };
 }  // extension_misc
 
 #endif  // CHROME_COMMON_EXTENSIONS_EXTENSION_CONSTANTS_H_

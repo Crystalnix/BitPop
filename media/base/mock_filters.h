@@ -54,7 +54,7 @@ class MockFilter : public Filter {
   MOCK_METHOD1(Flush, void(FilterCallback* callback));
   MOCK_METHOD1(Stop, void(FilterCallback* callback));
   MOCK_METHOD1(SetPlaybackRate, void(float playback_rate));
-  MOCK_METHOD2(Seek, void(base::TimeDelta time, FilterCallback* callback));
+  MOCK_METHOD2(Seek, void(base::TimeDelta time, const FilterStatusCB& cb));
   MOCK_METHOD0(OnAudioRendererDisabled, void());
 
  protected:
@@ -73,7 +73,7 @@ class MockDataSource : public DataSource {
 
   MOCK_METHOD1(Stop, void(FilterCallback* callback));
   MOCK_METHOD1(SetPlaybackRate, void(float playback_rate));
-  MOCK_METHOD2(Seek, void(base::TimeDelta time, FilterCallback* callback));
+  MOCK_METHOD2(Seek, void(base::TimeDelta time, const FilterStatusCB& cb));
   MOCK_METHOD0(OnAudioRendererDisabled, void());
 
   // DataSource implementation.
@@ -106,7 +106,7 @@ class MockDemuxer : public Demuxer {
   MOCK_METHOD1(Stop, void(FilterCallback* callback));
   MOCK_METHOD1(SetPlaybackRate, void(float playback_rate));
   MOCK_METHOD1(SetPreload, void(Preload preload));
-  MOCK_METHOD2(Seek, void(base::TimeDelta time, FilterCallback* callback));
+  MOCK_METHOD2(Seek, void(base::TimeDelta time, const FilterStatusCB& cb));
   MOCK_METHOD0(OnAudioRendererDisabled, void());
 
   // Demuxer implementation.
@@ -157,7 +157,7 @@ class MockDemuxerStream : public DemuxerStream {
   // DemuxerStream implementation.
   MOCK_METHOD0(type, Type());
   MOCK_METHOD0(media_format, const MediaFormat&());
-  MOCK_METHOD1(Read, void(Callback1<Buffer*>::Type* read_callback));
+  MOCK_METHOD1(Read, void(const ReadCallback& read_callback));
   MOCK_METHOD0(GetAVStream, AVStream*());
   MOCK_METHOD0(EnableBitstreamConverter, void());
 
@@ -177,7 +177,7 @@ class MockVideoDecoder : public VideoDecoder {
   // Filter implementation.
   MOCK_METHOD1(Stop, void(FilterCallback* callback));
   MOCK_METHOD1(SetPlaybackRate, void(float playback_rate));
-  MOCK_METHOD2(Seek, void(base::TimeDelta time, FilterCallback* callback));
+  MOCK_METHOD2(Seek, void(base::TimeDelta time, const FilterStatusCB& cb));
   MOCK_METHOD0(OnAudioRendererDisabled, void());
 
   // VideoDecoder implementation.
@@ -188,8 +188,7 @@ class MockVideoDecoder : public VideoDecoder {
   MOCK_METHOD1(ProduceVideoFrame, void(scoped_refptr<VideoFrame>));
   MOCK_METHOD0(ProvidesBuffer, bool());
 
-  // Make this method public so that tests can make use of it.
-  void VideoFrameReady(scoped_refptr<VideoFrame> frame) {
+  void VideoFrameReadyForTest(scoped_refptr<VideoFrame> frame) {
     VideoDecoder::VideoFrameReady(frame);
   }
 
@@ -207,19 +206,18 @@ class MockAudioDecoder : public AudioDecoder {
   // Filter implementation.
   MOCK_METHOD1(Stop, void(FilterCallback* callback));
   MOCK_METHOD1(SetPlaybackRate, void(float playback_rate));
-  MOCK_METHOD2(Seek, void(base::TimeDelta time, FilterCallback* callback));
+  MOCK_METHOD2(Seek, void(base::TimeDelta time, const FilterStatusCB& cb));
   MOCK_METHOD0(OnAudioRendererDisabled, void());
 
   // AudioDecoder implementation.
   MOCK_METHOD3(Initialize, void(DemuxerStream* stream,
                                 FilterCallback* callback,
                                 StatisticsCallback* stats_callback));
-  MOCK_METHOD0(media_format, const MediaFormat&());
+  MOCK_METHOD0(config, AudioDecoderConfig());
   MOCK_METHOD1(ProduceAudioSamples, void(scoped_refptr<Buffer>));
 
-  // change to public to allow unittest for access;
-  ConsumeAudioSamplesCallback* consume_audio_samples_callback() {
-    return AudioDecoder::consume_audio_samples_callback();
+  void ConsumeAudioSamplesForTest(scoped_refptr<Buffer> buffer) {
+    AudioDecoder::ConsumeAudioSamples(buffer);
   }
 
  protected:
@@ -236,7 +234,7 @@ class MockVideoRenderer : public VideoRenderer {
   // Filter implementation.
   MOCK_METHOD1(Stop, void(FilterCallback* callback));
   MOCK_METHOD1(SetPlaybackRate, void(float playback_rate));
-  MOCK_METHOD2(Seek, void(base::TimeDelta time, FilterCallback* callback));
+  MOCK_METHOD2(Seek, void(base::TimeDelta time, const FilterStatusCB& cb));
   MOCK_METHOD0(OnAudioRendererDisabled, void());
 
   // VideoRenderer implementation.
@@ -244,6 +242,9 @@ class MockVideoRenderer : public VideoRenderer {
                                 FilterCallback* callback,
                                 StatisticsCallback* stats_callback));
   MOCK_METHOD0(HasEnded, bool());
+
+  // TODO(scherkus): although VideoRendererBase defines this method, this really
+  // shouldn't be here OR should be renamed.
   MOCK_METHOD1(ConsumeVideoFrame, void(scoped_refptr<VideoFrame> frame));
 
  protected:
@@ -260,7 +261,7 @@ class MockAudioRenderer : public AudioRenderer {
   // Filter implementation.
   MOCK_METHOD1(Stop, void(FilterCallback* callback));
   MOCK_METHOD1(SetPlaybackRate, void(float playback_rate));
-  MOCK_METHOD2(Seek, void(base::TimeDelta time, FilterCallback* callback));
+  MOCK_METHOD2(Seek, void(base::TimeDelta time, const FilterStatusCB& cb));
   MOCK_METHOD0(OnAudioRendererDisabled, void());
 
   // AudioRenderer implementation.
@@ -313,6 +314,7 @@ class MockFilterCollection {
 // FilterCallback on behalf of the provided filter.  Can be used when mocking
 // the Initialize() and Seek() methods.
 void RunFilterCallback(::testing::Unused, FilterCallback* callback);
+void RunFilterStatusCB(::testing::Unused, const FilterStatusCB& cb);
 void RunPipelineStatusCallback(PipelineStatus status,
                                PipelineStatusCallback* callback);
 void RunFilterCallback3(::testing::Unused, FilterCallback* callback,

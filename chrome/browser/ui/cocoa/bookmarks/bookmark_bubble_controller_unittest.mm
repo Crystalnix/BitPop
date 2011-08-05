@@ -171,6 +171,16 @@ TEST_F(BookmarkBubbleControllerTest, TestFillInFolder) {
   EXPECT_TRUE([titles containsObject:@"sub"]);
   EXPECT_FALSE([titles containsObject:@"title1"]);
   EXPECT_FALSE([titles containsObject:@"title2"]);
+
+
+  // Verify that the top level folders are displayed correctly.
+  EXPECT_TRUE([titles containsObject:@"Other Bookmarks"]);
+  EXPECT_TRUE([titles containsObject:@"Bookmarks Bar"]);
+  if (model->synced_node()->IsVisible()) {
+    EXPECT_TRUE([titles containsObject:@"Synced Bookmarks"]);
+  } else {
+    EXPECT_FALSE([titles containsObject:@"Synced Bookmarks"]);
+  }
 }
 
 // Confirm ability to handle folders with blank name.
@@ -463,11 +473,11 @@ TEST_F(BookmarkBubbleControllerTest, BubbleGoesAwayOnNewTab) {
   // Many of our browser objects (Browser, Profile, RequestContext)
   // are "just enough" to run tests without being complete.  Instead
   // we fake the notification that would be triggered by a tab
-  // creation.
+  // creation. See TabContents::NotifyConnected().
   NotificationService::current()->Notify(
       NotificationType::TAB_CONTENTS_CONNECTED,
-      Source<TabContentsDelegate>(NULL),
-      Details<TabContents>(NULL));
+      Source<TabContents>(NULL),
+      NotificationService::NoDetails());
 
   // Confirm bubble going bye-bye.
   EXPECT_TRUE(IsWindowClosing());

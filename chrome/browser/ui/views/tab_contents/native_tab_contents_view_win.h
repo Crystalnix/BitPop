@@ -7,13 +7,13 @@
 #pragma once
 
 #include "chrome/browser/ui/views/tab_contents/native_tab_contents_view.h"
-#include "views/widget/widget_win.h"
+#include "views/widget/native_widget_win.h"
 
 class WebDropTarget;
 class TabContents;
 class TabContentsDragWin;
 
-class NativeTabContentsViewWin : public views::WidgetWin,
+class NativeTabContentsViewWin : public views::NativeWidgetWin,
                                  public NativeTabContentsView {
  public:
   explicit NativeTabContentsViewWin(
@@ -43,7 +43,7 @@ class NativeTabContentsViewWin : public views::WidgetWin,
   virtual void SetDragCursor(WebKit::WebDragOperation operation) OVERRIDE;
   virtual views::NativeWidget* AsNativeWidget() OVERRIDE;
 
-  // Overridden from views::WidgetWin:
+  // Overridden from views::NativeWidgetWin:
   virtual void OnDestroy() OVERRIDE;
   virtual void OnHScroll(int scroll_type,
                          short position,
@@ -61,7 +61,6 @@ class NativeTabContentsViewWin : public views::WidgetWin,
   virtual void OnSize(UINT param, const WTL::CSize& size) OVERRIDE;
   virtual LRESULT OnNCCalcSize(BOOL w_param, LPARAM l_param) OVERRIDE;
   virtual void OnNCPaint(HRGN rgn) OVERRIDE;
-  virtual views::FocusManager* GetFocusManager() OVERRIDE;
 
   // Backend for all scroll messages, the |message| parameter indicates which
   // one it is.
@@ -76,10 +75,6 @@ class NativeTabContentsViewWin : public views::WidgetWin,
 
   // Used to handle the drag-and-drop.
   scoped_refptr<TabContentsDragWin> drag_handler_;
-
-  // The FocusManager associated with this tab.  Stored as it is not directly
-  // accessible when un-parented.
-  views::FocusManager* focus_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(NativeTabContentsViewWin);
 };

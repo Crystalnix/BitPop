@@ -8,6 +8,7 @@
 #include <queue>
 
 #include "base/callback.h"
+#include "base/command_line.h"
 #include "base/file_path.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -18,22 +19,24 @@
 #include "content/common/audio_messages.h"
 #include "content/common/child_process_messages.h"
 #include "content/common/child_thread.h"
+#include "content/common/content_switches.h"
 #include "content/common/file_system/file_system_dispatcher.h"
 #include "content/common/pepper_file_messages.h"
 #include "content/common/pepper_plugin_registry.h"
 #include "content/common/pepper_messages.h"
 #include "content/common/view_messages.h"
 #include "content/renderer/audio_message_filter.h"
-#include "content/renderer/command_buffer_proxy.h"
 #include "content/renderer/content_renderer_client.h"
-#include "content/renderer/renderer_gl_context.h"
-#include "content/renderer/gpu_channel_host.h"
+#include "content/renderer/gpu/command_buffer_proxy.h"
+#include "content/renderer/gpu/gpu_channel_host.h"
+#include "content/renderer/gpu/renderer_gl_context.h"
+#include "content/renderer/gpu/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/renderer/p2p/p2p_transport_impl.h"
 #include "content/renderer/pepper_platform_context_3d_impl.h"
+#include "content/renderer/pepper_platform_video_decoder_impl.h"
 #include "content/renderer/render_thread.h"
 #include "content/renderer/render_view.h"
 #include "content/renderer/render_widget_fullscreen_pepper.h"
-#include "content/renderer/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/renderer/webplugin_delegate_proxy.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ppapi/c/dev/pp_video_dev.h"
@@ -42,6 +45,7 @@
 #include "ppapi/c/private/ppb_flash_net_connector.h"
 #include "ppapi/proxy/host_dispatcher.h"
 #include "ppapi/proxy/ppapi_messages.h"
+#include "ppapi/shared_impl/ppapi_preferences.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileChooserCompletion.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileChooserParams.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
@@ -325,7 +329,8 @@ class DispatcherWrapper
   DispatcherWrapper() {}
   virtual ~DispatcherWrapper() {}
 
-  bool Init(base::ProcessHandle plugin_process_handle,
+  bool Init(RenderView* render_view,
+            base::ProcessHandle plugin_process_handle,
             const IPC::ChannelHandle& channel_handle,
             PP_Module pp_module,
             pp::proxy::Dispatcher::GetInterfaceFunc local_get_interface);
@@ -348,6 +353,7 @@ class DispatcherWrapper
 }  // namespace
 
 bool DispatcherWrapper::Init(
+    RenderView* render_view,
     base::ProcessHandle plugin_process_handle,
     const IPC::ChannelHandle& channel_handle,
     PP_Module pp_module,
@@ -355,8 +361,10 @@ bool DispatcherWrapper::Init(
   dispatcher_.reset(new pp::proxy::HostDispatcher(
       plugin_process_handle, pp_module, local_get_interface));
 
-  if (!dispatcher_->InitHostWithChannel(PepperPluginRegistry::GetInstance(),
-                                        channel_handle, true)) {
+  if (!dispatcher_->InitHostWithChannel(
+          PepperPluginRegistry::GetInstance(),
+          channel_handle, true,
+          ppapi::Preferences(render_view->webkit_preferences()))) {
     dispatcher_.reset();
     return false;
   }
@@ -556,7 +564,8 @@ PepperPluginDelegateImpl::PepperPluginDelegateImpl(RenderView* render_view)
     : render_view_(render_view),
       has_saved_context_menu_action_(false),
       saved_context_menu_action_(0),
-      id_generator_(0) {
+      id_generator_(0),
+      is_pepper_plugin_focused_(false) {
 }
 
 PepperPluginDelegateImpl::~PepperPluginDelegateImpl() {
@@ -605,6 +614,7 @@ PepperPluginDelegateImpl::CreatePepperPlugin(
   PepperPluginRegistry::GetInstance()->AddLiveModule(path, module);
   scoped_ptr<DispatcherWrapper> dispatcher(new DispatcherWrapper);
   if (!dispatcher->Init(
+          render_view_,
           plugin_process_handle, channel_handle,
           module->pp_module(),
           webkit::ppapi::PluginModule::GetLocalGetInterfaceFunc()))
@@ -644,10 +654,10 @@ void PepperPluginDelegateImpl::OnPpapiBrokerChannelCreated(
     int request_id,
     base::ProcessHandle broker_process_handle,
     const IPC::ChannelHandle& handle) {
-
-  scoped_refptr<PpapiBrokerImpl> broker =
-      *pending_connect_broker_.Lookup(request_id);
-  if (broker) {
+  scoped_refptr<PpapiBrokerImpl>* broker_ptr =
+      pending_connect_broker_.Lookup(request_id);
+  if (broker_ptr) {
+    scoped_refptr<PpapiBrokerImpl> broker = *broker_ptr;
     pending_connect_broker_.Remove(request_id);
     broker->OnBrokerChannelConnected(broker_process_handle, handle);
   } else {
@@ -731,6 +741,12 @@ PepperPluginDelegateImpl::GetBitmapForOptimizedPluginPaint(
   return NULL;
 }
 
+void PepperPluginDelegateImpl::PluginFocusChanged(bool focused) {
+  is_pepper_plugin_focused_ = focused;
+  if (render_view_)
+    render_view_->PpapiPluginFocusChanged();
+}
+
 void PepperPluginDelegateImpl::PluginCrashed(
     webkit::ppapi::PluginInstance* instance) {
   render_view_->PluginCrashed(instance->module()->path());
@@ -812,10 +828,8 @@ webkit::ppapi::PluginDelegate::PlatformContext3D*
 
 webkit::ppapi::PluginDelegate::PlatformVideoDecoder*
 PepperPluginDelegateImpl::CreateVideoDecoder(
-    PP_VideoDecoderConfig_Dev* decoder_config) {
-  // TODO(vmr): Implement.
-  NOTIMPLEMENTED();
-  return NULL;
+    media::VideoDecodeAccelerator::Client* client) {
+  return new PlatformVideoDecoderImpl(client);
 }
 
 void PepperPluginDelegateImpl::NumberOfFindResultsChanged(int identifier,
@@ -902,6 +916,10 @@ void PepperPluginDelegateImpl::OnSetFocus(bool has_focus) {
          active_instances_.begin();
        i != active_instances_.end(); ++i)
     (*i)->SetContentAreaFocus(has_focus);
+}
+
+bool PepperPluginDelegateImpl::IsPluginFocused() const {
+  return is_pepper_plugin_focused_;
 }
 
 bool PepperPluginDelegateImpl::OpenFileSystem(
@@ -1277,7 +1295,11 @@ P2PSocketDispatcher* PepperPluginDelegateImpl::GetP2PSocketDispatcher() {
 }
 
 webkit_glue::P2PTransport* PepperPluginDelegateImpl::CreateP2PTransport() {
+#if defined(ENABLE_P2P_APIS)
   return new P2PTransportImpl(render_view_->p2p_socket_dispatcher());
+#else
+  return NULL;
+#endif
 }
 
 double PepperPluginDelegateImpl::GetLocalTimeZoneOffset(base::Time t) {
@@ -1285,4 +1307,30 @@ double PepperPluginDelegateImpl::GetLocalTimeZoneOffset(base::Time t) {
   render_view_->Send(new PepperMsg_GetLocalTimeZoneOffset(
       t, &result));
   return result;
+}
+
+std::string PepperPluginDelegateImpl::GetFlashCommandLineArgs() {
+  return CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+      switches::kPpapiFlashArgs);
+}
+
+base::SharedMemory* PepperPluginDelegateImpl::CreateAnonymousSharedMemory(
+    uint32_t size) {
+  if (size == 0)
+    return NULL;
+  base::SharedMemoryHandle handle;
+  if (!render_view_->Send(
+          new ViewHostMsg_AllocateSharedMemoryBuffer(size, &handle))) {
+    DLOG(WARNING) << "Browser allocation request message failed";
+    return NULL;
+  }
+  if (!base::SharedMemory::IsHandleValid(handle)) {
+    DLOG(WARNING) << "Browser failed to allocate shared memory";
+    return NULL;
+  }
+  return new base::SharedMemory(handle, false);
+}
+
+ppapi::Preferences PepperPluginDelegateImpl::GetPreferences() {
+  return ppapi::Preferences(render_view_->webkit_preferences());
 }

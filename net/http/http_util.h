@@ -12,6 +12,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/string_tokenizer.h"
 #include "googleurl/src/gurl.h"
+#include "net/base/net_api.h"
 #include "net/http/http_byte_range.h"
 
 // This is a macro to support extending this string literal at compile time.
@@ -22,7 +23,7 @@ namespace net {
 
 class UploadDataStream;
 
-class HttpUtil {
+class NET_API HttpUtil {
  public:
   // Returns the absolute path of the URL, to be used for the http request.
   // The absolute path starts with a '/' and may contain a query.
@@ -132,6 +133,12 @@ class HttpUtil {
   // the end-of-headers marker as defined by LocateEndOfHeaders.
   static std::string AssembleRawHeaders(const char* buf, int buf_len);
 
+  // Converts assembled "raw headers" back to the HTTP response format. That is
+  // convert each \0 occurence to CRLF. This is used by DevTools.
+  // Since all line continuations info is already lost at this point, the result
+  // consists of status line and then one line for each header.
+  static std::string ConvertHeadersBackToHTTPResponse(const std::string& str);
+
   // Given a comma separated ordered list of language codes, return
   // the list with a qvalue appended to each language.
   // The way qvalues are assigned is rather simple. The qvalue
@@ -164,7 +171,7 @@ class HttpUtil {
   // over the values in a multi-value header, use ValuesIterator.
   // See AssembleRawHeaders for joining line continuations (this iterator
   // does not expect any).
-  class HeadersIterator {
+  class NET_API HeadersIterator {
    public:
     HeadersIterator(std::string::const_iterator headers_begin,
                     std::string::const_iterator headers_end,
@@ -227,7 +234,7 @@ class HttpUtil {
   // This iterator is careful to skip over delimiters found inside an HTTP
   // quoted string.
   //
-  class ValuesIterator {
+  class NET_TEST ValuesIterator {
    public:
     ValuesIterator(std::string::const_iterator values_begin,
                    std::string::const_iterator values_end,
@@ -261,7 +268,7 @@ class HttpUtil {
   //
   // String iterators returned from this class' methods may be invalidated upon
   // calls to GetNext() or after the NameValuePairsIterator is destroyed.
-  class NameValuePairsIterator {
+  class NET_API NameValuePairsIterator {
    public:
     NameValuePairsIterator(std::string::const_iterator begin,
                            std::string::const_iterator end,

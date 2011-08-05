@@ -17,11 +17,110 @@
 namespace remoting {
 
 namespace {
+
+class scoped_pixel_buffer_object {
+ public:
+  scoped_pixel_buffer_object();
+  ~scoped_pixel_buffer_object();
+
+  bool Init(CGLContextObj cgl_context, int size_in_bytes);
+  void Release();
+
+  GLuint get() const { return pixel_buffer_object_; }
+
+ private:
+  CGLContextObj cgl_context_;
+  GLuint pixel_buffer_object_;
+
+  DISALLOW_COPY_AND_ASSIGN(scoped_pixel_buffer_object);
+};
+
+scoped_pixel_buffer_object::scoped_pixel_buffer_object()
+    : cgl_context_(NULL),
+      pixel_buffer_object_(0) {
+}
+
+scoped_pixel_buffer_object::~scoped_pixel_buffer_object() {
+  Release();
+}
+
+bool scoped_pixel_buffer_object::Init(CGLContextObj cgl_context,
+                                      int size_in_bytes) {
+  cgl_context_ = cgl_context;
+  CGLContextObj CGL_MACRO_CONTEXT = cgl_context_;
+  glGenBuffersARB(1, &pixel_buffer_object_);
+  if (glGetError() == GL_NO_ERROR) {
+    glBindBufferARB(GL_PIXEL_PACK_BUFFER_ARB, pixel_buffer_object_);
+    glBufferDataARB(GL_PIXEL_PACK_BUFFER_ARB, size_in_bytes, NULL,
+                    GL_STREAM_READ_ARB);
+    glBindBufferARB(GL_PIXEL_PACK_BUFFER_ARB, 0);
+    if (glGetError() != GL_NO_ERROR) {
+      Release();
+    }
+  } else {
+    cgl_context_ = NULL;
+    pixel_buffer_object_ = 0;
+  }
+  return pixel_buffer_object_ != 0;
+}
+
+void scoped_pixel_buffer_object::Release() {
+  if (pixel_buffer_object_) {
+    CGLContextObj CGL_MACRO_CONTEXT = cgl_context_;
+    glDeleteBuffersARB(1, &pixel_buffer_object_);
+    cgl_context_ = NULL;
+    pixel_buffer_object_ = 0;
+  }
+}
+
+// A class representing a full-frame pixel buffer.
+class VideoFrameBuffer {
+ public:
+  VideoFrameBuffer() : bytes_per_row_(0), needs_update_(true) { }
+
+  // If the buffer is marked as needing to be updated (for example after the
+  // screen mode changes) and is the wrong size, then release the old buffer
+  // and create a new one.
+  void Update() {
+    if (needs_update_) {
+      needs_update_ = false;
+      CGDirectDisplayID mainDevice = CGMainDisplayID();
+      int width = CGDisplayPixelsWide(mainDevice);
+      int height = CGDisplayPixelsHigh(mainDevice);
+      if (width != size_.width() || height != size_.height()) {
+        size_.SetSize(width, height);
+        bytes_per_row_ = width * sizeof(uint32_t);
+        size_t buffer_size = width * height * sizeof(uint32_t);
+        ptr_.reset(new uint8[buffer_size]);
+      }
+    }
+  }
+
+  gfx::Size size() const { return size_; }
+  int bytes_per_row() const { return bytes_per_row_; }
+  uint8* ptr() const { return ptr_.get(); }
+
+  void set_needs_update() { needs_update_ = true; }
+
+ private:
+  gfx::Size size_;
+  int bytes_per_row_;
+  scoped_array<uint8> ptr_;
+  bool needs_update_;
+
+  DISALLOW_COPY_AND_ASSIGN(VideoFrameBuffer);
+};
+
 // A class to perform capturing for mac.
 class CapturerMac : public Capturer {
  public:
   CapturerMac();
   virtual ~CapturerMac();
+
+  // Enable or disable capturing. Capturing should be disabled while a screen
+  // reconfiguration is in progress, otherwise reading from the screen base
+  // address is likely to segfault.
+  void EnableCapture(bool enable);
 
   // Capturer interface.
   virtual void ScreenConfigurationChanged() OVERRIDE;
@@ -34,6 +133,9 @@ class CapturerMac : public Capturer {
   virtual const gfx::Size& size_most_recent() const OVERRIDE;
 
  private:
+  void GlBlitFast(const VideoFrameBuffer& buffer);
+  void GlBlitSlow(const VideoFrameBuffer& buffer);
+  void CgBlit(const VideoFrameBuffer& buffer, const InvalidRects& rects);
   void CaptureRects(const InvalidRects& rects,
                     CaptureCompletedCallback* callback);
 
@@ -55,34 +157,34 @@ class CapturerMac : public Capturer {
   void ReleaseBuffers();
   CGLContextObj cgl_context_;
   static const int kNumBuffers = 2;
-  scoped_array<uint8> buffers_[kNumBuffers];
+  scoped_pixel_buffer_object pixel_buffer_object_;
+  VideoFrameBuffer buffers_[kNumBuffers];
 
   // A thread-safe list of invalid rectangles, and the size of the most
   // recently captured screen.
   CapturerHelper helper_;
 
-  // Screen size.
-  int width_;
-  int height_;
-
-  int bytes_per_row_;
-
   // The current buffer with valid data for reading.
   int current_buffer_;
 
+  // The last buffer into which we captured, or NULL for the first capture for
+  // a particular screen resolution.
+  uint8* last_buffer_;
+
   // Format of pixels returned in buffer.
   media::VideoFrame::Format pixel_format_;
+
+  bool capturing_;
 
   DISALLOW_COPY_AND_ASSIGN(CapturerMac);
 };
 
 CapturerMac::CapturerMac()
     : cgl_context_(NULL),
-      width_(0),
-      height_(0),
-      bytes_per_row_(0),
       current_buffer_(0),
-      pixel_format_(media::VideoFrame::RGB32) {
+      last_buffer_(NULL),
+      pixel_format_(media::VideoFrame::RGB32),
+      capturing_(true) {
   // TODO(dmaclach): move this initialization out into session_manager,
   // or at least have session_manager call into here to initialize it.
   CGError err =
@@ -96,7 +198,6 @@ CapturerMac::CapturerMac()
       CapturerMac::DisplaysReconfiguredCallback, this);
   DCHECK_EQ(err, kCGErrorSuccess);
   ScreenConfigurationChanged();
-  InvalidateScreen(gfx::Size(width_, height_));
 }
 
 CapturerMac::~CapturerMac() {
@@ -107,25 +208,40 @@ CapturerMac::~CapturerMac() {
       CapturerMac::DisplaysReconfiguredCallback, this);
 }
 
+void CapturerMac::EnableCapture(bool enable) {
+  capturing_ = enable;
+}
+
 void CapturerMac::ReleaseBuffers() {
   if (cgl_context_) {
+    pixel_buffer_object_.Release();
     CGLDestroyContext(cgl_context_);
     cgl_context_ = NULL;
+  }
+  // The buffers might be in use by the encoder, so don't delete them here.
+  // Instead, mark them as "needs update"; next time the buffers are used by
+  // the capturer, they will be recreated if necessary.
+  for (int i = 0; i < kNumBuffers; ++i) {
+    buffers_[i].set_needs_update();
   }
 }
 
 void CapturerMac::ScreenConfigurationChanged() {
   ReleaseBuffers();
-  CGDirectDisplayID mainDevice = CGMainDisplayID();
+  InvalidRects rects;
+  helper_.SwapInvalidRects(rects);
+  last_buffer_ = NULL;
 
-  width_ = CGDisplayPixelsWide(mainDevice);
-  height_ = CGDisplayPixelsHigh(mainDevice);
-  pixel_format_ = media::VideoFrame::RGB32;
-  bytes_per_row_ = width_ * sizeof(uint32_t);
-  size_t buffer_size = height_ * bytes_per_row_;
-  for (int i = 0; i < kNumBuffers; ++i) {
-    buffers_[i].reset(new uint8[buffer_size]);
+  CGDirectDisplayID mainDevice = CGMainDisplayID();
+  int width = CGDisplayPixelsWide(mainDevice);
+  int height = CGDisplayPixelsHigh(mainDevice);
+  InvalidateScreen(gfx::Size(width, height));
+
+  if (CGDisplayIsBuiltin(mainDevice)) {
+    VLOG(3) << "OpenGL support not available.";
+    return;
   }
+
   CGLPixelFormatAttribute attributes[] = {
     kCGLPFAFullScreen,
     kCGLPFADisplayMask,
@@ -143,6 +259,9 @@ void CapturerMac::ScreenConfigurationChanged() {
   CGLDestroyPixelFormat(pixel_format);
   CGLSetFullScreen(cgl_context_);
   CGLSetCurrentContext(cgl_context_);
+
+  size_t buffer_size = width * height * sizeof(uint32_t);
+  pixel_buffer_object_.Init(cgl_context_, buffer_size);
 }
 
 media::VideoFrame::Format CapturerMac::pixel_format() const {
@@ -166,37 +285,107 @@ void CapturerMac::InvalidateFullScreen() {
 }
 
 void CapturerMac::CaptureInvalidRects(CaptureCompletedCallback* callback) {
-  InvalidRects rects;
-  helper_.SwapInvalidRects(rects);
+  scoped_refptr<CaptureData> data;
+  if (capturing_) {
+    InvalidRects rects;
+    helper_.SwapInvalidRects(rects);
+    VideoFrameBuffer& current_buffer = buffers_[current_buffer_];
+    current_buffer.Update();
 
+    bool flip = true;  // GL capturers need flipping.
+    if (cgl_context_) {
+      if (pixel_buffer_object_.get() != 0) {
+        GlBlitFast(current_buffer);
+      } else {
+        GlBlitSlow(current_buffer);
+      }
+    } else {
+      CgBlit(current_buffer, rects);
+      flip = false;
+    }
+
+    DataPlanes planes;
+    planes.data[0] = current_buffer.ptr();
+    planes.strides[0] = current_buffer.bytes_per_row();
+    if (flip) {
+      planes.strides[0] = -planes.strides[0];
+      planes.data[0] +=
+          (current_buffer.size().height() - 1) * current_buffer.bytes_per_row();
+    }
+
+    data = new CaptureData(planes, gfx::Size(current_buffer.size()),
+                           pixel_format());
+    data->mutable_dirty_rects() = rects;
+
+    current_buffer_ = (current_buffer_ + 1) % kNumBuffers;
+    helper_.set_size_most_recent(data->size());
+  }
+
+  callback->Run(data);
+  delete callback;
+}
+
+void CapturerMac::GlBlitFast(const VideoFrameBuffer& buffer) {
+  CGLContextObj CGL_MACRO_CONTEXT = cgl_context_;
+  glBindBufferARB(GL_PIXEL_PACK_BUFFER_ARB, pixel_buffer_object_.get());
+  glReadPixels(0, 0, buffer.size().width(), buffer.size().height(),
+               GL_BGRA, GL_UNSIGNED_BYTE, 0);
+  GLubyte* ptr = static_cast<GLubyte*>(
+      glMapBufferARB(GL_PIXEL_PACK_BUFFER_ARB, GL_READ_ONLY_ARB));
+  if (ptr == NULL) {
+    // If the buffer can't be mapped, assume that it's no longer valid and
+    // release it.
+    pixel_buffer_object_.Release();
+  } else {
+    memcpy(buffer.ptr(), ptr, buffer.size().height() * buffer.bytes_per_row());
+  }
+  if (!glUnmapBufferARB(GL_PIXEL_PACK_BUFFER_ARB)) {
+    // If glUnmapBuffer returns false, then the contents of the data store are
+    // undefined. This might be because the screen mode has changed, in which
+    // case it will be recreated in ScreenConfigurationChanged, but releasing
+    // the object here is the best option. Capturing will fall back on
+    // GlBlitSlow until such time as the pixel buffer object is recreated.
+    pixel_buffer_object_.Release();
+  }
+  glBindBufferARB(GL_PIXEL_PACK_BUFFER_ARB, 0);
+}
+
+void CapturerMac::GlBlitSlow(const VideoFrameBuffer& buffer) {
   CGLContextObj CGL_MACRO_CONTEXT = cgl_context_;
   glReadBuffer(GL_FRONT);
   glPushClientAttrib(GL_CLIENT_PIXEL_STORE_BIT);
-
   glPixelStorei(GL_PACK_ALIGNMENT, 4);  // Force 4-byte alignment.
   glPixelStorei(GL_PACK_ROW_LENGTH, 0);
   glPixelStorei(GL_PACK_SKIP_ROWS, 0);
   glPixelStorei(GL_PACK_SKIP_PIXELS, 0);
-
   // Read a block of pixels from the frame buffer.
-  uint8* current_buffer = buffers_[current_buffer_].get();
-  glReadPixels(0, 0, width_, height_, GL_BGRA, GL_UNSIGNED_BYTE,
-               current_buffer);
+  glReadPixels(0, 0, buffer.size().width(), buffer.size().height(),
+               GL_BGRA, GL_UNSIGNED_BYTE, buffer.ptr());
   glPopClientAttrib();
+}
 
-  DataPlanes planes;
-  planes.data[0] = buffers_[current_buffer_].get() + height_ * bytes_per_row_;
-  planes.strides[0] = -bytes_per_row_;
-
-  scoped_refptr<CaptureData> data(
-      new CaptureData(planes, gfx::Size(width_, height_), pixel_format()));
-  data->mutable_dirty_rects() = rects;
-
-  current_buffer_ = (current_buffer_ + 1) % kNumBuffers;
-  helper_.set_size_most_recent(data->size());
-
-  callback->Run(data);
-  delete callback;
+void CapturerMac::CgBlit(const VideoFrameBuffer& buffer,
+                         const InvalidRects& rects) {
+  if (last_buffer_)
+    memcpy(buffer.ptr(), last_buffer_,
+           buffer.bytes_per_row() * buffer.size().height());
+  last_buffer_ = buffer.ptr();
+  CGDirectDisplayID main_display = CGMainDisplayID();
+  uint8* display_base_address =
+      reinterpret_cast<uint8*>(CGDisplayBaseAddress(main_display));
+  int src_bytes_per_row = CGDisplayBytesPerRow(main_display);
+  int src_bytes_per_pixel = CGDisplayBitsPerPixel(main_display) / 8;
+  for (InvalidRects::iterator i = rects.begin(); i != rects.end(); ++i) {
+    int src_row_offset =  i->x() * src_bytes_per_pixel;
+    int dst_row_offset = i->x() * sizeof(uint32_t);
+    int rect_width_in_bytes = i->width() * src_bytes_per_pixel;
+    int ymax = i->height() + i->y();
+    for (int y = i->y(); y < ymax; ++y) {
+      memcpy(buffer.ptr() + y * buffer.bytes_per_row() + dst_row_offset,
+             display_base_address + y * src_bytes_per_row + src_row_offset,
+             rect_width_in_bytes);
+    }
+  }
 }
 
 const gfx::Size& CapturerMac::size_most_recent() const {
@@ -243,10 +432,14 @@ void CapturerMac::DisplaysReconfiguredCallback(
     CGDirectDisplayID display,
     CGDisplayChangeSummaryFlags flags,
     void *user_parameter) {
-  if ((display == CGMainDisplayID()) &&
-      !(flags & kCGDisplayBeginConfigurationFlag)) {
+  if (display == CGMainDisplayID()) {
     CapturerMac *capturer = reinterpret_cast<CapturerMac *>(user_parameter);
-    capturer->ScreenConfigurationChanged();
+    if (flags & kCGDisplayBeginConfigurationFlag) {
+      capturer->EnableCapture(false);
+    } else {
+      capturer->EnableCapture(true);
+      capturer->ScreenConfigurationChanged();
+    }
   }
 }
 

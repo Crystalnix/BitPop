@@ -24,23 +24,20 @@ SSLConfig::SSLConfig()
 SSLConfig::~SSLConfig() {
 }
 
-bool SSLConfig::IsAllowedBadCert(X509Certificate* cert) const {
+bool SSLConfig::IsAllowedBadCert(X509Certificate* cert,
+                                 int* cert_status) const {
   for (size_t i = 0; i < allowed_bad_certs.size(); ++i) {
-    if (cert->Equals(allowed_bad_certs[i].cert))
+    if (cert->Equals(allowed_bad_certs[i].cert)) {
+      if (cert_status)
+        *cert_status = allowed_bad_certs[i].cert_status;
       return true;
+    }
   }
   return false;
 }
 
 SSLConfigService::SSLConfigService()
     : observer_list_(ObserverList<Observer>::NOTIFY_EXISTING_ONLY) {
-}
-
-// static
-SSLConfigService* SSLConfigService::CreateSystemSSLConfigService() {
-  // TODO(rtenneti): We don't use the system SSL configuration any more.
-  // Simplify this code after talking with mattm.
-  return new SSLConfigServiceDefaults;
 }
 
 // static
@@ -109,6 +106,16 @@ void SSLConfigService::ProcessConfigUpdate(const SSLConfig& orig_config,
       orig_config.tls1_enabled != new_config.tls1_enabled) {
     FOR_EACH_OBSERVER(Observer, observer_list_, OnSSLConfigChanged());
   }
+}
+
+// static
+bool SSLConfigService::IsSNIAvailable(SSLConfigService* service) {
+  if (!service)
+    return false;
+
+  SSLConfig ssl_config;
+  service->GetSSLConfig(&ssl_config);
+  return ssl_config.tls1_enabled;
 }
 
 }  // namespace net

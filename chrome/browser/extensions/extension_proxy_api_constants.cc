@@ -12,6 +12,7 @@ namespace extension_proxy_api_constants {
 
 const char kProxyConfigMode[] = "mode";
 const char kProxyConfigPacScript[] = "pacScript";
+const char kProxyConfigPacScriptMandatory[] = "mandatory";
 const char kProxyConfigPacScriptUrl[] = "url";
 const char kProxyConfigPacScriptData[] = "data";
 const char kProxyConfigRules[] = "rules";
@@ -24,7 +25,7 @@ const char kProxyConfigValue[] = "value";
 const char kProxyEventFatal[] = "fatal";
 const char kProxyEventError[] = "error";
 const char kProxyEventDetails[] = "details";
-const char kProxyEventOnProxyError[] = "experimental.proxy.onProxyError";
+const char kProxyEventOnProxyError[] = "proxy.onProxyError";
 
 const char kPACDataUrlPrefix[] =
     "data:application/x-ns-proxy-autoconfig;base64,";

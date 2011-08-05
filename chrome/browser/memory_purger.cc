@@ -20,6 +20,7 @@
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
 #include "content/common/notification_service.h"
 #include "net/proxy/proxy_resolver.h"
+#include "net/proxy/proxy_service.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "third_party/tcmalloc/chromium/src/google/malloc_extension.h"
@@ -134,7 +135,7 @@ void MemoryPurger::PurgeBrowser() {
   // * Purge AppCache memory.  Not yet implemented sufficiently.
   // * Browser-side DatabaseTracker.  Not implemented sufficiently.
 
-#if (defined(OS_WIN) || defined(OS_LINUX)) && defined(USE_TCMALLOC)
+#if !defined(OS_MACOSX) && defined(USE_TCMALLOC)
   // Tell tcmalloc to release any free pages it's still holding.
   //
   // TODO(pkasting): A lot of the above calls kick off actions on other threads.

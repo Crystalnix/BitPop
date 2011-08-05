@@ -20,8 +20,8 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/net/url_fetcher.h"
 #include "content/browser/tab_contents/tab_contents.h"
+#include "content/common/url_fetcher.h"
 #include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
@@ -93,7 +93,7 @@ class BugReportUtil::PostCleanup : public URLFetcher::Delegate {
                                   const GURL& url,
                                   const net::URLRequestStatus& status,
                                   int response_code,
-                                  const ResponseCookies& cookies,
+                                  const net::ResponseCookies& cookies,
                                   const std::string& data);
 
  protected:
@@ -115,7 +115,7 @@ void BugReportUtil::PostCleanup::OnURLFetchComplete(
     const GURL& url,
     const net::URLRequestStatus& status,
     int response_code,
-    const ResponseCookies& cookies,
+    const net::ResponseCookies& cookies,
     const std::string& data) {
 
   std::stringstream error_stream;
@@ -382,7 +382,8 @@ void BugReportUtil::ReportPhishing(TabContents* currentTab,
                                    const std::string& phishing_url) {
   currentTab->controller().LoadURL(
       safe_browsing_util::GeneratePhishingReportUrl(
-          kReportPhishingUrl, phishing_url),
+          kReportPhishingUrl, phishing_url,
+          false /* not client-side detection */),
       GURL(),
       PageTransition::LINK);
 }

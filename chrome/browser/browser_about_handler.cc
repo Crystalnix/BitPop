@@ -44,10 +44,10 @@
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
 #include "content/browser/browser_thread.h"
-#include "content/browser/gpu_process_host.h"
+#include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/common/gpu_messages.h"
+#include "content/common/gpu/gpu_messages.h"
 #include "googleurl/src/gurl.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
@@ -114,6 +114,7 @@ const char kConflictsPath[] = "conflicts";
 #endif
 const char kDnsPath[] = "dns";
 const char kFlagsPath[] = "flags";
+const char kFlashPath[] = "flash";
 const char kGpuPath[] = "gpu-internals";
 const char kHistogramsPath[] = "histograms";
 const char kMemoryRedirectPath[] = "memory-redirect";
@@ -152,6 +153,7 @@ const char *kAllAboutPaths[] = {
 #endif
   kDnsPath,
   kFlagsPath,
+  kFlashPath,
   kGpuPath,
   kHistogramsPath,
   kMemoryPath,
@@ -193,6 +195,7 @@ class AboutSource : public ChromeURLDataManager::DataSource {
  public:
   // Creates our datasource.
   AboutSource();
+  explicit AboutSource(Profile* profile);
 
   // Called when the network layer has requested a resource underneath
   // the path we registered.
@@ -207,8 +210,12 @@ class AboutSource : public ChromeURLDataManager::DataSource {
   // Send the response data.
   void FinishDataRequest(const std::string& html, int request_id);
 
+  Profile* profile() { return profile_; }
+
  private:
   virtual ~AboutSource();
+
+  Profile* profile_;
 
   DISALLOW_COPY_AND_ASSIGN(AboutSource);
 };
@@ -279,7 +286,7 @@ class ChromeOSTermsHandler
   ChromeOSTermsHandler(AboutSource* source, int request_id)
     : source_(source),
       request_id_(request_id),
-      locale_(WizardController::GetInitialLocale()) {
+      locale_(chromeos::WizardController::GetInitialLocale()) {
   }
 
   void StartOnUIThread() {
@@ -346,6 +353,7 @@ std::string AboutAbout() {
         (*i != kConflictsPath) &&
   #endif
         (*i != kFlagsPath) &&
+        (*i != kFlashPath) &&
         (*i != kGpuPath) &&
         (*i != kNetInternalsPath) &&
         (*i != kPluginsPath)) {
@@ -354,7 +362,7 @@ std::string AboutAbout() {
     html += *i + "/'>about:" + *i + "</a></li>\n";
   }
   const char *debug[] = { "crash", "kill", "hang", "shorthang",
-                          "gpucrash", "gpuhang" };
+                          "gpuclean", "gpucrash", "gpuhang" };
   html += "</ul>\n<h2>For Debug</h2>\n"
       "<p>The following pages are for debugging purposes only. Because they "
       "crash or hang the renderer, they're not linked directly; you can type "
@@ -440,7 +448,6 @@ static std::string ToHtmlTableRow(const chromeos::Network* network) {
     const chromeos::CellularNetwork* cell =
         static_cast<const chromeos::CellularNetwork*>(network);
     str += WrapWithTH(cell->GetNetworkTechnologyString());
-    str += WrapWithTH(cell->GetConnectivityStateString());
     str += WrapWithTH(cell->GetActivationStateString());
     str += WrapWithTH(cell->GetRoamingStateString());
   }
@@ -878,12 +885,10 @@ std::string AboutSandbox() {
 
   AboutSandboxRow(&data, "", IDS_ABOUT_SANDBOX_SUID_SANDBOX,
                   status & ZygoteHost::kSandboxSUID);
-  if (status & ZygoteHost::kSandboxPIDNS) {
-    AboutSandboxRow(&data, "&nbsp;&nbsp;", IDS_ABOUT_SANDBOX_PID_NAMESPACES,
-                    status & ZygoteHost::kSandboxPIDNS);
-    AboutSandboxRow(&data, "&nbsp;&nbsp;", IDS_ABOUT_SANDBOX_NET_NAMESPACES,
-                    status & ZygoteHost::kSandboxNetNS);
-  }
+  AboutSandboxRow(&data, "&nbsp;&nbsp;", IDS_ABOUT_SANDBOX_PID_NAMESPACES,
+                  status & ZygoteHost::kSandboxPIDNS);
+  AboutSandboxRow(&data, "&nbsp;&nbsp;", IDS_ABOUT_SANDBOX_NET_NAMESPACES,
+                  status & ZygoteHost::kSandboxNetNS);
   AboutSandboxRow(&data, "", IDS_ABOUT_SANDBOX_SECCOMP_SANDBOX,
                   status & ZygoteHost::kSandboxSeccomp);
 
@@ -906,7 +911,7 @@ std::string AboutSandbox() {
 }
 #endif
 
-std::string AboutVersion(DictionaryValue* localized_strings) {
+std::string AboutVersion(DictionaryValue* localized_strings, Profile* profile) {
   localized_strings->SetString("title",
       l10n_util::GetStringUTF16(IDS_ABOUT_VERSION_TITLE));
   chrome::VersionInfo version_info;
@@ -928,6 +933,10 @@ std::string AboutVersion(DictionaryValue* localized_strings) {
   base::ThreadRestrictions::ScopedAllowIO allow_io;
   localized_strings->SetString("version_modifier",
                                platform_util::GetVersionStringModifier());
+  localized_strings->SetString("os_name",
+                               l10n_util::GetStringUTF16(IDS_ABOUT_VERSION_OS));
+  localized_strings->SetString("os_type", version_info.OSType());
+  localized_strings->SetString("webkit_version", webkit_version);
   localized_strings->SetString("js_engine", js_engine);
   localized_strings->SetString("js_version", js_version);
 
@@ -976,6 +985,32 @@ std::string AboutVersion(DictionaryValue* localized_strings) {
   localized_strings->SetString("command_line", command_line);
 #endif
 
+  // Allow IO temporarily based on allow_io (defined above)
+  // since the following operation will complete quickly
+  localized_strings->SetString("executable_path_name",
+      l10n_util::GetStringUTF16(IDS_ABOUT_VERSION_EXECUTABLE_PATH));
+  FilePath executable_path = CommandLine::ForCurrentProcess()->GetProgram();
+  if (file_util::AbsolutePath(&executable_path)) {
+    localized_strings->SetString("executable_path", executable_path.value());
+  } else {
+    localized_strings->SetString("executable_path",
+        l10n_util::GetStringUTF16(IDS_ABOUT_VERSION_PATH_NOTFOUND));
+  }
+  localized_strings->SetString("profile_path_name",
+      l10n_util::GetStringUTF16(IDS_ABOUT_VERSION_PROFILE_PATH));
+  if (profile) {
+    FilePath profile_path = profile->GetPath();
+    if (file_util::AbsolutePath(&profile_path)) {
+      localized_strings->SetString("profile_path", profile_path.value());
+    } else {
+      localized_strings->SetString("profile_path",
+          l10n_util::GetStringUTF16(IDS_ABOUT_VERSION_PATH_NOTFOUND));
+    }
+  } else {
+    localized_strings->SetString("profile_path",
+        l10n_util::GetStringUTF16(IDS_ABOUT_VERSION_PATH_NOTFOUND));
+  }
+
   base::StringPiece version_html(
       ResourceBundle::GetSharedInstance().GetRawDataResource(
           IDR_ABOUT_VERSION_HTML));
@@ -984,16 +1019,15 @@ std::string AboutVersion(DictionaryValue* localized_strings) {
       version_html, localized_strings, "t" /* template root node id */);
 }
 
-std::string VersionNumberToString(uint32 value) {
-  int hi = (value >> 8) & 0xff;
-  int low = value & 0xff;
-  return base::IntToString(hi) + "." + base::IntToString(low);
-}
-
 // AboutSource -----------------------------------------------------------------
 
 AboutSource::AboutSource()
     : DataSource(chrome::kAboutScheme, MessageLoop::current()) {
+}
+
+AboutSource::AboutSource(Profile* profile)
+    : DataSource(chrome::kAboutScheme, MessageLoop::current()),
+      profile_(profile) {
 }
 
 AboutSource::~AboutSource() {
@@ -1036,8 +1070,9 @@ void AboutSource::StartDataRequest(const std::string& path_raw,
     new ChromeOSAboutVersionHandler(this, request_id);
     return;
 #else
-    DictionaryValue value;
-    response = AboutVersion(&value);
+    DictionaryValue localized_strings;
+    localized_strings.SetString("os_version", "");
+    response = AboutVersion(&localized_strings, profile_);
 #endif
   } else if (path == kCreditsPath) {
     response = ResourceBundle::GetSharedInstance().GetRawDataResource(
@@ -1218,6 +1253,7 @@ ChromeOSAboutVersionHandler::ChromeOSAboutVersionHandler(AboutSource* source,
                                                          int request_id)
     : source_(source),
       request_id_(request_id) {
+  loader_.EnablePlatformVersions(true);
   loader_.GetVersion(&consumer_,
                      NewCallback(this, &ChromeOSAboutVersionHandler::OnVersion),
                      chromeos::VersionLoader::VERSION_FULL);
@@ -1227,11 +1263,9 @@ void ChromeOSAboutVersionHandler::OnVersion(
     chromeos::VersionLoader::Handle handle,
     std::string version) {
   DictionaryValue localized_strings;
-  localized_strings.SetString("os_name",
-                              l10n_util::GetStringUTF16(IDS_PRODUCT_OS_NAME));
   localized_strings.SetString("os_version", version);
-  localized_strings.SetBoolean("is_chrome_os", true);
-  source_->FinishDataRequest(AboutVersion(&localized_strings), request_id_);
+  source_->FinishDataRequest(AboutVersion(&localized_strings,
+                                          source_->profile()), request_id_);
 
   // CancelableRequestProvider isn't happy when it's deleted and servicing a
   // task, so we delay the deletion.
@@ -1292,6 +1326,12 @@ bool WillHandleBrowserAboutURL(GURL* url, Profile* profile) {
     return true;
   }
 
+  // Rewrite about:flash to chrome://flash/.
+  if (LowerCaseEqualsASCII(url->spec(), chrome::kAboutFlashURL)) {
+    *url = GURL(chrome::kChromeUIFlashURL);
+    return true;
+  }
+
   // Rewrite about:net-internals/* URLs to chrome://net-internals/*
   if (StartsWithAboutSpecifier(*url, chrome::kAboutNetInternalsURL)) {
     *url = RemapAboutURL(chrome::kNetworkViewInternalsURL, *url);
@@ -1333,6 +1373,10 @@ bool WillHandleBrowserAboutURL(GURL* url, Profile* profile) {
   }
 
   // Handle URLs to wreck the gpu process.
+  if (LowerCaseEqualsASCII(url->spec(), chrome::kAboutGpuCleanURL)) {
+    GpuProcessHost::SendOnIO(
+        0, content::CAUSE_FOR_GPU_LAUNCH_NO_LAUNCH, new GpuMsg_Clean());
+  }
   if (LowerCaseEqualsASCII(url->spec(), chrome::kAboutGpuCrashURL)) {
     GpuProcessHost::SendOnIO(
         0, content::CAUSE_FOR_GPU_LAUNCH_ABOUT_GPUCRASH, new GpuMsg_Crash());
@@ -1367,7 +1411,7 @@ bool WillHandleBrowserAboutURL(GURL* url, Profile* profile) {
 }
 
 void InitializeAboutDataSource(Profile* profile) {
-  profile->GetChromeURLDataManager()->AddDataSource(new AboutSource());
+  profile->GetChromeURLDataManager()->AddDataSource(new AboutSource(profile));
 }
 
 // This function gets called with the fixed-up chrome: URLs, so we have to

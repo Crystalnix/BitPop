@@ -4,10 +4,10 @@
 
 #include "content/renderer/pepper_platform_context_3d_impl.h"
 
-#include "content/renderer/command_buffer_proxy.h"
 #include "content/renderer/render_thread.h"
-#include "content/renderer/renderer_gl_context.h"
-#include "content/renderer/gpu_channel_host.h"
+#include "content/renderer/gpu/renderer_gl_context.h"
+#include "content/renderer/gpu/gpu_channel_host.h"
+#include "content/renderer/gpu/command_buffer_proxy.h"
 #include "googleurl/src/gurl.h"
 #include "gpu/command_buffer/client/gles2_cmd_helper.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
@@ -22,6 +22,15 @@ PlatformContext3DImpl::PlatformContext3DImpl(RendererGLContext* parent_context)
 }
 
 PlatformContext3DImpl::~PlatformContext3DImpl() {
+  if (parent_context_.get() && parent_texture_id_ != 0) {
+  // Flush any remaining commands in the parent context to make sure the
+  // texture id accounting stays consistent.
+    gpu::gles2::GLES2Implementation* parent_gles2 =
+        parent_context_->GetImplementation();
+    parent_gles2->helper()->CommandBufferHelper::Finish();
+    parent_gles2->FreeTextureId(parent_texture_id_);
+  }
+
   if (command_buffer_) {
     DCHECK(channel_.get());
     channel_->DestroyCommandBuffer(command_buffer_);
@@ -29,11 +38,6 @@ PlatformContext3DImpl::~PlatformContext3DImpl() {
   }
 
   channel_ = NULL;
-
-  if (parent_context_.get() && parent_texture_id_ != 0) {
-    parent_context_->GetImplementation()->FreeTextureId(parent_texture_id_);
-  }
-
 }
 
 bool PlatformContext3DImpl::Init() {

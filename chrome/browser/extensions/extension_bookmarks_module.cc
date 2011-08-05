@@ -23,6 +23,7 @@
 #include "chrome/browser/extensions/extension_bookmark_helpers.h"
 #include "chrome/browser/extensions/extension_bookmarks_module_constants.h"
 #include "chrome/browser/extensions/extension_event_router.h"
+#include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/extensions/extensions_quota_service.h"
 #include "chrome/browser/importer/importer_data_types.h"
 #include "chrome/browser/importer/importer_host.h"
@@ -226,7 +227,7 @@ void ExtensionBookmarkEventRouter::BookmarkNodeChanged(
   DispatchEvent(model->profile(), keys::kOnBookmarkChanged, json_args);
 }
 
-void ExtensionBookmarkEventRouter::BookmarkNodeFaviconLoaded(
+void ExtensionBookmarkEventRouter::BookmarkNodeFaviconChanged(
     BookmarkModel* model, const BookmarkNode* node) {
   // TODO(erikkay) anything we should do here?
 }
@@ -448,7 +449,7 @@ bool CreateBookmarkFunction::RunImpl() {
     error_ = keys::kNoParentError;
     return false;
   }
-  if (parent->parent() == NULL) {  // Can't create children of the root.
+  if (parent->is_root()) {  // Can't create children of the root.
     error_ = keys::kModifySpecialError;
     return false;
   }
@@ -521,9 +522,7 @@ bool MoveBookmarkFunction::RunImpl() {
     error_ = keys::kNoNodeError;
     return false;
   }
-  if (node == model->root_node() ||
-      node == model->other_node() ||
-      node == model->GetBookmarkBarNode()) {
+  if (model->is_permanent_node(node)) {
     error_ = keys::kModifySpecialError;
     return false;
   }
@@ -615,9 +614,7 @@ bool UpdateBookmarkFunction::RunImpl() {
     error_ = keys::kNoNodeError;
     return false;
   }
-  if (node == model->root_node() ||
-      node == model->other_node() ||
-      node == model->GetBookmarkBarNode()) {
+  if (model->is_permanent_node(node)) {
     error_ = keys::kModifySpecialError;
     return false;
   }
@@ -708,7 +705,7 @@ class RemoveBookmarksBucketMapper : public BookmarkBucketMapper<std::string> {
     for (IdList::iterator it = ids.begin(); it != ids.end(); ++it) {
       BookmarkModel* model = profile_->GetBookmarkModel();
       const BookmarkNode* node = model->GetNodeByID(*it);
-      if (!node || !node->parent())
+      if (!node || node->is_root())
         return;
 
       std::string bucket_id;
@@ -856,7 +853,7 @@ void BookmarksIOFunction::ShowSelectFileDialog(SelectFileDialog::Type type,
   file_type_info.extensions[0].push_back(FILE_PATH_LITERAL("html"));
 
   TabContents* tab_contents = dispatcher()->delegate()->
-      associated_tab_contents();
+      GetAssociatedTabContents();
 
   // |tab_contents| can be NULL (for background pages), which is fine. In such
   // a case if file-selection dialogs are forbidden by policy, we will not

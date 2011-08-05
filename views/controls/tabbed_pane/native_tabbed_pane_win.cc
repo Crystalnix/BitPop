@@ -38,10 +38,11 @@ class TabBackground : public Background {
   virtual ~TabBackground() {}
 
   virtual void Paint(gfx::Canvas* canvas, View* view) const {
-    HDC dc = canvas->BeginPlatformPaint();
-    RECT r = {0, 0, view->width(), view->height()};
-    gfx::NativeThemeWin::instance()->PaintTabPanelBackground(dc, &r);
-    canvas->EndPlatformPaint();
+    gfx::Rect r(0, 0, view->width(), view->height());
+    gfx::NativeTheme::ExtraParams extra;
+    gfx::NativeTheme::instance()->Paint(
+        canvas->AsCanvasSkia(), gfx::NativeTheme::kTabPanelBackground,
+        gfx::NativeTheme::kNormal, r, extra);
   }
 
  private:
@@ -154,7 +155,7 @@ void NativeTabbedPaneWin::AddTabAtIndex(int index, const std::wstring& title,
     // The newly added tab may have made the contents window smaller.
     ResizeContents();
 
-    RootView* content_root = content_window_->GetRootView();
+    View* content_root = content_window_->GetRootView();
     content_root->AddChildView(contents);
     // Switch to the newly added tab if requested;
     if (tab_views_.size() == 1 && select_if_first_tab)
@@ -291,9 +292,10 @@ void NativeTabbedPaneWin::CreateNativeControl() {
   SendMessage(tab_control, WM_SETFONT, reinterpret_cast<WPARAM>(font), FALSE);
 
   // Create the view container which is a child of the TabControl.
-  content_window_ = Widget::CreateWidget(
-      Widget::CreateParams(Widget::CreateParams::TYPE_CONTROL));
-  content_window_->Init(tab_control, gfx::Rect());
+  content_window_ = new Widget;
+  Widget::InitParams params(Widget::InitParams::TYPE_CONTROL);
+  params.parent = tab_control;
+  content_window_->Init(params);
 
   // Explicitly setting the WS_EX_LAYOUTRTL property for the HWND (see above
   // for why we waited until |content_window_| is created before we set this
@@ -301,7 +303,7 @@ void NativeTabbedPaneWin::CreateNativeControl() {
   if (base::i18n::IsRTL())
     l10n_util::HWNDSetRTLLayout(tab_control);
 
-  RootView* root_view = content_window_->GetRootView();
+  View* root_view = content_window_->GetRootView();
   tab_layout_manager_ = new TabLayout();
   root_view->SetLayoutManager(tab_layout_manager_);
   DWORD sys_color = ::GetSysColor(COLOR_3DHILIGHT);
@@ -362,6 +364,10 @@ void NativeTabbedPaneWin::ViewHierarchyChanged(bool is_add,
   }
 }
 
+Widget* NativeTabbedPaneWin::GetChildWidget() {
+  return content_window_;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // NativeTabbedPaneWin, private:
 
@@ -369,7 +375,7 @@ void NativeTabbedPaneWin::InitializeTabs() {
   for (size_t i = 0; i < tab_titles_.size(); ++i)
     AddNativeTab(i, tab_titles_[i]);
 
-  RootView* content_root = content_window_->GetRootView();
+  View* content_root = content_window_->GetRootView();
   for (std::vector<View*>::iterator tab(tab_views_.begin());
        tab != tab_views_.end(); ++tab)
     content_root->AddChildView(*tab);
@@ -378,7 +384,7 @@ void NativeTabbedPaneWin::InitializeTabs() {
 void NativeTabbedPaneWin::DoSelectTabAt(int index, boolean invoke_listener) {
   selected_index_ = index;
   if (content_window_) {
-    RootView* content_root = content_window_->GetRootView();
+    View* content_root = content_window_->GetRootView();
     tab_layout_manager_->SwitchToPage(content_root, tab_views_.at(index));
   }
   if (invoke_listener && tabbed_pane_->listener())

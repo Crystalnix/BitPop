@@ -9,7 +9,8 @@
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_var.h"
 
-#define PPB_VIDEODECODER_DEV_INTERFACE "PPB_VideoDecoder(Dev);0.5"
+#define PPB_VIDEODECODER_DEV_INTERFACE_0_8 "PPB_VideoDecoder(Dev);0.8"
+#define PPB_VIDEODECODER_DEV_INTERFACE PPB_VIDEODECODER_DEV_INTERFACE_0_8
 
 // Video decoder interface.
 //
@@ -40,6 +41,52 @@
 //   2. Output picture format.
 //   3. Output picture buffer storage type.
 //
+// Diagram below shows typical session which ends in decoder facing end of
+// stream marker in the stream. Calls from left to right are functions that are
+// in PPB_VideoDecoder_Dev and calls from right to left are functions that are
+// in PPP_VideoDecoder_Dev interface.
+//
+//        Plugin                   VideoDecoder
+//          |###########################|
+//          |       Configuration       |
+//          |###########################|
+//          | GetConfigs                |
+//          |-------------------------->|
+//          | Create                    |
+//          |-------------------------->|  Decoder will ask for certain number
+//          | (Decode)                  |  of PictureBuffers. This may happen
+//          |- - - - - - - - - - - - - >|  either directly after constructor or
+//          |     ProvidePictureBuffers |  after Decode has decoded some of the
+//          |<--------------------------|  bitstream. Once resources have been
+//          | AssignPictureBuffer       |  acquired decoder calls
+//          |-------------------------->|  NotifyResourcesAcquired.
+//          |   NotifyResourcesAcquired |
+//          |<--------------------------|
+//          |                           |
+//          |###########################|
+//          |        Streaming          |  Once configuration is done session
+//          |###########################|  can continue onto streaming state.
+//          | Decode                    |
+//          |-------------------------->|
+//          |          callback(Decode) |  Decoder issues callback when input
+//          |<--------------------------|  bitstream buffer can be reused.
+//          |              PictureReady |  NOTE: Decode and PictureReady calls
+//          |<--------------------------|        happen interleaved during
+//          | ReusePictureBuffer        |        streaming.
+//          |-------------------------->|
+//          |                           |
+//          |###########################|
+//          |       End of stream       |
+//          |###########################|
+//          |         NotifyEndOfStream |
+//          |<--------------------------|
+//          | Abort                     |
+//          |-------------------------->|
+//          |           callback(Abort) |  Decoder issues callback when decoder
+//          |<--------------------------|  has finished processing on all given
+//          |                           |  resources and they can be considered
+//          |                           |  dismissed.
+//
 struct PPB_VideoDecoder_Dev {
   // Queries capability of the decoder implementation for a specific codec.
   //
@@ -69,10 +116,10 @@ struct PPB_VideoDecoder_Dev {
   //
   // Returns PP_TRUE on success, PP_FALSE otherwise.
   PP_Bool (*GetConfigs)(PP_Instance instance,
-                        struct PP_VideoDecoderConfig_Dev* proto_config,
-                        struct PP_VideoDecoderConfig_Dev* matching_configs,
-                        int32_t matching_configs_size,
-                        int32_t* num_of_matching_configs);
+                        PP_VideoConfigElement* proto_config,
+                        PP_VideoConfigElement* matching_configs,
+                        uint32_t matching_configs_size,
+                        uint32_t* num_of_matching_configs);
 
   // Creates a video decoder with requested |decoder_config|.
   // |input_format| in |decoder_config| specifies the format of input access
@@ -84,10 +131,12 @@ struct PPB_VideoDecoder_Dev {
   // Parameters:
   //   |instance| pointer to the plugin instance.
   //   |dec_config| the configuration which to use to initialize the decoder.
+  //   |callback| called after initialize is complete.
   //
   // The created decoder is returned as PP_Resource. NULL means failure.
   PP_Resource (*Create)(PP_Instance instance,
-                        struct PP_VideoDecoderConfig_Dev* dec_config);
+                        PP_VideoConfigElement* dec_config,
+                        struct PP_CompletionCallback callback);
 
   // Tests whether |resource| is a video decoder created through Create
   // function of this interface.
@@ -113,37 +162,39 @@ struct PPB_VideoDecoder_Dev {
                     struct PP_VideoBitstreamBuffer_Dev* bitstream_buffer,
                     struct PP_CompletionCallback callback);
 
-  // Provides the decoder with picture buffers for video decoding. This
-  // function should be called when decoder has issued ProvidePictureBuffers
-  // callback to the plugin with buffer requirements.
+  // Provides the decoder with picture buffers for video decoding.
+  // AssignGLESBuffers provides texture-backed buffers, whereas
+  // AssignSysmemBuffers provides system memory-backed buffers.
   //
-  // If the plugin is can determine how many and what kind of buffers are
-  // needed by the decoder it can provide them in advance. For this purpose
-  // the configuration map can provide how many extra buffers the decoder
-  // implementation requires for seamless operation.
+  // This function should be called when decoder has issued the
+  // ProvidePictureBuffers callback to the plugin with buffer requirements.
   //
-  // The decoder will pause if AssignPictureBuffer hasn't been called with
-  // sufficient buffers.
+  // It can also be called in advance or outside of ProvidePictureBuffers calls
+  // to provide the decoder with additional buffers. Additional buffers will be
+  // added to the decoder's buffer pool.
   //
-  // If the decoder rejects the buffers it will return the buffers and issue
+  // The decoder will pause in decoding if it has not received enough buffers.
+  //
+  // If the buffer is invalid, the decoder will return the buffer and will issue
   // ProvidePictureBuffers again.
   //
-  // If AssignPictureBuffer is called multiple times the decoder will add them
-  // to its pool of output pictures.
-  //
-  // TODO(vmr): this API feels too flexible... should we make it more strict
-  // where the decoder errors on bad buffers/duplicate buffers? Perhaps
-  // AssignPictureBuffer should only get called in response to
-  // ProvidePictureBuffer?
+  // TODO(vmr/vrk): Decide if the API is too flexible, i.e. stricter rules on
+  // errors/duplicates or requiring Assign*Buffers to only be called in response
+  // to ProvidePictureBuffers... in which case the output buffers should be
+  // callback parameters to ProvidePictureBuffers instead of being part of the
+  // PPB API.
   //
   // Parameters:
   //   |video_decoder| is the previously created handle to the decoder instance.
   //   |no_of_buffers| how many buffers are behind picture buffer pointer.
-  //   |picture_buffer| contains the reference to the picture buffer that was
-  //   processed.
-  void (*AssignPictureBuffer)(PP_Resource video_decoder,
+  //   |buffers| contains the reference to the picture buffer that was
+  //   allocated.
+  void (*AssignGLESBuffers)(PP_Resource video_decoder,
+                            uint32_t no_of_buffers,
+                            struct PP_GLESBuffer_Dev* buffers);
+  void (*AssignSysmemBuffers)(PP_Resource video_decoder,
                               uint32_t no_of_buffers,
-                              union PP_PictureData_Dev* picture_buffer);
+                              struct PP_SysmemBuffer_Dev* buffers);
 
   // Tells the decoder to reuse given picture buffer. Typical use of this
   // function is to call from PictureReady callback to recycle picture buffer
@@ -160,10 +211,10 @@ struct PPB_VideoDecoder_Dev {
   //
   // Parameters:
   //   |video_decoder| is the previously created handle to the decoder instance.
-  //   |picture_buffer| contains the reference to the picture buffer that was
+  //   |picture_buffer_id| contains the id of the picture buffer that was
   //   processed.
   void (*ReusePictureBuffer)(PP_Resource video_decoder,
-                             union PP_PictureData_Dev* picture_buffer);
+                             int32_t picture_buffer_id);
 
   // Dispatches flushing request to the decoder to flush both input and output
   // buffers. Successful flushing will result in output of the pictures and

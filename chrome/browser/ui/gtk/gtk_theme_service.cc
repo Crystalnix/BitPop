@@ -12,7 +12,6 @@
 #include "base/environment.h"
 #include "base/nix/xdg_util.h"
 #include "base/stl_util-inl.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_service_factory.h"
@@ -24,12 +23,14 @@
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/hover_controller_gtk.h"
 #include "chrome/common/pref_names.h"
+#include "content/browser/user_metrics.h"
 #include "content/common/notification_details.h"
 #include "content/common/notification_service.h"
 #include "content/common/notification_source.h"
 #include "content/common/notification_type.h"
 #include "grit/app_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -39,6 +40,7 @@
 #include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/gtk_util.h"
+#include "ui/gfx/image.h"
 #include "ui/gfx/skbitmap_operations.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/skia_utils_gtk.h"
@@ -254,6 +256,7 @@ GtkThemeService* GtkThemeService::GetFrom(Profile* profile) {
 
 GtkThemeService::GtkThemeService()
     : ThemeService(),
+      use_gtk_(false),
       fake_window_(gtk_window_new(GTK_WINDOW_TOPLEVEL)),
       fake_frame_(chrome_gtk_frame_new()),
       signals_(new ui::GtkSignalRegistrar),
@@ -288,8 +291,11 @@ GtkThemeService::~GtkThemeService() {
 void GtkThemeService::Init(Profile* profile) {
   registrar_.Init(profile->GetPrefs());
   registrar_.Add(prefs::kUsesSystemTheme, this);
+#if defined(OS_CHROMEOS)
+  use_gtk_ = false;
+#else
   use_gtk_ = profile->GetPrefs()->GetBoolean(prefs::kUsesSystemTheme);
-
+#endif
   ThemeService::Init(profile);
 }
 
@@ -351,8 +357,12 @@ void GtkThemeService::SetNativeTheme() {
   NotifyThemeChanged();
 }
 
-bool GtkThemeService::UsingDefaultTheme() {
+bool GtkThemeService::UsingDefaultTheme() const {
   return !use_gtk_ && ThemeService::UsingDefaultTheme();
+}
+
+bool GtkThemeService::UsingNativeTheme() const {
+  return use_gtk_;
 }
 
 void GtkThemeService::Observe(NotificationType type,
@@ -360,7 +370,9 @@ void GtkThemeService::Observe(NotificationType type,
                               const NotificationDetails& details) {
   if ((type == NotificationType::PREF_CHANGED) &&
       (*Details<std::string>(details).ptr() == prefs::kUsesSystemTheme)) {
+#if !defined(OS_CHROMEOS)
     use_gtk_ = profile()->GetPrefs()->GetBoolean(prefs::kUsesSystemTheme);
+#endif
   } else {
     ThemeService::Observe(type, source, details);
   }
@@ -386,10 +398,6 @@ GtkWidget* GtkThemeService::CreateToolbarSeparator() {
   signals_->Connect(separator, "expose-event",
                     G_CALLBACK(OnSeparatorExposeThunk), this);
   return alignment;
-}
-
-bool GtkThemeService::UseGtkTheme() const {
-  return use_gtk_;
 }
 
 GdkColor GtkThemeService::GetGdkColor(int id) const {
@@ -554,7 +562,7 @@ CairoCachedSurface* GtkThemeService::GetUnthemedSurfaceNamed(
     GtkWidget* widget_on_display) {
   return GetSurfaceNamedImpl(id,
       &per_display_unthemed_surfaces_,
-      ResourceBundle::GetSharedInstance().GetPixbufNamed(id),
+      ResourceBundle::GetSharedInstance().GetNativeImageNamed(id),
       widget_on_display);
 }
 
@@ -574,7 +582,7 @@ GdkPixbuf* GtkThemeService::GetFolderIcon(bool native) {
   }
 
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  static GdkPixbuf* default_folder_icon_ = rb.GetPixbufNamed(
+  static GdkPixbuf* default_folder_icon_ = rb.GetNativeImageNamed(
       IDR_BOOKMARK_BAR_FOLDER);
   return default_folder_icon_;
 }
@@ -595,7 +603,7 @@ GdkPixbuf* GtkThemeService::GetDefaultFavicon(bool native) {
   }
 
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  static GdkPixbuf* default_bookmark_icon_ = rb.GetPixbufNamed(
+  static GdkPixbuf* default_bookmark_icon_ = rb.GetNativeImageNamed(
       IDR_DEFAULT_FAVICON);
   return default_bookmark_icon_;
 }
@@ -1103,7 +1111,7 @@ void GtkThemeService::OnDestroyChromeButton(GtkWidget* button) {
 
 gboolean GtkThemeService::OnSeparatorExpose(GtkWidget* widget,
                                             GdkEventExpose* event) {
-  if (UseGtkTheme())
+  if (UsingNativeTheme())
     return FALSE;
 
   cairo_t* cr = gdk_cairo_create(GDK_DRAWABLE(widget->window));

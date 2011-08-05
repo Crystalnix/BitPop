@@ -273,6 +273,7 @@ void AboutPageHandler::RegisterMessages() {
 void AboutPageHandler::PageReady(const ListValue* args) {
 #if defined(OS_CHROMEOS)
   // Version information is loaded from a callback
+  loader_.EnablePlatformVersions(true);
   loader_.GetVersion(&consumer_,
                      NewCallback(this, &AboutPageHandler::OnOSVersion),
                      chromeos::VersionLoader::VERSION_FULL);
@@ -317,8 +318,8 @@ void AboutPageHandler::SetReleaseTrack(const ListValue* args) {
 void AboutPageHandler::CheckNow(const ListValue* args) {
   // Make sure that libcros is loaded and OOBE is complete.
   if (chromeos::CrosLibrary::Get()->EnsureLoaded() &&
-      (!WizardController::default_controller() ||
-        WizardController::IsDeviceRegistered())) {
+      (!chromeos::WizardController::default_controller() ||
+        chromeos::WizardController::IsDeviceRegistered())) {
     chromeos::CrosLibrary::Get()->GetUpdateLibrary()->
         RequestUpdateCheck(NULL,   // no callback
                            NULL);  // no userdata

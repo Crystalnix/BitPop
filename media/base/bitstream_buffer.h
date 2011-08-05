@@ -6,31 +6,30 @@
 #define MEDIA_BASE_BITSTREAM_BUFFER_H_
 
 #include "base/basictypes.h"
+#include "base/shared_memory.h"
 
 namespace media {
 
-// Class for passing bitstream buffers around. Ownership of the bitstream
-// pointer remains with whoever uses this class.
+// Class for passing bitstream buffers around.  Does not take ownership of the
+// data.  This is the media-namespace equivalent of PP_VideoBitstreamBuffer_Dev.
 class BitstreamBuffer {
  public:
-  BitstreamBuffer(uint8* bitstream, size_t bitstream_size, void* user_handle)
-      : bitstream_(bitstream),
-        bitstream_size_(bitstream_size),
-        user_handle_(user_handle) {
+  BitstreamBuffer(int32 id, base::SharedMemoryHandle handle, size_t size)
+      : id_(id),
+        handle_(handle),
+        size_(size) {
   }
 
-  ~BitstreamBuffer() {}
-
-  uint8* bitstream() { return bitstream_; }
-  size_t bitstream_size() { return bitstream_size_; }
-  void* user_handle() { return user_handle_; }
+  int32 id() const { return id_; }
+  base::SharedMemoryHandle handle() const { return handle_; }
+  size_t size() const { return size_; }
 
  private:
-  uint8* bitstream_;
-  size_t bitstream_size_;
-  void* user_handle_;
+  const int32 id_;
+  const base::SharedMemoryHandle handle_;
+  const size_t size_;
 
-  DISALLOW_IMPLICIT_CONSTRUCTORS(BitstreamBuffer);
+  // Allow compiler-generated copy & assign constructors.
 };
 
 }  // namespace media

@@ -15,7 +15,6 @@
 #include "base/memory/singleton.h"
 #include "base/path_service.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
@@ -36,16 +35,19 @@
 #include "chrome/browser/ui/gtk/tabs/tab_strip_gtk.h"
 #include "chrome/browser/ui/gtk/view_id_util.h"
 #include "chrome/browser/ui/toolbar/encoding_menu_controller.h"
+#include "chrome/browser/ui/webui/web_ui_util.h"
 #include "chrome/browser/upgrade_detector.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/browser/tab_contents/tab_contents.h"
+#include "content/browser/user_metrics.h"
 #include "content/common/notification_details.h"
 #include "content/common/notification_service.h"
 #include "content/common/notification_type.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/dragdrop/gtk_dnd_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/accelerator_gtk.h"
@@ -130,7 +132,7 @@ void BrowserToolbarGtk::Init(Profile* profile,
   event_box_ = gtk_event_box_new();
   // Make the event box transparent so themes can use transparent toolbar
   // backgrounds.
-  if (!theme_service_->UseGtkTheme())
+  if (!theme_service_->UsingNativeTheme())
     gtk_event_box_set_visible_window(GTK_EVENT_BOX(event_box_), FALSE);
 
   toolbar_ = gtk_hbox_new(FALSE, 0);
@@ -143,19 +145,23 @@ void BrowserToolbarGtk::Init(Profile* profile,
 
   toolbar_left_ = gtk_hbox_new(FALSE, kToolbarWidgetSpacing);
 
+  GtkSizeGroup* size_group = gtk_size_group_new(GTK_SIZE_GROUP_HORIZONTAL);
   back_.reset(new BackForwardButtonGtk(browser_, false));
   g_signal_connect(back_->widget(), "clicked",
                    G_CALLBACK(OnButtonClickThunk), this);
+  gtk_size_group_add_widget(size_group, back_->widget());
   gtk_box_pack_start(GTK_BOX(toolbar_left_), back_->widget(), FALSE,
                      FALSE, 0);
 
   forward_.reset(new BackForwardButtonGtk(browser_, true));
   g_signal_connect(forward_->widget(), "clicked",
                    G_CALLBACK(OnButtonClickThunk), this);
+  gtk_size_group_add_widget(size_group, forward_->widget());
   gtk_box_pack_start(GTK_BOX(toolbar_left_), forward_->widget(), FALSE,
                      FALSE, 0);
 
   reload_.reset(new ReloadButtonGtk(location_bar_.get(), browser_));
+  gtk_size_group_add_widget(size_group, reload_->widget());
   gtk_box_pack_start(GTK_BOX(toolbar_left_), reload_->widget(), FALSE, FALSE,
                      0);
 
@@ -166,12 +172,15 @@ void BrowserToolbarGtk::Init(Profile* profile,
       l10n_util::GetStringUTF8(IDS_TOOLTIP_HOME).c_str());
   g_signal_connect(home_->widget(), "clicked",
                    G_CALLBACK(OnButtonClickThunk), this);
+  gtk_size_group_add_widget(size_group, home_->widget());
   gtk_box_pack_start(GTK_BOX(toolbar_left_), home_->widget(), FALSE, FALSE,
                      kToolbarWidgetSpacing);
   gtk_util::SetButtonTriggersNavigation(home_->widget());
 
   gtk_box_pack_start(GTK_BOX(toolbar_), toolbar_left_, FALSE, FALSE,
                      kToolbarLeftAreaPadding);
+
+  g_object_unref(size_group);
 
   location_hbox_ = gtk_hbox_new(FALSE, 0);
   location_bar_->Init(ShouldOnlyShowLocation());
@@ -215,7 +224,7 @@ void BrowserToolbarGtk::Init(Profile* profile,
 
   wrench_menu_.reset(new MenuGtk(this, &wrench_menu_model_));
   registrar_.Add(this, NotificationType::ZOOM_LEVEL_CHANGED,
-                 Source<Profile>(browser_->profile()));
+      Source<HostZoomMap>(browser_->profile()->GetHostZoomMap()));
 
   if (ShouldOnlyShowLocation()) {
     gtk_widget_show(event_box_);
@@ -345,7 +354,7 @@ void BrowserToolbarGtk::Observe(NotificationType type,
     NotifyPrefChanged(Details<std::string>(details).ptr());
   } else if (type == NotificationType::BROWSER_THEME_CHANGED) {
     // Update the spacing around the menu buttons
-    bool use_gtk = theme_service_->UseGtkTheme();
+    bool use_gtk = theme_service_->UsingNativeTheme();
     int border = use_gtk ? 0 : 2;
     gtk_container_set_border_width(
         GTK_CONTAINER(wrench_menu_button_->widget()), border);
@@ -428,7 +437,7 @@ bool BrowserToolbarGtk::UpdateRoundedness() {
   // We still round the corners if we are in chrome theme mode, but we do it by
   // drawing theme resources rather than changing the physical shape of the
   // widget.
-  bool should_be_rounded = theme_service_->UseGtkTheme() &&
+  bool should_be_rounded = theme_service_->UsingNativeTheme() &&
       window_->ShouldDrawContentDropShadow();
 
   if (should_be_rounded == gtk_util::IsActingAsRoundedWindow(alignment_))
@@ -453,7 +462,7 @@ gboolean BrowserToolbarGtk::OnAlignmentExpose(GtkWidget* widget,
     return TRUE;
 
   // We don't need to render the toolbar image in GTK mode.
-  if (theme_service_->UseGtkTheme())
+  if (theme_service_->UsingNativeTheme())
     return FALSE;
 
   cairo_t* cr = gdk_cairo_create(GDK_DRAWABLE(widget->window));
@@ -554,7 +563,7 @@ gboolean BrowserToolbarGtk::OnAlignmentExpose(GtkWidget* widget,
 
 gboolean BrowserToolbarGtk::OnLocationHboxExpose(GtkWidget* location_hbox,
                                                  GdkEventExpose* e) {
-  if (theme_service_->UseGtkTheme()) {
+  if (theme_service_->UsingNativeTheme()) {
     gtk_util::DrawTextEntryBackground(offscreen_entry_.get(),
                                       location_hbox, &e->area,
                                       &location_hbox->allocation);
@@ -598,7 +607,8 @@ void BrowserToolbarGtk::OnDragDataReceived(GtkWidget* widget,
   if (!url.is_valid())
     return;
 
-  bool url_is_newtab = url.spec() == chrome::kChromeUINewTabURL;
+  bool url_is_newtab =
+      web_ui_util::ChromeURLHostEquals(url, chrome::kChromeUINewTabHost);
   home_page_is_new_tab_page_.SetValue(url_is_newtab);
   if (!url_is_newtab)
     home_page_.SetValue(url.spec());
@@ -622,14 +632,16 @@ void BrowserToolbarGtk::NotifyPrefChanged(const std::string* pref) {
 
 bool BrowserToolbarGtk::ShouldOnlyShowLocation() const {
   // If we're a popup window, only show the location bar (omnibox).
-  return browser_->type() != Browser::TYPE_NORMAL;
+  return !browser_->is_type_tabbed();
 }
 
 gboolean BrowserToolbarGtk::OnWrenchMenuButtonExpose(GtkWidget* sender,
                                                      GdkEventExpose* expose) {
   const SkBitmap* badge = NULL;
   if (UpgradeDetector::GetInstance()->notify_upgrade()) {
-    badge = theme_service_->GetBitmapNamed(IDR_UPDATE_BADGE);
+    badge = theme_service_->GetBitmapNamed(
+        UpgradeDetector::GetInstance()->GetIconResourceID(
+            UpgradeDetector::UPGRADE_ICON_TYPE_BADGE));
   } else {
     return FALSE;
   }

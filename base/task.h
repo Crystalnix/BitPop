@@ -7,10 +7,15 @@
 #pragma once
 
 #include "base/base_api.h"
+#include "base/debug/alias.h"
 #include "base/memory/raw_scoped_refptr_mismatch_checker.h"
 #include "base/memory/weak_ptr.h"
 #include "base/tracked.h"
 #include "base/tuple.h"
+
+namespace base {
+const size_t kDeadTask = 0xDEAD7A53;
+}
 
 // Task ------------------------------------------------------------------------
 //
@@ -325,6 +330,7 @@ class RunnableMethod : public CancelableTask {
 
   ~RunnableMethod() {
     ReleaseCallee();
+    obj_ = reinterpret_cast<T*>(base::kDeadTask);
   }
 
   virtual void Run() {
@@ -442,7 +448,7 @@ inline CancelableTask* NewRunnableMethod(T* object, Method method,
 // RunnableFunction and NewRunnableFunction implementation ---------------------
 
 template <class Function, class Params>
-class RunnableFunction : public CancelableTask {
+class RunnableFunction : public Task {
  public:
   RunnableFunction(Function function, const Params& params)
       : function_(function), params_(params) {
@@ -452,14 +458,20 @@ class RunnableFunction : public CancelableTask {
   }
 
   ~RunnableFunction() {
+    function_ = reinterpret_cast<Function>(base::kDeadTask);
   }
 
   virtual void Run() {
+    // TODO(apatrick): Remove this ASAP. This ensures that the function pointer
+    // is available in minidumps for the purpose of diagnosing
+    // http://crbug.com/81449.
+    Function function = function_;
+    base::debug::Alias(&function);
+    Params params = params_;
+    base::debug::Alias(&params);
+
     if (function_)
       DispatchToFunction(function_, params_);
-  }
-
-  virtual void Cancel() {
   }
 
  private:
@@ -468,44 +480,39 @@ class RunnableFunction : public CancelableTask {
 };
 
 template <class Function>
-inline CancelableTask* NewRunnableFunction(Function function) {
+inline Task* NewRunnableFunction(Function function) {
   return new RunnableFunction<Function, Tuple0>(function, MakeTuple());
 }
 
 template <class Function, class A>
-inline CancelableTask* NewRunnableFunction(Function function, const A& a) {
+inline Task* NewRunnableFunction(Function function, const A& a) {
   return new RunnableFunction<Function, Tuple1<A> >(function, MakeTuple(a));
 }
 
 template <class Function, class A, class B>
-inline CancelableTask* NewRunnableFunction(Function function,
-                                           const A& a, const B& b) {
+inline Task* NewRunnableFunction(Function function, const A& a, const B& b) {
   return new RunnableFunction<Function, Tuple2<A, B> >(function,
                                                        MakeTuple(a, b));
 }
 
 template <class Function, class A, class B, class C>
-inline CancelableTask* NewRunnableFunction(Function function,
-                                           const A& a, const B& b,
-                                           const C& c) {
+inline Task* NewRunnableFunction(Function function, const A& a, const B& b,
+                                 const C& c) {
   return new RunnableFunction<Function, Tuple3<A, B, C> >(function,
                                                           MakeTuple(a, b, c));
 }
 
 template <class Function, class A, class B, class C, class D>
-inline CancelableTask* NewRunnableFunction(Function function,
-                                           const A& a, const B& b,
-                                           const C& c, const D& d) {
+inline Task* NewRunnableFunction(Function function, const A& a, const B& b,
+                                 const C& c, const D& d) {
   return new RunnableFunction<Function, Tuple4<A, B, C, D> >(function,
                                                              MakeTuple(a, b,
                                                                        c, d));
 }
 
 template <class Function, class A, class B, class C, class D, class E>
-inline CancelableTask* NewRunnableFunction(Function function,
-                                           const A& a, const B& b,
-                                           const C& c, const D& d,
-                                           const E& e) {
+inline Task* NewRunnableFunction(Function function, const A& a, const B& b,
+                                 const C& c, const D& d, const E& e) {
   return new RunnableFunction<Function, Tuple5<A, B, C, D, E> >(function,
                                                                 MakeTuple(a, b,
                                                                           c, d,
@@ -514,34 +521,49 @@ inline CancelableTask* NewRunnableFunction(Function function,
 
 template <class Function, class A, class B, class C, class D, class E,
           class F>
-inline CancelableTask* NewRunnableFunction(Function function,
-                                           const A& a, const B& b,
-                                           const C& c, const D& d,
-                                           const E& e, const F& f) {
+inline Task* NewRunnableFunction(Function function, const A& a, const B& b,
+                                 const C& c, const D& d, const E& e,
+                                 const F& f) {
   return new RunnableFunction<Function, Tuple6<A, B, C, D, E, F> >(function,
       MakeTuple(a, b, c, d, e, f));
 }
 
 template <class Function, class A, class B, class C, class D, class E,
           class F, class G>
-inline CancelableTask* NewRunnableFunction(Function function,
-                                           const A& a, const B& b,
-                                           const C& c, const D& d,
-                                           const E& e, const F& f,
-                                           const G& g) {
+inline Task* NewRunnableFunction(Function function, const A& a, const B& b,
+                                 const C& c, const D& d, const E& e, const F& f,
+                                 const G& g) {
   return new RunnableFunction<Function, Tuple7<A, B, C, D, E, F, G> >(function,
       MakeTuple(a, b, c, d, e, f, g));
 }
 
 template <class Function, class A, class B, class C, class D, class E,
           class F, class G, class H>
-inline CancelableTask* NewRunnableFunction(Function function,
-                                           const A& a, const B& b,
-                                           const C& c, const D& d,
-                                           const E& e, const F& f,
-                                           const G& g, const H& h) {
+inline Task* NewRunnableFunction(Function function, const A& a, const B& b,
+                                 const C& c, const D& d, const E& e, const F& f,
+                                 const G& g, const H& h) {
   return new RunnableFunction<Function, Tuple8<A, B, C, D, E, F, G, H> >(
       function, MakeTuple(a, b, c, d, e, f, g, h));
 }
+
+namespace base {
+
+// ScopedTaskRunner is akin to scoped_ptr for Tasks.  It ensures that the Task
+// is executed and deleted no matter how the current scope exits.
+class BASE_API ScopedTaskRunner {
+ public:
+  // Takes ownership of the task.
+  explicit ScopedTaskRunner(Task* task);
+  ~ScopedTaskRunner();
+
+  Task* Release();
+
+ private:
+  Task* task_;
+
+  DISALLOW_IMPLICIT_CONSTRUCTORS(ScopedTaskRunner);
+};
+
+}  // namespace base
 
 #endif  // BASE_TASK_H_

@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-#include "base/callback.h"
+#include "base/callback_old.h"
 #include "base/memory/scoped_ptr.h"
 #include "media/omx/omx_configurator.h"
 #include "media/video/video_decode_engine.h"
@@ -28,7 +28,7 @@ class OmxVideoDecodeEngine : public VideoDecodeEngine {
   virtual void Initialize(MessageLoop* message_loop,
                           VideoDecodeEngine::EventHandler* event_handler,
                           VideoDecodeContext* context,
-                          const VideoCodecConfig& config);
+                          const VideoDecoderConfig& config);
   virtual void ConsumeVideoSample(scoped_refptr<Buffer> buffer);
   virtual void ProduceVideoFrame(scoped_refptr<VideoFrame> frame);
   virtual void Uninitialize();

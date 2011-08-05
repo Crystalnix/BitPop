@@ -83,10 +83,9 @@ class MockLoginPerformerDelegate : public LoginPerformer::Delegate {
                       const std::string&,
                       const GaiaAuthConsumer::ClientLoginResult&,
                       bool) {
-    WizardController::MarkDeviceRegistered();
     LoginPerformer* login_performer = controller_->login_performer_.release();
     login_performer = NULL;
-    controller_->OnProfilePrepared(NULL);
+    controller_->ActivateWizard(WizardController::kUserImageScreenName);
   }
 
   MOCK_METHOD1(OnLoginFailure, void(const LoginFailure&));
@@ -121,7 +120,7 @@ class ExistingUserControllerTest : public CrosInProcessBrowserTest {
     mock_login_library_ = new MockLoginLibrary();
     EXPECT_CALL(*mock_login_library_, EmitLoginPromptReady())
         .Times(1);
-    EXPECT_CALL(*mock_login_library_, RequestRetrieveProperty(_, _, _))
+    EXPECT_CALL(*mock_login_library_, RequestRetrievePolicy(_, _))
         .Times(AnyNumber());
     cros_mock_->test_api()->SetLoginLibrary(mock_login_library_, true);
 
@@ -132,6 +131,10 @@ class ExistingUserControllerTest : public CrosInProcessBrowserTest {
         .WillRepeatedly(Return(true));
     EXPECT_CALL(*mock_cryptohome_library_,
                 AsyncDoAutomaticFreeDiskSpaceControl(_))
+        .Times(1)
+        .WillOnce(Return(true));
+    EXPECT_CALL(*mock_cryptohome_library_,
+                AsyncSetOwnerUser(_, _))
         .Times(1)
         .WillOnce(Return(true));
     LoginUtils::Set(new MockLoginUtils(kUsername, kPassword));
@@ -183,8 +186,6 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerTest, NewUserLogin) {
   EXPECT_CALL(*mock_login_display_host_,
               StartWizard(WizardController::kUserImageScreenName,
                           GURL()))
-      .Times(1);
-  EXPECT_CALL(*mock_login_display_, OnFadeOut())
       .Times(1);
   existing_user_controller()->Login(kUsername, kPassword);
 }

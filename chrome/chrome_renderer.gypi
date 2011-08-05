@@ -6,7 +6,7 @@
   'targets': [
     {
       'target_name': 'renderer',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '9301A569-5D2B-4D11-9332-B1E30AEACB8D',
       'dependencies': [
         'common',
@@ -16,7 +16,7 @@
         'safe_browsing_proto',
         '../content/content.gyp:content_renderer',
         '../content/content.gyp:content_plugin',
-        '../ppapi/ppapi.gyp:ppapi_proxy',
+        '../ppapi/ppapi_internal.gyp:ppapi_proxy',
         '../printing/printing.gyp:printing',
         '../skia/skia.gyp:skia',
         '../third_party/cld/cld.gyp:cld',
@@ -120,6 +120,8 @@
         'renderer/page_click_tracker.h',
         'renderer/page_load_histograms.cc',
         'renderer/page_load_histograms.h',
+        'renderer/prerender/prerender_helper.cc',
+        'renderer/prerender/prerender_helper.h',
         'renderer/print_web_view_helper.cc',
         'renderer/print_web_view_helper.h',
         'renderer/print_web_view_helper_linux.cc',
@@ -166,6 +168,8 @@
         'renderer/spellchecker/spellcheck_worditerator.h',
         'renderer/translate_helper.cc',
         'renderer/translate_helper.h',
+        'renderer/text_input_client_observer.cc',
+        'renderer/text_input_client_observer.h',
         'renderer/visitedlink_slave.cc',
         'renderer/visitedlink_slave.h',
       ],
@@ -183,7 +187,7 @@
             '../third_party/mach_override/mach_override.gyp:mach_override',
           ],
         }],
-        ['OS=="linux"', {
+        ['toolkit_uses_gtk == 1', {
           'conditions': [
             [ 'linux_use_tcmalloc==1', {
                 'dependencies': [
@@ -195,11 +199,6 @@
           'dependencies': [
             '../build/linux/system.gyp:gtk',
             '../sandbox/sandbox.gyp:sandbox',
-          ],
-        }],
-        ['OS=="openbsd" or OS=="freebsd"', {
-          'dependencies': [
-            '../build/linux/system.gyp:gtk',
           ],
         }],
         ['OS=="win"', {

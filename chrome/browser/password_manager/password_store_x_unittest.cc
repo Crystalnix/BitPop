@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
-#include "base/memory/scoped_temp_dir.h"
+#include "base/scoped_temp_dir.h"
 #include "base/stl_util-inl.h"
 #include "base/string_util.h"
 #include "base/synchronization/waitable_event.h"
@@ -436,6 +436,8 @@ TEST_P(PasswordStoreXTest, WDSMigration) {
 
   STLDeleteElements(&expected_autofillable);
   STLDeleteElements(&expected_blacklisted);
+
+  store->Shutdown();
 }
 
 TEST_P(PasswordStoreXTest, WDSMigrationAlreadyDone) {
@@ -473,7 +475,8 @@ TEST_P(PasswordStoreXTest, WDSMigrationAlreadyDone) {
 
   // Prentend that the migration has already taken place.
   profile_->GetPrefs()->RegisterBooleanPref(prefs::kLoginDatabaseMigrated,
-                                            true);
+                                            true,
+                                            PrefService::UNSYNCABLE_PREF);
 
   // Initializing the PasswordStore shouldn't trigger a migration.
   scoped_refptr<PasswordStoreX> store(
@@ -499,12 +502,15 @@ TEST_P(PasswordStoreXTest, WDSMigrationAlreadyDone) {
   MessageLoop::current()->Run();
 
   STLDeleteElements(&unexpected_autofillable);
+
+  store->Shutdown();
 }
 
 TEST_P(PasswordStoreXTest, Notifications) {
   // Pretend that the migration has already taken place.
   profile_->GetPrefs()->RegisterBooleanPref(prefs::kLoginDatabaseMigrated,
-                                            true);
+                                            true,
+                                            PrefService::UNSYNCABLE_PREF);
 
   // Initializing the PasswordStore shouldn't trigger a migration.
   scoped_refptr<PasswordStoreX> store(
@@ -591,6 +597,8 @@ TEST_P(PasswordStoreXTest, Notifications) {
   BrowserThread::PostTask(BrowserThread::DB, FROM_HERE,
       new SignalingTask(&done));
   done.Wait();
+
+  store->Shutdown();
 }
 
 TEST_P(PasswordStoreXTest, NativeMigration) {
@@ -640,7 +648,8 @@ TEST_P(PasswordStoreXTest, NativeMigration) {
 
   // Pretend that the WDS migration has already taken place.
   profile_->GetPrefs()->RegisterBooleanPref(prefs::kLoginDatabaseMigrated,
-                                            true);
+                                            true,
+                                            PrefService::UNSYNCABLE_PREF);
 
   // Initializing the PasswordStore shouldn't trigger a native migration (yet).
   scoped_refptr<PasswordStoreX> store(
@@ -730,6 +739,8 @@ TEST_P(PasswordStoreXTest, NativeMigration) {
 
   STLDeleteElements(&expected_autofillable);
   STLDeleteElements(&expected_blacklisted);
+
+  store->Shutdown();
 }
 
 INSTANTIATE_TEST_CASE_P(NoBackend,

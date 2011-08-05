@@ -16,6 +16,7 @@ cr.define('mobile', function() {
 
       if (networks.length == 0) {
         $('scanning').hidden = true;
+        $('choosing').hidden = true;
         $('no-mobile-networks').hidden = false;
         return;
       }
@@ -43,6 +44,7 @@ cr.define('mobile', function() {
       }
       $('scanning').hidden = true;
       $('choosing').hidden = false;
+      $('no-mobile-networks').hidden = true;
     },
     connect_: function() {
       for (var i in this.networks_) {
@@ -77,6 +79,7 @@ cr.define('mobile', function() {
     $('connect').addEventListener('click', function(event) {
       ChooseNetwork.connect();
     });
+    chrome.send('pageReady', []);
   };
 
   ChooseNetwork.showNetworks = function(networks) {
@@ -87,4 +90,29 @@ cr.define('mobile', function() {
   return {
     ChooseNetwork: ChooseNetwork
   };
+});
+
+var ChooseNetwork = mobile.ChooseNetwork;
+
+document.addEventListener('DOMContentLoaded', function () {
+  // TODO(dpolukhin): refactor spinner code&css to be reusable.
+  // Setup css canvas 'spinner-circle'
+  (function() {
+    var lineWidth = 3;
+    var r = 8;
+    var ctx = document.getCSSCanvasContext(
+        '2d', 'spinner-circle', 2 * r, 2 * r);
+
+    ctx.lineWidth = lineWidth;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    ctx.strokeStyle = '#4e73c7';
+    ctx.beginPath();
+    ctx.moveTo(lineWidth / 2, r - lineWidth / 2);
+    ctx.arc(r, r, r - lineWidth / 2, Math.PI, Math.PI * 3 / 2);
+    ctx.stroke();
+  })();
+
+  ChooseNetwork.initialize();
 });

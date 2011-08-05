@@ -11,14 +11,14 @@
 #define CHROME_TEST_TESTING_BROWSER_PROCESS_H_
 #pragma once
 
-#include "build/build_config.h"
-
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
+#include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
 #include "content/common/notification_service.h"
 
+class BackgroundModeManager;
 class IOThread;
 class GoogleURLTracker;
 class NotificationUIManager;
@@ -31,6 +31,10 @@ class WaitableEvent;
 
 namespace policy {
 class BrowserPolicyConnector;
+}
+
+namespace prerender {
+class PrerenderTracker;
 }
 
 namespace ui {
@@ -60,9 +64,11 @@ class TestingBrowserProcess : public BrowserProcess {
 
   virtual base::Thread* cache_thread();
 
-  virtual base::Thread* gpu_thread();
-
   virtual WatchDogThread* watchdog_thread();
+
+#if defined(OS_CHROMEOS)
+  virtual base::Thread* web_socket_proxy_thread();
+#endif
 
   virtual ProfileManager* profile_manager();
 
@@ -79,6 +85,10 @@ class TestingBrowserProcess : public BrowserProcess {
   virtual SidebarManager* sidebar_manager();
 
   virtual TabCloseableStateWatcher* tab_closeable_state_watcher();
+
+  virtual BackgroundModeManager* background_mode_manager();
+
+  virtual StatusTray* status_tray();
 
   virtual safe_browsing::ClientSideDetectionService*
       safe_browsing_detection_service();
@@ -118,6 +128,8 @@ class TestingBrowserProcess : public BrowserProcess {
 
   virtual printing::PrintPreviewTabController* print_preview_tab_controller();
 
+  virtual printing::BackgroundPrintingManager* background_printing_manager();
+
   virtual const std::string& GetApplicationLocale();
 
   virtual void SetApplicationLocale(const std::string& app_locale);
@@ -136,11 +148,15 @@ class TestingBrowserProcess : public BrowserProcess {
 
   virtual ChromeNetLog* net_log();
 
+  virtual prerender::PrerenderTracker* prerender_tracker();
+
 #if defined(IPC_MESSAGE_LOG_ENABLED)
   virtual void SetIPCLoggingEnabled(bool enable) {}
 #endif
 
-  void SetPrefService(PrefService* pref_service);
+  // Set the local state for tests. Consumer is responsible for cleaning it up
+  // afterwards (using ScopedTestingLocalState, for example).
+  void SetLocalState(PrefService* local_state);
   void SetGoogleURLTracker(GoogleURLTracker* google_url_tracker);
   void SetProfileManager(ProfileManager* profile_manager);
 
@@ -151,11 +167,14 @@ class TestingBrowserProcess : public BrowserProcess {
   scoped_ptr<ui::Clipboard> clipboard_;
   std::string app_locale_;
 
-  PrefService* pref_service_;
+  // Weak pointer.
+  PrefService* local_state_;
   scoped_ptr<policy::BrowserPolicyConnector> browser_policy_connector_;
   scoped_ptr<GoogleURLTracker> google_url_tracker_;
   scoped_ptr<ProfileManager> profile_manager_;
   scoped_ptr<NotificationUIManager> notification_ui_manager_;
+  scoped_ptr<printing::BackgroundPrintingManager> background_printing_manager_;
+  scoped_ptr<prerender::PrerenderTracker> prerender_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(TestingBrowserProcess);
 };

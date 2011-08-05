@@ -16,11 +16,11 @@ namespace browser_sync {
 namespace sessions {
 namespace {
 
-using test::ExpectBooleanValue;
-using test::ExpectDictionaryValue;
-using test::ExpectIntegerValue;
-using test::ExpectListValue;
-using test::ExpectStringValue;
+using test::ExpectDictBooleanValue;
+using test::ExpectDictDictionaryValue;
+using test::ExpectDictIntegerValue;
+using test::ExpectDictListValue;
+using test::ExpectDictStringValue;
 
 class SessionStateTest : public testing::Test {};
 
@@ -37,8 +37,8 @@ TEST_F(SessionStateTest, SyncSourceInfoToValue) {
 
   scoped_ptr<DictionaryValue> value(source_info.ToValue());
   EXPECT_EQ(2u, value->size());
-  ExpectStringValue("PERIODIC", *value, "updatesSource");
-  ExpectDictionaryValue(*expected_types_value, *value, "types");
+  ExpectDictStringValue("PERIODIC", *value, "updatesSource");
+  ExpectDictDictionaryValue(*expected_types_value, *value, "types");
 }
 
 TEST_F(SessionStateTest, SyncerStatusToValue) {
@@ -50,20 +50,26 @@ TEST_F(SessionStateTest, SyncerStatusToValue) {
   status.num_successful_bookmark_commits = 10;
   status.num_updates_downloaded_total = 100;
   status.num_tombstone_updates_downloaded_total = 200;
+  status.num_local_overwrites = 15;
+  status.num_server_overwrites = 18;
 
   scoped_ptr<DictionaryValue> value(status.ToValue());
-  EXPECT_EQ(7u, value->size());
-  ExpectBooleanValue(status.invalid_store, *value, "invalidStore");
-  ExpectBooleanValue(status.syncer_stuck, *value, "syncerStuck");
-  ExpectBooleanValue(status.syncing, *value, "syncing");
-  ExpectIntegerValue(status.num_successful_commits,
-                     *value, "numSuccessfulCommits");
-  ExpectIntegerValue(status.num_successful_bookmark_commits,
-                     *value, "numSuccessfulBookmarkCommits");
-  ExpectIntegerValue(status.num_updates_downloaded_total,
-                     *value, "numUpdatesDownloadedTotal");
-  ExpectIntegerValue(status.num_tombstone_updates_downloaded_total,
-                     *value, "numTombstoneUpdatesDownloadedTotal");
+  EXPECT_EQ(9u, value->size());
+  ExpectDictBooleanValue(status.invalid_store, *value, "invalidStore");
+  ExpectDictBooleanValue(status.syncer_stuck, *value, "syncerStuck");
+  ExpectDictBooleanValue(status.syncing, *value, "syncing");
+  ExpectDictIntegerValue(status.num_successful_commits,
+                         *value, "numSuccessfulCommits");
+  ExpectDictIntegerValue(status.num_successful_bookmark_commits,
+                         *value, "numSuccessfulBookmarkCommits");
+  ExpectDictIntegerValue(status.num_updates_downloaded_total,
+                         *value, "numUpdatesDownloadedTotal");
+  ExpectDictIntegerValue(status.num_tombstone_updates_downloaded_total,
+                         *value, "numTombstoneUpdatesDownloadedTotal");
+  ExpectDictIntegerValue(status.num_local_overwrites,
+                         *value, "numLocalOverwrites");
+  ExpectDictIntegerValue(status.num_server_overwrites,
+                         *value, "numServerOverwrites");
 }
 
 TEST_F(SessionStateTest, ErrorCountersToValue) {
@@ -74,12 +80,12 @@ TEST_F(SessionStateTest, ErrorCountersToValue) {
 
   scoped_ptr<DictionaryValue> value(counters.ToValue());
   EXPECT_EQ(3u, value->size());
-  ExpectIntegerValue(counters.num_conflicting_commits,
-                     *value, "numConflictingCommits");
-  ExpectIntegerValue(counters.consecutive_transient_error_commits,
-                     *value, "consecutiveTransientErrorCommits");
-  ExpectIntegerValue(counters.consecutive_errors,
-                     *value, "consecutiveErrors");
+  ExpectDictIntegerValue(counters.num_conflicting_commits,
+                         *value, "numConflictingCommits");
+  ExpectDictIntegerValue(counters.consecutive_transient_error_commits,
+                         *value, "consecutiveTransientErrorCommits");
+  ExpectDictIntegerValue(counters.consecutive_errors,
+                         *value, "consecutiveErrors");
 }
 
 TEST_F(SessionStateTest, DownloadProgressMarkersToValue) {
@@ -100,8 +106,8 @@ TEST_F(SessionStateTest, DownloadProgressMarkersToValue) {
     std::string marker(i, i);
     std::string expected_value;
     EXPECT_TRUE(base::Base64Encode(marker, &expected_value));
-    ExpectStringValue(expected_value,
-                      *value, syncable::ModelTypeToString(model_type));
+    ExpectDictStringValue(expected_value,
+                          *value, syncable::ModelTypeToString(model_type));
   }
 }
 
@@ -134,6 +140,7 @@ TEST_F(SessionStateTest, SyncSessionSnapshotToValue) {
   const bool kHasMoreToSync = false;
   const bool kIsSilenced = true;
   const int kUnsyncedCount = 1053;
+  const int kNumBlockingConflictingUpdates = 1054;
   const int kNumConflictingUpdates = 1055;
   const bool kDidCommitItems = true;
 
@@ -149,29 +156,33 @@ TEST_F(SessionStateTest, SyncSessionSnapshotToValue) {
                                kHasMoreToSync,
                                kIsSilenced,
                                kUnsyncedCount,
+                               kNumBlockingConflictingUpdates,
                                kNumConflictingUpdates,
                                kDidCommitItems,
-                               source);
+                               source,
+                               0);
   scoped_ptr<DictionaryValue> value(snapshot.ToValue());
-  EXPECT_EQ(12u, value->size());
-  ExpectDictionaryValue(*expected_syncer_status_value, *value,
-                        "syncerStatus");
-  ExpectDictionaryValue(*expected_errors_value, *value, "errors");
-  ExpectIntegerValue(kNumServerChangesRemaining, *value,
-                     "numServerChangesRemaining");
-  ExpectBooleanValue(kIsShareUsable, *value, "isShareUsable");
-  ExpectListValue(*expected_initial_sync_ended_value, *value,
-                  "initialSyncEnded");
-  ExpectDictionaryValue(*expected_download_progress_markers_value,
-                        *value, "downloadProgressMarkers");
-  ExpectBooleanValue(kHasMoreToSync, *value, "hasMoreToSync");
-  ExpectBooleanValue(kIsSilenced, *value, "isSilenced");
-  ExpectIntegerValue(kUnsyncedCount, *value, "unsyncedCount");
-  ExpectIntegerValue(kNumConflictingUpdates, *value,
-                     "numConflictingUpdates");
-  ExpectBooleanValue(kDidCommitItems, *value,
-                     "didCommitItems");
-  ExpectDictionaryValue(*expected_source_value, *value, "source");
+  EXPECT_EQ(14u, value->size());
+  ExpectDictDictionaryValue(*expected_syncer_status_value, *value,
+                            "syncerStatus");
+  ExpectDictDictionaryValue(*expected_errors_value, *value, "errors");
+  ExpectDictIntegerValue(kNumServerChangesRemaining, *value,
+                         "numServerChangesRemaining");
+  ExpectDictBooleanValue(kIsShareUsable, *value, "isShareUsable");
+  ExpectDictListValue(*expected_initial_sync_ended_value, *value,
+                      "initialSyncEnded");
+  ExpectDictDictionaryValue(*expected_download_progress_markers_value,
+                            *value, "downloadProgressMarkers");
+  ExpectDictBooleanValue(kHasMoreToSync, *value, "hasMoreToSync");
+  ExpectDictBooleanValue(kIsSilenced, *value, "isSilenced");
+  ExpectDictIntegerValue(kUnsyncedCount, *value, "unsyncedCount");
+  ExpectDictIntegerValue(kNumBlockingConflictingUpdates, *value,
+                         "numBlockingConflictingUpdates");
+  ExpectDictIntegerValue(kNumConflictingUpdates, *value,
+                         "numConflictingUpdates");
+  ExpectDictBooleanValue(kDidCommitItems, *value,
+                         "didCommitItems");
+  ExpectDictDictionaryValue(*expected_source_value, *value, "source");
 }
 
 }  // namespace

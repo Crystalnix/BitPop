@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_nsobject.h"
 #import "chrome/browser/ui/cocoa/clickhold_button_cell.h"
+#import "chrome/browser/ui/cocoa/nsview_additions.h"
 
 @interface MenuButton (Private)
 - (void)showMenu:(BOOL)isDragging;
@@ -78,6 +79,10 @@
   }
 }
 
+- (NSRect)menuRect {
+  return [self bounds];
+}
+
 @end  // @implementation MenuButton
 
 @implementation MenuButton (Private)
@@ -112,8 +117,7 @@
   // is flipped, and that frame should be in our coordinates.) The y/height is
   // very odd, since it doesn't seem to respond to changes the way that it
   // should. I don't understand it.
-  NSRect frame = [self convertRect:[self frame]
-                          fromView:[self superview]];
+  NSRect frame = [self menuRect];
   frame.origin.x -= 2.0;
   frame.size.height += 10.0;
 
@@ -133,10 +137,17 @@
   DCHECK(popUpCell_.get());
   [popUpCell_ setMenu:[self attachedMenu]];
   [popUpCell_ selectItem:nil];
-  [popUpCell_ attachPopUpWithFrame:frame
-                            inView:self];
-  [popUpCell_ performClickWithFrame:frame
-                             inView:self];
+  [popUpCell_ attachPopUpWithFrame:frame inView:self];
+  [popUpCell_ performClickWithFrame:frame inView:self];
+
+  // Once the menu is dismissed send a mouseExited event if necessary. If the
+  // menu action caused the super view to resize then we won't automatically
+  // get a mouseExited event so we need to do this manually.
+  // See http://crbug.com/82456
+  if (![self cr_isMouseInView]) {
+    if ([[self cell] respondsToSelector:@selector(mouseExited:)])
+      [[self cell] mouseExited:nil];
+  }
 }
 
 // Called when the button is clicked and released. (Shouldn't happen with

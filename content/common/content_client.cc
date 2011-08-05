@@ -23,4 +23,19 @@ ContentClient::ContentClient() :
 ContentClient::~ContentClient() {
 }
 
+bool ContentClient::CanSendWhileSwappedOut(const IPC::Message* msg) {
+  return false;
+}
+
+bool ContentClient::CanHandleWhileSwappedOut(const IPC::Message& msg) {
+  return false;
+}
+
+#if defined(OS_WIN)
+bool ContentClient::SandboxPlugin(CommandLine* command_line,
+                                  sandbox::TargetPolicy* policy) {
+  return false;
+}
+#endif
+
 }  // namespace content

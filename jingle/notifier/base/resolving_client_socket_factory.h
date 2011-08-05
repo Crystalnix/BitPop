@@ -7,11 +7,11 @@
 
 
 namespace net {
-class ClientSocket;
 class ClientSocketHandle;
 class HostPortPair;
 class NetLog;
 class SSLClientSocket;
+class StreamSocket;
 }
 
 // TODO(sanjeevr): Move this to net/
@@ -24,8 +24,8 @@ class ResolvingClientSocketFactory {
  public:
   virtual ~ResolvingClientSocketFactory() { }
   // Method to create a transport socket using a HostPortPair.
-  virtual net::ClientSocket* CreateTransportClientSocket(
-      const net::HostPortPair& host_and_port, net::NetLog* net_log) = 0;
+  virtual net::StreamSocket* CreateTransportClientSocket(
+      const net::HostPortPair& host_and_port) = 0;
 
   virtual net::SSLClientSocket* CreateSSLClientSocket(
       net::ClientSocketHandle* transport_socket,

@@ -106,6 +106,11 @@ const char kRegisterChromeBrowser[] = "register-chrome-browser";
 const char kRegisterChromeBrowserSuffix[] =
     "register-chrome-browser-suffix";
 
+// Switch to allow an extra URL protocol to be registered. This option is used
+// in conjunction with kRegisterChromeBrowser to specify an extra protocol
+// in addition to the standard set of protocols.
+const char kRegisterURLProtocol[] = "register-url-protocol";
+
 // Renames chrome.exe to old_chrome.exe and renames new_chrome.exe to chrome.exe
 // to support in-use updates. Also deletes opv key.
 const char kRenameChromeExe[] = "rename-chrome-exe";
@@ -152,9 +157,6 @@ const char kToastResultsKey[] = "toast-results-key";
 
 }  // namespace switches
 
-const wchar_t kCeeeBrokerExe[] = L"ceee_broker.exe";
-const wchar_t kCeeeIeDll[] = L"ceee_ie.dll";
-const wchar_t kCeeeInstallHelperDll[] = L"ceee_installer_helper.dll";
 const wchar_t kChromeDll[] = L"chrome.dll";
 const wchar_t kChromeExe[] = L"chrome.exe";
 const wchar_t kChromeFrameDll[] = L"npchrome_frame.dll";

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include "ppapi/c/ppp_instance.h"
 #include "webkit/plugins/ppapi/mock_plugin_delegate.h"
 #include "webkit/plugins/ppapi/plugin_module.h"
+#include "webkit/plugins/ppapi/ppapi_interface_factory.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 
 namespace webkit {
@@ -55,18 +56,13 @@ PP_Bool Instance_HandleDocumentLoad(PP_Instance pp_instance,
   return PP_FALSE;
 }
 
-PP_Var Instance_GetInstanceObject(PP_Instance pp_instance) {
-  return PP_MakeUndefined();
-}
-
 static PPP_Instance mock_instance_interface = {
   &Instance_DidCreate,
   &Instance_DidDestroy,
   &Instance_DidChangeView,
   &Instance_DidChangeFocus,
   &Instance_HandleInputEvent,
-  &Instance_HandleDocumentLoad,
-  &Instance_GetInstanceObject
+  &Instance_HandleDocumentLoad
 };
 
 }  // namespace
@@ -95,7 +91,7 @@ void PpapiUnittest::SetUp() {
 
   // Initialize the mock instance.
   instance_ = new PluginInstance(delegate_.get(), module(),
-      static_cast<const PPP_Instance*>(
+      PluginInstance::new_instance_interface<PPP_Instance>(
           GetMockInterface(PPP_INSTANCE_INTERFACE)));
 }
 
@@ -119,6 +115,52 @@ void PpapiUnittest::ShutdownModule() {
 
 void PpapiUnittest::PluginModuleDead(PluginModule* /* dead_module */) {
   // Nothing needed (this is necessary to make the module compile).
+}
+
+// Tests whether custom PPAPI interface factories are called when PPAPI
+// interfaces are requested.
+class PpapiCustomInterfaceFactoryTest
+    : public testing::Test,
+      public webkit::ppapi::PluginDelegate::ModuleLifetime {
+ public:
+  PpapiCustomInterfaceFactoryTest() {}
+  virtual ~PpapiCustomInterfaceFactoryTest() {}
+
+  bool result() {
+    return result_;
+  }
+
+  void reset_result() {
+    result_ = false;
+  }
+
+  static void* InterfaceFactory(const std::string& interface_name) {
+    result_ = true;
+    return NULL;
+  }
+
+ private:
+  static bool result_;
+  // ModuleLifetime implementation.
+  virtual void PluginModuleDead(PluginModule* dead_module) {}
+};
+
+bool PpapiCustomInterfaceFactoryTest::result_ = false;
+
+// This test validates whether custom PPAPI interface factories are invoked in
+// response to PluginModule::GetPluginInterface calls.
+TEST_F(PpapiCustomInterfaceFactoryTest, BasicFactoryTest) {
+  PpapiInterfaceFactoryManager::GetInstance()->RegisterFactory(
+      PpapiCustomInterfaceFactoryTest::InterfaceFactory);
+  (*PluginModule::GetLocalGetInterfaceFunc())("DummyInterface");
+  EXPECT_TRUE(result());
+
+  reset_result();
+  PpapiInterfaceFactoryManager::GetInstance()->UnregisterFactory(
+      PpapiCustomInterfaceFactoryTest::InterfaceFactory);
+
+  (*PluginModule::GetLocalGetInterfaceFunc())("DummyInterface");
+  EXPECT_FALSE(result());
 }
 
 }  // namespace ppapi

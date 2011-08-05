@@ -9,15 +9,14 @@
 #include "base/file_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/configuration_policy_pref_store.h"
 #include "chrome/browser/policy/cloud_policy_subsystem.h"
+#include "chrome/browser/policy/configuration_policy_pref_store.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/policy/user_policy_cache.h"
 #include "chrome/browser/policy/user_policy_identity_strategy.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
-#include "net/url_request/url_request_context_getter.h"
 
 namespace {
 
@@ -25,30 +24,18 @@ const FilePath::CharType kPolicyDir[] = FILE_PATH_LITERAL("Device Management");
 const FilePath::CharType kTokenCacheFile[] = FILE_PATH_LITERAL("Token");
 const FilePath::CharType kPolicyCacheFile[] = FILE_PATH_LITERAL("Policy");
 
+const int64 kServiceInitializationStartupDelay = 2000;
+
 }  // namespace
 
 namespace policy {
 
 ProfilePolicyConnector::ProfilePolicyConnector(Profile* profile)
     : profile_(profile) {
-  // TODO(mnissler): We access the file system here. The cloud policy context
-  // below needs to do so anyway, since it needs to read the policy cache from
-  // disk. If this proves to be a problem, we need to do this initialization
-  // asynchronously on the file thread and put in synchronization that allows us
-  // to wait for the cache to be read during the browser startup code paths.
-  // Another option would be to provide a generic IO-safe initializer called
-  // from the PrefService that we could hook up with through the policy
-  // provider.
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kDeviceManagementUrl)) {
     FilePath policy_cache_dir(profile_->GetPath());
     policy_cache_dir = policy_cache_dir.Append(kPolicyDir);
-    if (!file_util::CreateDirectory(policy_cache_dir)) {
-      LOG(WARNING) << "Failed to create policy state dir "
-                   << policy_cache_dir.value()
-                   << ", skipping cloud policy initialization.";
-      return;
-    }
 
     identity_strategy_.reset(new UserPolicyIdentityStrategy(
         profile_,
@@ -76,12 +63,18 @@ ProfilePolicyConnector::~ProfilePolicyConnector() {
   identity_strategy_.reset();
 }
 
+void ProfilePolicyConnector::ScheduleServiceInitialization(
+    int64 delay_milliseconds) {
+  if (cloud_policy_subsystem_.get())
+    cloud_policy_subsystem_->ScheduleServiceInitialization(delay_milliseconds);
+}
+
 void ProfilePolicyConnector::Initialize() {
-  // TODO(jkummerow, mnissler): Move this out of the browser startup path.
-  if (cloud_policy_subsystem_.get()) {
+  if (identity_strategy_.get())
+    identity_strategy_->LoadTokenCache();
+  if (cloud_policy_subsystem_.get())
     cloud_policy_subsystem_->Initialize(profile_->GetPrefs(),
-                                        profile_->GetRequestContext());
-  }
+                                        kServiceInitializationStartupDelay);
 }
 
 void ProfilePolicyConnector::Shutdown() {

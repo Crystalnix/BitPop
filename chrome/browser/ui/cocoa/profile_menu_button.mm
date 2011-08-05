@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/logging.h"
+#include "chrome/browser/ui/profile_menu_model.h"
 #import "third_party/GTM/AppKit/GTMFadeTruncatingTextFieldCell.h"
 
 namespace {
@@ -52,11 +53,16 @@ NSColor* GetBlackWithAlpha(CGFloat alpha) {
   [textFieldCell_ setAlignment:NSRightTextAlignment];
   [textFieldCell_ setFont:[NSFont systemFontOfSize:
       [NSFont smallSystemFontSize]]];
+
+  [self setOpenMenuOnClick:YES];
+
+  profile_menu_model_.reset(new ProfileMenuModel);
+  menu_.reset([[MenuController alloc] initWithModel:profile_menu_model_.get()
+                             useWithPopUpButtonCell:NO]);
 }
 
-- (id)initWithFrame:(NSRect)frame
-          pullsDown:(BOOL)flag {
-  if ((self = [super initWithFrame:frame pullsDown:flag]))
+- (id)initWithFrame:(NSRect)frame {
+  if ((self = [super initWithFrame:frame]))
     [self commonInit];
   return self;
 }
@@ -326,54 +332,6 @@ NSColor* GetBlackWithAlpha(CGFloat alpha) {
   }
 }
 
-- (NSPoint)popUpMenuPosition {
-  NSPoint menuPos = [self tabRect].origin;
-  // By default popUpContextMenu: causes the menu to show up a few pixels above
-  // the point you give it. We need to shift it down a bit so that it lines up
-  // with the bottom of the tab.
-  menuPos.y -= 6;
-  return [self convertPoint:menuPos toView:nil];
-}
-
-- (void)   mouseDown:(NSEvent*)event
-  withShowMenuTarget:(id)target {
-  if (![self menu]) {
-    [super mouseDown:event];
-    return;
-  }
-
-  NSPoint point = [[self superview]
-      convertPointFromBase:[event locationInWindow]];
-  if (![[self hitTest:point] isEqual:self])
-    return;
-
-  // Draw the control as depressed.
-  [self highlight:YES];
-
-  NSEvent* fakeEvent = [NSEvent
-      mouseEventWithType:[event type]
-                location:[self popUpMenuPosition]
-           modifierFlags:[event modifierFlags]
-               timestamp:[event timestamp]
-            windowNumber:[event windowNumber]
-                 context:[event context]
-             eventNumber:[event eventNumber]
-              clickCount:[event clickCount]
-                pressure:[event pressure]];
-  DCHECK([target respondsToSelector:
-      @selector(popUpContextMenu:withEvent:forView:)]);
-  [target popUpContextMenu:[self menu]
-                 withEvent:fakeEvent
-                   forView:self];
-
-  [self highlight:NO];
-}
-
-- (void)mouseDown:(NSEvent*)event {
-  [self      mouseDown:event
-    withShowMenuTarget:[NSMenu class]];
-}
-
 - (NSSize)desiredControlSize {
   NSSize size = [self tabRect].size;
 
@@ -390,6 +348,16 @@ NSColor* GetBlackWithAlpha(CGFloat alpha) {
 
 - (NSSize)minControlSize {
   return [self tabRect].size;
+}
+
+// Overridden from MenuButton.
+- (NSMenu*)attachedMenu {
+  return [menu_.get() menu];
+}
+
+// Overridden from MenuButton.
+- (NSRect)menuRect {
+  return [self tabRect];
 }
 
 @end

@@ -7,11 +7,11 @@
 #include "base/command_line.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/content_settings/content_settings_details.h"
+#include "chrome/browser/content_settings/content_settings_extension_provider.h"
 #include "chrome/browser/content_settings/content_settings_policy_provider.h"
 #include "chrome/browser/content_settings/content_settings_pref_provider.h"
 #include "chrome/browser/content_settings/content_settings_provider.h"
-#include "chrome/browser/metrics/user_metrics.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
@@ -19,10 +19,12 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/browser/browser_thread.h"
+#include "content/browser/user_metrics.h"
 #include "content/common/notification_service.h"
 #include "content/common/notification_source.h"
 #include "content/common/notification_type.h"
 #include "googleurl/src/gurl.h"
+#include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/base/static_cookie_policy.h"
 
@@ -68,11 +70,11 @@ HostContentSettingsMap::HostContentSettingsMap(Profile* profile)
   // critical, as providers that are further down in the list (i.e. added later)
   // override providers further up.
   default_content_settings_providers_.push_back(
-      DefaultContentSettingsProviderPtr(
-          new content_settings::PrefDefaultProvider(profile)));
+      make_linked_ptr(new content_settings::PrefDefaultProvider(profile)));
+  content_settings::DefaultProviderInterface* policy_default_provider =
+      new content_settings::PolicyDefaultProvider(profile);
   default_content_settings_providers_.push_back(
-      DefaultContentSettingsProviderPtr(
-          new content_settings::PolicyDefaultProvider(profile)));
+      make_linked_ptr(policy_default_provider));
 
   PrefService* prefs = profile_->GetPrefs();
 
@@ -92,34 +94,44 @@ HostContentSettingsMap::HostContentSettingsMap(Profile* profile)
   }
   is_block_third_party_cookies_managed_ =
       prefs->IsManagedPreference(prefs::kBlockThirdPartyCookies);
-  block_nonsandboxed_plugins_ =
-      prefs->GetBoolean(prefs::kBlockNonsandboxedPlugins);
 
   // User defined non default content settings are provided by the PrefProvider.
   // The order in which the content settings providers are created is critical,
   // as providers that are further up in the list (i.e. added earlier) override
   // providers further down.
-  content_settings_providers_.push_back(
-      make_linked_ptr(new content_settings::PolicyProvider(profile)));
+  content_settings_providers_.push_back(make_linked_ptr(
+      new content_settings::PolicyProvider(profile, policy_default_provider)));
+  ExtensionService* extension_service = profile->GetExtensionService();
+  if (extension_service) {
+    // |extension_service| can be NULL in unit tests.
+    content_settings_providers_.push_back(make_linked_ptr(
+        new content_settings::ExtensionProvider(
+            profile,
+            extension_service->GetExtensionContentSettingsStore(),
+            is_off_the_record_)));
+  }
   content_settings_providers_.push_back(
       make_linked_ptr(new content_settings::PrefProvider(profile)));
 
   pref_change_registrar_.Init(prefs);
   pref_change_registrar_.Add(prefs::kBlockThirdPartyCookies, this);
-  pref_change_registrar_.Add(prefs::kBlockNonsandboxedPlugins, this);
   notification_registrar_.Add(this, NotificationType::PROFILE_DESTROYED,
                               Source<Profile>(profile_));
 }
 
 // static
 void HostContentSettingsMap::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kBlockThirdPartyCookies, false);
-  prefs->RegisterBooleanPref(prefs::kBlockNonsandboxedPlugins, false);
-  prefs->RegisterIntegerPref(prefs::kContentSettingsWindowLastTabIndex, 0);
+  prefs->RegisterBooleanPref(prefs::kBlockThirdPartyCookies,
+                             false,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterIntegerPref(prefs::kContentSettingsWindowLastTabIndex,
+                             0,
+                             PrefService::UNSYNCABLE_PREF);
 
   // Obsolete prefs, for migration:
   prefs->RegisterIntegerPref(prefs::kCookieBehavior,
-                             net::StaticCookiePolicy::ALLOW_ALL_COOKIES);
+                             net::StaticCookiePolicy::ALLOW_ALL_COOKIES,
+                             PrefService::UNSYNCABLE_PREF);
 
   // Register the prefs for the content settings providers.
   content_settings::PrefDefaultProvider::RegisterUserPrefs(prefs);
@@ -150,11 +162,48 @@ ContentSetting HostContentSettingsMap::GetContentSetting(
     const GURL& url,
     ContentSettingsType content_type,
     const std::string& resource_identifier) const {
+  DCHECK_NE(CONTENT_SETTINGS_TYPE_COOKIES, content_type);
+  return GetContentSettingInternal(url, content_type, resource_identifier);
+}
+
+ContentSetting HostContentSettingsMap::GetContentSettingInternal(
+    const GURL& url,
+    ContentSettingsType content_type,
+    const std::string& resource_identifier) const {
   ContentSetting setting = GetNonDefaultContentSetting(url,
                                                        content_type,
                                                        resource_identifier);
   if (setting == CONTENT_SETTING_DEFAULT)
     return GetDefaultContentSetting(content_type);
+  return setting;
+}
+
+ContentSetting HostContentSettingsMap::GetCookieContentSetting(
+    const GURL& url,
+    const GURL& first_party_url,
+    bool setting_cookie) const {
+  if (ShouldAllowAllContent(first_party_url))
+    return CONTENT_SETTING_ALLOW;
+  ContentSetting setting = CONTENT_SETTING_ALLOW;
+  if (BlockThirdPartyCookies()) {
+    bool strict = CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kBlockReadingThirdPartyCookies);
+    net::StaticCookiePolicy policy(strict ?
+        net::StaticCookiePolicy::BLOCK_ALL_THIRD_PARTY_COOKIES :
+        net::StaticCookiePolicy::BLOCK_SETTING_THIRD_PARTY_COOKIES);
+    int rv;
+    if (setting_cookie)
+     rv = policy.CanSetCookie(url, first_party_url);
+    else
+     rv = policy.CanGetCookies(url, first_party_url);
+    DCHECK_NE(net::ERR_IO_PENDING, rv);
+    if (rv != net::OK)
+      setting = CONTENT_SETTING_BLOCK;
+  }
+
+  if (setting == CONTENT_SETTING_ALLOW)
+    setting = GetContentSettingInternal(url, CONTENT_SETTINGS_TYPE_COOKIES, "");
+
   return setting;
 }
 
@@ -173,8 +222,7 @@ ContentSetting HostContentSettingsMap::GetNonDefaultContentSetting(
        ++provider) {
     provided_setting = (*provider)->GetContentSetting(
         url, url, content_type, resource_identifier);
-    bool isManaged = (*provider)->ContentSettingsTypeIsManaged(content_type);
-    if (provided_setting != CONTENT_SETTING_DEFAULT || isManaged)
+    if (provided_setting != CONTENT_SETTING_DEFAULT)
       return provided_setting;
   }
   return provided_setting;
@@ -200,7 +248,7 @@ ContentSettings HostContentSettingsMap::GetContentSettings(
 ContentSettings HostContentSettingsMap::GetNonDefaultContentSettings(
     const GURL& url) const {
   if (ShouldAllowAllContent(url))
-      return ContentSettings(CONTENT_SETTING_ALLOW);
+    return ContentSettings(CONTENT_SETTING_ALLOW);
 
   ContentSettings output(CONTENT_SETTING_DEFAULT);
   for (int j = 0; j < CONTENT_SETTINGS_NUM_TYPES; ++j) {
@@ -276,11 +324,11 @@ void HostContentSettingsMap::AddExceptionForURL(
     ContentSetting setting) {
   // Make sure there is no entry that would override the pattern we are about
   // to insert for exactly this URL.
-  SetContentSetting(ContentSettingsPattern::FromURLNoWildcard(url),
+  SetContentSetting(ContentSettingsPattern::LegacyFromURLNoWildcard(url),
                     content_type,
                     resource_identifier,
                     CONTENT_SETTING_DEFAULT);
-  SetContentSetting(ContentSettingsPattern::FromURL(url),
+  SetContentSetting(ContentSettingsPattern::LegacyFromURL(url),
                     content_type,
                     resource_identifier,
                     setting);
@@ -318,37 +366,7 @@ void HostContentSettingsMap::SetBlockThirdPartyCookies(bool block) {
     block_third_party_cookies_ = block;
   }
 
-  if (block)
-    prefs->SetBoolean(prefs::kBlockThirdPartyCookies, true);
-  else
-    prefs->ClearPref(prefs::kBlockThirdPartyCookies);
-}
-
-void HostContentSettingsMap::SetBlockNonsandboxedPlugins(bool block) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  // This setting may not be directly modified for OTR sessions.  Instead, it
-  // is synced to the main profile's setting.
-  if (is_off_the_record_) {
-    NOTREACHED();
-    return;
-  }
-
-  {
-    base::AutoLock auto_lock(lock_);
-    block_nonsandboxed_plugins_ = block;
-  }
-
-  PrefService* prefs = profile_->GetPrefs();
-  if (block) {
-    UserMetrics::RecordAction(
-        UserMetricsAction("BlockNonsandboxedPlugins_Enable"));
-    prefs->SetBoolean(prefs::kBlockNonsandboxedPlugins, true);
-  } else {
-    UserMetrics::RecordAction(
-        UserMetricsAction("BlockNonsandboxedPlugins_Disable"));
-    prefs->ClearPref(prefs::kBlockNonsandboxedPlugins);
-  }
+  profile_->GetPrefs()->SetBoolean(prefs::kBlockThirdPartyCookies, block);
 }
 
 void HostContentSettingsMap::ResetToDefaults() {
@@ -371,7 +389,6 @@ void HostContentSettingsMap::ResetToDefaults() {
     // Don't reset block third party cookies if they are managed.
     if (!IsBlockThirdPartyCookiesManaged())
       block_third_party_cookies_ = false;
-    block_nonsandboxed_plugins_ = false;
   }
 
   if (!is_off_the_record_) {
@@ -381,11 +398,7 @@ void HostContentSettingsMap::ResetToDefaults() {
     // clear it in order to restore the default value for later when the
     // preference is not managed anymore.
     prefs->ClearPref(prefs::kBlockThirdPartyCookies);
-    prefs->ClearPref(prefs::kBlockNonsandboxedPlugins);
     updating_preferences_ = false;
-    NotifyObservers(ContentSettingsDetails(ContentSettingsPattern(),
-                                           CONTENT_SETTINGS_TYPE_DEFAULT,
-                                           ""));
   }
 }
 
@@ -407,19 +420,9 @@ void HostContentSettingsMap::Observe(NotificationType type,
       is_block_third_party_cookies_managed_ =
           profile_->GetPrefs()->IsManagedPreference(
               prefs::kBlockThirdPartyCookies);
-    } else if (*name == prefs::kBlockNonsandboxedPlugins) {
-      base::AutoLock auto_lock(lock_);
-      block_nonsandboxed_plugins_ = profile_->GetPrefs()->GetBoolean(
-          prefs::kBlockNonsandboxedPlugins);
     } else {
       NOTREACHED() << "Unexpected preference observed";
       return;
-    }
-
-    if (!is_off_the_record_) {
-      NotifyObservers(ContentSettingsDetails(ContentSettingsPattern(),
-                                             CONTENT_SETTINGS_TYPE_DEFAULT,
-                                             ""));
     }
   } else if (type == NotificationType::PROFILE_DESTROYED) {
     DCHECK_EQ(profile_, Source<Profile>(source).ptr());
@@ -442,14 +445,6 @@ bool HostContentSettingsMap::IsDefaultContentSettingManaged(
       return true;
   }
   return false;
-}
-
-void HostContentSettingsMap::NotifyObservers(
-    const ContentSettingsDetails& details) {
-  NotificationService::current()->Notify(
-      NotificationType::CONTENT_SETTINGS_CHANGED,
-      Source<HostContentSettingsMap>(this),
-      Details<const ContentSettingsDetails>(&details));
 }
 
 void HostContentSettingsMap::UnregisterObservers() {

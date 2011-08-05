@@ -16,7 +16,6 @@
 #include "views/screen.h"
 #include "views/view.h"
 #include "views/widget/monitor_win.h"
-#include "views/widget/root_view.h"
 #include "views/widget/widget.h"
 
 namespace views {
@@ -37,7 +36,8 @@ static gfx::Font DetermineDefaultFont() {
   HWND window = CreateWindowEx(
       WS_EX_TRANSPARENT | l10n_util::GetExtendedTooltipStyles(),
       TOOLTIPS_CLASS, NULL, 0 , 0, 0, 0, 0, NULL, NULL, NULL, NULL);
-  ui::CheckWindowCreated(window);
+  if (!window)
+    return gfx::Font();
   HFONT hfont = reinterpret_cast<HFONT>(SendMessage(window, WM_GETFONT, 0, 0));
   gfx::Font font = hfont ? gfx::Font(hfont) : gfx::Font();
   DestroyWindow(window);
@@ -91,13 +91,14 @@ TooltipManagerWin::~TooltipManagerWin() {
     DestroyWindow(keyboard_tooltip_hwnd_);
 }
 
-void TooltipManagerWin::Init() {
+bool TooltipManagerWin::Init() {
   // Create the tooltip control.
   tooltip_hwnd_ = CreateWindowEx(
       WS_EX_TRANSPARENT | l10n_util::GetExtendedTooltipStyles(),
       TOOLTIPS_CLASS, NULL, TTS_NOPREFIX, 0, 0, 0, 0,
       GetParent(), NULL, NULL, NULL);
-  ui::CheckWindowCreated(tooltip_hwnd_);
+  if (!tooltip_hwnd_)
+    return false;
 
   l10n_util::AdjustUIFontForWindow(tooltip_hwnd_);
 
@@ -118,6 +119,7 @@ void TooltipManagerWin::Init() {
   toolinfo_.lpszText = LPSTR_TEXTCALLBACK;
   SetRectEmpty(&toolinfo_.rect);
   SendMessage(tooltip_hwnd_, TTM_ADDTOOL, 0, (LPARAM)&toolinfo_);
+  return true;
 }
 
 gfx::NativeView TooltipManagerWin::GetParent() {
@@ -148,7 +150,7 @@ LRESULT TooltipManagerWin::OnNotify(int w_param,
       case TTN_GETDISPINFO: {
         if (last_view_out_of_sync_) {
           // View under the mouse is out of sync, determine it now.
-          RootView* root_view = widget_->GetRootView();
+          View* root_view = widget_->GetRootView();
           last_tooltip_view_ =
               root_view->GetEventHandlerForPoint(last_mouse_pos_);
           last_view_out_of_sync_ = false;
@@ -271,7 +273,7 @@ int TooltipManagerWin::CalcTooltipHeight() {
 }
 
 void TooltipManagerWin::UpdateTooltip(const gfx::Point& mouse_pos) {
-  RootView* root_view = widget_->GetRootView();
+  View* root_view = widget_->GetRootView();
   View* view = root_view->GetEventHandlerForPoint(mouse_pos);
   if (view != last_tooltip_view_) {
     // NOTE: This *must* be sent regardless of the visibility of the tooltip.
@@ -336,7 +338,9 @@ void TooltipManagerWin::ShowKeyboardTooltip(View* focused_view) {
   keyboard_tooltip_hwnd_ = CreateWindowEx(
       WS_EX_TRANSPARENT | l10n_util::GetExtendedTooltipStyles(),
       TOOLTIPS_CLASS, NULL, 0, 0, 0, 0, 0, NULL, NULL, NULL, NULL);
-  ui::CheckWindowCreated(keyboard_tooltip_hwnd_);
+  if (!keyboard_tooltip_hwnd_)
+    return;
+
   SendMessage(keyboard_tooltip_hwnd_, TTM_SETMAXTIPWIDTH, 0,
               std::numeric_limits<short>::max());
   int tooltip_width;

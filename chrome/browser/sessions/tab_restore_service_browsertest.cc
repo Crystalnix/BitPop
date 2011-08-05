@@ -1,10 +1,12 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/sessions/session_types.h"
 #include "chrome/browser/sessions/session_service.h"
+#include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
+#include "chrome/common/url_constants.h"
 #include "chrome/test/render_view_test.h"
 #include "chrome/test/testing_profile.h"
 #include "content/browser/renderer_host/test_render_view_host.h"
@@ -46,12 +48,12 @@ class TabRestoreServiceTest : public RenderViewHostTestHarness {
   virtual void SetUp() {
     RenderViewHostTestHarness::SetUp();
     time_factory_ = new TabRestoreTimeFactory();
-    service_ = new TabRestoreService(profile(), time_factory_);
+    service_.reset(new TabRestoreService(profile(), time_factory_));
     WebKit::initialize(&webkitclient_);
   }
 
   virtual void TearDown() {
-    service_ = NULL;
+    service_.reset();
     delete time_factory_;
     RenderViewHostTestHarness::TearDown();
     WebKit::shutdown();
@@ -74,18 +76,19 @@ class TabRestoreServiceTest : public RenderViewHostTestHarness {
   void RecreateService() {
     // Must set service to null first so that it is destroyed before the new
     // one is created.
-    service_ = NULL;
-    service_ = new TabRestoreService(profile(), time_factory_);
+    service_.reset();
+    service_.reset(new TabRestoreService(profile(), time_factory_));
     service_->LoadTabsFromLastSession();
   }
 
   // Adds a window with one tab and url to the profile's session service.
   // If |pinned| is true, the tab is marked as pinned in the session service.
   void AddWindowWithOneTabToSessionService(bool pinned) {
-    SessionService* session_service = profile()->GetSessionService();
+    SessionService* session_service =
+        SessionServiceFactory::GetForProfile(profile());
     SessionID tab_id;
     SessionID window_id;
-    session_service->SetWindowType(window_id, Browser::TYPE_NORMAL);
+    session_service->SetWindowType(window_id, Browser::TYPE_TABBED);
     session_service->SetTabWindow(window_id, tab_id);
     session_service->SetTabIndexInWindow(window_id, tab_id, 0);
     session_service->SetSelectedTabInWindow(window_id, 0);
@@ -103,7 +106,7 @@ class TabRestoreServiceTest : public RenderViewHostTestHarness {
   void CreateSessionServiceWithOneWindow(bool pinned) {
     // The profile takes ownership of this.
     SessionService* session_service = new SessionService(profile());
-    profile()->set_session_service(session_service);
+    SessionServiceFactory::SetForTestProfile(profile(), session_service);
 
     AddWindowWithOneTabToSessionService(pinned);
 
@@ -114,7 +117,7 @@ class TabRestoreServiceTest : public RenderViewHostTestHarness {
   GURL url1_;
   GURL url2_;
   GURL url3_;
-  scoped_refptr<TabRestoreService> service_;
+  scoped_ptr<TabRestoreService> service_;
   TabRestoreTimeFactory* time_factory_;
   RenderViewTest::RendererWebKitClientImplNoSandbox webkitclient_;
 };
@@ -169,6 +172,40 @@ TEST_F(TabRestoreServiceTest, Basic) {
 TEST_F(TabRestoreServiceTest, DontCreateEmptyTab) {
   service_->CreateHistoricalTab(&controller(), -1);
   EXPECT_TRUE(service_->entries().empty());
+}
+
+// Make sure TabRestoreService doesn't create an entry for print preview tab.
+TEST_F(TabRestoreServiceTest, DontRestorePrintPreviewTab) {
+  AddThreeNavigations();
+
+  // Navigate to a print preview tab.
+  GURL printPreviewURL(chrome::kChromeUIPrintURL);
+  NavigateAndCommit(printPreviewURL);
+  EXPECT_EQ(printPreviewURL, contents()->GetURL());
+  EXPECT_EQ(4, controller().entry_count());
+
+  // Have the service record the tab.
+  service_->CreateHistoricalTab(&controller(), -1);
+
+  // Recreate the service and have it load the tabs.
+  RecreateService();
+
+  // One entry should be created.
+  ASSERT_EQ(1U, service_->entries().size());
+
+  // And verify the entry.
+  TabRestoreService::Entry* entry = service_->entries().front();
+  ASSERT_EQ(TabRestoreService::TAB, entry->type);
+  TabRestoreService::Tab* tab = static_cast<TabRestoreService::Tab*>(entry);
+  EXPECT_FALSE(tab->pinned);
+
+  // Verify that print preview tab is not restored.
+  ASSERT_EQ(3U, tab->navigations.size());
+  EXPECT_NE(printPreviewURL, tab->navigations[0].virtual_url());
+  EXPECT_NE(printPreviewURL, tab->navigations[1].virtual_url());
+  EXPECT_NE(printPreviewURL, tab->navigations[2].virtual_url());
+  EXPECT_EQ(time_factory_->TimeNow().ToInternalValue(),
+            tab->timestamp.ToInternalValue());
 }
 
 // Tests restoring a single tab.
@@ -287,7 +324,8 @@ TEST_F(TabRestoreServiceTest, DontLoadTwice) {
 TEST_F(TabRestoreServiceTest, LoadPreviousSession) {
   CreateSessionServiceWithOneWindow(false);
 
-  profile()->GetSessionService()->MoveCurrentSessionToLastSession();
+  SessionServiceFactory::GetForProfile(profile())->
+      MoveCurrentSessionToLastSession();
 
   service_->LoadTabsFromLastSession();
 
@@ -310,7 +348,8 @@ TEST_F(TabRestoreServiceTest, LoadPreviousSession) {
 TEST_F(TabRestoreServiceTest, DontLoadAfterRestore) {
   CreateSessionServiceWithOneWindow(false);
 
-  profile()->GetSessionService()->MoveCurrentSessionToLastSession();
+  SessionServiceFactory::GetForProfile(profile())->
+      MoveCurrentSessionToLastSession();
 
   profile()->set_restored_last_session(true);
 
@@ -324,7 +363,8 @@ TEST_F(TabRestoreServiceTest, DontLoadAfterRestore) {
 TEST_F(TabRestoreServiceTest, DontLoadAfterCleanExit) {
   CreateSessionServiceWithOneWindow(false);
 
-  profile()->GetSessionService()->MoveCurrentSessionToLastSession();
+  SessionServiceFactory::GetForProfile(profile())->
+      MoveCurrentSessionToLastSession();
 
   profile()->set_last_session_exited_cleanly(true);
 
@@ -336,7 +376,8 @@ TEST_F(TabRestoreServiceTest, DontLoadAfterCleanExit) {
 TEST_F(TabRestoreServiceTest, LoadPreviousSessionAndTabs) {
   CreateSessionServiceWithOneWindow(false);
 
-  profile()->GetSessionService()->MoveCurrentSessionToLastSession();
+  SessionServiceFactory::GetForProfile(profile())->
+      MoveCurrentSessionToLastSession();
 
   AddThreeNavigations();
 
@@ -378,7 +419,8 @@ TEST_F(TabRestoreServiceTest, LoadPreviousSessionAndTabs) {
 TEST_F(TabRestoreServiceTest, LoadPreviousSessionAndTabsPinned) {
   CreateSessionServiceWithOneWindow(true);
 
-  profile()->GetSessionService()->MoveCurrentSessionToLastSession();
+  SessionServiceFactory::GetForProfile(profile())->
+      MoveCurrentSessionToLastSession();
 
   AddThreeNavigations();
 
@@ -421,7 +463,8 @@ TEST_F(TabRestoreServiceTest, ManyWindowsInSessionService) {
   for (size_t i = 0; i < TabRestoreService::kMaxEntries; ++i)
     AddWindowWithOneTabToSessionService(false);
 
-  profile()->GetSessionService()->MoveCurrentSessionToLastSession();
+  SessionServiceFactory::GetForProfile(profile())->
+      MoveCurrentSessionToLastSession();
 
   AddThreeNavigations();
 

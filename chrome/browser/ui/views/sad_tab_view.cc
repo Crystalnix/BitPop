@@ -19,6 +19,7 @@
 #include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/skia_util.h"
+#include "views/controls/link.h"
 
 static const int kSadTabOffset = -64;
 static const int kIconTitleSpacing = 20;
@@ -34,6 +35,8 @@ static const SkColor kCrashBackgroundEndColor = SkColorSetRGB(35, 48, 64);
 // official versions.  See http://crosbug.com/10711.
 static const SkColor kKillBackgroundColor = SkColorSetRGB(57, 48, 88);
 static const SkColor kKillBackgroundEndColor = SkColorSetRGB(57, 48, 88);
+static const int kMessageFlags = gfx::Canvas::MULTI_LINE |
+    gfx::Canvas::NO_ELLIPSIS | gfx::Canvas::TEXT_ALIGN_CENTER;
 
 // Font size correction.
 #if defined(CROS_FONTS_USING_BCI)
@@ -65,7 +68,7 @@ SadTabView::SadTabView(TabContents* tab_contents, Kind kind)
         new views::Link(UTF16ToWide(l10n_util::GetStringUTF16(IDS_LEARN_MORE)));
     learn_more_link_->SetFont(*message_font_);
     learn_more_link_->SetNormalColor(kLinkColor);
-    learn_more_link_->SetController(this);
+    learn_more_link_->set_listener(this);
     AddChildView(learn_more_link_);
   }
 }
@@ -95,7 +98,7 @@ void SadTabView::OnPaint(gfx::Canvas* canvas) {
   canvas->DrawStringInt(WideToUTF16Hack(message_), *message_font_,
                         kMessageColor, message_bounds_.x(), message_bounds_.y(),
                         message_bounds_.width(), message_bounds_.height(),
-                        gfx::Canvas::MULTI_LINE);
+                        kMessageFlags);
 
   if (learn_more_link_ != NULL)
     learn_more_link_->SetBounds(link_bounds_.x(), link_bounds_.y(),
@@ -114,11 +117,11 @@ void SadTabView::Layout() {
   int title_height = title_font_->GetHeight();
   title_bounds_.SetRect(title_x, title_y, title_width_, title_height);
 
-  gfx::CanvasSkia cc(0, 0, true);
   int message_width = static_cast<int>(width() * kMessageSize);
   int message_height = 0;
-  cc.SizeStringInt(WideToUTF16Hack(message_), *message_font_, &message_width,
-                   &message_height, gfx::Canvas::MULTI_LINE);
+  gfx::CanvasSkia::SizeStringInt(WideToUTF16Hack(message_),
+                                 *message_font_, &message_width,
+                                 &message_height, kMessageFlags);
   int message_x = (width() - message_width) / 2;
   int message_y = title_bounds_.bottom() + kTitleMessageSpacing;
   message_bounds_.SetRect(message_x, message_y, message_width, message_height);
@@ -132,7 +135,7 @@ void SadTabView::Layout() {
   }
 }
 
-void SadTabView::LinkActivated(views::Link* source, int event_flags) {
+void SadTabView::LinkClicked(views::Link* source, int event_flags) {
   if (tab_contents_ != NULL && source == learn_more_link_) {
     GURL help_url =
         google_util::AppendGoogleLocaleParam(GURL(kind_ == CRASHED ?

@@ -23,14 +23,12 @@
 #include "chrome/browser/sync/sync_ui_util.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
-#include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/options/options_page_base.h"
-#include "chrome/browser/ui/options/options_window.h"
 #include "chrome/browser/ui/webui/options/options_managed_banner_handler.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/net/gaia/google_service_auth_error.h"
 #include "chrome/common/url_constants.h"
+#include "content/browser/user_metrics.h"
 #include "content/common/notification_service.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -210,8 +208,6 @@ void PersonalOptionsHandler::RegisterMessages() {
       "themesSetGTK",
       NewCallback(this, &PersonalOptionsHandler::ThemesSetGTK));
 #endif
-  web_ui_->RegisterMessageCallback("updatePreferredDataTypes",
-      NewCallback(this, &PersonalOptionsHandler::OnPreferredDataTypesUpdated));
 #if defined(OS_CHROMEOS)
   web_ui_->RegisterMessageCallback(
       "loadAccountPicture",
@@ -240,8 +236,19 @@ void PersonalOptionsHandler::OnStateChanged() {
   DCHECK(service);
   bool managed = service->IsManaged();
   bool sync_setup_completed = service->HasSyncSetupCompleted();
-  bool status_has_error = sync_ui_util::GetStatusLabels(service,
-      &status_label, &link_label) == sync_ui_util::SYNC_ERROR;
+  bool status_has_error = sync_ui_util::GetStatusLabels(
+      service, &status_label, &link_label) == sync_ui_util::SYNC_ERROR;
+  browser_sync::SyncBackendHost::StatusSummary summary =
+      service->QuerySyncStatusSummary();
+
+  if (!status_has_error &&
+      summary == browser_sync::SyncBackendHost::Status::SYNCING) {
+    string16 user_name(service->GetAuthenticatedUsername());
+    status_label.assign(l10n_util::GetStringFUTF16(
+        IDS_SYNC_ACCOUNT_SYNCING_TO_USER,
+        user_name,
+        ASCIIToUTF16(chrome::kSyncGoogleDashboardURL)));
+  }
 
   string16 start_stop_button_label;
   bool is_start_stop_button_visible = false;
@@ -332,17 +339,17 @@ void PersonalOptionsHandler::OnLoginFailure(
 void PersonalOptionsHandler::ObserveThemeChanged() {
   Profile* profile = web_ui_->GetProfile();
 #if defined(TOOLKIT_GTK)
-  GtkThemeService* provider = GtkThemeService::GetFrom(profile);
-  bool is_gtk_theme = provider->UseGtkTheme();
+  GtkThemeService* theme_service = GtkThemeService::GetFrom(profile);
+  bool is_gtk_theme = theme_service->UsingNativeTheme();
   FundamentalValue gtk_enabled(!is_gtk_theme);
   web_ui_->CallJavascriptFunction(
       "options.PersonalOptions.setGtkThemeButtonEnabled", gtk_enabled);
 #else
-  ThemeService* provider = ThemeServiceFactory::GetForProfile(profile);
+  ThemeService* theme_service = ThemeServiceFactory::GetForProfile(profile);
   bool is_gtk_theme = false;
 #endif
 
-  bool is_classic_theme = !is_gtk_theme && provider->UsingDefaultTheme();
+  bool is_classic_theme = !is_gtk_theme && theme_service->UsingDefaultTheme();
   FundamentalValue enabled(!is_classic_theme);
   web_ui_->CallJavascriptFunction(
       "options.PersonalOptions.setThemesResetButtonEnabled", enabled);
@@ -378,20 +385,20 @@ void PersonalOptionsHandler::Initialize() {
 void PersonalOptionsHandler::ShowSyncActionDialog(const ListValue* args) {
   ProfileSyncService* service = web_ui_->GetProfile()->GetProfileSyncService();
   DCHECK(service);
-  service->ShowErrorUI(NULL);
+  service->ShowErrorUI(web_ui_);
 }
 
 void PersonalOptionsHandler::ShowSyncLoginDialog(const ListValue* args) {
   ProfileSyncService* service = web_ui_->GetProfile()->GetProfileSyncService();
   DCHECK(service);
-  service->ShowLoginDialog(NULL);
+  service->ShowLoginDialog(web_ui_);
   ProfileSyncService::SyncEvent(ProfileSyncService::START_FROM_OPTIONS);
 }
 
 void PersonalOptionsHandler::ShowCustomizeSyncDialog(const ListValue* args) {
   ProfileSyncService* service = web_ui_->GetProfile()->GetProfileSyncService();
   DCHECK(service);
-  service->ShowConfigure(NULL, false);
+  service->ShowConfigure(web_ui_, false);
 }
 
 void PersonalOptionsHandler::ThemesReset(const ListValue* args) {
@@ -405,14 +412,6 @@ void PersonalOptionsHandler::ThemesSetGTK(const ListValue* args) {
   ThemeServiceFactory::GetForProfile(web_ui_->GetProfile())->SetNativeTheme();
 }
 #endif
-
-void PersonalOptionsHandler::OnPreferredDataTypesUpdated(
-    const ListValue* args) {
-  NotificationService::current()->Notify(
-      NotificationType::SYNC_DATA_TYPES_UPDATED,
-      Source<Profile>(web_ui_->GetProfile()),
-      NotificationService::NoDetails());
-}
 
 #if defined(OS_CHROMEOS)
 void PersonalOptionsHandler::LoadAccountPicture(const ListValue* args) {
@@ -430,7 +429,10 @@ void PersonalOptionsHandler::LoadAccountPicture(const ListValue* args) {
                      timestamp));
     web_ui_->CallJavascriptFunction("PersonalOptions.setAccountPicture",
                                     image_url);
+
+    StringValue email_value(email);
+    web_ui_->CallJavascriptFunction("AccountsOptions.updateAccountPicture",
+                                    email_value, image_url);
   }
 }
-
 #endif

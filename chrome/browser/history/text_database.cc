@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,8 +13,8 @@
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/stringprintf.h"
 #include "base/string_number_conversions.h"
-#include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/diagnostics/sqlite_diagnostics.h"
 
@@ -306,12 +306,13 @@ void TextDatabase::GetTextMatches(const std::string& query,
                                   base::Time* first_time_searched) {
   *first_time_searched = options.begin_time;
 
-  sql::Statement statement(db_.GetCachedStatement(SQL_FROM_HERE,
-    "SELECT url, title, time, offsets(pages), body "
-        "FROM pages LEFT OUTER JOIN info ON pages.rowid = info.rowid "
-        "WHERE pages MATCH ? AND time >= ? AND time < ? "
-        "ORDER BY time DESC "
-        "LIMIT ?"));
+  // TODO(mrossetti): Remove the non-body_only alternative and move the string
+  // into the statement construction when we switch to body_only permanently.
+  std::string sql = "SELECT url, title, time, offsets(pages), body FROM pages "
+                    " LEFT OUTER JOIN info ON pages.rowid = info.rowid WHERE ";
+  sql += options.body_only ? "body " : "pages ";
+  sql += "MATCH ? AND time >= ? AND time < ? ORDER BY time DESC LIMIT ?";
+  sql::Statement statement(db_.GetCachedStatement(SQL_FROM_HERE, sql.c_str()));
   if (!statement)
     return;
 

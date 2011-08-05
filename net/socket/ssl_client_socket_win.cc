@@ -740,6 +740,8 @@ int SSLClientSocketWin::Read(IOBuffer* buf, int buf_len,
   // reading more ciphertext from the transport socket.
   if (bytes_decrypted_ != 0) {
     int len = std::min(buf_len, bytes_decrypted_);
+    LogByteTransfer(net_log_, NetLog::TYPE_SSL_SOCKET_BYTES_RECEIVED, len,
+                    decrypted_ptr_);
     memcpy(buf->data(), decrypted_ptr_, len);
     decrypted_ptr_ += len;
     bytes_decrypted_ -= len;
@@ -1134,6 +1136,13 @@ int SSLClientSocketWin::DoVerifyCert() {
   next_state_ = STATE_VERIFY_CERT_COMPLETE;
 
   DCHECK(server_cert_);
+  int cert_status;
+  if (ssl_config_.IsAllowedBadCert(server_cert_, &cert_status)) {
+    VLOG(1) << "Received an expected bad cert with status: " << cert_status;
+    server_cert_verify_result_.Reset();
+    server_cert_verify_result_.cert_status = cert_status;
+    return OK;
+  }
 
   int flags = 0;
   if (ssl_config_.rev_checking_enabled)
@@ -1149,16 +1158,6 @@ int SSLClientSocketWin::DoVerifyCert() {
 int SSLClientSocketWin::DoVerifyCertComplete(int result) {
   DCHECK(verifier_.get());
   verifier_.reset();
-
-  // If we have been explicitly told to accept this certificate, override the
-  // result of verifier_.Verify.
-  // Eventually, we should cache the cert verification results so that we don't
-  // need to call verifier_.Verify repeatedly. But for now we need to do this.
-  // Alternatively, we could use the cert's status that we stored along with
-  // the cert in the allowed_bad_certs vector.
-  if (IsCertificateError(result) &&
-      ssl_config_.IsAllowedBadCert(server_cert_))
-    result = OK;
 
   if (result == OK)
     LogConnectionTypeMetrics();
@@ -1362,6 +1361,8 @@ int SSLClientSocketWin::DoPayloadDecrypt() {
   // mistaken for EOF.  Continue decrypting or read more.
   if (len == 0)
     return DoPayloadRead();
+  LogByteTransfer(net_log_, NetLog::TYPE_SSL_SOCKET_BYTES_RECEIVED, len,
+                  user_read_buf_->data());
   return len;
 }
 
@@ -1379,6 +1380,8 @@ int SSLClientSocketWin::DoPayloadEncrypt() {
   payload_send_buffer_.reset(new char[alloc_len]);
   memcpy(&payload_send_buffer_[stream_sizes_.cbHeader],
          user_write_buf_->data(), message_len);
+  LogByteTransfer(net_log_, NetLog::TYPE_SSL_SOCKET_BYTES_SENT, message_len,
+                  user_write_buf_->data());
 
   SecBuffer buffers[4];
   buffers[0].pvBuffer = payload_send_buffer_.get();

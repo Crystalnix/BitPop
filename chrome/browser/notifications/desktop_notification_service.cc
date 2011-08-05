@@ -8,6 +8,7 @@
 #include "base/threading/thread.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/content_settings/content_settings_provider.h"
+#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
 #include "chrome/browser/notifications/notification.h"
@@ -19,6 +20,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/browser/browser_child_process_host.h"
@@ -26,7 +28,6 @@
 #include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/site_instance.h"
-#include "content/browser/tab_contents/tab_contents.h"
 #include "content/browser/worker_host/worker_process_host.h"
 #include "content/common/desktop_notification_messages.h"
 #include "content/common/notification_service.h"
@@ -59,7 +60,7 @@ void GetOriginsWithSettingFromContentSettingsRules(
        rule != content_setting_rules.end();
        ++rule) {
     if (setting == rule->content_setting) {
-      std::string url_str = rule->requesting_url_pattern.AsString();
+      std::string url_str = rule->requesting_url_pattern.ToString();
       if (!rule->requesting_url_pattern.IsValid()) {
         // TODO(markusheintz): This will be removed in one of the next
         // refactoring steps as this entire function will disapear.
@@ -101,13 +102,12 @@ class NotificationPermissionInfoBarDelegate : public ConfirmInfoBarDelegate {
   virtual ~NotificationPermissionInfoBarDelegate();
 
   // ConfirmInfoBarDelegate:
-  virtual void InfoBarClosed();
-  virtual SkBitmap* GetIcon() const;
-  virtual Type GetInfoBarType() const;
-  virtual string16 GetMessageText() const;
-  virtual string16 GetButtonLabel(InfoBarButton button) const;
-  virtual bool Accept();
-  virtual bool Cancel();
+  virtual gfx::Image* GetIcon() const OVERRIDE;
+  virtual Type GetInfoBarType() const OVERRIDE;
+  virtual string16 GetMessageText() const OVERRIDE;
+  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual bool Accept() OVERRIDE;
+  virtual bool Cancel() OVERRIDE;
 
   // The origin we are asking for permissions on.
   GURL origin_;
@@ -150,9 +150,6 @@ NotificationPermissionInfoBarDelegate::NotificationPermissionInfoBarDelegate(
 
 NotificationPermissionInfoBarDelegate::
     ~NotificationPermissionInfoBarDelegate() {
-}
-
-void NotificationPermissionInfoBarDelegate::InfoBarClosed() {
   if (!action_taken_)
     UMA_HISTOGRAM_COUNTS("NotificationPermissionRequest.Ignored", 1);
 
@@ -161,12 +158,10 @@ void NotificationPermissionInfoBarDelegate::InfoBarClosed() {
     host->Send(new DesktopNotificationMsg_PermissionRequestDone(
         route_id_, callback_context_));
   }
-
-  delete this;
 }
 
-SkBitmap* NotificationPermissionInfoBarDelegate::GetIcon() const {
-  return ResourceBundle::GetSharedInstance().GetBitmapNamed(
+gfx::Image* NotificationPermissionInfoBarDelegate::GetIcon() const {
+  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
      IDR_PRODUCT_ICON_32);
 }
 
@@ -513,6 +508,9 @@ void DesktopNotificationService::RequestPermission(
   if (!tab)
     return;
 
+  TabContentsWrapper* wrapper =
+      TabContentsWrapper::GetCurrentWrapperForContents(tab);
+
   // If |origin| hasn't been seen before and the default content setting for
   // notifications is "ask", show an infobar.
   // The cache can only answer queries on the IO thread once it's initialized,
@@ -520,9 +518,10 @@ void DesktopNotificationService::RequestPermission(
   ContentSetting setting = GetContentSetting(origin);
   if (setting == CONTENT_SETTING_ASK) {
     // Show an info bar requesting permission.
-    tab->AddInfoBar(new NotificationPermissionInfoBarDelegate(
-                        tab, origin, DisplayNameForOrigin(origin), process_id,
-                        route_id, callback_context));
+    wrapper->AddInfoBar(
+        new NotificationPermissionInfoBarDelegate(
+            tab, origin, DisplayNameForOrigin(origin), process_id,
+            route_id, callback_context));
   } else {
     // Notify renderer immediately.
     RenderViewHost* host = RenderViewHost::FromID(process_id, route_id);

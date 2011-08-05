@@ -81,6 +81,8 @@ UsernameView::UsernameView(const std::wstring& username, bool use_small_shape)
       is_guest_(username.empty()) {
 }
 
+UsernameView::~UsernameView() {}
+
 void UsernameView::OnPaint(gfx::Canvas* canvas) {
   gfx::Rect bounds = GetContentsBounds();
   if (text_image_ == NULL)
@@ -97,9 +99,7 @@ UsernameView* UsernameView::CreateShapedUsernameView(
   return new HalfRoundedView<UsernameView>(username, use_small_shape);
 }
 
-gfx::NativeCursor UsernameView::GetCursorForPoint(
-    ui::EventType event_type,
-    const gfx::Point& p) {
+gfx::NativeCursor UsernameView::GetCursor(const views::MouseEvent& event) {
   return use_small_shape_ ? gfx::GetCursor(GDK_HAND2) : NULL;
 }
 

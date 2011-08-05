@@ -10,12 +10,19 @@
 #include "base/logging.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_sync_channel.h"
+#include "base/debug/trace_event.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/proxy/interface_proxy.h"
 #include "ppapi/proxy/plugin_message_filter.h"
+#include "ppapi/proxy/plugin_resource_tracker.h"
 #include "ppapi/proxy/plugin_var_serialization_rules.h"
 #include "ppapi/proxy/ppapi_messages.h"
+#include "ppapi/proxy/ppb_char_set_proxy.h"
+#include "ppapi/proxy/ppb_cursor_control_proxy.h"
+#include "ppapi/proxy/ppb_font_proxy.h"
 #include "ppapi/proxy/ppp_class_proxy.h"
+#include "ppapi/proxy/resource_creation_proxy.h"
+#include "ppapi/shared_impl/tracker_base.h"
 
 #if defined(OS_POSIX)
 #include "base/eintr_wrapper.h"
@@ -34,12 +41,17 @@ InstanceToDispatcherMap* g_instance_to_dispatcher = NULL;
 
 PluginDispatcher::PluginDispatcher(base::ProcessHandle remote_process_handle,
                                    GetInterfaceFunc get_interface)
-    : Dispatcher(remote_process_handle, get_interface) {
+    : Dispatcher(remote_process_handle, get_interface),
+      plugin_delegate_(NULL),
+      received_preferences_(false) {
   SetSerializationRules(new PluginVarSerializationRules);
 
   // As a plugin, we always support the PPP_Class interface. There's no
   // GetInterface call or name for it, so we insert it into our table now.
   target_proxies_[INTERFACE_ID_PPP_CLASS].reset(new PPP_Class_Proxy(this));
+
+  ::ppapi::TrackerBase::Init(
+      &PluginResourceTracker::GetTrackerBaseInstance);
 }
 
 PluginDispatcher::~PluginDispatcher() {
@@ -67,11 +79,12 @@ const void* PluginDispatcher::GetInterfaceFromDispatcher(
 }
 
 bool PluginDispatcher::InitPluginWithChannel(
-    PluginDispatcher::Delegate* delegate,
+    PluginDelegate* delegate,
     const IPC::ChannelHandle& channel_handle,
     bool is_client) {
   if (!Dispatcher::InitWithChannel(delegate, channel_handle, is_client))
     return false;
+  plugin_delegate_ = delegate;
 
   // The message filter will intercept and process certain messages directly
   // on the I/O thread.
@@ -85,6 +98,9 @@ bool PluginDispatcher::IsPlugin() const {
 }
 
 bool PluginDispatcher::Send(IPC::Message* msg) {
+  TRACE_EVENT2("ppapi proxy", "PluginDispatcher::Send",
+               "Class", IPC_MESSAGE_ID_CLASS(msg->type()),
+               "Line", IPC_MESSAGE_ID_LINE(msg->type()));
   // We always want plugin->renderer messages to arrive in-order. If some sync
   // and some async messages are send in response to a synchronous
   // renderer->plugin call, the sync reply will be processed before the async
@@ -97,6 +113,9 @@ bool PluginDispatcher::Send(IPC::Message* msg) {
 }
 
 bool PluginDispatcher::OnMessageReceived(const IPC::Message& msg) {
+  TRACE_EVENT2("ppapi proxy", "PluginDispatcher::OnMessageReceived",
+               "Class", IPC_MESSAGE_ID_CLASS(msg.type()),
+               "Line", IPC_MESSAGE_ID_LINE(msg.type()));
   // Handle common control messages.
   if (Dispatcher::OnMessageReceived(msg))
     return true;
@@ -106,6 +125,7 @@ bool PluginDispatcher::OnMessageReceived(const IPC::Message& msg) {
     bool handled = true;
     IPC_BEGIN_MESSAGE_MAP(PluginDispatcher, msg)
       IPC_MESSAGE_HANDLER(PpapiMsg_SupportsInterface, OnMsgSupportsInterface)
+      IPC_MESSAGE_HANDLER(PpapiMsg_SetPreferences, OnMsgSetPreferences)
     IPC_END_MESSAGE_MAP()
     return handled;
   }
@@ -188,6 +208,39 @@ InstanceData* PluginDispatcher::GetInstanceData(PP_Instance instance) {
   return (it == instance_map_.end()) ? NULL : &it->second;
 }
 
+void PluginDispatcher::PostToWebKitThread(
+    const tracked_objects::Location& from_here,
+    const base::Closure& task) {
+  return plugin_delegate_->PostToWebKitThread(from_here, task);
+}
+
+bool PluginDispatcher::SendToBrowser(IPC::Message* msg) {
+  return plugin_delegate_->SendToBrowser(msg);
+}
+
+ppapi::WebKitForwarding* PluginDispatcher::GetWebKitForwarding() {
+  return plugin_delegate_->GetWebKitForwarding();
+}
+
+::ppapi::FunctionGroupBase* PluginDispatcher::GetFunctionAPI(
+    pp::proxy::InterfaceID id) {
+  scoped_ptr< ::ppapi::FunctionGroupBase >& proxy = function_proxies_[id];
+
+  if (proxy.get())
+    return proxy.get();
+
+  if (id == INTERFACE_ID_PPB_CHAR_SET)
+    proxy.reset(new PPB_CharSet_Proxy(this, NULL));
+  else if(id == INTERFACE_ID_PPB_CURSORCONTROL)
+    proxy.reset(new PPB_CursorControl_Proxy(this, NULL));
+  else if (id == INTERFACE_ID_PPB_FONT)
+    proxy.reset(new PPB_Font_Proxy(this, NULL));
+  else if (id == INTERFACE_ID_RESOURCE_CREATION)
+    proxy.reset(new ResourceCreationProxy(this));
+
+  return proxy.get();
+}
+
 void PluginDispatcher::ForceFreeAllInstances() {
   if (!g_instance_to_dispatcher)
     return;
@@ -229,6 +282,20 @@ void PluginDispatcher::OnMsgSupportsInterface(
   target_proxies_[info->id].reset(
       info->create_proxy(this, interface_functions));
   *result = true;
+}
+
+void PluginDispatcher::OnMsgSetPreferences(const ::ppapi::Preferences& prefs) {
+  // The renderer may send us preferences more than once (currently this
+  // happens every time a new plugin instance is created). Since we don't have
+  // a way to signal to the plugin that the preferences have changed, changing
+  // the default fonts and such in the middle of a running plugin could be
+  // confusing to it. As a result, we never allow the preferences to be changed
+  // once they're set. The user will have to restart to get new font prefs
+  // propogated to plugins.
+  if (!received_preferences_) {
+    received_preferences_ = true;
+    preferences_ = prefs;
+  }
 }
 
 }  // namespace proxy

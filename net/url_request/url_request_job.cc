@@ -17,7 +17,6 @@
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
-#include "net/url_request/url_request_job_tracker.h"
 
 namespace net {
 
@@ -33,14 +32,15 @@ URLRequestJob::URLRequestJob(URLRequest* request)
       expected_content_size_(-1),
       deferred_redirect_status_code_(-1),
       ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)) {
-  g_url_request_job_tracker.AddNewJob(this);
+  base::SystemMonitor* system_monitor = base::SystemMonitor::Get();
+  if (system_monitor)
+    base::SystemMonitor::Get()->AddObserver(this);
 }
 
 void URLRequestJob::SetUpload(UploadData* upload) {
 }
 
-void URLRequestJob::SetExtraRequestHeaders(
-    const HttpRequestHeaders& headers) {
+void URLRequestJob::SetExtraRequestHeaders(const HttpRequestHeaders& headers) {
 }
 
 void URLRequestJob::Kill() {
@@ -203,8 +203,14 @@ HostPortPair URLRequestJob::GetSocketAddress() const {
   return HostPortPair();
 }
 
+void URLRequestJob::OnSuspend() {
+  Kill();
+}
+
 URLRequestJob::~URLRequestJob() {
-  g_url_request_job_tracker.RemoveJob(this);
+  base::SystemMonitor* system_monitor = base::SystemMonitor::Get();
+  if (system_monitor)
+    base::SystemMonitor::Get()->RemoveObserver(this);
 }
 
 void URLRequestJob::NotifyHeadersComplete() {
@@ -306,13 +312,12 @@ void URLRequestJob::NotifyReadComplete(int bytes_read) {
     return;
 
   // When notifying the delegate, the delegate can release the request
-  // (and thus release 'this').  After calling to the delgate, we must
+  // (and thus release 'this').  After calling to the delegate, we must
   // check the request pointer to see if it still exists, and return
   // immediately if it has been destroyed.  self_preservation ensures our
   // survival until we can get out of this method.
   scoped_refptr<URLRequestJob> self_preservation(this);
 
-  prefilter_bytes_read_ += bytes_read;
   if (filter_.get()) {
     // Tell the filter that it has more data
     FilteredDataRead(bytes_read);
@@ -320,21 +325,16 @@ void URLRequestJob::NotifyReadComplete(int bytes_read) {
     // Filter the data.
     int filter_bytes_read = 0;
     if (ReadFilteredData(&filter_bytes_read)) {
-      postfilter_bytes_read_ += filter_bytes_read;
-      if (request_->context() && request_->context()->network_delegate()) {
-        request_->context()->network_delegate()->NotifyReadCompleted(
-            request_, filter_bytes_read);
-      }
       request_->delegate()->OnReadCompleted(request_, filter_bytes_read);
     }
   } else {
-    postfilter_bytes_read_ += bytes_read;
-    if (request_->context() && request_->context()->network_delegate()) {
-      request_->context()->network_delegate()->NotifyReadCompleted(
-          request_, bytes_read);
-    }
     request_->delegate()->OnReadCompleted(request_, bytes_read);
   }
+  DVLOG(1) << __FUNCTION__ << "() "
+           << "\"" << (request_ ? request_->url().spec() : "???") << "\""
+           << " pre bytes read = " << bytes_read
+           << " pre total = " << prefilter_bytes_read_
+           << " post total = " << postfilter_bytes_read_;
 }
 
 void URLRequestJob::NotifyStartError(const URLRequestStatus &status) {
@@ -370,7 +370,10 @@ void URLRequestJob::NotifyDone(const URLRequestStatus &status) {
       request_->set_status(status);
   }
 
-  g_url_request_job_tracker.OnJobDone(this, status);
+  if (request_ && request_->context() &&
+      request_->context()->network_delegate()) {
+    request_->context()->network_delegate()->NotifyCompleted(request_);
+  }
 
   // Complete this notification later.  This prevents us from re-entering the
   // delegate if we're done because of a synchronous call.
@@ -388,9 +391,6 @@ void URLRequestJob::CompleteNotifyDone() {
     // OnResponseStarted yet.
     if (has_handled_response_) {
       // We signal the error by calling OnReadComplete with a bytes_read of -1.
-      if (request_->context() && request_->context()->network_delegate())
-        request_->context()->network_delegate()->NotifyReadCompleted(
-            request_, -1);
       request_->delegate()->OnReadCompleted(request_, -1);
     } else {
       has_handled_response_ = true;
@@ -474,6 +474,7 @@ bool URLRequestJob::ReadFilteredData(int* bytes_read) {
       case Filter::FILTER_DONE: {
         filter_needs_more_output_space_ = false;
         *bytes_read = filtered_data_len;
+        postfilter_bytes_read_ += filtered_data_len;
         rv = true;
         break;
       }
@@ -488,6 +489,7 @@ bool URLRequestJob::ReadFilteredData(int* bytes_read) {
         // We can revisit this issue if there is a real perf need.
         if (filtered_data_len > 0) {
           *bytes_read = filtered_data_len;
+          postfilter_bytes_read_ += filtered_data_len;
           rv = true;
         } else {
           // Read again since we haven't received enough data yet (e.g., we may
@@ -500,10 +502,14 @@ bool URLRequestJob::ReadFilteredData(int* bytes_read) {
         filter_needs_more_output_space_ =
             (filtered_data_len == output_buffer_size);
         *bytes_read = filtered_data_len;
+        postfilter_bytes_read_ += filtered_data_len;
         rv = true;
         break;
       }
       case Filter::FILTER_ERROR: {
+        DVLOG(1) << __FUNCTION__ << "() "
+                 << "\"" << (request_ ? request_->url().spec() : "???") << "\""
+                 << " Filter Error";
         filter_needs_more_output_space_ = false;
         NotifyDone(URLRequestStatus(URLRequestStatus::FAILED,
                    ERR_CONTENT_DECODING_FAILED));
@@ -517,6 +523,13 @@ bool URLRequestJob::ReadFilteredData(int* bytes_read) {
         break;
       }
     }
+    DVLOG(2) << __FUNCTION__ << "() "
+             << "\"" << (request_ ? request_->url().spec() : "???") << "\""
+             << " rv = " << rv
+             << " post bytes read = " << filtered_data_len
+             << " pre total = " << prefilter_bytes_read_
+             << " post total = "
+             << postfilter_bytes_read_;
   } else {
     // we are done, or there is no data left.
     rv = true;
@@ -584,8 +597,6 @@ bool URLRequestJob::ReadRawDataHelper(IOBuffer* buf, int buf_size,
 }
 
 void URLRequestJob::FollowRedirect(const GURL& location, int http_status_code) {
-  g_url_request_job_tracker.OnJobRedirect(this, location, http_status_code);
-
   int rv = request_->Redirect(location, http_status_code);
   if (rv != OK)
     NotifyDone(URLRequestStatus(URLRequestStatus::FAILED, rv));
@@ -601,9 +612,18 @@ void URLRequestJob::OnRawReadComplete(int bytes_read) {
 
 void URLRequestJob::RecordBytesRead(int bytes_read) {
   filter_input_byte_count_ += bytes_read;
+  prefilter_bytes_read_ += bytes_read;
+  if (!filter_.get())
+    postfilter_bytes_read_ += bytes_read;
+  DVLOG(2) << __FUNCTION__ << "() "
+           << "\"" << (request_ ? request_->url().spec() : "???") << "\""
+           << " pre bytes read = " << bytes_read
+           << " pre total = " << prefilter_bytes_read_
+           << " post total = " << postfilter_bytes_read_;
   UpdatePacketReadTimes();  // Facilitate stats recording if it is active.
-  g_url_request_job_tracker.OnBytesRead(this, raw_read_buffer_->data(),
-                                        bytes_read);
+  const URLRequestContext* context = request_->context();
+  if (context && context->network_delegate())
+    context->network_delegate()->NotifyRawBytesRead(*request_, bytes_read);
 }
 
 bool URLRequestJob::FilterHasData() {

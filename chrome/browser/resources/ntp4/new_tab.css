@@ -6,9 +6,12 @@
  */
 
 html {
+  font-family: segoe ui, arial, helvetica, sans-serif;
+  font-size: 14px;
   /* It's necessary to put this here instead of in body in order to get the
      background-size of 100% to work properly */
   height: 100%;
+  overflow: hidden;
 }
 
 body {
@@ -21,10 +24,8 @@ body {
   -webkit-user-select: none;
 }
 
-body,
-button span {
-  font-family: segoe ui, arial, helvetica, sans-serif;
-  font-size: 14px;
+.hidden {
+  display: none !important;
 }
 
 #card-slider-frame {
@@ -45,6 +46,20 @@ button span {
   display: -webkit-box;
 }
 
+#attribution {
+  bottom: 0;
+  position: absolute;
+  right: 0;
+  z-index: -5;
+}
+
+#attribution > span {
+  display: block;
+  font-size: 84%;
+  /* Text should be left aligned regardless of diretionality. */
+  text-align: left;
+}
+
 #footer {
   background-color: rgba(255, 255, 255, 0.8);
   bottom: 0;
@@ -56,8 +71,6 @@ button span {
  * border-image on #footer once WebKit supports border-image-slice.
  * See https://bugs.webkit.org/show_bug.cgi?id=20127 */
 #footer-border {
-  background: -webkit-gradient(linear, left top, right top,
-                               from(#eee), color-stop(0.5, #ccc), to(#eee));
   height: 1px;
 }
 
@@ -69,56 +82,6 @@ button span {
 
 #footer-content > * {
   margin: 0 9px;
-}
-
-/* TODO(estade): theme this color. */
-#footer-content span {
-  color: #888;
-}
-
-/* TODO(estade): handle overflow better? I tried overflow-x: hidden and
-   overflow-y: visible (for the new dot animation), but this makes a scroll
-   bar appear */
-#dot-list {
-  display: -webkit-box;
-  height: 100%;
-  list-style-type: none;
-  margin: 0;
-  padding: 0;
-  /* Expand to take up all available horizontal space.  */
-  -webkit-box-flex: 1;
-  /* Center child dots. */
-  -webkit-box-pack: center;
-}
-
-/* TODO(estade): improve focus indicator. */
-.dot {
-  border-top: 5px solid rgba(0, 0, 0, .1);
-  color: rgba(0, 0, 0, 0.2);
-  cursor: pointer;
-  font-size: 9pt;
-  height: 100%;
-  margin: 0 10px;
-  padding-top: 5px;
-  text-align: left;
-  width: 60px;
-  -webkit-box-sizing: border-box;
-  -webkit-padding-start: 5px;
-  -webkit-transition: -webkit-transform 500ms,
-                      background-color 250ms;
-}
-
-.dot.selected {
-  border-top: 5px solid rgba(0, 0, 0, .4);
-  color: rgba(0, 0, 0, 0.4);
-}
-
-.dot:hover {
-  background-color: rgba(0, 0, 0, .05);
-}
-
-.dot.new {
-  -webkit-transform: translate(0, 40px);
 }
 
 #trash {
@@ -148,4 +111,11 @@ button span {
 
 #footer.rearrange-mode #trash {
   -webkit-transform: translate(0, 0);
+}
+
+.disclosure-triangle {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  -webkit-mask-image: url('./ntp4_disclosure_triangle_mask.png');
 }

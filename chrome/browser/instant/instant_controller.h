@@ -51,7 +51,7 @@ class InstantController : public InstantLoaderDelegate {
   static const int kAutoCommitFadeInTimeMS = 300;
 
   InstantController(Profile* profile, InstantDelegate* delegate);
-  ~InstantController();
+  virtual ~InstantController();
 
   // Registers instant related preferences.
   static void RegisterUserPrefs(PrefService* prefs);
@@ -121,6 +121,10 @@ class InstantController : public InstantLoaderDelegate {
   // lost focus. Commit or discard the preview accordingly.
   void OnAutocompleteLostFocus(gfx::NativeView view_gaining_focus);
 
+  // The autocomplete edit has gained focus. Preload the instant URL of the
+  // default search engine, in anticipation of the user typing a query.
+  void OnAutocompleteGotFocus(TabContentsWrapper* tab_contents);
+
   // Releases the preview TabContents passing ownership to the caller. This is
   // intended to be called when the preview TabContents is committed. This does
   // not notify the delegate.
@@ -130,7 +134,7 @@ class InstantController : public InstantLoaderDelegate {
 
   // Does cleanup after the preview contents has been added to the tabstrip.
   // Invoke this if you explicitly invoke ReleasePreviewContents.
-  void CompleteRelease(TabContents* tab);
+  void CompleteRelease(TabContentsWrapper* tab);
 
   // TabContents the match is being shown for.
   TabContentsWrapper* tab_contents() const { return tab_contents_; }
@@ -184,6 +188,7 @@ class InstantController : public InstantLoaderDelegate {
       InstantLoader* loader) OVERRIDE;
   virtual void AddToBlacklist(InstantLoader* loader,
                               const GURL& url) OVERRIDE;
+  virtual void SwappedTabContents(InstantLoader* loader) OVERRIDE;
 
  private:
   friend class InstantTest;

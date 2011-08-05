@@ -5,12 +5,12 @@
 {
   'variables': {
     'conditions': [
-      [ 'OS=="linux" or OS=="freebsd"', {
+      [ 'os_posix == 1 and OS != "mac" and OS != "openbsd"', {
         # Link to system .so since we already use it due to GTK.
         # TODO(pvalchev): OpenBSD is purposefully left out, as the system
         # zlib brings up an incompatibility that breaks rendering.
         'use_system_zlib%': 1,
-      }, {  # OS!="linux" and OS!="freebsd"
+      }, {  # os_posix != 1 or OS == "mac" or OS == "openbsd"
         'use_system_zlib%': 0,
       }],
     ],
@@ -20,7 +20,7 @@
       'targets': [
         {
           'target_name': 'zlib',
-          'type': '<(library)',
+          'type': 'static_library',
           'msvs_guid': '8423AF0D-4B88-4EBF-94E1-E4D00D00E21C',
           'sources': [
             'contrib/minizip/ioapi.c',
@@ -79,7 +79,7 @@
       'targets': [
         {
           'target_name': 'zlib',
-          'type': '<(library)',
+          'type': 'static_library',
           'direct_dependent_settings': {
             'defines': [
               'USE_SYSTEM_ZLIB',

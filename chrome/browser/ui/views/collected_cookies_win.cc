@@ -4,11 +4,13 @@
 
 #include "chrome/browser/ui/views/collected_cookies_win.h"
 
+#include "chrome/browser/content_settings/host_content_settings_map.h"
+#include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/cookies_tree_model.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/collected_cookies_infobar_delegate.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/browser/ui/views/cookie_info_view.h"
-#include "content/browser/tab_contents/tab_contents.h"
 #include "content/common/notification_details.h"
 #include "content/common/notification_source.h"
 #include "grit/generated_resources.h"
@@ -25,8 +27,6 @@
 #include "views/layout/box_layout.h"
 #include "views/layout/grid_layout.h"
 #include "views/layout/layout_constants.h"
-#include "views/widget/root_view.h"
-#include "views/widget/widget_win.h"
 #include "views/window/window.h"
 
 namespace browser {
@@ -173,7 +173,8 @@ CollectedCookiesWin::CollectedCookiesWin(gfx::NativeWindow parent_window,
       infobar_(NULL),
       status_changed_(false) {
   TabSpecificContentSettings* content_settings =
-      tab_contents->GetTabSpecificContentSettings();
+      TabContentsWrapper::GetCurrentWrapperForContents(tab_contents)->
+          content_settings();
   registrar_.Add(this, NotificationType::COLLECTED_COOKIES_SHOWN,
                  Source<TabSpecificContentSettings>(content_settings));
 
@@ -235,7 +236,8 @@ void CollectedCookiesWin::Init() {
 
 views::View* CollectedCookiesWin::CreateAllowedPane() {
   TabSpecificContentSettings* content_settings =
-      tab_contents_->GetTabSpecificContentSettings();
+      TabContentsWrapper::GetCurrentWrapperForContents(tab_contents_)->
+          content_settings();
 
   // Create the controls that go into the pane.
   allowed_label_ = new views::Label(UTF16ToWide(l10n_util::GetStringUTF16(
@@ -284,7 +286,8 @@ views::View* CollectedCookiesWin::CreateAllowedPane() {
 
 views::View* CollectedCookiesWin::CreateBlockedPane() {
   TabSpecificContentSettings* content_settings =
-      tab_contents_->GetTabSpecificContentSettings();
+      TabContentsWrapper::GetCurrentWrapperForContents(tab_contents_)->
+          content_settings();
 
   HostContentSettingsMap* host_content_settings_map =
       tab_contents_->profile()->GetHostContentSettingsMap();
@@ -373,7 +376,7 @@ void CollectedCookiesWin::DeleteDelegate() {
 
 bool CollectedCookiesWin::Cancel() {
   if (status_changed_) {
-    tab_contents_->AddInfoBar(
+    TabContentsWrapper::GetCurrentWrapperForContents(tab_contents_)->AddInfoBar(
         new CollectedCookiesInfoBarDelegate(tab_contents_));
   }
 
@@ -475,12 +478,12 @@ void CollectedCookiesWin::AddContentException(views::TreeView* tree_view,
       tab_contents_->profile()->GetHostContentSettingsMap(), setting);
   infobar_->UpdateVisibility(true, setting, origin_node->GetTitle());
   gfx::Rect bounds = GetWidget()->GetClientAreaScreenBounds();
-  // WidgetWin::GetBounds returns the bounds relative to the parent window,
-  // while WidgetWin::SetBounds wants screen coordinates. Do the translation
-  // here until http://crbug.com/52851 is fixed.
+  // NativeWidgetWin::GetBounds returns the bounds relative to the parent
+  // window, while NativeWidgetWin::SetBounds wants screen coordinates. Do the
+  // translation here until http://crbug.com/52851 is fixed.
   POINT topleft = {bounds.x(), bounds.y()};
   MapWindowPoints(HWND_DESKTOP, tab_contents_->GetNativeView(), &topleft, 1);
-  gfx::Size size = GetRootView()->GetPreferredSize();
+  gfx::Size size = GetWidget()->GetRootView()->GetPreferredSize();
   bounds.SetRect(topleft.x, topleft.y, size.width(), size.height());
   GetWidget()->SetBounds(bounds);
   status_changed_ = true;
@@ -493,7 +496,5 @@ void CollectedCookiesWin::Observe(NotificationType type,
                                    const NotificationSource& source,
                                    const NotificationDetails& details) {
   DCHECK(type == NotificationType::COLLECTED_COOKIES_SHOWN);
-  DCHECK_EQ(Source<TabSpecificContentSettings>(source).ptr(),
-            tab_contents_->GetTabSpecificContentSettings());
   window_->CloseConstrainedWindow();
 }

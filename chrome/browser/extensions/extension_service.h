@@ -12,14 +12,15 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/compiler_specific.h"
 #include "base/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "base/task.h"
 #include "base/time.h"
 #include "base/tuple.h"
-#include "base/version.h"
 #include "chrome/browser/extensions/apps_promo.h"
 #include "chrome/browser/extensions/extension_icon_manager.h"
 #include "chrome/browser/extensions/extension_menu_manager.h"
@@ -37,7 +38,10 @@
 #include "content/common/notification_registrar.h"
 #include "content/common/property_bag.h"
 
+class CrxInstaller;
 class ExtensionBrowserEventRouter;
+class ExtensionContentSettingsStore;
+class ExtensionInstallUI;
 class ExtensionPreferenceEventRouter;
 class ExtensionServiceBackend;
 struct ExtensionSyncData;
@@ -52,33 +56,34 @@ class Version;
 // various classes have on ExtensionService. This allows easy mocking.
 class ExtensionServiceInterface {
  public:
+  // A function that returns true if the given extension should be
+  // included and false if it should be filtered out.  Identical to
+  // PendingExtensionInfo::ShouldAllowInstallPredicate.
+  typedef bool (*ExtensionFilter)(const Extension&);
+
   virtual ~ExtensionServiceInterface() {}
   virtual const ExtensionList* extensions() const = 0;
-  virtual const ExtensionList* disabled_extensions() const = 0;
   virtual PendingExtensionManager* pending_extension_manager() = 0;
-  virtual void UpdateExtension(const std::string& id,
-                               const FilePath& path,
-                               const GURL& download_url) = 0;
+
+  // Install an update.  Return true if the install can be started.
+  // Set out_crx_installer to the installer if one was started.
+  virtual bool UpdateExtension(
+      const std::string& id,
+      const FilePath& path,
+      const GURL& download_url,
+      CrxInstaller** out_crx_installer) = 0;
   virtual const Extension* GetExtensionById(const std::string& id,
                                             bool include_disabled) const = 0;
-
-  virtual bool UninstallExtension(const std::string& extension_id,
-                                  bool external_uninstall,
-                                  std::string* error) = 0;
+  virtual const Extension* GetInstalledExtension(
+      const std::string& id) const = 0;
 
   virtual bool IsExtensionEnabled(const std::string& extension_id) const = 0;
   virtual bool IsExternalExtensionUninstalled(
       const std::string& extension_id) const = 0;
-  virtual void EnableExtension(const std::string& extension_id) = 0;
-  virtual void DisableExtension(const std::string& extension_id) = 0;
 
   virtual void UpdateExtensionBlacklist(
     const std::vector<std::string>& blacklist) = 0;
   virtual void CheckAdminBlacklist() = 0;
-
-  virtual bool IsIncognitoEnabled(const std::string& extension_id) const = 0;
-  virtual void SetIsIncognitoEnabled(const std::string& extension_id,
-                                     bool enabled) = 0;
 
   // Safe to call multiple times in a row.
   //
@@ -86,32 +91,38 @@ class ExtensionServiceInterface {
   // themes sync to not use it directly.
   virtual void CheckForUpdatesSoon() = 0;
 
+  // Methods used by sync.
+  //
+  // TODO(akalin): We'll eventually need separate methods for app
+  // sync.  See http://crbug.com/58077 and http://crbug.com/61447.
+
+  // Get the sync data for |extension|.  If |extension| passes
+  // |filter|, fill in |extension_sync_data| and return true.
+  // Otherwise, return false.
+  //
+  // Ideally, we'd just have to pass in the extension ID, but the
+  // service may not know about the extension anymore (if it's
+  // unloaded).
+  virtual bool GetSyncData(const Extension& extension,
+                           ExtensionFilter filter,
+                           ExtensionSyncData* extension_sync_data) const = 0;
+
+  // Return a list of ExtensionSyncData objects for all extensions
+  // matching |filter|.
+  virtual std::vector<ExtensionSyncData> GetSyncDataList(
+      ExtensionFilter filter) const = 0;
+
   // Take any actions required to make the local state of the
   // extension match the state in |extension_sync_data| (including
   // installing/uninstalling the extension).
-  //
-  // TODO(akalin): We'll eventually need a separate method for app
-  // sync.  See http://crbug.com/58077 and http://crbug.com/61447.
   virtual void ProcessSyncData(
       const ExtensionSyncData& extension_sync_data,
-      PendingExtensionInfo::ShouldAllowInstallPredicate should_allow) = 0;
-
-  // TODO(akalin): Add a method like:
-  //
-  //   virtual void
-  //     GetInitialSyncData(bool (*filter)(Extension),
-  //                        map<string, ExtensionSyncData>* out) const;
-  //
-  // which would fill |out| with sync data for the extensions that
-  // match |filter|.  Sync would use this for the initial syncing
-  // step.
+      ExtensionFilter filter) = 0;
 };
 
 // Manages installed and running Chromium extensions.
 class ExtensionService
-    : public base::RefCountedThreadSafe<ExtensionService,
-                                        BrowserThread::DeleteOnUIThread>,
-      public ExtensionServiceInterface,
+    : public ExtensionServiceInterface,
       public ExternalExtensionProviderInterface::VisitorInterface,
       public NotificationObserver {
  public:
@@ -157,6 +168,13 @@ class ExtensionService
   // Returns whether the URL is from either a hosted or packaged app.
   bool IsInstalledApp(const GURL& url);
 
+  // Associates a renderer process with the given installed app.
+  void SetInstalledAppForRenderer(int renderer_child_id, const Extension* app);
+
+  // If the renderer is hosting an installed app, returns it, otherwise returns
+  // NULL.
+  const Extension* GetInstalledAppForRenderer(int renderer_child_id);
+
   // Attempts to uninstall an extension from a given ExtensionService. Returns
   // true iff the target extension exists.
   static bool UninstallExtensionHelper(ExtensionService* extensions_service,
@@ -171,13 +189,15 @@ class ExtensionService
                    bool autoupdate_enabled,
                    bool extensions_enabled);
 
+  virtual ~ExtensionService();
+
   // Gets the list of currently installed extensions.
-  virtual const ExtensionList* extensions() const;
-  virtual const ExtensionList* disabled_extensions() const;
-  virtual const ExtensionList* terminated_extensions() const;
+  virtual const ExtensionList* extensions() const OVERRIDE;
+  const ExtensionList* disabled_extensions() const;
+  const ExtensionList* terminated_extensions() const;
 
   // Gets the object managing the set of pending extensions.
-  virtual PendingExtensionManager* pending_extension_manager();
+  virtual PendingExtensionManager* pending_extension_manager() OVERRIDE;
 
   // Registers an extension to be loaded as a component extension.
   void register_component_extension(const ComponentExtensionInfo& info) {
@@ -196,6 +216,9 @@ class ExtensionService
   // Returns true if the given extension can see events and data from another
   // sub-profile (incognito to original profile, or vice versa).
   bool CanCrossIncognito(const Extension* extension);
+
+  // Returns true if the given extension can be loaded in incognito.
+  bool CanLoadInIncognito(const Extension* extension) const;
 
   // Whether this extension can inject scripts into pages with file URLs.
   bool AllowFileAccess(const Extension* extension);
@@ -227,21 +250,28 @@ class ExtensionService
   // Start up the extension event routers.
   void InitEventRouters();
 
-  // Look up an extension by ID.
-  virtual const Extension* GetExtensionById(const std::string& id,
-                                            bool include_disabled) const;
+  // Look up an extension by ID.  Does not include terminated
+  // extensions.
+  virtual const Extension* GetExtensionById(
+      const std::string& id, bool include_disabled) const OVERRIDE;
 
-  // Looks up a terminated (crashed) extension by ID. GetExtensionById does
-  // not include terminated extensions.
-  virtual const Extension* GetTerminatedExtension(const std::string& id);
+  // Looks up a terminated (crashed) extension by ID.
+  const Extension* GetTerminatedExtension(const std::string& id) const;
+
+  // Looks up an extension by ID, regardless of whether it's enabled,
+  // disabled, or terminated.
+  virtual const Extension* GetInstalledExtension(
+      const std::string& id) const OVERRIDE;
 
   // Updates a currently-installed extension with the contents from
   // |extension_path|.
   // TODO(aa): This method can be removed. ExtensionUpdater could use
   // CrxInstaller directly instead.
-  virtual void UpdateExtension(const std::string& id,
-                               const FilePath& extension_path,
-                               const GURL& download_url);
+  virtual bool UpdateExtension(
+      const std::string& id,
+      const FilePath& extension_path,
+      const GURL& download_url,
+      CrxInstaller** out_crx_installer) OVERRIDE;
 
   // Reloads the specified extension.
   void ReloadExtension(const std::string& extension_id);
@@ -256,13 +286,17 @@ class ExtensionService
                                   bool external_uninstall,
                                   std::string* error);
 
-  virtual bool IsExtensionEnabled(const std::string& extension_id) const;
+  virtual bool IsExtensionEnabled(
+      const std::string& extension_id) const OVERRIDE;
   virtual bool IsExternalExtensionUninstalled(
-      const std::string& extension_id) const;
+      const std::string& extension_id) const OVERRIDE;
 
-  // Enable or disable an extension. No action if the extension is already
-  // enabled/disabled.
+  // Enables the extension.  If the extension is already enabled, does
+  // nothing.
   virtual void EnableExtension(const std::string& extension_id);
+
+  // Disables the extension.  If the extension is already disabled, or
+  // cannot be disabled, does nothing.
   virtual void DisableExtension(const std::string& extension_id);
 
   // Updates the |extension|'s granted permissions lists to include all
@@ -323,7 +357,7 @@ class ExtensionService
   // Returns an extension that contains any URL that overlaps with the given
   // extent, if one exists.
   const Extension* GetExtensionByOverlappingWebExtent(
-      const ExtensionExtent& extent);
+      const URLPatternSet& extent);
 
   // Returns true if |url| should get extension api bindings and be permitted
   // to make api calls. Note that this is independent of what extension
@@ -345,6 +379,9 @@ class ExtensionService
   // been loaded from a file and installed.
   void AddExtension(const Extension* extension);
 
+  // Called by the backend when an unpacked extension has been loaded.
+  void OnLoadSingleExtension(const Extension* extension);
+
   // Called by the backend when an extension has been installed.
   void OnExtensionInstalled(const Extension* extension);
 
@@ -355,19 +392,25 @@ class ExtensionService
   // Go through each extensions in pref, unload blacklisted extensions
   // and update the blacklist state in pref.
   virtual void UpdateExtensionBlacklist(
-    const std::vector<std::string>& blacklist);
+    const std::vector<std::string>& blacklist) OVERRIDE;
 
   // Go through each extension and unload those that the network admin has
   // put on the blacklist (not to be confused with the Google managed blacklist
   // set of extensions.
-  virtual void CheckAdminBlacklist();
+  virtual void CheckAdminBlacklist() OVERRIDE;
 
-  virtual void CheckForUpdatesSoon();
+  virtual void CheckForUpdatesSoon() OVERRIDE;
 
+  // Sync methods implementation.
+  virtual bool GetSyncData(
+      const Extension& extension,
+      ExtensionFilter filter,
+      ExtensionSyncData* extension_sync_data) const OVERRIDE;
+  virtual std::vector<ExtensionSyncData> GetSyncDataList(
+      ExtensionFilter filter) const OVERRIDE;
   virtual void ProcessSyncData(
       const ExtensionSyncData& extension_sync_data,
-      PendingExtensionInfo::ShouldAllowInstallPredicate
-          should_allow_install);
+      ExtensionFilter filter) OVERRIDE;
 
   void set_extensions_enabled(bool enabled) { extensions_enabled_ = enabled; }
   bool extensions_enabled() { return extensions_enabled_; }
@@ -382,13 +425,11 @@ class ExtensionService
 
   Profile* profile();
 
-  // Profile calls this when it is being destroyed so that we know not to call
-  // it.
-  void DestroyingProfile();
-
   // TODO(skerner): Change to const ExtensionPrefs& extension_prefs() const,
   // ExtensionPrefs* mutable_extension_prefs().
   ExtensionPrefs* extension_prefs();
+
+  ExtensionContentSettingsStore* GetExtensionContentSettingsStore();
 
   // Whether the extension service is ready.
   // TODO(skerner): Get rid of this method.  crbug.com/63756
@@ -459,10 +500,16 @@ class ExtensionService
   static void RecordPermissionMessagesHistogram(
       const Extension* e, const char* histogram);
 
- private:
-  friend struct BrowserThread::DeleteOnThread<BrowserThread::UI>;
-  friend class DeleteTask<ExtensionService>;
+  // |client| can be NULL for a silent install.
+  scoped_refptr<CrxInstaller> MakeCrxInstaller(ExtensionInstallUI* client);
 
+#if defined(UNIT_TEST)
+  void TrackTerminatedExtensionForTest(const Extension* extension) {
+    TrackTerminatedExtension(extension);
+  }
+#endif
+
+ private:
   // Contains Extension data that can change during the life of the process,
   // but does not persist across restarts.
   struct ExtensionRuntimeData {
@@ -489,7 +536,15 @@ class ExtensionService
   };
   typedef std::list<NaClModuleInfo> NaClModuleInfoList;
 
-  virtual ~ExtensionService();
+  // Gets the sync data for the given extension.
+  ExtensionSyncData GetSyncDataHelper(const Extension& extension) const;
+
+  // Appends sync data objects for every extension in |extensions|
+  // that passes |filter|.
+  void GetSyncDataListHelper(
+      const ExtensionList& extensions,
+      ExtensionFilter filter,
+      std::vector<ExtensionSyncData>* sync_data_list) const;
 
   // Clear all persistent data that may have been stored by the extension.
   void ClearExtensionData(const GURL& extension_url);
@@ -498,11 +553,16 @@ class ExtensionService
   // and disabled extensions.
   const Extension* GetExtensionByIdInternal(const std::string& id,
                                             bool include_enabled,
-                                            bool include_disabled) const;
+                                            bool include_disabled,
+                                            bool include_terminated) const;
 
 
-  // Keep track of terminated extensions.
+  // Adds the given extension to the list of terminated extensions if
+  // it is not already there and unloads it.
   void TrackTerminatedExtension(const Extension* extension);
+
+  // Removes the extension with the given id from the list of
+  // terminated extensions if it is there.
   void UntrackTerminatedExtension(const std::string& id);
 
   // Handles sending notification that |extension| was loaded.
@@ -533,6 +593,10 @@ class ExtensionService
 
   NaClModuleInfoList::iterator FindNaClModule(const GURL& url);
 
+  base::WeakPtrFactory<ExtensionService> weak_ptr_factory_;
+
+  ScopedRunnableMethodFactory<ExtensionService> method_factory_;
+
   // The profile this ExtensionService is part of.
   Profile* profile_;
 
@@ -557,6 +621,11 @@ class ExtensionService
 
   // The map of extension IDs to their runtime data.
   ExtensionRuntimeDataMap extension_runtime_data_;
+
+  // Holds a map between renderer process IDs that are associated with an
+  // installed app and their app.
+  typedef std::map<int, scoped_refptr<const Extension> > InstalledAppMap;
+  InstalledAppMap installed_app_hosts_;
 
   // The full path to the directory where extensions are installed.
   FilePath install_directory_;
@@ -584,7 +653,7 @@ class ExtensionService
   ExtensionToolbarModel toolbar_model_;
 
   // Map unloaded extensions' ids to their paths. When a temporarily loaded
-  // extension is unloaded, we lose the infomation about it and don't have
+  // extension is unloaded, we lose the information about it and don't have
   // any in the extension preferences file.
   typedef std::map<std::string, FilePath> UnloadedExtensionPathMap;
   UnloadedExtensionPathMap unloaded_extension_paths_;

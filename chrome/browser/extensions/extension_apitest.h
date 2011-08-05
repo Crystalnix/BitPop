@@ -38,7 +38,7 @@ class ExtensionApiTest : public ExtensionBrowserTest {
   class ResultCatcher : public NotificationObserver {
    public:
     ResultCatcher();
-    ~ResultCatcher();
+    virtual ~ResultCatcher();
 
     // Pumps the UI loop until a notification is received that an API test
     // succeeded or failed. Returns true if the test succeeded, false otherwise.
@@ -118,7 +118,7 @@ class ExtensionApiTest : public ExtensionBrowserTest {
  private:
   bool RunExtensionTestImpl(const char* extension_name,
                             const std::string& test_page,
-                            bool enable_incogntio,
+                            bool enable_incognito,
                             bool enable_fileaccess,
                             bool load_as_component);
 

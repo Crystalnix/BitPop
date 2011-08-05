@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "base/callback.h"
+#include "base/callback_old.h"
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -104,7 +104,7 @@ class CannedBrowsingDataIndexedDBHelper
   // BrowsingDataIndexedDBHelper methods.
   virtual void StartFetching(
       Callback1<const std::vector<IndexedDBInfo>& >::Type* callback);
-  virtual void CancelNotification() {}
+  virtual void CancelNotification();
   virtual void DeleteIndexedDBFile(const FilePath& file_path) {}
 
  private:

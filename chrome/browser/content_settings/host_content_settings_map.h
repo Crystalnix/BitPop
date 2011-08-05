@@ -65,6 +65,16 @@ class HostContentSettingsMap
       ContentSettingsType content_type,
       const std::string& resource_identifier) const;
 
+  // Gets the content setting for cookies. This takes the third party cookie
+  // flag into account, and therefore needs to know whether we read or write a
+  // cookie.
+  //
+  // This may be called on any thread.
+  ContentSetting GetCookieContentSetting(
+      const GURL& url,
+      const GURL& first_party_url,
+      bool setting_cookie) const;
+
   // Returns a single ContentSetting which applies to a given URL or
   // CONTENT_SETTING_DEFAULT, if no exception applies. Note that certain
   // internal schemes are whitelisted. For ContentSettingsTypes that require an
@@ -150,12 +160,6 @@ class HostContentSettingsMap
   // This should only be called on the UI thread.
   void SetBlockThirdPartyCookies(bool block);
 
-  bool GetBlockNonsandboxedPlugins() const {
-    return block_nonsandboxed_plugins_;
-  }
-
-  void SetBlockNonsandboxedPlugins(bool block);
-
   // Resets all settings levels.
   //
   // This should only be called on the UI thread.
@@ -173,13 +177,12 @@ class HostContentSettingsMap
   friend struct BrowserThread::DeleteOnThread<BrowserThread::UI>;
   friend class DeleteTask<HostContentSettingsMap>;
 
-  ~HostContentSettingsMap();
+  virtual ~HostContentSettingsMap();
 
-  // Informs observers that content settings have changed. Make sure that
-  // |lock_| is not held when calling this, as listeners will usually call one
-  // of the GetSettings functions in response, which would then lead to a
-  // mutex deadlock.
-  void NotifyObservers(const ContentSettingsDetails& details);
+  ContentSetting GetContentSettingInternal(
+      const GURL& url,
+      ContentSettingsType content_type,
+      const std::string& resource_identifier) const;
 
   void UnregisterObservers();
 
@@ -214,7 +217,6 @@ class HostContentSettingsMap
   // Misc global settings.
   bool block_third_party_cookies_;
   bool is_block_third_party_cookies_managed_;
-  bool block_nonsandboxed_plugins_;
 
   DISALLOW_COPY_AND_ASSIGN(HostContentSettingsMap);
 };

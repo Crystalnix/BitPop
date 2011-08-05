@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,10 +36,11 @@ class NetworkDropdownButton : public DropDownButton,
 
  protected:
   // NetworkMenu implementation:
-  virtual bool IsBrowserMode() const { return browser_mode_; }
-  virtual gfx::NativeWindow GetNativeWindow() const { return parent_window_; }
+  virtual bool IsBrowserMode() const;
+  virtual views::MenuButton* GetMenuButton();
+  virtual gfx::NativeWindow GetNativeWindow() const;
   virtual void OpenButtonOptions() {}
-  virtual bool ShouldOpenButtonOptions() const { return false; }
+  virtual bool ShouldOpenButtonOptions() const;
 
  private:
   bool browser_mode_;
@@ -51,6 +52,9 @@ class NetworkDropdownButton : public DropDownButton,
   static const int kThrobDuration;
 
   gfx::NativeWindow parent_window_;
+
+  // The last network we connected to (or tried to).
+  ConnectionType last_network_type_;
 
   DISALLOW_COPY_AND_ASSIGN(NetworkDropdownButton);
 };

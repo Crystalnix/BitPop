@@ -10,10 +10,9 @@
 
 #include "base/i18n/rtl.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/blocked_content_container.h"
-#include "chrome/browser/content_setting_bubble_model.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
 #include "chrome/browser/ui/gtk/gtk_chrome_link_button.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
@@ -30,7 +29,7 @@
 
 namespace {
 
-// Padding between content and edge of info bubble.
+// Padding between content and edge of bubble.
 const int kContentBorder = 7;
 
 // The maximum width of a title entry in the content box. We elide anything
@@ -49,7 +48,7 @@ std::string BuildElidedText(const std::string& input) {
 
 ContentSettingBubbleGtk::ContentSettingBubbleGtk(
     GtkWidget* anchor,
-    InfoBubbleGtkDelegate* delegate,
+    BubbleDelegateGtk* delegate,
     ContentSettingBubbleModel* content_setting_bubble_model,
     Profile* profile,
     TabContents* tab_contents)
@@ -58,7 +57,7 @@ ContentSettingBubbleGtk::ContentSettingBubbleGtk(
       tab_contents_(tab_contents),
       delegate_(delegate),
       content_setting_bubble_model_(content_setting_bubble_model),
-      info_bubble_(NULL) {
+      bubble_(NULL) {
   registrar_.Add(this, NotificationType::TAB_CONTENTS_DESTROYED,
                  Source<TabContents>(tab_contents));
   BuildBubble();
@@ -68,13 +67,13 @@ ContentSettingBubbleGtk::~ContentSettingBubbleGtk() {
 }
 
 void ContentSettingBubbleGtk::Close() {
-  if (info_bubble_)
-    info_bubble_->Close();
+  if (bubble_)
+    bubble_->Close();
 }
 
-void ContentSettingBubbleGtk::InfoBubbleClosing(InfoBubbleGtk* info_bubble,
-                                                bool closed_by_escape) {
-  delegate_->InfoBubbleClosing(info_bubble, closed_by_escape);
+void ContentSettingBubbleGtk::BubbleClosing(BubbleGtk* bubble,
+                                            bool closed_by_escape) {
+  delegate_->BubbleClosing(bubble, closed_by_escape);
   delete this;
 }
 
@@ -164,33 +163,30 @@ void ContentSettingBubbleGtk::BuildBubble() {
     gtk_box_pack_start(GTK_BOX(bubble_content), table, FALSE, FALSE, 0);
   }
 
-  if (content_setting_bubble_model_->content_type() !=
-      CONTENT_SETTINGS_TYPE_COOKIES) {
-    const ContentSettingBubbleModel::RadioGroup& radio_group =
-        content.radio_group;
-    for (ContentSettingBubbleModel::RadioItems::const_iterator i =
-         radio_group.radio_items.begin();
-         i != radio_group.radio_items.end(); ++i) {
-      std::string elided = BuildElidedText(*i);
-      GtkWidget* radio =
-          radio_group_gtk_.empty() ?
-              gtk_radio_button_new_with_label(NULL, elided.c_str()) :
-              gtk_radio_button_new_with_label_from_widget(
-                  GTK_RADIO_BUTTON(radio_group_gtk_[0]),
-                  elided.c_str());
-      gtk_box_pack_start(GTK_BOX(bubble_content), radio, FALSE, FALSE, 0);
-      if (i - radio_group.radio_items.begin() == radio_group.default_item) {
-        // We must set the default value before we attach the signal handlers
-        // or pain occurs.
-        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(radio), TRUE);
-      }
-      radio_group_gtk_.push_back(radio);
+  const ContentSettingBubbleModel::RadioGroup& radio_group =
+      content.radio_group;
+  for (ContentSettingBubbleModel::RadioItems::const_iterator i =
+       radio_group.radio_items.begin();
+       i != radio_group.radio_items.end(); ++i) {
+    std::string elided = BuildElidedText(*i);
+    GtkWidget* radio =
+        radio_group_gtk_.empty() ?
+            gtk_radio_button_new_with_label(NULL, elided.c_str()) :
+            gtk_radio_button_new_with_label_from_widget(
+                GTK_RADIO_BUTTON(radio_group_gtk_[0]),
+                elided.c_str());
+    gtk_box_pack_start(GTK_BOX(bubble_content), radio, FALSE, FALSE, 0);
+    if (i - radio_group.radio_items.begin() == radio_group.default_item) {
+      // We must set the default value before we attach the signal handlers
+      // or pain occurs.
+      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(radio), TRUE);
     }
-    for (std::vector<GtkWidget*>::const_iterator i = radio_group_gtk_.begin();
-         i != radio_group_gtk_.end(); ++i) {
-      // We can attach signal handlers now that all defaults are set.
-      g_signal_connect(*i, "toggled", G_CALLBACK(OnRadioToggledThunk), this);
-    }
+    radio_group_gtk_.push_back(radio);
+  }
+  for (std::vector<GtkWidget*>::const_iterator i = radio_group_gtk_.begin();
+       i != radio_group_gtk_.end(); ++i) {
+    // We can attach signal handlers now that all defaults are set.
+    g_signal_connect(*i, "toggled", G_CALLBACK(OnRadioToggledThunk), this);
   }
 
   for (std::vector<ContentSettingBubbleModel::DomainList>::const_iterator i =
@@ -252,19 +248,18 @@ void ContentSettingBubbleGtk::BuildBubble() {
   gtk_widget_grab_focus(bottom_box);
   gtk_widget_grab_focus(button);
 
-  InfoBubbleGtk::ArrowLocationGtk arrow_location =
+  BubbleGtk::ArrowLocationGtk arrow_location =
       !base::i18n::IsRTL() ?
-      InfoBubbleGtk::ARROW_LOCATION_TOP_RIGHT :
-      InfoBubbleGtk::ARROW_LOCATION_TOP_LEFT;
-  info_bubble_ = InfoBubbleGtk::Show(
-      anchor_,
-      NULL,
-      bubble_content,
-      arrow_location,
-      true,  // match_system_theme
-      true,  // grab_input
-      theme_provider,
-      this);
+      BubbleGtk::ARROW_LOCATION_TOP_RIGHT :
+      BubbleGtk::ARROW_LOCATION_TOP_LEFT;
+  bubble_ = BubbleGtk::Show(anchor_,
+                            NULL,
+                            bubble_content,
+                            arrow_location,
+                            true,  // match_system_theme
+                            true,  // grab_input
+                            theme_provider,
+                            this);
 }
 
 void ContentSettingBubbleGtk::OnPopupIconButtonPress(

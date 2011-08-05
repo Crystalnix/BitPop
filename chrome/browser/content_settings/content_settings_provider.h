@@ -20,6 +20,8 @@ class GURL;
 
 namespace content_settings {
 
+typedef std::string ResourceIdentifier;
+
 class DefaultProviderInterface {
  public:
   virtual ~DefaultProviderInterface() {}
@@ -47,16 +49,11 @@ class DefaultProviderInterface {
 
 class ProviderInterface {
  public:
-  typedef std::string ResourceIdentifier;
-
   struct Rule {
-    Rule() {}
+    Rule();
     Rule(const ContentSettingsPattern& requesting_pattern,
          const ContentSettingsPattern& embedding_pattern,
-         ContentSetting setting)
-      : requesting_url_pattern(requesting_pattern),
-        embedding_url_pattern(embedding_pattern),
-        content_setting(setting) {}
+         ContentSetting setting);
 
     ContentSettingsPattern requesting_url_pattern;
     ContentSettingsPattern embedding_url_pattern;
@@ -66,11 +63,6 @@ class ProviderInterface {
   typedef std::vector<Rule> Rules;
 
   virtual ~ProviderInterface() {}
-
-  // Returns true whether the content settings provider manages the
-  // |content_type|.
-  virtual bool ContentSettingsTypeIsManaged(
-      ContentSettingsType content_type) = 0;
 
   // Returns a single ContentSetting which applies to a given |requesting_url|,
   // |embedding_url| pair or CONTENT_SETTING_DEFAULT, if no rule applies. For

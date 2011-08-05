@@ -127,6 +127,12 @@ void UserPolicyIdentityStrategy::TokenCache::StoreOnFileThread(
     return;
   }
 
+  if (!file_util::CreateDirectory(cache_file_.DirName())) {
+    LOG(WARNING) << "Failed to create directory "
+                 << cache_file_.DirName().value();
+    return;
+  }
+
   file_util::WriteFile(cache_file_, data.c_str(), data.length());
 }
 
@@ -151,11 +157,13 @@ UserPolicyIdentityStrategy::UserPolicyIdentityStrategy(
                  NotificationType::GOOGLE_SIGNIN_SUCCESSFUL,
                  Source<Profile>(profile_));
 #endif
-
-  cache_->Load();
 }
 
 UserPolicyIdentityStrategy::~UserPolicyIdentityStrategy() {}
+
+void UserPolicyIdentityStrategy::LoadTokenCache() {
+  cache_->Load();
+}
 
 std::string UserPolicyIdentityStrategy::GetDeviceToken() {
   return device_token_;

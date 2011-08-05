@@ -23,7 +23,8 @@ class SimpleMenuModel;
 namespace views {
 class ImageButton;
 class ImageView;
-class Menu2;
+class MenuDelegate;
+class MenuItemView;
 }  // namespace views
 
 namespace chromeos {
@@ -32,12 +33,12 @@ class StatusAreaView;
 class StatusAreaButton;
 
 // chromeos::BrowserView adds ChromeOS specific controls and menus to a
-// BrowserView created with Browser::TYPE_NORMAL. This extender adds controls
+// BrowserView created with Browser::TYPE_TABBED. This extender adds controls
 // to the title bar as follows:
 //       ____  __ __
 //      /    \   \  \     [StatusArea]
 //
-// and adds the system context menu to the remaining arae of the titlebar.
+// and adds the system context menu to the remaining area of the titlebar.
 class BrowserView : public ::BrowserView,
                     public views::ContextMenuController,
                     public views::MenuListener,
@@ -46,7 +47,7 @@ class BrowserView : public ::BrowserView,
   explicit BrowserView(Browser* browser);
   virtual ~BrowserView();
 
-  // BrowserView overrides.
+  // BrowserView implementation.
   virtual void Init() OVERRIDE;
   virtual void Show() OVERRIDE;
   virtual void ShowInactive() OVERRIDE;
@@ -57,8 +58,10 @@ class BrowserView : public ::BrowserView,
   virtual void Cut() OVERRIDE;
   virtual void Copy() OVERRIDE;
   virtual void Paste() OVERRIDE;
+  virtual WindowOpenDisposition GetDispositionForPopupBounds(
+      const gfx::Rect& bounds) OVERRIDE;
 
-  // views::ContextMenuController overrides.
+  // views::ContextMenuController implementation.
   virtual void ShowContextMenuForView(views::View* source,
                                       const gfx::Point& p,
                                       bool is_mouse_gesture) OVERRIDE;
@@ -80,6 +83,10 @@ class BrowserView : public ::BrowserView,
     return saved_focused_widget_;
   }
 
+  // static implementation for chromeos::PanelBrowserView.
+  static WindowOpenDisposition DispositionForPopupBounds(
+      const gfx::Rect& bounds);
+
  protected:
   virtual void GetAccessiblePanes(
       std::vector<AccessiblePaneView*>* panes);
@@ -92,11 +99,11 @@ class BrowserView : public ::BrowserView,
   // Status Area view.
   StatusAreaView* status_area_;
 
-  // System menus.
-  scoped_ptr<ui::SimpleMenuModel> system_menu_contents_;
-  scoped_ptr<views::Menu2> system_menu_menu_;
+  // System menu.
+  scoped_ptr<views::MenuItemView> system_menu_;
+  scoped_ptr<views::MenuDelegate> system_menu_delegate_;
 
-  // Focused native widget before wench menu shows up. We need this to properly
+  // Focused native widget before wrench menu shows up. We need this to properly
   // perform cut, copy and paste. See http://crosbug.com/8496
   gfx::NativeView saved_focused_widget_;
 

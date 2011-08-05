@@ -16,14 +16,11 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
-#include "chrome/browser/prefs/pref_change_registrar.h"
 #include "content/browser/browser_thread.h"
 #include "content/common/notification_observer.h"
 #include "content/common/notification_registrar.h"
 
 class GURL;
-class PrefService;
-class Profile;
 
 // HostZoomMap needs to be deleted on the UI thread because it listens
 // to notifications on there (and holds a NotificationRegistrar).
@@ -32,25 +29,24 @@ class HostZoomMap :
     public base::RefCountedThreadSafe<HostZoomMap,
                                       BrowserThread::DeleteOnUIThread> {
  public:
-  explicit HostZoomMap(Profile* profile);
+  HostZoomMap();
 
-  static void RegisterUserPrefs(PrefService* prefs);
-
-  // Returns the zoom level for a given url. The zoom level is determined by
-  // the host portion of the URL, or (in the absence of a host) the complete
-  // spec of the URL. In most cases, there is no custom zoom level, and this
-  // returns the user's default zoom level.  Otherwise, returns the saved zoom
-  // level, which may be positive (to zoom in) or negative (to zoom out).
+  // Returns the zoom level for the host or spec for a given url. The zoom
+  // level is determined by the host portion of the URL, or (in the absence of
+  // a host) the complete spec of the URL. In most cases, there is no custom
+  // zoom level, and this returns the user's default zoom level.  Otherwise,
+  // returns the saved zoom level, which may be positive (to zoom in) or
+  // negative (to zoom out).
   //
   // This may be called on any thread.
-  double GetZoomLevel(const GURL& url) const;
+  double GetZoomLevel(std::string host) const;
 
-  // Sets the zoom level for a given url to |level|.  If the level matches the
-  // current default zoom level, the host is erased from the saved preferences;
-  // otherwise the new value is written out.
+  // Sets the zoom level for the host or spec for a given url to |level|.  If
+  // the level matches the current default zoom level, the host is erased
+  // from the saved preferences; otherwise the new value is written out.
   //
   // This should only be called on the UI thread.
-  void SetZoomLevel(const GURL& url, double level);
+  void SetZoomLevel(std::string host, double level);
 
   // Returns the temporary zoom level that's only valid for the lifetime of
   // the given tab (i.e. isn't saved and doesn't affect other tabs) if it
@@ -68,15 +64,13 @@ class HostZoomMap :
                              int render_view_id,
                              double level);
 
-  // Resets all zoom levels.
-  //
-  // This should only be called on the UI thread.
-  void ResetToDefaults();
-
   // NotificationObserver implementation.
   virtual void Observe(NotificationType type,
                        const NotificationSource& source,
                        const NotificationDetails& details);
+
+  double default_zoom_level() const { return default_zoom_level_; }
+  void set_default_zoom_level(double level) { default_zoom_level_ = level; }
 
  private:
   friend struct BrowserThread::DeleteOnThread<BrowserThread::UI>;
@@ -84,17 +78,7 @@ class HostZoomMap :
 
   typedef std::map<std::string, double> HostZoomLevels;
 
-  ~HostZoomMap();
-
-  // Reads the zoom levels from the preferences service.
-  void Load();
-
-  // Removes dependencies on the profile so we can live longer than
-  // the profile without crashing.
-  void Shutdown();
-
-  // The profile we're associated with.
-  Profile* profile_;
+  virtual ~HostZoomMap();
 
   // Copy of the pref data, so that we can read it on the IO thread.
   HostZoomLevels host_zoom_levels_;
@@ -114,12 +98,7 @@ class HostZoomMap :
   // |temporary_zoom_levels_| to guarantee thread safety.
   mutable base::Lock lock_;
 
-  // Whether we are currently updating preferences, this is used to ignore
-  // notifications from the preference service that we triggered ourself.
-  bool updating_preferences_;
-
   NotificationRegistrar registrar_;
-  PrefChangeRegistrar pref_change_registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(HostZoomMap);
 };

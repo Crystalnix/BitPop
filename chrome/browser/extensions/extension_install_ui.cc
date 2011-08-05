@@ -17,27 +17,24 @@
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
+#include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/browser/ui/webui/web_ui_util.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/extension_resource.h"
 #include "chrome/common/extensions/url_pattern.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/tab_contents/tab_contents.h"
 #include "content/common/notification_service.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-
-#if defined(TOOLKIT_GTK)
-#include "chrome/browser/extensions/gtk_theme_installed_infobar_delegate.h"
-#include "chrome/browser/ui/gtk/gtk_theme_service.h"
-#endif
 
 // static
 const int ExtensionInstallUI::kTitleIds[NUM_PROMPT_TYPES] = {
@@ -73,9 +70,8 @@ void ShowAppInstalledAnimation(Browser* browser, const std::string& app_id) {
   // Select an already open NTP, if there is one. Existing NTPs will
   // automatically show the install animation for any new apps.
   for (int i = 0; i < browser->tab_count(); ++i) {
-    TabContents* tab_contents = browser->GetTabContentsAt(i);
-    GURL url = tab_contents->GetURL();
-    if (StartsWithASCII(url.spec(), chrome::kChromeUINewTabURL, false)) {
+    GURL url = browser->GetTabContentsAt(i)->GetURL();
+    if (web_ui_util::ChromeURLHostEquals(url, chrome::kChromeUINewTabHost)) {
       browser->ActivateTabAt(i, false);
       return;
     }
@@ -83,7 +79,7 @@ void ShowAppInstalledAnimation(Browser* browser, const std::string& app_id) {
 
   // If there isn't an NTP, open one and pass it the ID of the installed app.
   std::string url = base::StringPrintf(
-      "%s/#app-id=%s", chrome::kChromeUINewTabURL, app_id.c_str());
+      "%s#app-id=%s", chrome::kChromeUINewTabURL, app_id.c_str());
   browser->AddSelectedTabWithURL(GURL(url), PageTransition::TYPED);
 }
 
@@ -92,7 +88,7 @@ void ShowAppInstalledAnimation(Browser* browser, const std::string& app_id) {
 ExtensionInstallUI::ExtensionInstallUI(Profile* profile)
     : profile_(profile),
       ui_loop_(MessageLoop::current()),
-      previous_use_system_theme_(false),
+      previous_using_native_theme_(false),
       extension_(NULL),
       delegate_(NULL),
       prompt_type_(NUM_PROMPT_TYPES),
@@ -103,14 +99,8 @@ ExtensionInstallUI::ExtensionInstallUI(Profile* profile)
         ThemeServiceFactory::GetThemeForProfile(profile_);
     if (previous_theme)
       previous_theme_id_ = previous_theme->id();
-#if defined(TOOLKIT_GTK)
-    // On Linux, we also need to take the user's system settings into account
-    // to undo theme installation.
-    previous_use_system_theme_ =
-        GtkThemeService::GetFrom(profile_)->UseGtkTheme();
-#else
-    DCHECK(!previous_use_system_theme_);
-#endif
+    previous_using_native_theme_ =
+        ThemeServiceFactory::GetForProfile(profile_)->UsingNativeTheme();
   }
 }
 
@@ -149,7 +139,7 @@ void ExtensionInstallUI::OnInstallSuccess(const Extension* extension,
   SetIcon(icon);
 
   if (extension->is_theme()) {
-    ShowThemeInfoBar(previous_theme_id_, previous_use_system_theme_,
+    ShowThemeInfoBar(previous_theme_id_, previous_using_native_theme_,
                      extension, profile_);
     return;
   }
@@ -170,10 +160,18 @@ void ExtensionInstallUI::OnInstallSuccess(const Extension* extension,
   browser::ShowExtensionInstalledBubble(extension, browser, icon_, profile);
 }
 
+namespace {
+
+bool disable_failure_ui_for_tests = false;
+
+}  // namespace
+
 void ExtensionInstallUI::OnInstallFailure(const std::string& error) {
   DCHECK(ui_loop_ == MessageLoop::current());
 
   Browser* browser = BrowserList::GetLastActiveWithProfile(profile_);
+  if (disable_failure_ui_for_tests)
+    return;
   platform_util::SimpleErrorBox(
       browser ? browser->window()->GetNativeHandle() : NULL,
       l10n_util::GetStringUTF16(IDS_EXTENSION_INSTALL_FAILURE_TITLE),
@@ -215,21 +213,24 @@ void ExtensionInstallUI::OnImageLoaded(
   }
 }
 
+// static
+void ExtensionInstallUI::DisableFailureUIForTests() {
+  disable_failure_ui_for_tests = true;
+}
+
 void ExtensionInstallUI::ShowThemeInfoBar(const std::string& previous_theme_id,
-                                          bool previous_use_system_theme,
+                                          bool previous_using_native_theme,
                                           const Extension* new_theme,
                                           Profile* profile) {
   if (!new_theme->is_theme())
     return;
 
-  // Get last active normal browser of profile.
-  Browser* browser = BrowserList::FindBrowserWithType(profile,
-                                                      Browser::TYPE_NORMAL,
-                                                      true);
+  // Get last active tabbed browser of profile.
+  Browser* browser = BrowserList::FindTabbedBrowser(profile, true);
   if (!browser)
     return;
 
-  TabContents* tab_contents = browser->GetSelectedTabContents();
+  TabContentsWrapper* tab_contents = browser->GetSelectedTabContentsWrapper();
   if (!tab_contents)
     return;
 
@@ -252,7 +253,8 @@ void ExtensionInstallUI::ShowThemeInfoBar(const std::string& previous_theme_id,
 
   // Then either replace that old one or add a new one.
   InfoBarDelegate* new_delegate = GetNewThemeInstalledInfoBarDelegate(
-      tab_contents, new_theme, previous_theme_id, previous_use_system_theme);
+      tab_contents->tab_contents(), new_theme, previous_theme_id,
+      previous_using_native_theme);
 
   if (old_delegate)
     tab_contents->ReplaceInfoBar(old_delegate, new_delegate);
@@ -275,12 +277,8 @@ InfoBarDelegate* ExtensionInstallUI::GetNewThemeInstalledInfoBarDelegate(
     TabContents* tab_contents,
     const Extension* new_theme,
     const std::string& previous_theme_id,
-    bool previous_use_system_theme) {
-#if defined(TOOLKIT_GTK)
-  return new GtkThemeInstalledInfoBarDelegate(tab_contents, new_theme,
-      previous_theme_id, previous_use_system_theme);
-#else
+    bool previous_using_native_theme) {
   return new ThemeInstalledInfoBarDelegate(tab_contents, new_theme,
-                                           previous_theme_id);
-#endif
+                                           previous_theme_id,
+                                           previous_using_native_theme);
 }

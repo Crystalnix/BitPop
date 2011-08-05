@@ -25,9 +25,9 @@ class CreditCard : public FormGroup {
   virtual ~CreditCard();
 
   // FormGroup implementation:
-  virtual void GetPossibleFieldTypes(const string16& text,
-                                     FieldTypeSet* possible_types) const;
-  virtual void GetAvailableFieldTypes(FieldTypeSet* available_types) const;
+  virtual void GetMatchingTypes(const string16& text,
+                                FieldTypeSet* matching_types) const;
+  virtual void GetNonEmptyTypes(FieldTypeSet* non_empty_types) const;
   virtual string16 GetInfo(AutofillFieldType type) const;
   virtual void SetInfo(AutofillFieldType type, const string16& value);
   // Credit card preview summary, for example: ******1234, Exp: 01/2020
@@ -57,6 +57,10 @@ class CreditCard : public FormGroup {
   // GUIDs, labels, and unique IDs are not compared, only the values of the
   // credit cards themselves.
   int Compare(const CreditCard& credit_card) const;
+
+  // This is same as |Compare| for credit cards as they are single-valued.
+  // This is here to unify templated code that deals with |FormGroup|s.
+  int CompareMulti(const CreditCard& credit_card) const;
 
   // Used by tests.
   bool operator==(const CreditCard& credit_card) const;

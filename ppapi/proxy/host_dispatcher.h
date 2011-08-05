@@ -14,6 +14,7 @@
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/proxy/dispatcher.h"
 #include "ppapi/proxy/plugin_var_tracker.h"
+#include "ppapi/shared_impl/function_group_base.h"
 
 struct PPB_Proxy_Private;
 struct PPB_Var_Deprecated;
@@ -24,6 +25,10 @@ class WaitableEvent;
 
 namespace IPC {
 class SyncChannel;
+}
+
+namespace ppapi {
+struct Preferences;
 }
 
 namespace pp {
@@ -45,9 +50,10 @@ class HostDispatcher : public Dispatcher {
   // You must call this function before anything else. Returns true on success.
   // The delegate pointer must outlive this class, ownership is not
   // transferred.
-  virtual bool InitHostWithChannel(ProxyChannel::Delegate* delegate,
-                                     const IPC::ChannelHandle& channel_handle,
-                                     bool is_client);
+  virtual bool InitHostWithChannel(Delegate* delegate,
+                                   const IPC::ChannelHandle& channel_handle,
+                                   bool is_client,
+                                   const ppapi::Preferences& preferences);
 
   // The host side maintains a mapping from PP_Instance to Dispatcher so
   // that we can send the messages to the right channel.
@@ -114,6 +120,12 @@ class HostDispatcher : public Dispatcher {
   // All target proxies currently created. These are ones that receive
   // messages. They are created on demand when we receive messages.
   scoped_ptr<InterfaceProxy> target_proxies_[INTERFACE_ID_COUNT];
+
+  // Function proxies created for "new-style" FunctionGroups.
+  // TODO(brettw) this is in progress. It should be merged with the target
+  // proxies so there is one list to consult.
+  scoped_ptr< ::ppapi::FunctionGroupBase >
+      function_proxies_[INTERFACE_ID_COUNT];
 
   // Guaranteed non-NULL.
   const PPB_Proxy_Private* ppb_proxy_;

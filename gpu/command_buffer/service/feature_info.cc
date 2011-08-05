@@ -108,6 +108,8 @@ void FeatureInfo::AddFeatures(const char* desired_features) {
   AddExtensionString("GL_CHROMIUM_resize");
   AddExtensionString("GL_CHROMIUM_strict_attribs");
   AddExtensionString("GL_CHROMIUM_latch");
+  AddExtensionString("GL_CHROMIUM_swapbuffers_complete_callback");
+  AddExtensionString("GL_CHROMIUM_rate_limit_offscreen_context");
 
   // Only turn this feature on if it is requested. Not by default.
   if (desired_features && ext.Desire("GL_CHROMIUM_webglsl")) {
@@ -349,6 +351,3 @@ void FeatureInfo::AddExtensionString(const std::string& str) {
 
 }  // namespace gles2
 }  // namespace gpu
-
-
-

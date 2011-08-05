@@ -1,5 +1,8 @@
 <!DOCTYPE html>
-<html i18n-values='dir:textdirection;'>
+<html i18n-values="
+    dir:textdirection;
+    hasattribution:hasattribution;
+    customlogo:customlogo;">
 <head>
 <meta charset="utf-8">
 <title i18n-content="title"></title>
@@ -12,9 +15,16 @@
 <meta name="viewport"
       content="user-scalable=no, width=device-width, maximum-scale=1.0">
 
+<if expr="pp_ifdef('touchui')">
+<script>
+document.documentElement.setAttribute('touchui', true);
+</script>
+</if>
+
 <link rel="stylesheet" href="../shared/css/menu.css">
 <link rel="stylesheet" href="apps_page.css">
 <link rel="stylesheet" href="most_visited_page.css">
+<link rel="stylesheet" href="nav_dot.css">
 <link rel="stylesheet" href="new_tab.css">
 <link rel="stylesheet" href="recently_closed.css">
 <link rel="stylesheet" href="tile_page.css">
@@ -37,6 +47,7 @@
 
 <script src="card_slider.js"></script>
 <script src="grabber.js"></script>
+<script src="nav_dot.js"></script>
 <script src="new_tab.js"></script>
 <script src="recently_closed.js"></script>
 <script src="touch_handler.js"></script>
@@ -46,20 +57,22 @@
   <div id="card-slider-frame">
     <div id="page-list">
     </div>
+    <div id="attribution">
+      <span i18n-content="attributionintro"></span>
+      <img id="attribution-img">
+    </div>
   </div>
   <div id="footer">
     <div id="footer-border"></div>
     <div id="footer-content">
-      <img src="../../../app/theme/%DISTRIBUTION%/product_logo.png">
+      <img id="logo-img">
 
       <ul id="dot-list">
-        <!-- This is another template node (see above). -->
-        <li class="dot" tabindex="0" role="button"><span></span></li>
       </ul>
 
       <button id="recently-closed-menu-button">
         <span i18n-content="recentlyclosed"></span>
-        <img src="../ntp/ntp_disclosure_triangle.png">
+        <div class="disclosure-triangle"></div>
       </button>
 
       <!-- TODO(estade): may want to remove this. -->

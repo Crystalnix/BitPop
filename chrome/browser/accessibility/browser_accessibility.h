@@ -48,11 +48,6 @@ class BrowserAccessibility {
   // have been reset with new values from the renderer process.
   virtual void Initialize();
 
-  // Replace a child object. Used when updating the accessibility tree.
-  virtual void ReplaceChild(
-      BrowserAccessibility* old_acc,
-      BrowserAccessibility* new_acc);
-
   // Initialize this object, reading attributes from |src|. Does not
   // recurse into children of |src| and build the whole subtree.
   void Initialize(BrowserAccessibilityManager* manager,
@@ -143,6 +138,9 @@ class BrowserAccessibility {
     return html_attributes_;
   }
   int32 index_in_parent() const { return index_in_parent_; }
+  const std::vector<int32>& indirect_child_ids() const {
+    return indirect_child_ids_;
+  }
   gfx::Rect location() const { return location_; }
   BrowserAccessibilityManager* manager() const { return manager_; }
   const string16& name() const { return name_; }

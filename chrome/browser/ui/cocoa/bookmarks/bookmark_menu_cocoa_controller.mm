@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,10 +10,10 @@
 #import "chrome/browser/app_controller_mac.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "chrome/browser/ui/browser.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_menu_bridge.h"
 #include "chrome/browser/ui/cocoa/event_utils.h"
+#include "content/browser/user_metrics.h"
 #include "ui/base/text/text_elider.h"
 
 namespace {
@@ -37,10 +37,24 @@ const NSUInteger kMaximumMenuPixelsWide = 300;
   return base::SysUTF16ToNSString(title);
 }
 
-- (id)initWithBridge:(BookmarkMenuBridge *)bridge {
++ (NSString*)tooltipForNode:(const BookmarkNode*)node {
+  NSString* title = base::SysUTF16ToNSString(node->GetTitle());
+  std::string url_string = node->GetURL().possibly_invalid_spec();
+  NSString* url = [NSString stringWithUTF8String:url_string.c_str()];
+  if ([title length] == 0)
+    return url;
+  else if ([url length] == 0 || [url isEqualToString:title])
+    return title;
+  else
+    return [NSString stringWithFormat:@"%@\n%@", title, url];
+}
+
+- (id)initWithBridge:(BookmarkMenuBridge *)bridge
+             andMenu:(NSMenu*)menu {
   if ((self = [super init])) {
     bridge_ = bridge;
     DCHECK(bridge_);
+    menu_ = menu;
     [[self menu] setDelegate:self];
   }
   return self;
@@ -52,7 +66,7 @@ const NSUInteger kMaximumMenuPixelsWide = 300;
 }
 
 - (NSMenu*)menu {
-  return [[[NSApp mainMenu] itemWithTag:IDC_BOOKMARK_MENU] submenu];
+  return menu_;
 }
 
 - (BOOL)validateMenuItem:(NSMenuItem*)menuItem {
@@ -109,8 +123,7 @@ const NSUInteger kMaximumMenuPixelsWide = 300;
   } else {
     metrics_action = "OpenAllBookmarksIncognitoWindow";
   }
-  UserMetrics::RecordAction(UserMetricsAction(metrics_action),
-                            browser->profile());
+  UserMetrics::RecordAction(UserMetricsAction(metrics_action));
 }
 
 - (IBAction)openBookmarkMenuItem:(id)sender {

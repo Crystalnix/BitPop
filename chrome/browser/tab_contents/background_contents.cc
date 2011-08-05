@@ -10,9 +10,7 @@
 #include "chrome/browser/renderer_preferences_util.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_factory.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/common/view_types.h"
 #include "content/browser/browsing_instance.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/site_instance.h"
@@ -104,8 +102,9 @@ void BackgroundContents::DidNavigate(
 }
 
 void BackgroundContents::RunJavaScriptMessage(
-    const std::wstring& message,
-    const std::wstring& default_prompt,
+    const RenderViewHost* rvh,
+    const string16& message,
+    const string16& default_prompt,
     const GURL& frame_url,
     const int flags,
     IPC::Message* reply_msg,
@@ -140,8 +139,10 @@ void BackgroundContents::Observe(NotificationType type,
 
 void BackgroundContents::OnMessageBoxClosed(IPC::Message* reply_msg,
                                             bool success,
-                                            const std::wstring& prompt) {
-  render_view_host_->JavaScriptMessageBoxClosed(reply_msg, success, prompt);
+                                            const std::wstring& user_input) {
+  render_view_host()->JavaScriptDialogClosed(reply_msg,
+                                             success,
+                                             WideToUTF16Hack(user_input));
 }
 
 gfx::NativeWindow BackgroundContents::GetMessageBoxRootWindow() {
@@ -206,15 +207,6 @@ WebPreferences BackgroundContents::GetWebkitPrefs() {
   Profile* profile = render_view_host_->process()->profile();
   return RenderViewHostDelegateHelper::GetWebkitPrefs(profile,
                                                       false);  // is_web_ui
-}
-
-void BackgroundContents::ProcessWebUIMessage(
-    const ExtensionHostMsg_DomMessage_Params& params) {
-  // TODO(rafaelw): It may make sense for extensions to be able to open
-  // BackgroundContents to chrome-extension://<id> pages. Consider implementing.
-  render_view_host_->Send(new ExtensionMsg_Response(
-      render_view_host_->routing_id(), params.request_id, false,
-      std::string(), "Access to extension API denied."));
 }
 
 void BackgroundContents::CreateNewWindow(

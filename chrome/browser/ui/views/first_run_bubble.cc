@@ -6,15 +6,15 @@
 
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/first_run/first_run.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "chrome/browser/search_engines/util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "content/browser/user_metrics.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
-#include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_font_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -24,7 +24,7 @@
 #include "views/events/event.h"
 #include "views/focus/focus_manager.h"
 #include "views/layout/layout_constants.h"
-#include "views/widget/widget_win.h"
+#include "views/widget/native_widget_win.h"
 #include "views/window/window.h"
 
 namespace {
@@ -145,14 +145,12 @@ void FirstRunBubbleView::BubbleShown() {
 
 void FirstRunBubbleView::ButtonPressed(views::Button* sender,
                                        const views::Event& event) {
-  UserMetrics::RecordAction(UserMetricsAction("FirstRunBubbleView_Clicked"),
-                            profile_);
+  UserMetrics::RecordAction(UserMetricsAction("FirstRunBubbleView_Clicked"));
   bubble_window_->set_fade_away_on_close(true);
   bubble_window_->Close();
   if (change_button_ == sender) {
     UserMetrics::RecordAction(
-                    UserMetricsAction("FirstRunBubbleView_ChangeButton"),
-                    profile_);
+                    UserMetricsAction("FirstRunBubbleView_ChangeButton"));
 
     Browser* browser = BrowserList::GetLastActive();
     if (browser) {
@@ -305,8 +303,8 @@ void FirstRunOEMBubbleView::BubbleShown() {
 
 void FirstRunOEMBubbleView::ButtonPressed(views::Button* sender,
                                           const views::Event& event) {
-  UserMetrics::RecordAction(UserMetricsAction("FirstRunOEMBubbleView_Clicked"),
-                            profile_);
+  UserMetrics::RecordAction(
+      UserMetricsAction("FirstRunOEMBubbleView_Clicked"));
   bubble_window_->set_fade_away_on_close(true);
   bubble_window_->Close();
 }
@@ -359,7 +357,7 @@ gfx::Size FirstRunOEMBubbleView::GetPreferredSize() {
   // now, we force Vista to show a correctly-sized box by taking account of
   // the difference in font size calculation. The coefficient should not be
   // stored in a variable because it's a hack and should go away.
-  if (views::WidgetWin::IsAeroGlassEnabled()) {
+  if (views::NativeWidgetWin::IsAeroGlassEnabled()) {
     size.set_width(static_cast<int>(size.width() * 0.85));
     size.set_height(static_cast<int>(size.height() * 0.85));
   }
@@ -493,7 +491,7 @@ FirstRunBubble* FirstRunBubble::Show(Profile* profile,
   bubble->set_view(view);
   bubble->InitBubble(
       parent, position_relative_to, arrow_location, view, bubble);
-  bubble->GetFocusManager()->AddFocusChangeListener(view);
+  bubble->GetWidget()->GetFocusManager()->AddFocusChangeListener(view);
   view->BubbleShown();
   return bubble;
 }
@@ -506,7 +504,7 @@ FirstRunBubble::FirstRunBubble()
 
 FirstRunBubble::~FirstRunBubble() {
   enable_window_method_factory_.RevokeAll();
-  GetFocusManager()->RemoveFocusChangeListener(view_);
+  GetWidget()->GetFocusManager()->RemoveFocusChangeListener(view_);
 }
 
 void FirstRunBubble::EnableParent() {
@@ -519,7 +517,7 @@ void FirstRunBubble::EnableParent() {
   views::NativeWidget* parent =
       views::NativeWidget::GetNativeWidgetForNativeView(GetParent());
   if (parent)
-    parent->GetWidget()->GetWindow()->DisableInactiveRendering();
+    parent->GetWidget()->GetContainingWindow()->DisableInactiveRendering();
   // Reactivate the FirstRunBubble so it responds to OnActivate messages.
   SetWindowPos(GetParent(), 0, 0, 0, 0,
                SWP_NOSIZE | SWP_NOMOVE | SWP_NOREDRAW | SWP_SHOWWINDOW);

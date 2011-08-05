@@ -16,14 +16,7 @@
 #include "views/view.h"
 #include "webkit/glue/window_open_disposition.h"
 
-#if defined(OS_WIN)
-#include "chrome/browser/ui/views/autocomplete/autocomplete_popup_win.h"
-#else
-#include "chrome/browser/ui/views/autocomplete/autocomplete_popup_gtk.h"
-#endif
-
 class AutocompleteEditModel;
-class AutocompleteEditViewWin;
 struct AutocompleteMatch;
 class AutocompleteResultView;
 class BubbleBorder;
@@ -41,7 +34,7 @@ class AutocompletePopupContentsView : public views::View,
                                       public ui::AnimationDelegate {
  public:
   AutocompletePopupContentsView(const gfx::Font& font,
-                                AutocompleteEditView* edit_view,
+                                OmniboxView* omnibox_view,
                                 AutocompleteEditModel* edit_model,
                                 Profile* profile,
                                 const views::View* location_bar);
@@ -106,11 +99,7 @@ class AutocompletePopupContentsView : public views::View,
   views::View* opt_in_view_;
 
  private:
-#if defined(OS_WIN)
-  typedef AutocompletePopupWin AutocompletePopupClass;
-#else
-  typedef AutocompletePopupGtk AutocompletePopupClass;
-#endif
+  class AutocompletePopupWidget;
   class InstantOptInView;
 
   // Returns true if the model has a match at the specified index.
@@ -149,10 +138,10 @@ class AutocompletePopupContentsView : public views::View,
   // when its window is destroyed.  This is a WeakPtr because it's possible for
   // the OS to destroy the window and thus delete this object before we're
   // deleted, or without our knowledge.
-  base::WeakPtr<AutocompletePopupClass> popup_;
+  base::WeakPtr<AutocompletePopupWidget> popup_;
 
   // The edit view that invokes us.
-  AutocompleteEditView* edit_view_;
+  OmniboxView* omnibox_view_;
 
   // An object that the popup positions itself against.
   const views::View* location_bar_;

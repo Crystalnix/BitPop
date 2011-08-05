@@ -4,15 +4,15 @@
 
 #include "touch_autocomplete_popup_contents_view.h"
 
-#include "chrome/browser/autocomplete/autocomplete_edit_view.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/omnibox/omnibox_view.h"
+#include "third_party/skia/include/core/SkPaint.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
-#include "third_party/skia/include/core/SkPaint.h"
 #include "views/view.h"
 
 
@@ -36,16 +36,18 @@ void TouchAutocompleteResultView::PaintMatch(gfx::Canvas* canvas,
              text_bounds().y());
 
   if (!match.description.empty()) {
+    // We use our base class's GetTextHeight below because we need the height
+    // of a single line of text.
     DrawString(canvas, match.description, match.description_class, true, x,
-        text_bounds().y() + GetFontHeight());
+        text_bounds().y() + AutocompleteResultView::GetTextHeight());
   }
 }
 
-int TouchAutocompleteResultView::GetFontHeight() const {
-  // In touch version of autocomplete popup, the text is displayed in two lines:
-  // First line is the title of the suggestion and second is the description.
-  // Hence, the total text height is 2 times the height of one line.
-  return AutocompleteResultView::GetFontHeight() * 2;
+int TouchAutocompleteResultView::GetTextHeight() const {
+  // In the touch version of the autocomplete popup, the text is displayed in
+  // two lines: First line is the title of the suggestion and second is the
+  // description. Hence, the total text height is twice the height of one line.
+  return AutocompleteResultView::GetTextHeight() * 2;
 }
 
 
@@ -53,11 +55,11 @@ int TouchAutocompleteResultView::GetFontHeight() const {
 
 TouchAutocompletePopupContentsView::TouchAutocompletePopupContentsView(
     const gfx::Font& font,
-    AutocompleteEditView* edit_view,
+    OmniboxView* omnibox_view,
     AutocompleteEditModel* edit_model,
     Profile* profile,
     const views::View* location_bar)
-    : AutocompletePopupContentsView(font, edit_view, edit_model, profile,
+    : AutocompletePopupContentsView(font, omnibox_view, edit_model, profile,
                                     location_bar) {
 }
 

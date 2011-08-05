@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,8 +6,7 @@
 // extensions.  It is loaded by any extension-related context, such as content
 // scripts or toolstrips.
 // See user_script_slave.cc for script that is loaded by content scripts only.
-// TODO(mpcomplete): we also load this in regular web pages, but don't need
-// to.
+// TODO(mpcomplete): we also load this in regular web pages, but don't need to.
 
 var chrome = chrome || {};
 (function () {
@@ -295,39 +294,43 @@ var chrome = chrome || {};
       // Entire namespaces.
       "bookmarks",
       "browserAction",
+      "chromePrivate",
       "chromeosInfoPrivate",
       "contextMenus",
       "cookies",
       "devtools",
       "experimental.accessibility",
       "experimental.bookmarkManager",
-      "experimental.clipboard",
       "experimental.contentSettings.misc",
-      "experimental.extension",
       "experimental.debugger",
+      "experimental.extension",
       "experimental.infobars",
       "experimental.input",
+      "experimental.inputUI",
       "experimental.metrics",
       "experimental.popup",
       "experimental.processes",
-      "experimental.tts",
-      "experimental.proxy",
       "experimental.rlz",
       "experimental.sidebar",
+      "experimental.tts",
       "experimental.webNavigation",
       "experimental.webRequest",
-      "history",
-      "idle",
       "fileBrowserHandler",
       "fileBrowserPrivate",
       "fileSystem",
+      "history",
+      "idle",
       "management",
+      "mediaPlayerPrivate",
       "omnibox",
       "pageAction",
       "pageActions",
+      "proxy",
       "tabs",
       "test",
       "toolstrip",
+      "types",
+      "webSocketProxyPrivate",
       "webstorePrivate",
       "windows",
 

@@ -4,14 +4,13 @@
 
 #include "chrome/browser/ui/views/location_bar/content_setting_image_view.h"
 
-#include "base/command_line.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/content_setting_bubble_model.h"
-#include "chrome/browser/content_setting_image_model.h"
+#include "chrome/browser/content_settings/tab_specific_content_settings.h"
+#include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
+#include "chrome/browser/ui/content_settings/content_setting_image_model.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/browser/ui/views/content_setting_bubble_contents.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
-#include "chrome/common/chrome_switches.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -77,8 +76,11 @@ void ContentSettingImageView::UpdateFromTabContents(TabContents* tab_contents) {
   SetTooltipText(UTF8ToWide(content_setting_image_model_->get_tooltip()));
   SetVisible(true);
 
-  TabSpecificContentSettings* content_settings = tab_contents ?
-      tab_contents->GetTabSpecificContentSettings() : NULL;
+  TabSpecificContentSettings* content_settings = NULL;
+  if (tab_contents) {
+    content_settings = TabContentsWrapper::GetCurrentWrapperForContents(
+        tab_contents)->content_settings();
+  }
   if (!content_settings || content_settings->IsBlockageIndicated(
       content_setting_image_model_->get_content_settings_type()))
     return;
@@ -90,10 +92,8 @@ void ContentSettingImageView::UpdateFromTabContents(TabContents* tab_contents) {
 
   int animated_string_id =
       content_setting_image_model_->explanatory_string_id();
-  // Check if the animation is enabled and if the string for animation is
-  // available.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableBlockContentAnimation) || !animated_string_id)
+  // Check if the string for animation is available.
+  if (!animated_string_id)
     return;
 
   // Do not start animation if already in progress.
@@ -128,7 +128,7 @@ void ContentSettingImageView::OnMouseReleased(const views::MouseEvent& event) {
   if (!HitTest(event.location()))
     return;
 
-  TabContents* tab_contents = parent_->GetTabContentsWrapper()->tab_contents();
+  TabContentsWrapper* tab_contents = parent_->GetTabContentsWrapper();
   if (!tab_contents)
     return;
 
@@ -145,8 +145,9 @@ void ContentSettingImageView::OnMouseReleased(const views::MouseEvent& event) {
   ContentSettingBubbleContents* bubble_contents =
       new ContentSettingBubbleContents(
           ContentSettingBubbleModel::CreateContentSettingBubbleModel(
-              tab_contents, profile_, content_settings_type),
-          profile_, tab_contents);
+              parent_->browser(), tab_contents, profile_,
+              content_settings_type),
+          profile_, tab_contents->tab_contents());
   bubble_ = Bubble::Show(GetWidget(), screen_bounds, BubbleBorder::TOP_RIGHT,
                          bubble_contents, this);
   bubble_contents->set_bubble(bubble_);

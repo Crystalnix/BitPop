@@ -25,6 +25,7 @@
 #include "chrome/browser/autofill/form_structure.h"
 #include "chrome/browser/autofill/personal_data_manager.h"
 #include "chrome/browser/autofill/phone_number.h"
+#include "chrome/browser/autofill/phone_number_i18n.h"
 #include "chrome/browser/autofill/select_control_handler.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
@@ -36,7 +37,6 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
 #include "content/common/notification_service.h"
 #include "content/common/notification_source.h"
 #include "content/common/notification_type.h"
@@ -56,6 +56,8 @@ namespace {
 // The rate for positive/negative matches potentially could be different.
 const double kAutofillPositiveUploadRateDefaultValue = 0.20;
 const double kAutofillNegativeUploadRateDefaultValue = 0.20;
+
+const size_t kMaxRecentFormSignaturesToRemember = 3;
 
 const string16::value_type kCreditCardPrefix[] = {'*', 0};
 
@@ -219,10 +221,35 @@ bool FormIsHTTPS(FormStructure* form) {
   return form->source_url().SchemeIs(chrome::kHttpsScheme);
 }
 
+// Normalizes phones in multi-info. If |type| is anything but
+// PHONE_HOME_WHOLE_NUMBER or PHONE_FAX_WHOLE_NUMBER does nothing, as it is
+// either not a phone, or already normalized (parts of the phone parsed and
+// normalized from the PHONE_*_WHOLE_NUMBER). |locale| is a profile locale.
+// For whole number does normalization:
+//   (650)2345678 -> 6502345678
+//   1-800-FLOWERS -> 18003569377
+// If phone cannot be normalized, leaves it as it is.
+void NormalizePhoneMultiInfo(AutofillFieldType type,
+                             std::string const& locale,
+                             std::vector<string16>* values) {
+  DCHECK(values);
+  if (type != PHONE_HOME_WHOLE_NUMBER && type != PHONE_FAX_WHOLE_NUMBER)
+    return;
+  for (std::vector<string16>::iterator it = values->begin();
+       it != values->end();
+       ++it) {
+    string16 normalized_phone = autofill_i18n::NormalizePhoneNumber(*it,
+                                                                    locale);
+    if (!normalized_phone.empty())
+      *it = normalized_phone;
+  }
+}
+
 }  // namespace
 
-AutofillManager::AutofillManager(TabContents* tab_contents)
-    : TabContentsObserver(tab_contents),
+AutofillManager::AutofillManager(TabContentsWrapper* tab_contents)
+    : TabContentsObserver(tab_contents->tab_contents()),
+      tab_contents_wrapper_(tab_contents),
       personal_data_(NULL),
       download_manager_(tab_contents->profile()),
       disable_download_manager_requests_(false),
@@ -248,20 +275,28 @@ void AutofillManager::RegisterBrowserPrefs(PrefService* prefs) {
 
 // static
 void AutofillManager::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kAutofillEnabled, true);
+  prefs->RegisterBooleanPref(prefs::kAutofillEnabled,
+                             true,
+                             PrefService::SYNCABLE_PREF);
 #if defined(OS_MACOSX)
-  prefs->RegisterBooleanPref(prefs::kAutofillAuxiliaryProfilesEnabled, true);
+  prefs->RegisterBooleanPref(prefs::kAutofillAuxiliaryProfilesEnabled,
+                             true,
+                             PrefService::SYNCABLE_PREF);
 #else
-  prefs->RegisterBooleanPref(prefs::kAutofillAuxiliaryProfilesEnabled, false);
+  prefs->RegisterBooleanPref(prefs::kAutofillAuxiliaryProfilesEnabled,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
 #endif
   prefs->RegisterDoublePref(prefs::kAutofillPositiveUploadRate,
-                            kAutofillPositiveUploadRateDefaultValue);
+                            kAutofillPositiveUploadRateDefaultValue,
+                            PrefService::UNSYNCABLE_PREF);
   prefs->RegisterDoublePref(prefs::kAutofillNegativeUploadRate,
-                            kAutofillNegativeUploadRateDefaultValue);
+                            kAutofillNegativeUploadRateDefaultValue,
+                            PrefService::UNSYNCABLE_PREF);
 }
 
 void AutofillManager::DidNavigateMainFramePostCommit(
-    const NavigationController::LoadCommittedDetails& details,
+    const content::LoadCommittedDetails& details,
     const ViewHostMsg_FrameNavigate_Params& params) {
   Reset();
 }
@@ -289,9 +324,7 @@ bool AutofillManager::OnMessageReceived(const IPC::Message& message) {
 
 void AutofillManager::OnFormSubmitted(const FormData& form) {
   // Let AutoComplete know as well.
-  TabContentsWrapper* wrapper =
-      TabContentsWrapper::GetCurrentWrapperForContents(tab_contents());
-  wrapper->autocomplete_history_manager()->OnFormSubmitted(form);
+  tab_contents_wrapper_->autocomplete_history_manager()->OnFormSubmitted(form);
 
   if (!IsAutofillEnabled())
     return;
@@ -425,10 +458,9 @@ void AutofillManager::OnQueryFormFieldAutofill(
   // Add the results from AutoComplete.  They come back asynchronously, so we
   // hand off what we generated and they will send the results back to the
   // renderer.
-  TabContentsWrapper* wrapper =
-      TabContentsWrapper::GetCurrentWrapperForContents(tab_contents());
-  wrapper->autocomplete_history_manager()->OnGetAutocompleteSuggestions(
-      query_id, field.name, field.value, values, labels, icons, unique_ids);
+  tab_contents_wrapper_->autocomplete_history_manager()->
+      OnGetAutocompleteSuggestions(
+          query_id, field.name, field.value, values, labels, icons, unique_ids);
 }
 
 void AutofillManager::OnFillAutofillFormData(int query_id,
@@ -561,7 +593,12 @@ void AutofillManager::OnFillAutofillFormData(int query_id,
     // proceed to the next |result| field, and the next |form_structure|.
     ++i;
   }
-  autofilled_forms_signatures_.push_front(form_structure->FormSignature());
+
+  autofilled_form_signatures_.push_front(form_structure->FormSignature());
+  // Only remember the last few forms that we've seen, both to avoid false
+  // positives and to avoid wasting memory.
+  if (autofilled_form_signatures_.size() > kMaxRecentFormSignaturesToRemember)
+    autofilled_form_signatures_.pop_back();
 
   host->Send(new AutofillMsg_FormDataFilled(
       host->routing_id(), query_id, result));
@@ -617,7 +654,7 @@ void AutofillManager::DeterminePossibleFieldTypesForUpload(
   for (size_t i = 0; i < submitted_form->field_count(); i++) {
     const AutofillField* field = submitted_form->field(i);
     FieldTypeSet field_types;
-    personal_data_->GetPossibleFieldTypes(field->value, &field_types);
+    personal_data_->GetMatchingTypes(field->value, &field_types);
 
     DCHECK(!field_types.empty());
     submitted_form->set_possible_types(i, field_types);
@@ -625,18 +662,15 @@ void AutofillManager::DeterminePossibleFieldTypesForUpload(
 }
 
 void AutofillManager::ImportFormData(const FormStructure& submitted_form) {
-  std::vector<const FormStructure*> submitted_forms;
-  submitted_forms.push_back(&submitted_form);
-
   const CreditCard* imported_credit_card;
-  if (!personal_data_->ImportFormData(submitted_forms, &imported_credit_card))
+  if (!personal_data_->ImportFormData(submitted_form, &imported_credit_card))
     return;
 
   // If credit card information was submitted, show an infobar to offer to save
   // it.
   scoped_ptr<const CreditCard> scoped_credit_card(imported_credit_card);
   if (imported_credit_card && tab_contents()) {
-    tab_contents()->AddInfoBar(
+    tab_contents_wrapper_->AddInfoBar(
         new AutofillCCInfoBarDelegate(tab_contents(),
                                       scoped_credit_card.release(),
                                       personal_data_,
@@ -645,25 +679,24 @@ void AutofillManager::ImportFormData(const FormStructure& submitted_form) {
 }
 
 void AutofillManager::UploadFormData(const FormStructure& submitted_form) {
-  if (!disable_download_manager_requests_) {
-    bool was_autofilled = false;
-    // Check if the form among last 3 forms that were auto-filled.
-    // Clear older signatures.
-    std::list<std::string>::iterator it;
-    int total_form_checked = 0;
-    for (it = autofilled_forms_signatures_.begin();
-         it != autofilled_forms_signatures_.end() && total_form_checked < 3;
-         ++it, ++total_form_checked) {
-      if (*it == submitted_form.FormSignature())
-        was_autofilled = true;
-    }
-    // Remove outdated form signatures.
-    if (total_form_checked == 3 && it != autofilled_forms_signatures_.end()) {
-      autofilled_forms_signatures_.erase(it,
-                                         autofilled_forms_signatures_.end());
-    }
-    download_manager_.StartUploadRequest(submitted_form, was_autofilled);
+  if (disable_download_manager_requests_)
+    return;
+
+  // Check if the form is among the forms that were recently auto-filled.
+  bool was_autofilled = false;
+  for (std::list<std::string>::const_iterator it =
+           autofilled_form_signatures_.begin();
+       it != autofilled_form_signatures_.end() && !was_autofilled;
+       ++it) {
+    if (*it == submitted_form.FormSignature())
+      was_autofilled = true;
   }
+
+  FieldTypeSet non_empty_types;
+  personal_data_->GetNonEmptyTypes(&non_empty_types);
+
+  download_manager_.StartUploadRequest(submitted_form, was_autofilled,
+                                       non_empty_types);
 }
 
 void AutofillManager::Reset() {
@@ -672,9 +705,10 @@ void AutofillManager::Reset() {
   has_logged_address_suggestions_count_ = false;
 }
 
-AutofillManager::AutofillManager(TabContents* tab_contents,
+AutofillManager::AutofillManager(TabContentsWrapper* tab_contents,
                                  PersonalDataManager* personal_data)
-    : TabContentsObserver(tab_contents),
+    : TabContentsObserver(tab_contents->tab_contents()),
+      tab_contents_wrapper_(tab_contents),
       personal_data_(personal_data),
       download_manager_(NULL),
       disable_download_manager_requests_(true),
@@ -742,11 +776,6 @@ bool AutofillManager::FindCachedFormAndField(const FormData& form,
   for (std::vector<AutofillField*>::const_iterator iter =
            (*form_structure)->begin();
        iter != (*form_structure)->end(); ++iter) {
-    // The field list is terminated with a NULL AutofillField, so don't try to
-    // dereference it.
-    if (!*iter)
-      break;
-
     if ((**iter) == field) {
       *autofill_field = *iter;
       break;
@@ -776,6 +805,7 @@ void AutofillManager::GetProfileSuggestions(FormStructure* form,
       // The value of the stored data for this field type in the |profile|.
       std::vector<string16> multi_values;
       profile->GetMultiInfo(type, &multi_values);
+      NormalizePhoneMultiInfo(type, profile->CountryCode(), &multi_values);
 
       for (size_t i = 0; i < multi_values.size(); ++i) {
         if (!multi_values[i].empty() &&
@@ -793,10 +823,6 @@ void AutofillManager::GetProfileSuggestions(FormStructure* form,
     form_fields.reserve(form->field_count());
     for (std::vector<AutofillField*>::const_iterator iter = form->begin();
          iter != form->end(); ++iter) {
-      // The field list is terminated with a NULL AutofillField, so don't try to
-      // dereference it.
-      if (!*iter)
-        break;
       form_fields.push_back((*iter)->type());
     }
 
@@ -813,11 +839,24 @@ void AutofillManager::GetProfileSuggestions(FormStructure* form,
       // The value of the stored data for this field type in the |profile|.
       std::vector<string16> multi_values;
       profile->GetMultiInfo(type, &multi_values);
+      NormalizePhoneMultiInfo(type, profile->CountryCode(), &multi_values);
 
       for (size_t i = 0; i < multi_values.size(); ++i) {
-        if (!multi_values[i].empty() &&
-            StringToLowerASCII(multi_values[i])
-                == StringToLowerASCII(field.value)) {
+        if (multi_values[i].empty())
+          continue;
+        string16 profile_value_lower_case(StringToLowerASCII(multi_values[i]));
+        string16 field_value_lower_case(StringToLowerASCII(field.value));
+        // Phone numbers could be split in US forms, so field value could be
+        // either prefix or suffix of the phone.
+        bool matched_phones = false;
+        if ((type == PHONE_HOME_NUMBER || type == PHONE_FAX_NUMBER) &&
+            !field_value_lower_case.empty() &&
+            (profile_value_lower_case.find(field_value_lower_case) !=
+             string16::npos)) {
+          matched_phones = true;
+        }
+        if (matched_phones ||
+            profile_value_lower_case == field_value_lower_case) {
           for (size_t j = 0; j < multi_values.size(); ++j) {
             if (!multi_values[j].empty()) {
               values->push_back(multi_values[j]);
@@ -918,6 +957,7 @@ void AutofillManager::FillFormField(const AutofillProfile* profile,
     } else {
       std::vector<string16> values;
       profile->GetMultiInfo(type, &values);
+      NormalizePhoneMultiInfo(type, profile->CountryCode(), &values);
       DCHECK(variant < values.size());
       field->value = values[variant];
     }
@@ -932,6 +972,7 @@ void AutofillManager::FillPhoneNumberField(const AutofillProfile* profile,
   // matches the "prefix" or "suffix" sizes and fill accordingly.
   std::vector<string16> values;
   profile->GetMultiInfo(type, &values);
+  NormalizePhoneMultiInfo(type, profile->CountryCode(), &values);
   DCHECK(variant < values.size());
   string16 number = values[variant];
   bool has_valid_suffix_and_prefix = (number.length() ==

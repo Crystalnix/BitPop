@@ -7,7 +7,7 @@
 #include "base/message_loop.h"
 #include "crypto/rsa_private_key.h"
 #include "jingle/glue/channel_socket_adapter.h"
-#include "jingle/glue/stream_socket_adapter.h"
+#include "jingle/glue/pseudotcp_adapter.h"
 #include "net/base/cert_status_flags.h"
 #include "net/base/cert_verifier.h"
 #include "net/base/host_port_pair.h"
@@ -23,11 +23,9 @@
 #include "remoting/protocol/socket_wrapper.h"
 #include "third_party/libjingle/source/talk/base/thread.h"
 #include "third_party/libjingle/source/talk/p2p/base/session.h"
-#include "third_party/libjingle/source/talk/session/tunnel/pseudotcpchannel.h"
+#include "third_party/libjingle/source/talk/p2p/base/p2ptransportchannel.h"
 
 using cricket::BaseSession;
-using cricket::PseudoTcp;
-using cricket::PseudoTcpChannel;
 
 namespace remoting {
 
@@ -42,15 +40,9 @@ const char kVideoChannelName[] = "video";
 const char kVideoRtpChannelName[] = "videortp";
 const char kVideoRtcpChannelName[] = "videortcp";
 
-// Settings to apply to PseudoTcp channels for Control, Input and Video.
-// Disable Nagle's algorithm, to reduce latency for small messages.
-// Reduce the ACK Delay to 10ms, to balance throughput/latency with overhead.
-const int kEnableNoDelay = true;
-const int kDelayedAckTimeoutMs = 10;
-
 // Helper method to create a SSL client socket.
 net::SSLClientSocket* CreateSSLClientSocket(
-    net::ClientSocket* socket, scoped_refptr<net::X509Certificate> cert,
+    net::StreamSocket* socket, scoped_refptr<net::X509Certificate> cert,
     net::CertVerifier* cert_verifier) {
   net::SSLConfig ssl_config;
   ssl_config.false_start_enabled = false;
@@ -96,11 +88,11 @@ JingleSession::JingleSession(
       closed_(false),
       closing_(false),
       cricket_session_(NULL),
-      event_channel_(NULL),
-      video_channel_(NULL),
       ssl_connections_(0),
       ALLOW_THIS_IN_INITIALIZER_LIST(connect_callback_(
-          NewCallback(this, &JingleSession::OnSSLConnect))) {
+          this, &JingleSession::OnConnect)),
+      ALLOW_THIS_IN_INITIALIZER_LIST(ssl_connect_callback_(
+          this, &JingleSession::OnSSLConnect)) {
   // TODO(hclam): Need a better way to clone a key.
   if (key) {
     std::vector<uint8> key_bytes;
@@ -132,38 +124,20 @@ void JingleSession::CloseInternal(int result, bool failed) {
   if (!closed_ && !closing_) {
     closing_ = true;
 
+    if (control_channel_.get())
+      control_channel_->Close(result);
     if (control_ssl_socket_.get())
       control_ssl_socket_->Disconnect();
 
-    if (control_channel_adapter_.get())
-      control_channel_adapter_->Close(result);
-
-    if (control_channel_) {
-      control_channel_->OnSessionTerminate(cricket_session_);
-      control_channel_ = NULL;
-    }
-
+    if (event_channel_.get())
+      event_channel_->Close(result);
     if (event_ssl_socket_.get())
       event_ssl_socket_->Disconnect();
 
-    if (event_channel_adapter_.get())
-      event_channel_adapter_->Close(result);
-
-    if (event_channel_) {
-      event_channel_->OnSessionTerminate(cricket_session_);
-      event_channel_ = NULL;
-    }
-
+    if (video_channel_.get())
+      video_channel_->Close(result);
     if (video_ssl_socket_.get())
       video_ssl_socket_->Disconnect();
-
-    if (video_channel_adapter_.get())
-      video_channel_adapter_->Close(result);
-
-    if (video_channel_) {
-      video_channel_->OnSessionTerminate(cricket_session_);
-      video_channel_ = NULL;
-    }
 
     if (video_rtp_channel_.get())
       video_rtp_channel_->Close(result);
@@ -364,38 +338,33 @@ void JingleSession::OnInitiate() {
   }
 
   // Create video RTP channels.
-  video_rtp_channel_.reset(new jingle_glue::TransportChannelSocketAdapter(
-      cricket_session_->CreateChannel(content_name, kVideoRtpChannelName)));
-  video_rtcp_channel_.reset(new jingle_glue::TransportChannelSocketAdapter(
-      cricket_session_->CreateChannel(content_name, kVideoRtcpChannelName)));
+  raw_video_rtp_channel_ =
+      cricket_session_->CreateChannel(content_name, kVideoRtpChannelName);
+  video_rtp_channel_.reset(
+      new jingle_glue::TransportChannelSocketAdapter(raw_video_rtp_channel_));
+  raw_video_rtcp_channel_ =
+      cricket_session_->CreateChannel(content_name, kVideoRtcpChannelName);
+  video_rtcp_channel_.reset(
+      new jingle_glue::TransportChannelSocketAdapter(raw_video_rtcp_channel_));
 
   // Create control channel.
-  control_channel_ = new PseudoTcpChannel(
-      jingle_session_manager_->jingle_thread(), cricket_session_);
-  control_channel_->Connect(content_name, kControlChannelName);
-  control_channel_->SetOption(PseudoTcp::OPT_NODELAY, kEnableNoDelay);
-  control_channel_->SetOption(PseudoTcp::OPT_ACKDELAY, kDelayedAckTimeoutMs);
-  control_channel_adapter_.reset(new jingle_glue::StreamSocketAdapter(
-      control_channel_->GetStream()));
+  raw_control_channel_ =
+      cricket_session_->CreateChannel(content_name, kControlChannelName);
+  control_channel_.reset(
+      new jingle_glue::TransportChannelSocketAdapter(raw_control_channel_));
 
   // Create event channel.
-  event_channel_ = new PseudoTcpChannel(
-      jingle_session_manager_->jingle_thread(), cricket_session_);
-  event_channel_->Connect(content_name, kEventChannelName);
-  event_channel_->SetOption(PseudoTcp::OPT_NODELAY, kEnableNoDelay);
-  event_channel_->SetOption(PseudoTcp::OPT_ACKDELAY, kDelayedAckTimeoutMs);
-  event_channel_adapter_.reset(new jingle_glue::StreamSocketAdapter(
-      event_channel_->GetStream()));
+  raw_event_channel_ =
+      cricket_session_->CreateChannel(content_name, kEventChannelName);
+  event_channel_.reset(
+      new jingle_glue::TransportChannelSocketAdapter(raw_event_channel_));
 
   // Create video channel.
   // TODO(sergeyu): Remove video channel when we are ready to switch to RTP.
-  video_channel_ = new PseudoTcpChannel(
-      jingle_session_manager_->jingle_thread(), cricket_session_);
-  video_channel_->Connect(content_name, kVideoChannelName);
-  video_channel_->SetOption(PseudoTcp::OPT_NODELAY, kEnableNoDelay);
-  video_channel_->SetOption(PseudoTcp::OPT_ACKDELAY, kDelayedAckTimeoutMs);
-  video_channel_adapter_.reset(new jingle_glue::StreamSocketAdapter(
-      video_channel_->GetStream()));
+  raw_video_channel_ =
+      cricket_session_->CreateChannel(content_name, kVideoChannelName);
+  video_channel_.reset(
+      new jingle_glue::TransportChannelSocketAdapter(raw_video_channel_));
 
   if (!cricket_session_->initiator())
     jingle_session_manager_->AcceptConnection(this, cricket_session_);
@@ -407,15 +376,20 @@ void JingleSession::OnInitiate() {
 }
 
 bool JingleSession::EstablishSSLConnection(
-    net::ClientSocket* adapter, scoped_ptr<SocketWrapper>* ssl_socket) {
+    net::Socket* channel, scoped_ptr<SocketWrapper>* ssl_socket) {
+  jingle_glue::PseudoTcpAdapter* pseudotcp =
+      new jingle_glue::PseudoTcpAdapter(channel);
+  pseudotcp->Connect(&connect_callback_);
+
+  // TODO(wez): We shouldn't try to start SSL until the socket we're
+  // starting it on is connected.
   if (cricket_session_->initiator()) {
     // Create client SSL socket.
-    net::SSLClientSocket* socket = CreateSSLClientSocket(adapter,
-                                                         server_cert_,
-                                                         cert_verifier_.get());
+    net::SSLClientSocket* socket = CreateSSLClientSocket(
+        pseudotcp, server_cert_, cert_verifier_.get());
     ssl_socket->reset(new SocketWrapper(socket));
 
-    int ret = socket->Connect(connect_callback_.get());
+    int ret = socket->Connect(&ssl_connect_callback_);
     if (ret == net::ERR_IO_PENDING) {
       return true;
     } else if (ret != net::OK) {
@@ -427,10 +401,10 @@ bool JingleSession::EstablishSSLConnection(
     // Create server SSL socket.
     net::SSLConfig ssl_config;
     net::SSLServerSocket* socket = net::CreateSSLServerSocket(
-        adapter, server_cert_, key_.get(), ssl_config);
+        pseudotcp, server_cert_, key_.get(), ssl_config);
     ssl_socket->reset(new SocketWrapper(socket));
 
-    int ret = socket->Accept(connect_callback_.get());
+    int ret = socket->Accept(&ssl_connect_callback_);
     if (ret == net::ERR_IO_PENDING) {
       return true;
     } else if (ret != net::OK) {
@@ -440,58 +414,109 @@ bool JingleSession::EstablishSSLConnection(
     }
   }
   // Reach here if net::OK is received.
-  connect_callback_->Run(net::OK);
+  ssl_connect_callback_.Run(net::OK);
   return true;
 }
 
+bool JingleSession::InitializeConfigFromDescription(
+    const cricket::SessionDescription* description) {
+  // We should only be called after ParseContent has succeeded, in which
+  // case there will always be a Chromoting session configuration.
+  const cricket::ContentInfo* content =
+    description->FirstContentByType(kChromotingXmlNamespace);
+  CHECK(content);
+  const protocol::ContentDescription* content_description =
+    static_cast<const protocol::ContentDescription*>(content->description);
+  CHECK(content_description);
+
+  server_cert_ = content_description->certificate();
+  if (!server_cert_) {
+    LOG(ERROR) << "Connection response does not specify certificate";
+    return false;
+  }
+
+  scoped_ptr<SessionConfig> config(
+    content_description->config()->GetFinalConfig());
+  if (!config.get()) {
+    LOG(ERROR) << "Connection response does not specify configuration";
+    return false;
+  }
+  if (!candidate_config()->IsSupported(config.get())) {
+    LOG(ERROR) << "Connection response specifies an invalid configuration";
+    return false;
+  }
+
+  set_config(config.release());
+  return true;
+}
+
+bool JingleSession::InitializeSSL() {
+  if (!EstablishSSLConnection(control_channel_.release(),
+                              &control_ssl_socket_)) {
+    LOG(ERROR) << "Establish control channel failed";
+    return false;
+  }
+  if (!EstablishSSLConnection(event_channel_.release(),
+                              &event_ssl_socket_)) {
+    LOG(ERROR) << "Establish event channel failed";
+    return false;
+  }
+  if (!EstablishSSLConnection(video_channel_.release(),
+                              &video_ssl_socket_)) {
+    LOG(ERROR) << "Establish video channel failed";
+    return false;
+  }
+  return true;
+}
+
+void JingleSession::InitializeChannels() {
+  // Disable incoming connections on the host so that we don't travers
+  // the firewall.
+  if (!cricket_session_->initiator()) {
+    raw_control_channel_->GetP2PChannel()->set_incoming_only(true);
+    raw_event_channel_->GetP2PChannel()->set_incoming_only(true);
+    raw_video_channel_->GetP2PChannel()->set_incoming_only(true);
+    raw_video_rtp_channel_->GetP2PChannel()->set_incoming_only(true);
+    raw_video_rtcp_channel_->GetP2PChannel()->set_incoming_only(true);
+  }
+
+  if (!InitializeSSL()) {
+    CloseInternal(net::ERR_CONNECTION_FAILED, true);
+    return;
+  }
+}
+
 void JingleSession::OnAccept() {
-  // TODO(hclam): Need to close the adapters on failuire otherwise it will
-  // crash in the destructor.
-
-  // Set the config if we are the one who initiated the session.
+  // If we initiated the session, store the candidate configuration that the
+  // host responded with, to refer to later.
   if (cricket_session_->initiator()) {
-    const cricket::ContentInfo* content =
-        cricket_session_->remote_description()->FirstContentByType(
-            kChromotingXmlNamespace);
-    CHECK(content);
-
-    const protocol::ContentDescription* content_description =
-        static_cast<const protocol::ContentDescription*>(content->description);
-    server_cert_ = content_description->certificate();
-    CHECK(server_cert_);
-
-    SessionConfig* config = content_description->config()->GetFinalConfig();
-
-    // Terminate the session if the config we received is invalid.
-    if (!config || !candidate_config()->IsSupported(config)) {
-      // TODO(sergeyu): Inform the user that the host is misbehaving?
-      LOG(ERROR) << "Terminating outgoing session after an "
-          "invalid session description has been received.";
-      cricket_session_->Terminate();
+    if (!InitializeConfigFromDescription(
+        cricket_session_->remote_description())) {
+      CloseInternal(net::ERR_CONNECTION_FAILED, true);
       return;
     }
-    set_config(config);
   }
 
-  bool ret = EstablishSSLConnection(control_channel_adapter_.release(),
-                                    &control_ssl_socket_);
-  if (ret) {
-    ret = EstablishSSLConnection(event_channel_adapter_.release(),
-                                 &event_ssl_socket_);
-  }
-  if (ret) {
-    ret = EstablishSSLConnection(video_channel_adapter_.release(),
-                                 &video_ssl_socket_);
-  }
-
-  if (!ret) {
-    LOG(ERROR) << "Failed to establish SSL connections";
-    cricket_session_->Terminate();
-  }
+  // TODO(sergeyu): This is a hack: Currently set_incoming_only()
+  // needs to be called on each channel before the channel starts
+  // creating candidates but after session is accepted (after
+  // TransportChannelProxy::GetP2PChannel() starts returning actual
+  // P2P channel). By posting a task here we can call it at the right
+  // moment. This problem will go away when we switch to Pepper P2P
+  // API.
+  jingle_session_manager_->message_loop()->PostTask(
+    FROM_HERE, NewRunnableMethod(this, &JingleSession::InitializeChannels));
 }
 
 void JingleSession::OnTerminate() {
   CloseInternal(net::ERR_CONNECTION_ABORTED, false);
+}
+
+void JingleSession::OnConnect(int result) {
+  if (result != net::OK) {
+    LOG(ERROR) << "PseudoTCP connection failed: " << result;
+    CloseInternal(result, true);
+  }
 }
 
 void JingleSession::OnSSLConnect(int result) {

@@ -411,6 +411,10 @@ class TabStripModel : public NotificationObserver {
   void MoveTabNext();
   void MoveTabPrevious();
 
+  // Notifies the observers that the active/foreground tab at |index| was
+  // reselected (ie - it was already active and was clicked again).
+  void ActiveTabClicked(int index);
+
   // View API //////////////////////////////////////////////////////////////////
 
   // Context menu functions.
@@ -426,6 +430,7 @@ class TabStripModel : public NotificationObserver {
     CommandTogglePinned,
     CommandBookmarkAllTabs,
     CommandUseVerticalTabs,
+    CommandUseCompactNavigationBar,
     CommandSelectByDomain,
     CommandSelectByOpener,
     CommandLast
@@ -493,7 +498,8 @@ class TabStripModel : public NotificationObserver {
   //
   // Returns true if the TabContents were closed immediately, false if we are
   // waiting for the result of an onunload handler.
-  bool InternalCloseTabs(const std::vector<int>& indices, uint32 close_types);
+  bool InternalCloseTabs(const std::vector<int>& in_indices,
+                         uint32 close_types);
 
   // Invoked from InternalCloseTabs and when an extension is removed for an app
   // tab. Notifies observers of TabClosingAt and deletes |contents|. If
@@ -515,9 +521,9 @@ class TabStripModel : public NotificationObserver {
                                   int to_index,
                                   bool user_gesture);
 
-  // Notifies the observers the selection changed. |old_selected_index| gives
-  // the old selected index.
-  void NotifySelectionChanged(int old_selected_index);
+  // Notifies the observers the active tab changed. |old_active_index| gives
+  // the old active index.
+  void NotifyActiveTabChanged(int old_active_index);
 
   // Returns the number of New Tab tabs in the TabStripModel.
   int GetNewTabCount() const;

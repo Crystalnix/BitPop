@@ -15,12 +15,12 @@
 #include "grit/locale_settings.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/gfx/rect.h"
+#include "views/controls/button/native_button.h"
 #include "views/layout/grid_layout.h"
 #include "views/layout/layout_constants.h"
-#include "views/widget/widget_gtk.h"
+#include "views/widget/widget.h"
 #include "views/window/window.h"
-
-using views::WidgetGtk;
 
 namespace chromeos {
 
@@ -28,8 +28,9 @@ namespace chromeos {
 const int ChildNetworkConfigView::kPassphraseWidth = 150;
 
 NetworkConfigView::NetworkConfigView(Network* network)
-    : browser_mode_(true),
-      delegate_(NULL) {
+    : delegate_(NULL),
+      advanced_button_(NULL),
+      advanced_button_container_(NULL) {
   if (network->type() == TYPE_WIFI) {
     child_config_view_ =
         new WifiConfigView(this, static_cast<WifiNetwork*>(network));
@@ -43,10 +44,12 @@ NetworkConfigView::NetworkConfigView(Network* network)
 }
 
 NetworkConfigView::NetworkConfigView(ConnectionType type)
-    : browser_mode_(true),
-      delegate_(NULL) {
+    : delegate_(NULL),
+      advanced_button_(NULL),
+      advanced_button_container_(NULL) {
   if (type == TYPE_WIFI) {
-    child_config_view_ = new WifiConfigView(this);
+    child_config_view_ = new WifiConfigView(this, false /* show_8021x */);
+    CreateAdvancedButton();
   } else if (type == TYPE_VPN) {
     child_config_view_ = new VPNConfigView(this);
   } else {
@@ -56,8 +59,7 @@ NetworkConfigView::NetworkConfigView(ConnectionType type)
 }
 
 gfx::NativeWindow NetworkConfigView::GetNativeWindow() const {
-  return
-      GTK_WINDOW(static_cast<const WidgetGtk*>(GetWidget())->GetNativeView());
+  return GetWidget()->GetNativeWindow();
 }
 
 std::wstring NetworkConfigView::GetDialogButtonLabel(
@@ -83,10 +85,25 @@ bool NetworkConfigView::Cancel() {
 }
 
 bool NetworkConfigView::Accept() {
+  // Do not attempt login if it is guaranteed to fail, keep the dialog open.
+  if (!child_config_view_->CanLogin())
+    return false;
   bool result = child_config_view_->Login();
   if (result && delegate_)
     delegate_->OnDialogAccepted();
   return result;
+}
+
+views::View* NetworkConfigView::GetExtraView() {
+  return advanced_button_container_;
+}
+
+bool NetworkConfigView::IsModal() const {
+  return true;
+}
+
+views::View* NetworkConfigView::GetContentsView() {
+  return this;
 }
 
 std::wstring NetworkConfigView::GetWindowTitle() const {
@@ -97,6 +114,36 @@ void NetworkConfigView::GetAccessibleState(ui::AccessibleViewState* state) {
   state->name =
       l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_OTHER_WIFI_NETWORKS);
   state->role = ui::AccessibilityTypes::ROLE_DIALOG;
+}
+
+void NetworkConfigView::ButtonPressed(views::Button* sender,
+                                      const views::Event& event) {
+  if (advanced_button_ && sender == advanced_button_) {
+    advanced_button_->SetVisible(false);
+    ShowAdvancedView();
+  }
+}
+
+void NetworkConfigView::ShowAdvancedView() {
+  // Clear out the old widgets and build new ones.
+  RemoveChildView(child_config_view_);
+  delete child_config_view_;
+  // For now, there is only an advanced view for Wi-Fi 802.1X.
+  child_config_view_ = new WifiConfigView(this, true /* show_8021x */);
+  AddChildView(child_config_view_);
+  // Resize the window to be able to hold the new widgets.
+  gfx::Size size = views::Window::GetLocalizedContentsSize(
+      IDS_JOIN_WIFI_NETWORK_DIALOG_ADVANCED_WIDTH_CHARS,
+      IDS_JOIN_WIFI_NETWORK_DIALOG_ADVANCED_MINIMUM_HEIGHT_LINES);
+  // Get the new bounds with desired size at the same center point.
+  gfx::Rect bounds = window()->GetBounds();
+  int horiz_padding = bounds.width() - size.width();
+  int vert_padding = bounds.height() - size.height();
+  bounds.Inset(horiz_padding / 2, vert_padding / 2,
+               horiz_padding / 2, vert_padding / 2);
+  window()->SetBoundsConstrained(bounds, NULL);
+  Layout();
+  child_config_view_->InitFocus();
 }
 
 void NetworkConfigView::Layout() {
@@ -122,6 +169,24 @@ void NetworkConfigView::ViewHierarchyChanged(
     AddChildView(child_config_view_);
     child_config_view_->InitFocus();
   }
+}
+
+void NetworkConfigView::CreateAdvancedButton() {
+  advanced_button_ = new views::NativeButton(this, UTF16ToWide(
+      l10n_util::GetStringUTF16(
+          IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_ADVANCED_BUTTON)));
+
+  // Wrap the advanced button in a grid layout in order to left-align it.
+  advanced_button_container_ = new views::View();
+  views::GridLayout* layout = new views::GridLayout(advanced_button_container_);
+  advanced_button_container_->SetLayoutManager(layout);
+
+  int column_set_id = 0;
+  views::ColumnSet* column_set = layout->AddColumnSet(column_set_id);
+  column_set->AddColumn(views::GridLayout::LEADING, views::GridLayout::LEADING,
+                        0, views::GridLayout::USE_PREF, 0, 0);
+  layout->StartRow(0, column_set_id);
+  layout->AddView(advanced_button_);
 }
 
 }  // namespace chromeos

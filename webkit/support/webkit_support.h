@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -81,6 +81,14 @@ enum GLBindingPreferences {
 };
 void SetUpGLBindings(GLBindingPreferences);
 
+enum GraphicsContext3DImplementation {
+  IN_PROCESS,
+  IN_PROCESS_COMMAND_BUFFER
+};
+// Registers which GraphicsContext3D Implementation to use.
+void SetGraphicsContext3DImplementation(GraphicsContext3DImplementation);
+GraphicsContext3DImplementation GetGraphicsContext3DImplementation();
+
 // ------- URL load mocking.
 // Registers the file at |file_path| to be served when |url| is requested.
 // |response| is the response provided with the contents.
@@ -145,6 +153,16 @@ bool SetCurrentDirectoryForFileURL(const WebKit::WebURL& fileUrl);
 
 // Convert a file:/// URL to a base64 encoded data: URL.
 WebKit::WebURL LocalFileToDataURL(const WebKit::WebURL& fileUrl);
+
+// Scoped temporary directories for use by webkit layout tests.
+class ScopedTempDirectory {
+ public:
+  virtual ~ScopedTempDirectory() {}
+  virtual bool CreateUniqueTempDir() = 0;
+  virtual std::string path() const = 0;
+};
+
+ScopedTempDirectory* CreateScopedTempDirectory();
 
 // -------- Time
 int64 GetCurrentTimeInMillisecond();

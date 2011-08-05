@@ -7,7 +7,7 @@
 #include "base/logging.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -17,8 +17,9 @@ CollectedCookiesInfoBarDelegate::CollectedCookiesInfoBarDelegate(
       tab_contents_(tab_contents) {
 }
 
-SkBitmap* CollectedCookiesInfoBarDelegate::GetIcon() const {
-  return ResourceBundle::GetSharedInstance().GetBitmapNamed(IDR_INFOBAR_COOKIE);
+gfx::Image* CollectedCookiesInfoBarDelegate::GetIcon() const {
+  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
+      IDR_INFOBAR_COOKIE);
 }
 
 InfoBarDelegate::Type CollectedCookiesInfoBarDelegate::GetInfoBarType() const {
@@ -33,8 +34,8 @@ int CollectedCookiesInfoBarDelegate::GetButtons() const {
   return BUTTON_OK;
 }
 
-string16 CollectedCookiesInfoBarDelegate::GetButtonLabel(InfoBarButton button)
-    const {
+string16 CollectedCookiesInfoBarDelegate::GetButtonLabel(
+    InfoBarButton button) const {
   DCHECK_EQ(BUTTON_OK, button);
   return l10n_util::GetStringUTF16(IDS_COLLECTED_COOKIES_INFOBAR_BUTTON);
 }

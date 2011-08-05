@@ -37,9 +37,9 @@ class AutofillProfile : public FormGroup {
   AutofillProfile& operator=(const AutofillProfile& profile);
 
   // FormGroup:
-  virtual void GetPossibleFieldTypes(const string16& text,
-                                     FieldTypeSet* possible_types) const;
-  virtual void GetAvailableFieldTypes(FieldTypeSet* available_types) const;
+  virtual void GetMatchingTypes(const string16& text,
+                                FieldTypeSet* matching_types) const;
+  virtual void GetNonEmptyTypes(FieldTypeSet* non_empty_types) const;
   virtual string16 GetInfo(AutofillFieldType type) const;
   virtual void SetInfo(AutofillFieldType type, const string16& value);
 
@@ -119,12 +119,26 @@ class AutofillProfile : public FormGroup {
   // aid with correct aggregation of new data.
   const string16 PrimaryValue() const;
 
+  // Normalizes the home phone and fax numbers.
+  // Should be called after all of the form data is imported into profile.
+  // Drops unparsable numbers, so the numbers that are incomplete or wrong
+  // are not saved. Returns true if all numbers were successfully parsed,
+  // false otherwise.
+  bool NormalizePhones();
+
   // Overwrites the single-valued field data in |profile| with this
   // Profile.  Or, for multi-valued fields append the new values.
   void OverwriteWithOrAddTo(const AutofillProfile& profile);
 
  private:
   typedef std::vector<const FormGroup*> FormGroupList;
+
+  // Checks if the |phone| is in the |existing_phones| using fuzzy matching:
+  // for example, "1-800-FLOWERS", "18003569377", "(800)356-9377" and "356-9377"
+  // are considered the same.
+  // Adds the |phone| to the |existing_phones| if not already there.
+  void AddPhoneIfUnique(const string16& phone,
+                        std::vector<string16>* existing_phones);
 
   // Builds inferred label from the first |num_fields_to_include| non-empty
   // fields in |label_fields|. Uses as many fields as possible if there are not
@@ -161,8 +175,8 @@ class AutofillProfile : public FormGroup {
   std::vector<NameInfo> name_;
   std::vector<EmailInfo> email_;
   CompanyInfo company_;
-  std::vector<HomePhoneNumber> home_number_;
-  std::vector<FaxNumber> fax_number_;
+  std::vector<PhoneNumber> home_number_;
+  std::vector<PhoneNumber> fax_number_;
   Address address_;
 };
 

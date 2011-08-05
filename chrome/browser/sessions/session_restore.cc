@@ -14,10 +14,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util-inl.h"
-#include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_service.h"
+#include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/sessions/session_types.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/browser.h"
@@ -299,7 +300,8 @@ void TabLoader::Observe(NotificationType type,
           // Record a time for the number of tabs, to help track down
           // contention.
           std::string time_for_count =
-              StringPrintf("SessionRestore.FirstTabPainted_%d", tab_count_);
+              base::StringPrintf("SessionRestore.FirstTabPainted_%d",
+                                 tab_count_);
           base::Histogram* counter_for_count =
               base::Histogram::FactoryTimeGet(
                   time_for_count,
@@ -387,7 +389,7 @@ void TabLoader::HandleTabClosedOrLoaded(NavigationController* tab) {
         100);
     // Record a time for the number of tabs, to help track down contention.
     std::string time_for_count =
-        StringPrintf("SessionRestore.AllTabsLoaded_%d", tab_count_);
+        base::StringPrintf("SessionRestore.AllTabsLoaded_%d", tab_count_);
     base::Histogram* counter_for_count =
         base::Histogram::FactoryTimeGet(
             time_for_count,
@@ -422,7 +424,8 @@ class SessionRestoreImpl : public NotificationObserver {
   }
 
   Browser* Restore() {
-    SessionService* session_service = profile_->GetSessionService();
+    SessionService* session_service =
+        SessionServiceFactory::GetForProfile(profile_);
     DCHECK(session_service);
     SessionService::SessionCallback* callback =
         NewCallback(this, &SessionRestoreImpl::OnGotSession);
@@ -571,7 +574,7 @@ class SessionRestoreImpl : public NotificationObserver {
     StartTabCreation();
 
     Browser* current_browser =
-        browser_ ? browser_ : BrowserList::GetLastActive();
+        browser_ ? browser_ : BrowserList::GetLastActiveWithProfile(profile_);
     // After the for loop this contains the last TABBED_BROWSER. Is null if no
     // tabbed browsers exist.
     Browser* last_browser = NULL;
@@ -579,14 +582,14 @@ class SessionRestoreImpl : public NotificationObserver {
     for (std::vector<SessionWindow*>::iterator i = windows->begin();
          i != windows->end(); ++i) {
       Browser* browser = NULL;
-      if (!has_tabbed_browser && (*i)->type == Browser::TYPE_NORMAL)
+      if (!has_tabbed_browser && (*i)->type == Browser::TYPE_TABBED)
         has_tabbed_browser = true;
-      if (i == windows->begin() && (*i)->type == Browser::TYPE_NORMAL &&
+      if (i == windows->begin() && (*i)->type == Browser::TYPE_TABBED &&
           !clobber_existing_window_) {
         // If there is an open tabbed browser window, use it. Otherwise fall
         // through and create a new one.
         browser = current_browser;
-        if (browser && (browser->type() != Browser::TYPE_NORMAL ||
+        if (browser && (!browser->is_type_tabbed() ||
                         browser->profile()->IsOffTheRecord())) {
           browser = NULL;
         }
@@ -597,7 +600,7 @@ class SessionRestoreImpl : public NotificationObserver {
             (*i)->bounds,
             (*i)->is_maximized);
       }
-      if ((*i)->type == Browser::TYPE_NORMAL)
+      if ((*i)->type == Browser::TYPE_TABBED)
         last_browser = browser;
       const int initial_tab_count = browser->tab_count();
       int selected_tab_index = (*i)->selected_tab_index;
@@ -612,7 +615,7 @@ class SessionRestoreImpl : public NotificationObserver {
     // included at least one tabbed browser, then close the browser window
     // that was opened when the user clicked to restore the session.
     if (clobber_existing_window_ && current_browser && has_tabbed_browser &&
-        current_browser->type() == Browser::TYPE_NORMAL) {
+        current_browser->is_type_tabbed()) {
       current_browser->CloseAllTabs();
     }
     if (last_browser && !urls_to_open_.empty())
@@ -727,7 +730,8 @@ class SessionRestoreImpl : public NotificationObserver {
   // Invokes TabRestored on the SessionService for all tabs in browser after
   // initial_count.
   void NotifySessionServiceOfRestoredTabs(Browser* browser, int initial_count) {
-    SessionService* session_service = profile_->GetSessionService();
+    SessionService* session_service =
+        SessionServiceFactory::GetForProfile(profile_);
     for (int i = initial_count; i < browser->tab_count(); ++i)
       session_service->TabRestored(&browser->GetTabContentsAt(i)->controller(),
                                    browser->tabstrip_model()->IsTabPinned(i));
@@ -789,7 +793,7 @@ static Browser* Restore(Profile* profile,
   // Always restore from the original profile (incognito profiles have no
   // session service).
   profile = profile->GetOriginalProfile();
-  if (!profile->GetSessionService()) {
+  if (!SessionServiceFactory::GetForProfile(profile)) {
     NOTREACHED();
     return NULL;
   }

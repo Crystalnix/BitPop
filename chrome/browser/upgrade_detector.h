@@ -7,8 +7,8 @@
 #pragma once
 
 #include "base/timer.h"
+#include "ui/gfx/image.h"
 
-template <typename T> struct DefaultSingletonTraits;
 class PrefService;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -32,53 +32,49 @@ class UpgradeDetector {
     UPGRADE_ANNOYANCE_SEVERE,    // Orange.
   };
 
-  // Returns the singleton instance.
+  // The two types of icons we know about.
+  enum UpgradeNotificationIconType {
+    UPGRADE_ICON_TYPE_BADGE = 0,  // For overlay badging of the wrench menu.
+    UPGRADE_ICON_TYPE_MENU_ICON,  // For showing in the wrench menu.
+  };
+
+  // Returns the singleton implementation instance.
   static UpgradeDetector* GetInstance();
 
-  ~UpgradeDetector();
+  virtual ~UpgradeDetector();
 
   static void RegisterPrefs(PrefService* prefs);
 
   bool notify_upgrade() { return notify_upgrade_; }
 
-  UpgradeNotificationAnnoyanceLevel upgrade_notification_stage() const {
-    return upgrade_notification_stage_;
+  // Retrieves the right icon ID based on the degree of severity (see
+  // UpgradeNotificationAnnoyanceLevel, each level has an an accompanying icon
+  // to go with it). |type| determines which class of icons the caller wants,
+  // either an icon appropriate for badging the wrench menu or one to display
+  // within the wrench menu.
+  int GetIconResourceID(UpgradeNotificationIconType type);
+
+ protected:
+  UpgradeDetector();
+
+  // Sends out UPGRADE_DETECTED notification and record upgrade_detected_time_.
+  void NotifyUpgradeDetected();
+
+  // Sends out UPGRADE_RECOMMENDED notification and set notify_upgrade_.
+  void NotifyUpgradeRecommended();
+
+  // Accessors.
+  const base::Time& upgrade_detected_time() const {
+    return upgrade_detected_time_;
+  }
+
+  void set_upgrade_notification_stage(UpgradeNotificationAnnoyanceLevel stage) {
+    upgrade_notification_stage_ = stage;
   }
 
  private:
-  friend struct DefaultSingletonTraits<UpgradeDetector>;
-
-  UpgradeDetector();
-
-  // Launches a task on the file thread to check if we have the latest version.
-  void CheckForUpgrade();
-
-  // Sends out a notification and starts a one shot timer to wait until
-  // notifying the user.
-  void UpgradeDetected();
-
-  // The function that sends out a notification (after a certain time has
-  // elapsed) that lets the rest of the UI know we should start notifying the
-  // user that a new version is available.
-  void NotifyOnUpgrade();
-
-  // We periodically check to see if Chrome has been upgraded.
-  base::RepeatingTimer<UpgradeDetector> detect_upgrade_timer_;
-
-  // After we detect an upgrade we start a recurring timer to see if enough time
-  // has passed and we should start notifying the user.
-  base::RepeatingTimer<UpgradeDetector> upgrade_notification_timer_;
-
-  // We use this factory to create callback tasks for UpgradeDetected. We pass
-  // the task to the actual upgrade detection code, which is in
-  // DetectUpgradeTask.
-  ScopedRunnableMethodFactory<UpgradeDetector> method_factory_;
-
   // When the upgrade was detected.
   base::Time upgrade_detected_time_;
-
-  // Whether this build is a dev channel build or not.
-  bool is_dev_channel_;
 
   // The stage at which the annoyance level for upgrade notifications is at.
   UpgradeNotificationAnnoyanceLevel upgrade_notification_stage_;

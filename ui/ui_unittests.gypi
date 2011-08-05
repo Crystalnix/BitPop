@@ -32,8 +32,10 @@
         'gfx/codec/png_codec_unittest.cc',
         'gfx/color_utils_unittest.cc',
         'gfx/font_unittest.cc',
+        'gfx/image_mac_unittest.mm',
         'gfx/image_unittest.cc',
-        'gfx/image_unittest.h',
+        'gfx/image_unittest_util.h',
+        'gfx/image_unittest_util.cc',
         'gfx/insets_unittest.cc',
         'gfx/rect_unittest.cc',
         'gfx/run_all_unittests.cc',
@@ -88,11 +90,10 @@
             ],
           },
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../app/app.gyp:app_base',
             '../build/linux/system.gyp:gtk',
-            '../chrome/chrome.gyp:packed_resources',
           ],
           'conditions': [
             ['linux_use_tcmalloc==1', {

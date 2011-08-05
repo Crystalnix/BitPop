@@ -4,14 +4,20 @@
 # found in the LICENSE file.
 
 
+import hashlib
 import math
 import optparse
 import re
-import simplejson
 import subprocess
 import sys
 import time
 import urllib2
+
+
+try:
+  import json
+except ImportError:
+  import simplejson as json
 
 
 __version__ = '1.0'
@@ -39,11 +45,11 @@ def ConvertJsonIntoDict(string):
     raise Exception('JSON data missing')
 
   try:
-    json = simplejson.loads(string)
+    jsondata = json.loads(string)
   except ValueError, e:
     print >> sys.stderr, ('Error parsing string: "%s"' % string)
     raise e
-  return json
+  return jsondata
 
 
 # Floating point representation of last time we fetched a URL.
@@ -65,6 +71,31 @@ def FetchUrlContents(url):
   return text
 
 
+def GetRowData(data, key):
+  rowdata = []
+  # reva and revb always come first.
+  for subkey in ['reva', 'revb']:
+    if subkey in data[key]:
+      rowdata.append('"%s": %s' % (subkey, data[key][subkey]))
+  # Strings, like type, come next.
+  for subkey in ['type']:
+    if subkey in data[key]:
+      rowdata.append('"%s": "%s"' % (subkey, data[key][subkey]))
+  # Finally improve/regress numbers come last.
+  for subkey in ['improve', 'regress']:
+    if subkey in data[key]:
+      rowdata.append('"%s": %s' % (subkey, data[key][subkey]))
+  return rowdata
+
+
+def GetRowDigest(rowdata, key):
+  sha1 = hashlib.sha1()
+  rowdata = [str(possibly_unicode_string).encode('ascii')
+             for possibly_unicode_string in rowdata]
+  sha1.update(str(rowdata) + key)
+  return sha1.hexdigest()[0:8]
+
+
 def WriteJson(filename, data, keys):
   """Write a list of |keys| in |data| to the file specified in |filename|."""
   try:
@@ -75,30 +106,36 @@ def WriteJson(filename, data, keys):
     return False
   jsondata = []
   for key in keys:
-    rowdata = []
-    # Numbers, these come first.
-    for subkey in ['reva', 'revb']:
-      if subkey in data[key]:
-        rowdata.append('"%s": %s' % (subkey, data[key][subkey]))
-    # Strings, like type, come next.
-    for subkey in ['type']:
-      if subkey in data[key]:
-        rowdata.append('"%s": "%s"' % (subkey, data[key][subkey]))
-    # Finally improve/regress numbers come last.
-    for subkey in ['improve', 'regress']:
-      if subkey in data[key]:
-        rowdata.append('"%s": %s' % (subkey, data[key][subkey]))
+    rowdata = GetRowData(data, key)
+    # Include an updated checksum.
+    rowdata.append('"sha1": "%s"' % GetRowDigest(rowdata, key))
     jsondata.append('"%s": {%s}' % (key, ', '.join(rowdata)))
   jsondata.append('"load": true')
-  json = '{%s\n}' % ',\n '.join(jsondata)
-  file.write(json + '\n')
+  jsontext = '{%s\n}' % ',\n '.join(jsondata)
+  file.write(jsontext + '\n')
   file.close()
   return True
 
 
+last_key_printed = None
 def Main(args):
+  def OutputMessage(message, verbose_message=True):
+    global last_key_printed
+    if not options.verbose and verbose_message:
+      return
+
+    if key != last_key_printed:
+      last_key_printed = key
+      print '\n' + key + ':'
+    print '  %s' % message
+
   parser = optparse.OptionParser(usage=USAGE, version=__version__)
+  parser.add_option('-v', '--verbose', action='store_true', default=False,
+                    help='enable verbose output')
   options, args = parser.parse_args(args)
+
+  if options.verbose:
+    print 'Verbose output enabled.'
 
   # Get the list of summaries for a test.
   base_url = 'http://build.chromium.org/f/chromium/perf'
@@ -115,10 +152,20 @@ def Main(args):
     value = perf[key]
     variance = DEFAULT_VARIANCE
 
+    # Verify the checksum.
+    original_checksum = value.get('sha1', '')
+    if 'sha1' in value:
+      del value['sha1']
+    rowdata = GetRowData(perf, key)
+    computed_checksum = GetRowDigest(rowdata, key)
+    if original_checksum == computed_checksum:
+      OutputMessage('checksum matches, skipping')
+      continue
+
     # Skip expectations that are missing a reva or revb.  We can't generate
     # expectations for those.
     if not(value.has_key('reva') and value.has_key('revb')):
-      print '%s (skipping, missing revision range)' % key
+      OutputMessage('missing revision range, skipping')
       continue
     revb = int(value['revb'])
     reva = int(value['reva'])
@@ -132,7 +179,7 @@ def Main(args):
     # Get the system/test/graph/tracename and reftracename for the current key.
     matchData = re.match(r'^([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)$', key)
     if not matchData:
-      print '%s (skipping, cannot parse key)' % key
+      OutputMessage('cannot parse key, skipping')
       continue
     system = matchData.group(1)
     test = matchData.group(2)
@@ -146,7 +193,7 @@ def Main(args):
     summary_url = '%s/%s/%s/%s-summary.dat' % (base_url, system, test, graph)
     summaryjson = FetchUrlContents(summary_url)
     if not summaryjson:
-      print '%s (skipping, missing json data)' % key
+      OutputMessage('missing json data, skipping')
       continue
 
     # Set value's type to 'relative' by default.
@@ -162,38 +209,28 @@ def Main(args):
 
     # Find the high and low values for each of the traces.
     scanning = False
-    printed_error = False
     for line in summarylist:
-      json = ConvertJsonIntoDict(line)
-      if int(json['rev']) <= revb:
+      jsondata = ConvertJsonIntoDict(line)
+      if int(jsondata['rev']) <= revb:
         scanning = True
-      if int(json['rev']) < reva:
+      if int(jsondata['rev']) < reva:
         break
 
       # We found the upper revision in the range.  Scan for trace data until we
       # find the lower revision in the range.
       if scanning:
         for trace in traces:
-          if trace not in json['traces']:
-            if not printed_error:
-              print '%s (error)' % key
-              printed_error = True
-            print '  trace %s missing' % trace
+          if trace not in jsondata['traces']:
+            OutputMessage('trace %s missing' % trace)
             continue
-          if type(json['traces'][trace]) != type([]):
-            if not printed_error:
-              print '%s (error)' % key
-              printed_error = True
-            print '  trace %s format not recognized' % trace
+          if type(jsondata['traces'][trace]) != type([]):
+            OutputMessage('trace %s format not recognized' % trace)
             continue
           try:
-            tracevalue = float(json['traces'][trace][0])
+            tracevalue = float(jsondata['traces'][trace][0])
           except ValueError:
-            if not printed_error:
-              print '%s (error)' % key
-              printed_error = True
-            print '  trace %s value error: %s' % (
-                trace, str(json['traces'][trace][0]))
+            OutputMessage('trace %s value error: %s' % (
+                trace, str(jsondata['traces'][trace][0])))
             continue
 
           for bound in ['high', 'low']:
@@ -205,7 +242,7 @@ def Main(args):
                                            tracevalue)
 
     if 'high' not in trace_values[tracename]:
-      print '%s (skipping, no suitable traces matched)' % key
+      OutputMessage('no suitable traces matched, skipping')
       continue
 
     if value_type == 'relative':
@@ -238,23 +275,24 @@ def Main(args):
 
     if ('regress' in perf[key] and 'improve' in perf[key] and
         perf[key]['regress'] == regress and perf[key]['improve'] == improve):
-      print '%s (no change)' % key
+      OutputMessage('no change')
       continue
 
     write_new_expectations = True
-    print key
-    print '  before = %s' % perf[key]
-    print '  traces = %s' % trace_values
+    OutputMessage('traces: %s' % trace_values, verbose_message=False)
+    OutputMessage('before: %s' % perf[key], verbose_message=False)
     perf[key]['regress'] = regress
     perf[key]['improve'] = improve
-    print '  after = %s' % perf[key]
+    OutputMessage('after: %s' % perf[key], verbose_message=False)
 
   if write_new_expectations:
-    print 'writing expectations... ',
+    print '\nWriting expectations... ',
     WriteJson(DEFAULT_EXPECTATIONS_FILE, perf, perfkeys)
     print 'done'
   else:
-    print 'no updates made'
+    if options.verbose:
+      print ''
+    print 'No changes.'
 
 
 if __name__ == '__main__':

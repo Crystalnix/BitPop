@@ -9,7 +9,6 @@
 #include "base/string_split.h"
 #include "base/string_util.h"
 #include "googleurl/src/gurl.h"
-#include "net/base/cookie_policy.h"
 #include "net/base/cookie_store.h"
 #include "net/base/net_errors.h"
 #include "net/base/sys_addrinfo.h"
@@ -54,7 +53,10 @@ class MockSocketStream : public SocketStream {
 class MockSocketStreamDelegate : public SocketStream::Delegate {
  public:
   MockSocketStreamDelegate()
-      : amount_sent_(0) {}
+      : amount_sent_(0), allow_all_cookies_(true) {}
+  void set_allow_all_cookies(bool allow_all_cookies) {
+    allow_all_cookies_ = allow_all_cookies;
+  }
   virtual ~MockSocketStreamDelegate() {}
 
   virtual void OnConnected(SocketStream* socket, int max_pending_send_allowed) {
@@ -68,12 +70,22 @@ class MockSocketStreamDelegate : public SocketStream::Delegate {
   }
   virtual void OnClose(SocketStream* socket) {
   }
+  virtual bool CanGetCookies(SocketStream* socket, const GURL& url) {
+    return allow_all_cookies_;
+  }
+  virtual bool CanSetCookie(SocketStream* request,
+                            const GURL& url,
+                            const std::string& cookie_line,
+                            CookieOptions* options) {
+    return allow_all_cookies_;
+  }
 
   size_t amount_sent() const { return amount_sent_; }
   const std::string& received_data() const { return received_data_; }
 
  private:
   int amount_sent_;
+  bool allow_all_cookies_;
   std::string received_data_;
 };
 
@@ -110,6 +122,12 @@ class MockCookieStore : public CookieStore {
     }
     return result;
   }
+  virtual void GetCookiesWithInfo(const GURL& url,
+                                  const CookieOptions& options,
+                                  std::string* cookie_line,
+                                  std::vector<CookieInfo>* cookie_infos) {
+    NOTREACHED();
+  }
   virtual void DeleteCookie(const GURL& url,
                             const std::string& cookie_name) {}
   virtual CookieMonster* GetCookieMonster() { return NULL; }
@@ -123,41 +141,11 @@ class MockCookieStore : public CookieStore {
   std::vector<Entry> entries_;
 };
 
-class MockCookiePolicy : public CookiePolicy {
- public:
-  MockCookiePolicy() : allow_all_cookies_(true) {}
-  virtual ~MockCookiePolicy() {}
-
-  void set_allow_all_cookies(bool allow_all_cookies) {
-    allow_all_cookies_ = allow_all_cookies;
-  }
-
-  virtual int CanGetCookies(const GURL& url,
-                            const GURL& first_party_for_cookies) const {
-    if (allow_all_cookies_)
-      return OK;
-    return ERR_ACCESS_DENIED;
-  }
-
-  virtual int CanSetCookie(const GURL& url,
-                           const GURL& first_party_for_cookies,
-                           const std::string& cookie_line) const {
-    if (allow_all_cookies_)
-      return OK;
-    return ERR_ACCESS_DENIED;
-  }
-
- private:
-  bool allow_all_cookies_;
-};
-
 class MockURLRequestContext : public URLRequestContext {
  public:
-  MockURLRequestContext(CookieStore* cookie_store,
-                        CookiePolicy* cookie_policy) {
+  explicit MockURLRequestContext(CookieStore* cookie_store) {
     set_cookie_store(cookie_store);
-    set_cookie_policy(cookie_policy);
-    transport_security_state_ = new TransportSecurityState();
+    transport_security_state_ = new TransportSecurityState(std::string());
     set_transport_security_state(transport_security_state_.get());
     TransportSecurityState::DomainState state;
     state.expiry = base::Time::Now() + base::TimeDelta::FromSeconds(1000);
@@ -175,13 +163,10 @@ class WebSocketJobTest : public PlatformTest {
  public:
   virtual void SetUp() {
     cookie_store_ = new MockCookieStore;
-    cookie_policy_.reset(new MockCookiePolicy);
-    context_ = new MockURLRequestContext(
-        cookie_store_.get(), cookie_policy_.get());
+    context_ = new MockURLRequestContext(cookie_store_.get());
   }
   virtual void TearDown() {
     cookie_store_ = NULL;
-    cookie_policy_.reset();
     context_ = NULL;
     websocket_ = NULL;
     socket_ = NULL;
@@ -202,7 +187,7 @@ class WebSocketJobTest : public PlatformTest {
     memcpy(&sa_in.sin_addr, "\x7f\0\0\1", 4);
     addr.ai_addr = reinterpret_cast<sockaddr*>(&sa_in);
     addr.ai_next = NULL;
-    websocket_->addresses_.Copy(&addr, true);
+    websocket_->addresses_ = AddressList::CreateByCopying(&addr);
     WebSocketThrottle::GetInstance()->PutInQueue(websocket_);
   }
   WebSocketJob::State GetWebSocketJobState() {
@@ -222,7 +207,6 @@ class WebSocketJobTest : public PlatformTest {
   }
 
   scoped_refptr<MockCookieStore> cookie_store_;
-  scoped_ptr<MockCookiePolicy> cookie_policy_;
   scoped_refptr<MockURLRequestContext> context_;
   scoped_refptr<WebSocketJob> websocket_;
   scoped_refptr<MockSocketStream> socket_;
@@ -429,9 +413,9 @@ TEST_F(WebSocketJobTest, HandshakeWithCookieButNotAllowed) {
   cookie_options.set_include_httponly();
   cookie_store_->SetCookieWithOptions(
       cookieUrl, "CR-test-httponly=1", cookie_options);
-  cookie_policy_->set_allow_all_cookies(false);
 
   MockSocketStreamDelegate delegate;
+  delegate.set_allow_all_cookies(false);
   InitWebSocketJob(url, &delegate);
 
   static const char* kHandshakeRequestMessage =
@@ -509,13 +493,15 @@ TEST_F(WebSocketJobTest, HSTSUpgrade) {
   GURL url("ws://upgrademe.com/");
   MockSocketStreamDelegate delegate;
   scoped_refptr<SocketStreamJob> job = SocketStreamJob::CreateSocketStreamJob(
-      url, &delegate, *context_.get());
+      url, &delegate, context_->transport_security_state(),
+      context_->ssl_config_service());
   EXPECT_TRUE(GetSocket(job.get())->is_secure());
   job->DetachDelegate();
 
   url = GURL("ws://donotupgrademe.com/");
   job = SocketStreamJob::CreateSocketStreamJob(
-      url, &delegate, *context_.get());
+      url, &delegate, context_->transport_security_state(),
+      context_->ssl_config_service());
   EXPECT_FALSE(GetSocket(job.get())->is_secure());
   job->DetachDelegate();
 }

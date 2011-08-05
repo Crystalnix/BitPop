@@ -4,22 +4,17 @@
 
 #ifndef CHROME_BROWSER_PRERENDER_PRERENDER_OBSERVER_H_
 #define CHROME_BROWSER_PRERENDER_PRERENDER_OBSERVER_H_
-#pragma once
 
-#include <list>
-#include <vector>
-
-#include "base/memory/scoped_ptr.h"
-#include "base/time.h"
 #include "content/browser/tab_contents/tab_contents_observer.h"
-#include "googleurl/src/gurl.h"
 
-class PrerenderContents;
-class Profile;
+#include "base/time.h"
+
 class TabContents;
+class GURL;
 
 namespace prerender {
 
+class PrerenderContents;
 class PrerenderManager;
 
 // PrerenderObserver is responsible for recording perceived pageload times
@@ -30,15 +25,19 @@ class PrerenderObserver : public TabContentsObserver {
   virtual ~PrerenderObserver();
 
   // TabContentsObserver implementation.
-  virtual void ProvisionalChangeToMainFrameUrl(const GURL& url);
-  virtual bool OnMessageReceived(const IPC::Message& message);
+  virtual void ProvisionalChangeToMainFrameUrl(const GURL& url,
+                                               bool has_opener_set) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  virtual void DidStopLoading() OVERRIDE;
 
   // Message handler.
   void OnDidStartProvisionalLoadForFrame(int64 frame_id,
                                          bool main_frame,
+                                         bool has_opener_set,
                                          const GURL& url);
 
-  virtual void DidStopLoading();
+  // Called when this prerendered TabContents has just been swapped in.
+  void PrerenderSwappedIn();
 
  private:
   // Retrieves the PrerenderManager, or NULL, if none was found.
@@ -47,7 +46,10 @@ class PrerenderObserver : public TabContentsObserver {
   // Checks with the PrerenderManager if the specified URL has been preloaded,
   // and if so, swap the RenderViewHost with the preload into this TabContents
   // object.
-  bool MaybeUsePreloadedPage(const GURL& url);
+  bool MaybeUsePreloadedPage(const GURL& url, bool has_opener_set);
+
+  // Returns whether the TabContents being observed is currently prerendering.
+  bool IsPrerendering();
 
   // System time at which the current load was started for the purpose of
   // the perceived page load time (PPLT).
@@ -56,6 +58,6 @@ class PrerenderObserver : public TabContentsObserver {
   DISALLOW_COPY_AND_ASSIGN(PrerenderObserver);
 };
 
-}  // prerender
+}  // namespace prerender
 
 #endif  // CHROME_BROWSER_PRERENDER_PRERENDER_OBSERVER_H_

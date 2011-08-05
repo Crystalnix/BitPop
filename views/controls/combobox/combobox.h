@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,11 @@
 
 #include "views/view.h"
 
+#ifdef UNIT_TEST
+#include "ui/gfx/native_widget_types.h"
+#include "views/controls/combobox/native_combobox_wrapper.h"
+#endif
+
 namespace ui {
 class ComboboxModel;
 }
@@ -19,7 +24,7 @@ namespace views {
 
 class NativeComboboxWrapper;
 
-// A non-editable combo-box.
+// A non-editable combo-box (aka a drop-down list)
 class Combobox : public View {
  public:
   // The combobox's class name.
@@ -61,17 +66,29 @@ class Combobox : public View {
   // Set the accessible name of the combo box.
   void SetAccessibleName(const string16& name);
 
+#ifdef UNIT_TEST
+  gfx::NativeView GetTestingHandle() const {
+    return native_wrapper_ ? native_wrapper_->GetTestingHandle() : NULL;
+  }
+  NativeComboboxWrapper* native_wrapper() const {
+    return native_wrapper_;
+  }
+#endif
+
   // Overridden from View:
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual void Layout() OVERRIDE;
-  virtual void SetEnabled(bool enabled) OVERRIDE;
+  virtual void OnEnabledChanged() OVERRIDE;
   virtual bool SkipDefaultKeyEventProcessing(const KeyEvent& e) OVERRIDE;
   virtual void OnPaintFocusBorder(gfx::Canvas* canvas) OVERRIDE;
+  virtual bool OnKeyPressed(const views::KeyEvent& e) OVERRIDE;
+  virtual bool OnKeyReleased(const views::KeyEvent& e) OVERRIDE;
+  virtual void OnFocus() OVERRIDE;
+  virtual void OnBlur() OVERRIDE;
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
 
  protected:
   // Overridden from View:
-  virtual void OnFocus() OVERRIDE;
   virtual void ViewHierarchyChanged(bool is_add, View* parent,
                                     View* child) OVERRIDE;
   virtual std::string GetClassName() const OVERRIDE;

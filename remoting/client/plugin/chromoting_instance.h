@@ -19,6 +19,7 @@
 #include "ppapi/cpp/var.h"
 #include "remoting/client/client_context.h"
 #include "remoting/client/plugin/chromoting_scriptable_object.h"
+#include "remoting/client/plugin/pepper_client_logger.h"
 #include "remoting/protocol/connection_to_host.h"
 
 class MessageLoop;
@@ -64,11 +65,16 @@ class ChromotingInstance : public pp::Instance {
   virtual bool Init(uint32_t argc, const char* argn[], const char* argv[]);
   virtual void Connect(const ClientConfig& config);
   virtual void ConnectSandboxed(const std::string& your_jid,
-                                const std::string& host_jid);
+                                const std::string& host_jid,
+                                const std::string& nonce);
   virtual bool HandleInputEvent(const PP_InputEvent& event);
   virtual void Disconnect();
   virtual pp::Var GetInstanceObject();
   virtual void ViewChanged(const pp::Rect& position, const pp::Rect& clip);
+
+  // pp::Instance interface.
+  virtual void DidChangeView(const pp::Rect& position, const pp::Rect& clip)
+      OVERRIDE;
 
   // Convenience wrapper to get the ChromotingScriptableObject.
   ChromotingScriptableObject* GetScriptableObject();
@@ -77,7 +83,11 @@ class ChromotingInstance : public pp::Instance {
   void SubmitLoginInfo(const std::string& username,
                        const std::string& password);
 
-  void LogDebugInfo(const std::string& info);
+  // Called by ChromotingScriptableObject to set scale-to-fit.
+  void SetScaleToFit(bool scale_to_fit);
+
+  void Log(int severity, const char* format, ...);
+  void VLog(int verboselevel, const char* format, ...);
 
   // Return statistics record by ChromotingClient.
   // If no connection is currently active then NULL will be returned.
@@ -109,6 +119,8 @@ class ChromotingInstance : public pp::Instance {
   // jingle_glue objects. This is used when if we start a sandboxed jingle
   // connection.
   scoped_refptr<PepperXmppProxy> xmpp_proxy_;
+
+  PepperClientLogger logger_;
 
   // JavaScript interface to control this instance.
   // This wraps a ChromotingScriptableObject in a pp::Var.

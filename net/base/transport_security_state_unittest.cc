@@ -141,68 +141,68 @@ TEST_F(TransportSecurityStateTest, ValidHeaders) {
 
 TEST_F(TransportSecurityStateTest, SimpleMatches) {
   scoped_refptr<TransportSecurityState> state(
-      new TransportSecurityState);
+      new TransportSecurityState(std::string()));
   TransportSecurityState::DomainState domain_state;
   const base::Time current_time(base::Time::Now());
   const base::Time expiry = current_time + base::TimeDelta::FromSeconds(1000);
 
-  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "google.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "yahoo.com", true));
   domain_state.expiry = expiry;
-  state->EnableHost("google.com", domain_state);
-  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "google.com", true));
+  state->EnableHost("yahoo.com", domain_state);
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "yahoo.com", true));
 }
 
 TEST_F(TransportSecurityStateTest, MatchesCase1) {
   scoped_refptr<TransportSecurityState> state(
-      new TransportSecurityState);
+      new TransportSecurityState(std::string()));
   TransportSecurityState::DomainState domain_state;
   const base::Time current_time(base::Time::Now());
   const base::Time expiry = current_time + base::TimeDelta::FromSeconds(1000);
 
-  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "google.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "yahoo.com", true));
   domain_state.expiry = expiry;
-  state->EnableHost("GOOgle.coM", domain_state);
-  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "google.com", true));
+  state->EnableHost("YAhoo.coM", domain_state);
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "yahoo.com", true));
 }
 
 TEST_F(TransportSecurityStateTest, MatchesCase2) {
   scoped_refptr<TransportSecurityState> state(
-      new TransportSecurityState);
+      new TransportSecurityState(std::string()));
   TransportSecurityState::DomainState domain_state;
   const base::Time current_time(base::Time::Now());
   const base::Time expiry = current_time + base::TimeDelta::FromSeconds(1000);
 
-  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "GOOgle.coM", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "YAhoo.coM", true));
   domain_state.expiry = expiry;
-  state->EnableHost("google.com", domain_state);
-  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "GOOgle.coM", true));
+  state->EnableHost("yahoo.com", domain_state);
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "YAhoo.coM", true));
 }
 
 TEST_F(TransportSecurityStateTest, SubdomainMatches) {
   scoped_refptr<TransportSecurityState> state(
-      new TransportSecurityState);
+      new TransportSecurityState(std::string()));
   TransportSecurityState::DomainState domain_state;
   const base::Time current_time(base::Time::Now());
   const base::Time expiry = current_time + base::TimeDelta::FromSeconds(1000);
 
-  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "google.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "yahoo.com", true));
   domain_state.expiry = expiry;
   domain_state.include_subdomains = true;
-  state->EnableHost("google.com", domain_state);
-  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "google.com", true));
-  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "foo.google.com", true));
+  state->EnableHost("yahoo.com", domain_state);
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "yahoo.com", true));
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "foo.yahoo.com", true));
   EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
-                                      "foo.bar.google.com",
+                                      "foo.bar.yahoo.com",
                                       true));
   EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
-                                      "foo.bar.baz.google.com",
+                                      "foo.bar.baz.yahoo.com",
                                       true));
   EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "com", true));
 }
 
 TEST_F(TransportSecurityStateTest, Serialise1) {
   scoped_refptr<TransportSecurityState> state(
-      new TransportSecurityState);
+      new TransportSecurityState(std::string()));
   std::string output;
   bool dirty;
   state->Serialise(&output);
@@ -212,33 +212,33 @@ TEST_F(TransportSecurityStateTest, Serialise1) {
 
 TEST_F(TransportSecurityStateTest, Serialise2) {
   scoped_refptr<TransportSecurityState> state(
-      new TransportSecurityState);
+      new TransportSecurityState(std::string()));
 
   TransportSecurityState::DomainState domain_state;
   const base::Time current_time(base::Time::Now());
   const base::Time expiry = current_time + base::TimeDelta::FromSeconds(1000);
 
-  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "google.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "yahoo.com", true));
   domain_state.mode = TransportSecurityState::DomainState::MODE_STRICT;
   domain_state.expiry = expiry;
   domain_state.include_subdomains = true;
-  state->EnableHost("google.com", domain_state);
+  state->EnableHost("yahoo.com", domain_state);
 
   std::string output;
   bool dirty;
   state->Serialise(&output);
   EXPECT_TRUE(state->LoadEntries(output, &dirty));
 
-  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "google.com", true));
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "yahoo.com", true));
   EXPECT_EQ(domain_state.mode, TransportSecurityState::DomainState::MODE_STRICT);
-  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "foo.google.com", true));
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "foo.yahoo.com", true));
   EXPECT_EQ(domain_state.mode, TransportSecurityState::DomainState::MODE_STRICT);
   EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
-                                      "foo.bar.google.com",
+                                      "foo.bar.yahoo.com",
                                       true));
   EXPECT_EQ(domain_state.mode, TransportSecurityState::DomainState::MODE_STRICT);
   EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
-                                      "foo.bar.baz.google.com",
+                                      "foo.bar.baz.yahoo.com",
                                       true));
   EXPECT_EQ(domain_state.mode, TransportSecurityState::DomainState::MODE_STRICT);
   EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "com", true));
@@ -246,67 +246,67 @@ TEST_F(TransportSecurityStateTest, Serialise2) {
 
 TEST_F(TransportSecurityStateTest, Serialise3) {
   scoped_refptr<TransportSecurityState> state(
-      new TransportSecurityState);
+      new TransportSecurityState(std::string()));
 
   TransportSecurityState::DomainState domain_state;
   const base::Time current_time(base::Time::Now());
   const base::Time expiry = current_time + base::TimeDelta::FromSeconds(1000);
 
-  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "google.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "yahoo.com", true));
   domain_state.mode = TransportSecurityState::DomainState::MODE_OPPORTUNISTIC;
   domain_state.expiry = expiry;
-  state->EnableHost("google.com", domain_state);
+  state->EnableHost("yahoo.com", domain_state);
 
   std::string output;
   bool dirty;
   state->Serialise(&output);
   EXPECT_TRUE(state->LoadEntries(output, &dirty));
 
-  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "google.com", true));
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "yahoo.com", true));
   EXPECT_EQ(domain_state.mode,
             TransportSecurityState::DomainState::MODE_OPPORTUNISTIC);
 }
 
 TEST_F(TransportSecurityStateTest, DeleteSince) {
   scoped_refptr<TransportSecurityState> state(
-      new TransportSecurityState);
+      new TransportSecurityState(std::string()));
 
   TransportSecurityState::DomainState domain_state;
   const base::Time current_time(base::Time::Now());
   const base::Time expiry = current_time + base::TimeDelta::FromSeconds(1000);
   const base::Time older = current_time - base::TimeDelta::FromSeconds(1000);
 
-  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "google.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "yahoo.com", true));
   domain_state.mode = TransportSecurityState::DomainState::MODE_STRICT;
   domain_state.expiry = expiry;
-  state->EnableHost("google.com", domain_state);
+  state->EnableHost("yahoo.com", domain_state);
 
   state->DeleteSince(expiry);
-  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "google.com", true));
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "yahoo.com", true));
   state->DeleteSince(older);
-  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "google.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "yahoo.com", true));
 }
 
 TEST_F(TransportSecurityStateTest, DeleteHost) {
   scoped_refptr<TransportSecurityState> state(
-      new TransportSecurityState);
+      new TransportSecurityState(std::string()));
 
   TransportSecurityState::DomainState domain_state;
   const base::Time current_time(base::Time::Now());
   const base::Time expiry = current_time + base::TimeDelta::FromSeconds(1000);
   domain_state.mode = TransportSecurityState::DomainState::MODE_STRICT;
   domain_state.expiry = expiry;
-  state->EnableHost("google.com", domain_state);
+  state->EnableHost("yahoo.com", domain_state);
 
-  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "google.com", true));
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "yahoo.com", true));
   EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "example.com", true));
-  EXPECT_TRUE(state->DeleteHost("google.com"));
-  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "google.com", true));
+  EXPECT_TRUE(state->DeleteHost("yahoo.com"));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "yahoo.com", true));
 }
 
 TEST_F(TransportSecurityStateTest, SerialiseOld) {
   scoped_refptr<TransportSecurityState> state(
-      new TransportSecurityState);
+      new TransportSecurityState(std::string()));
   // This is an old-style piece of transport state JSON, which has no creation
   // date.
   std::string output =
@@ -323,6 +323,9 @@ TEST_F(TransportSecurityStateTest, SerialiseOld) {
 }
 
 TEST_F(TransportSecurityStateTest, IsPreloaded) {
+  scoped_refptr<TransportSecurityState> state(
+      new TransportSecurityState(std::string()));
+
   const std::string paypal =
       TransportSecurityState::CanonicalizeHost("paypal.com");
   const std::string www_paypal =
@@ -337,24 +340,18 @@ TEST_F(TransportSecurityStateTest, IsPreloaded) {
       TransportSecurityState::CanonicalizeHost("aypal.com");
 
   TransportSecurityState::DomainState domain_state;
-  EXPECT_FALSE(TransportSecurityState::IsPreloadedSTS(
-      paypal, true, &domain_state));
-  EXPECT_TRUE(TransportSecurityState::IsPreloadedSTS(
-      www_paypal, true, &domain_state));
+  EXPECT_FALSE(state->IsPreloadedSTS(paypal, true, &domain_state));
+  EXPECT_TRUE(state->IsPreloadedSTS(www_paypal, true, &domain_state));
   EXPECT_FALSE(domain_state.include_subdomains);
-  EXPECT_FALSE(TransportSecurityState::IsPreloadedSTS(
-      a_www_paypal, true, &domain_state));
-  EXPECT_FALSE(TransportSecurityState::IsPreloadedSTS(
-      abc_paypal, true, &domain_state));
-  EXPECT_FALSE(TransportSecurityState::IsPreloadedSTS(
-      example, true, &domain_state));
-  EXPECT_FALSE(TransportSecurityState::IsPreloadedSTS(
-      aypal, true, &domain_state));
+  EXPECT_FALSE(state->IsPreloadedSTS(a_www_paypal, true, &domain_state));
+  EXPECT_FALSE(state->IsPreloadedSTS(abc_paypal, true, &domain_state));
+  EXPECT_FALSE(state->IsPreloadedSTS(example, true, &domain_state));
+  EXPECT_FALSE(state->IsPreloadedSTS(aypal, true, &domain_state));
 }
 
 TEST_F(TransportSecurityStateTest, Preloaded) {
   scoped_refptr<TransportSecurityState> state(
-      new TransportSecurityState);
+      new TransportSecurityState(std::string()));
   TransportSecurityState::DomainState domain_state;
   EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "paypal.com", true));
   EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "www.paypal.com", true));
@@ -490,10 +487,56 @@ TEST_F(TransportSecurityStateTest, Preloaded) {
   EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
                                       "accounts.google.com",
                                       true));
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
+                                      "profiles.google.com",
+                                      true));
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "mail.google.com", true));
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
+                                      "chatenabled.mail.google.com",
+                                      true));
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
+                                      "talkgadget.google.com",
+                                      true));
 
   EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "entropia.de", true));
   EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "www.entropia.de", true));
   EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "foo.entropia.de", true));
+
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
+                                      "ssl.google-analytics.com",
+                                      true));
+
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "www.google.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "google.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "www.youtube.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "youtube.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "i.ytimg.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "ytimg.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state,
+                                       "googleusercontent.com",
+                                       true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state,
+                                       "www.googleusercontent.com",
+                                       true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state,
+                                       "www.google-analytics.com",
+                                       true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state,
+                                       "google-analytics.com",
+                                       true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "googleapis.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state,
+                                       "googleadservices.com",
+                                       true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "googlecode.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "appspot.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state,
+                                       "googlesyndication.com",
+                                       true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "doubleclick.net", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state,
+                                       "googlegroups.com",
+                                       true));
 
   EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "gmail.com", true));
   EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "www.gmail.com", true));
@@ -515,11 +558,68 @@ TEST_F(TransportSecurityStateTest, Preloaded) {
   EXPECT_FALSE(state->IsEnabledForHost(&domain_state,
                                        "m.googlemail.com",
                                        false));
+
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "romab.com", false));
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "www.romab.com", false));
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "foo.romab.com", false));
+
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "logentries.com", false));
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
+                                      "www.logentries.com",
+                                      false));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state,
+                                       "foo.logentries.com",
+                                       false));
+
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "stripe.com", false));
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "foo.stripe.com", false));
+
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
+                                      "cloudsecurityalliance.org",
+                                      false));
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
+                                      "foo.cloudsecurityalliance.org",
+                                      false));
+
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
+                                      "login.sapo.pt",
+                                      false));
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
+                                      "foo.login.sapo.pt",
+                                      false));
+
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
+                                      "mattmccutchen.net",
+                                      false));
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
+                                      "foo.mattmccutchen.net",
+                                      false));
+
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
+                                      "betnet.fr",
+                                      false));
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
+                                      "foo.betnet.fr",
+                                      false));
+
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
+                                      "uprotect.it",
+                                      false));
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
+                                      "foo.uprotect.it",
+                                      false));
+
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
+                                      "squareup.com",
+                                      false));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state,
+                                       "foo.squareup.com",
+                                       false));
 }
 
 TEST_F(TransportSecurityStateTest, LongNames) {
   scoped_refptr<TransportSecurityState> state(
-      new TransportSecurityState);
+      new TransportSecurityState(std::string()));
   const char kLongName[] =
       "lookupByWaveIdHashAndWaveIdIdAndWaveIdDomainAndWaveletIdIdAnd"
       "WaveletIdDomainAndBlipBlipid";
@@ -530,7 +630,7 @@ TEST_F(TransportSecurityStateTest, LongNames) {
 
 TEST_F(TransportSecurityStateTest, PublicKeyHashes) {
   scoped_refptr<TransportSecurityState> state(
-      new TransportSecurityState);
+      new TransportSecurityState(std::string()));
 
   TransportSecurityState::DomainState domain_state;
   EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "example.com", false));
@@ -559,6 +659,146 @@ TEST_F(TransportSecurityStateTest, PublicKeyHashes) {
   EXPECT_EQ(1u, domain_state.public_key_hashes.size());
   EXPECT_TRUE(0 == memcmp(domain_state.public_key_hashes[0].data, hash.data,
                           sizeof(hash.data)));
+}
+
+TEST_F(TransportSecurityStateTest, BuiltinCertPins) {
+  scoped_refptr<TransportSecurityState> state(
+      new TransportSecurityState(std::string()));
+
+  TransportSecurityState::DomainState domain_state;
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
+                                      "chrome.google.com",
+                                      true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "chrome.google.com", true));
+  std::vector<SHA1Fingerprint> hashes;
+  // This essential checks that a built-in list does exist.
+  EXPECT_FALSE(domain_state.IsChainOfPublicKeysPermitted(hashes));
+  EXPECT_FALSE(state->HasPinsForHost(&domain_state, "www.paypal.com", true));
+  EXPECT_FALSE(state->HasPinsForHost(&domain_state, "twitter.com", true));
+
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "docs.google.com", true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "1.docs.google.com", true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "sites.google.com", true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state,
+                                    "spreadsheets.google.com",
+                                    true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "health.google.com", true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state,
+                                    "checkout.google.com",
+                                    true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state,
+                                    "appengine.google.com",
+                                    true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "market.android.com", true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state,
+                                    "encrypted.google.com",
+                                    true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state,
+                                    "accounts.google.com",
+                                    true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state,
+                                    "profiles.google.com",
+                                    true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "mail.google.com", true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state,
+                                    "chatenabled.mail.google.com",
+                                    true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state,
+                                    "talkgadget.google.com",
+                                    true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "ssl.gstatic.com", true));
+  EXPECT_FALSE(state->HasPinsForHost(&domain_state, "www.gstatic.com", true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state,
+                                    "ssl.google-analytics.com",
+                                    true));
+}
+
+TEST_F(TransportSecurityStateTest, OptionalHSTSCertPins) {
+  scoped_refptr<TransportSecurityState> state(
+      new TransportSecurityState(std::string()));
+
+  TransportSecurityState::DomainState domain_state;
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state,
+                                       "www.google-analytics.com",
+                                       false));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state,
+                                       "www.google-analytics.com",
+                                       true));
+  EXPECT_FALSE(state->HasPinsForHost(&domain_state,
+                                     "www.google-analytics.com",
+                                     false));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state,
+                                    "www.google-analytics.com",
+                                    true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "google.com", true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "www.google.com", true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state,
+                                    "mail-attachment.googleusercontent.com",
+                                    true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "www.youtube.com", true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "i.ytimg.com", true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "googleapis.com", true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state,
+                                    "ajax.googleapis.com",
+                                    true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state,
+                                    "googleadservices.com",
+                                    true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state,
+                                    "pagead2.googleadservices.com",
+                                    true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "googlecode.com", true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state,
+                                    "kibbles.googlecode.com",
+                                    true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "appspot.com", true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state,
+                                    "googlesyndication.com",
+                                    true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "doubleclick.net", true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "ad.doubleclick.net", true));
+  EXPECT_FALSE(state->HasPinsForHost(&domain_state,
+                                     "learn.doubleclick.net",
+                                     true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "a.googlegroups.com", true));
+  EXPECT_FALSE(state->HasPinsForHost(&domain_state,
+                                     "a.googlegroups.com",
+                                     false));
+}
+
+TEST_F(TransportSecurityStateTest, ForcePreloads) {
+  // This is a docs.google.com override.
+  std::string preload("{"
+    "\"4AGT3lHihuMSd5rUj7B4u6At0jlSH3HFePovjPR+oLE=\": {"
+       "\"created\": 0.0,"
+       "\"expiry\": 2000000000.0,"
+       "\"include_subdomains\": false,"
+       "\"mode\": \"none\""
+    "}}");
+
+  scoped_refptr<TransportSecurityState> state(
+      new TransportSecurityState(preload));
+  TransportSecurityState::DomainState domain_state;
+  EXPECT_FALSE(state->HasPinsForHost(&domain_state, "docs.google.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "docs.google.com", true));
+}
+
+TEST_F(TransportSecurityStateTest, OverrideBuiltins) {
+  scoped_refptr<TransportSecurityState> state(
+      new TransportSecurityState(std::string()));
+
+  TransportSecurityState::DomainState domain_state;
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "google.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "google.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "www.google.com", true));
+
+  domain_state = TransportSecurityState::DomainState();
+  const base::Time current_time(base::Time::Now());
+  const base::Time expiry = current_time + base::TimeDelta::FromSeconds(1000);
+  domain_state.expiry = expiry;
+  state->EnableHost("www.google.com", domain_state);
+
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "www.google.com", true));
 }
 
 }  // namespace net

@@ -24,16 +24,21 @@ static const SkColor kSelectedBackgroundColor = SkColorSetRGB(0xDC, 0xE4, 0xFA);
 static const SkColor kSelectedBackgroundColor = SkColorSetRGB(246, 249, 253);
 #endif
 
+#if defined(TOUCH_UI)
+const int kMinTouchHeight = 46;
+#endif
+
 gfx::Size MenuItemView::CalculatePreferredSize() {
-  const gfx::Font& font = MenuConfig::instance().font;
-  // TODO(sky): this is a workaround until I figure out why font.height()
-  // isn't returning the right thing. We really only want to include
-  // kFaviconSize if we're showing icons.
-  int content_height = std::max(kFaviconSize, font.GetHeight());
+  const gfx::Font& font = GetFont();
+#if defined(TOUCH_UI)
+  int height = std::max(font.GetHeight(), kMinTouchHeight);
+#else
+  int height = font.GetHeight();
+#endif
   return gfx::Size(
       font.GetStringWidth(title_) + label_start_ +
           item_right_margin_ + GetChildPreferredWidth(),
-      content_height + GetBottomMargin() + GetTopMargin());
+      height + GetBottomMargin() + GetTopMargin());
 }
 
 void MenuItemView::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
@@ -87,7 +92,7 @@ void MenuItemView::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
   SkColor fg_color =
       IsEnabled() ? TextButton::kEnabledColor : TextButton::kDisabledColor;
 #endif
-  const gfx::Font& font = MenuConfig::instance().font;
+  const gfx::Font& font = GetFont();
   int accel_width = parent_menu_item_->GetSubmenu()->max_accelerator_width();
   int width = this->width() - item_right_margin_ - label_start_ - accel_width;
   gfx::Rect text_bounds(label_start_, top_margin +

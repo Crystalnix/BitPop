@@ -87,6 +87,10 @@ class URLRow {
     }
   }
 
+  // The number of times this URL has been visited. This will often match the
+  // number of entries in the visit table for this URL, but won't always. It's
+  // really designed for autocomplete ranking, so some "useless" transitions
+  // from the visit table aren't counted in this tally.
   int visit_count() const {
     return visit_count_;
   }
@@ -94,7 +98,11 @@ class URLRow {
     visit_count_ = visit_count;
   }
 
-  // Number of times the URL was typed in the Omnibox.
+  // Number of times the URL was typed in the Omnibox. This "should" match
+  // the number of TYPED transitions in the visit table. It's used primarily
+  // for faster autocomplete ranking. If you need to know the actual number of
+  // TYPED transitions, you should query the visit table since there could be
+  // something out of sync.
   int typed_count() const {
     return typed_count_;
   }
@@ -283,7 +291,10 @@ struct StarredEntry {
     USER_FOLDER,
 
     // The "other bookmarks" folder that holds uncategorized bookmarks.
-    OTHER
+    OTHER,
+
+    // The synced folder.
+    SYNCED,
   };
 
   StarredEntry();
@@ -337,7 +348,7 @@ class URLResult : public URLRow {
   // Constructor that create a URLResult from the specified URL and title match
   // positions from title_matches.
   URLResult(const GURL& url, const Snippet::MatchPositions& title_matches);
-  ~URLResult();
+  virtual ~URLResult();
 
   base::Time visit_time() const { return visit_time_; }
   void set_visit_time(base::Time visit_time) { visit_time_ = visit_time; }
@@ -499,6 +510,10 @@ struct QueryOptions {
   // the most recent first, so older results may not be returned if there is not
   // enough room. When 0, this will return everything (the default).
   int max_count;
+
+  // Only search within the page body if true, otherwise search all columns
+  // including url and time. Defaults to false.
+  bool body_only;
 };
 
 // KeywordSearchTermVisit -----------------------------------------------------

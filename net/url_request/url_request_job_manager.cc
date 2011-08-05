@@ -11,12 +11,15 @@
 #include "base/string_util.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
+#include "net/base/network_delegate.h"
 #include "net/url_request/url_request_about_job.h"
+#include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_data_job.h"
 #include "net/url_request/url_request_error_job.h"
 #include "net/url_request/url_request_file_job.h"
 #include "net/url_request/url_request_ftp_job.h"
 #include "net/url_request/url_request_http_job.h"
+#include "net/url_request/url_request_job_factory.h"
 
 namespace net {
 
@@ -46,24 +49,40 @@ URLRequestJobManager* URLRequestJobManager::GetInstance() {
 
 URLRequestJob* URLRequestJobManager::CreateJob(
     URLRequest* request) const {
-#ifndef NDEBUG
   DCHECK(IsAllowedThread());
-#endif
 
   // If we are given an invalid URL, then don't even try to inspect the scheme.
   if (!request->url().is_valid())
     return new URLRequestErrorJob(request, ERR_INVALID_URL);
 
   // We do this here to avoid asking interceptors about unsupported schemes.
+  const URLRequestJobFactory* job_factory = NULL;
+  if (request->context())
+    job_factory = request->context()->job_factory();
+
   const std::string& scheme = request->url().scheme();  // already lowercase
-  if (!SupportsScheme(scheme))
+  if (job_factory) {
+    if (!job_factory->IsHandledProtocol(scheme)) {
+      return new URLRequestErrorJob(request, ERR_UNKNOWN_URL_SCHEME);
+    }
+  } else if (!SupportsScheme(scheme)) {
     return new URLRequestErrorJob(request, ERR_UNKNOWN_URL_SCHEME);
+  }
 
   // THREAD-SAFETY NOTICE:
   //   We do not need to acquire the lock here since we are only reading our
   //   data structures.  They should only be modified on the current thread.
 
   // See if the request should be intercepted.
+  //
+
+  if (job_factory) {
+    URLRequestJob* job = job_factory->MaybeCreateJobWithInterceptor(request);
+    if (job)
+      return job;
+  }
+
+  // TODO(willchan): Remove this in favor of URLRequestJobFactory::Interceptor.
   if (!(request->load_flags() & LOAD_DISABLE_INTERCEPT)) {
     InterceptorList::const_iterator i;
     for (i = interceptors_.begin(); i != interceptors_.end(); ++i) {
@@ -73,6 +92,15 @@ URLRequestJob* URLRequestJobManager::CreateJob(
     }
   }
 
+  if (job_factory) {
+    URLRequestJob* job =
+        job_factory->MaybeCreateJobWithProtocolHandler(scheme, request);
+    if (job)
+      return job;
+  }
+
+  // TODO(willchan): Remove this in favor of
+  // URLRequestJobFactory::ProtocolHandler.
   // See if the request should be handled by a registered protocol factory.
   // If the registered factory returns null, then we want to fall-back to the
   // built-in protocol factory.
@@ -102,18 +130,35 @@ URLRequestJob* URLRequestJobManager::CreateJob(
 URLRequestJob* URLRequestJobManager::MaybeInterceptRedirect(
     URLRequest* request,
     const GURL& location) const {
-#ifndef NDEBUG
   DCHECK(IsAllowedThread());
-#endif
-  if ((request->load_flags() & LOAD_DISABLE_INTERCEPT) ||
-      (request->status().status() == URLRequestStatus::CANCELED) ||
-      !request->url().is_valid() ||
-      !SupportsScheme(request->url().scheme()))
+  if (!request->url().is_valid() ||
+      request->load_flags() & LOAD_DISABLE_INTERCEPT ||
+      request->status().status() == URLRequestStatus::CANCELED) {
     return NULL;
+  }
+
+  const URLRequestJobFactory* job_factory = NULL;
+  if (request->context())
+    job_factory = request->context()->job_factory();
+
+  const std::string& scheme = request->url().scheme();  // already lowercase
+  if (job_factory) {
+    if (!job_factory->IsHandledProtocol(scheme)) {
+      return NULL;
+    }
+  } else if (!SupportsScheme(scheme)) {
+    return NULL;
+  }
+
+  URLRequestJob* job = NULL;
+  if (job_factory)
+    job = job_factory->MaybeInterceptRedirect(location, request);
+  if (job)
+    return job;
 
   InterceptorList::const_iterator i;
   for (i = interceptors_.begin(); i != interceptors_.end(); ++i) {
-    URLRequestJob* job = (*i)->MaybeInterceptRedirect(request, location);
+    job = (*i)->MaybeInterceptRedirect(request, location);
     if (job)
       return job;
   }
@@ -122,18 +167,35 @@ URLRequestJob* URLRequestJobManager::MaybeInterceptRedirect(
 
 URLRequestJob* URLRequestJobManager::MaybeInterceptResponse(
     URLRequest* request) const {
-#ifndef NDEBUG
   DCHECK(IsAllowedThread());
-#endif
-  if ((request->load_flags() & LOAD_DISABLE_INTERCEPT) ||
-      (request->status().status() == URLRequestStatus::CANCELED) ||
-      !request->url().is_valid() ||
-      !SupportsScheme(request->url().scheme()))
+  if (!request->url().is_valid() ||
+      request->load_flags() & LOAD_DISABLE_INTERCEPT ||
+      request->status().status() == URLRequestStatus::CANCELED) {
     return NULL;
+  }
+
+  const URLRequestJobFactory* job_factory = NULL;
+  if (request->context())
+    job_factory = request->context()->job_factory();
+
+  const std::string& scheme = request->url().scheme();  // already lowercase
+  if (job_factory) {
+    if (!job_factory->IsHandledProtocol(scheme)) {
+      return NULL;
+    }
+  } else if (!SupportsScheme(scheme)) {
+    return NULL;
+  }
+
+  URLRequestJob* job = NULL;
+  if (job_factory)
+    job = job_factory->MaybeInterceptResponse(request);
+  if (job)
+    return job;
 
   InterceptorList::const_iterator i;
   for (i = interceptors_.begin(); i != interceptors_.end(); ++i) {
-    URLRequestJob* job = (*i)->MaybeInterceptResponse(request);
+    job = (*i)->MaybeInterceptResponse(request);
     if (job)
       return job;
   }
@@ -158,9 +220,7 @@ bool URLRequestJobManager::SupportsScheme(const std::string& scheme) const {
 URLRequest::ProtocolFactory* URLRequestJobManager::RegisterProtocolFactory(
     const std::string& scheme,
     URLRequest::ProtocolFactory* factory) {
-#ifndef NDEBUG
   DCHECK(IsAllowedThread());
-#endif
 
   base::AutoLock locked(lock_);
 
@@ -181,9 +241,7 @@ URLRequest::ProtocolFactory* URLRequestJobManager::RegisterProtocolFactory(
 
 void URLRequestJobManager::RegisterRequestInterceptor(
     URLRequest::Interceptor* interceptor) {
-#ifndef NDEBUG
   DCHECK(IsAllowedThread());
-#endif
 
   base::AutoLock locked(lock_);
 
@@ -194,9 +252,7 @@ void URLRequestJobManager::RegisterRequestInterceptor(
 
 void URLRequestJobManager::UnregisterRequestInterceptor(
     URLRequest::Interceptor* interceptor) {
-#ifndef NDEBUG
   DCHECK(IsAllowedThread());
-#endif
 
   base::AutoLock locked(lock_);
 

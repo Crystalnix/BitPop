@@ -28,7 +28,7 @@ class Widget;
 
 // TooltipManager implementation for Windows.
 //
-// This class is intended to be used by WidgetWin. To use this, you must
+// This class is intended to be used by NativeWidgetWin. To use this, you must
 // do the following:
 // Add the following to your MSG_MAP:
 //
@@ -55,12 +55,17 @@ class Widget;
 //
 // Lastly, you'll need to override GetTooltipManager.
 //
-// See WidgetWin for an example of this in action.
+// See NativeWidgetWin for an example of this in action.
 class TooltipManagerWin : public TooltipManager {
  public:
   // Creates a TooltipManager for the specified Widget and parent window.
   explicit TooltipManagerWin(Widget* widget);
   virtual ~TooltipManagerWin();
+
+  // Initializes the TooltipManager returning whether initialization was
+  // successful. If this returns false the TooltipManager should be destroyed
+  // and not used.
+  bool Init();
 
   // Notification that the view hierarchy has changed in some way.
   virtual void UpdateTooltip();
@@ -79,8 +84,6 @@ class TooltipManagerWin : public TooltipManager {
   LRESULT OnNotify(int w_param, NMHDR* l_param, bool* handled);
 
  protected:
-  virtual void Init();
-
   // Returns the Widget we're showing tooltips for.
   gfx::NativeView GetParent();
 

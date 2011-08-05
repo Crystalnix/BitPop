@@ -12,7 +12,6 @@
 #include "chrome/browser/ui/cocoa/notifications/balloon_controller.h"
 #include "chrome/test/testing_profile.h"
 #include "content/browser/renderer_host/test_render_view_host.h"
-#import "third_party/ocmock/OCMock/OCMock.h"
 
 // Subclass balloon controller and mock out the initialization of the RVH.
 @interface TestBalloonController : BalloonController {
@@ -58,7 +57,7 @@ class BalloonControllerTest : public RenderViewHostTestHarness {
     CocoaTest::BootstrapCocoa();
     profile_.reset(new TestingProfile());
     profile_->CreateRequestContext();
-    browser_.reset(new Browser(Browser::TYPE_NORMAL, profile_.get()));
+    browser_.reset(new Browser(Browser::TYPE_TABBED, profile_.get()));
     collection_.reset(new MockBalloonCollection());
   }
 

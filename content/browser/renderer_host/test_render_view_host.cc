@@ -65,7 +65,6 @@ TestRenderViewHost::~TestRenderViewHost() {
 bool TestRenderViewHost::CreateRenderView(const string16& frame_name) {
   DCHECK(!render_view_created_);
   render_view_created_ = true;
-  process()->ViewCreated();
   return true;
 }
 
@@ -107,6 +106,15 @@ void TestRenderViewHost::SendNavigateWithTransition(
 
   ViewHostMsg_FrameNavigate msg(1, params);
   OnMsgNavigate(msg);
+}
+
+void TestRenderViewHost::SendShouldCloseACK(bool proceed) {
+  OnMsgShouldCloseACK(proceed);
+}
+
+void TestRenderViewHost::TestOnMsgStartDragging(const WebDropData& drop_data) {
+  WebKit::WebDragOperationsMask drag_operation = WebKit::WebDragOperationEvery;
+  OnMsgStartDragging(drop_data, drag_operation, SkBitmap(), gfx::Point());
 }
 
 void TestRenderViewHost::set_simulate_fetch_via_proxy(bool proxy) {

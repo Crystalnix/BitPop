@@ -9,8 +9,8 @@
 #include "base/message_loop.h"
 #include "base/stringprintf.h"
 #include "chrome/common/net/http_return.h"
-#include "chrome/common/net/url_fetcher.h"
 #include "content/browser/browser_thread.h"
+#include "content/common/url_fetcher.h"
 #include "googleurl/src/gurl.h"
 #include "net/url_request/url_request_status.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -23,22 +23,21 @@ ExpectCanceledFetcher::ExpectCanceledFetcher(
     const std::string& results,
     URLFetcher::RequestType request_type,
     URLFetcher::Delegate* d)
-    : URLFetcher(url, request_type, d) {
+    : URLFetcher(url, request_type, d),
+      ALLOW_THIS_IN_INITIALIZER_LIST(complete_fetch_factory_(this)) {
 }
 
 ExpectCanceledFetcher::~ExpectCanceledFetcher() {
-  task_->Cancel();
 }
 
 void ExpectCanceledFetcher::Start() {
-  task_ = NewRunnableFunction(&ExpectCanceledFetcher::CompleteFetch);
-  BrowserThread::PostDelayedTask(BrowserThread::UI,
-                                 FROM_HERE,
-                                 task_,
-                                 100);
+  MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      complete_fetch_factory_.NewRunnableMethod(
+          &ExpectCanceledFetcher::CompleteFetch),
+      100);
 }
 
-// static
 void ExpectCanceledFetcher::CompleteFetch() {
   ADD_FAILURE() << "Fetch completed in ExpectCanceledFetcher!";
   MessageLoop::current()->Quit();  // Allow exiting even if we mess up.
@@ -62,7 +61,7 @@ void GotCanceledFetcher::Start() {
                                  url_,
                                  status,
                                  RC_FORBIDDEN,
-                                 ResponseCookies(),
+                                 net::ResponseCookies(),
                                  std::string());
 }
 
@@ -83,7 +82,7 @@ void SuccessFetcher::Start() {
                                  url_,
                                  success,
                                  RC_REQUEST_OK,
-                                 ResponseCookies(),
+                                 net::ResponseCookies(),
                                  std::string());
 }
 
@@ -104,7 +103,7 @@ void FailFetcher::Start() {
                                  url_,
                                  failed,
                                  RC_REQUEST_OK,
-                                 ResponseCookies(),
+                                 net::ResponseCookies(),
                                  std::string());
 }
 
@@ -158,7 +157,7 @@ void CaptchaFetcher::Start() {
                                  url_,
                                  success,
                                  RC_FORBIDDEN,
-                                 ResponseCookies(),
+                                 net::ResponseCookies(),
                                  body);
 }
 
@@ -187,7 +186,7 @@ void HostedFetcher::Start() {
                                  url_,
                                  success,
                                  response_code,
-                                 ResponseCookies(),
+                                 net::ResponseCookies(),
                                  data);
 }
 

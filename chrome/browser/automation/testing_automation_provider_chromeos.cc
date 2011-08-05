@@ -7,6 +7,7 @@
 #include "base/values.h"
 #include "chrome/browser/automation/automation_provider_json.h"
 #include "chrome/browser/automation/automation_provider_observers.h"
+#include "chrome/browser/chromeos/audio_handler.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/cros/power_library.h"
@@ -14,6 +15,7 @@
 #include "chrome/browser/chromeos/cros/update_library.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
 #include "chrome/browser/chromeos/login/screen_locker.h"
+#include "chrome/browser/chromeos/network_state_notifier.h"
 #include "chrome/browser/chromeos/proxy_cros_settings_provider.h"
 
 using chromeos::CrosLibrary;
@@ -149,14 +151,24 @@ void TestingAutomationProvider::GetLoginInfo(DictionaryValue* args,
   reply.SendSuccess(return_value.get());
 }
 
+// See the note under LoginAsGuest(). CreateAccount() causes a login as guest.
+void TestingAutomationProvider::ShowCreateAccountUI(
+    DictionaryValue* args, IPC::Message* reply_message) {
+  chromeos::ExistingUserController* controller =
+      chromeos::ExistingUserController::current_controller();
+  // Return immediately, since we're going to die before the login is finished.
+  AutomationJSONReply(this, reply_message).SendSuccess(NULL);
+  controller->CreateAccount();
+}
+
 // Logging in as guest will cause session_manager to restart Chrome with new
 // flags. If you used EnableChromeTesting, you will have to call it again.
 void TestingAutomationProvider::LoginAsGuest(DictionaryValue* args,
                                              IPC::Message* reply_message) {
   chromeos::ExistingUserController* controller =
       chromeos::ExistingUserController::current_controller();
-  // Set up an observer (it will delete itself).
-  new LoginManagerObserver(this, reply_message);
+  // Return immediately, since we're going to die before the login is finished.
+  AutomationJSONReply(this, reply_message).SendSuccess(NULL);
   controller->LoginAsGuest();
 }
 
@@ -173,7 +185,7 @@ void TestingAutomationProvider::Login(DictionaryValue* args,
   chromeos::ExistingUserController* controller =
       chromeos::ExistingUserController::current_controller();
   // Set up an observer (it will delete itself).
-  new LoginManagerObserver(this, reply_message);
+  new LoginObserver(controller, this, reply_message);
   controller->Login(username, password);
 }
 
@@ -189,12 +201,23 @@ void TestingAutomationProvider::LockScreen(DictionaryValue* args,
 
 void TestingAutomationProvider::UnlockScreen(DictionaryValue* args,
                                              IPC::Message* reply_message) {
-  if (!EnsureCrosLibraryLoaded(this, reply_message))
+  std::string password;
+  if (!args->GetString("password", &password)) {
+    AutomationJSONReply(this, reply_message).SendError(
+        "Invalid or missing args.");
     return;
+  }
 
-  new ScreenLockUnlockObserver(this, reply_message, false);
-  CrosLibrary::Get()->GetScreenLockLibrary()->
-      NotifyScreenUnlockRequested();
+  chromeos::ScreenLocker* screen_locker =
+      chromeos::ScreenLocker::default_screen_locker();
+  if (!screen_locker) {
+    AutomationJSONReply(this, reply_message).SendError(
+        "No default screen locker. Are you sure the screen is locked?");
+    return;
+  }
+
+  new ScreenUnlockObserver(this, reply_message);
+  screen_locker->Authenticate(ASCIIToUTF16(password));
 }
 
 // Signing out could have undesirable side effects: session_manager is
@@ -252,8 +275,12 @@ void TestingAutomationProvider::GetNetworkInfo(DictionaryValue* args,
   if (!EnsureCrosLibraryLoaded(this, reply_message))
     return;
 
-  NetworkLibrary* network_library = CrosLibrary::Get()->GetNetworkLibrary();
   scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
+  NetworkLibrary* network_library = CrosLibrary::Get()->GetNetworkLibrary();
+
+  chromeos::NetworkStateNotifier* notifier =
+      chromeos::NetworkStateNotifier::GetInstance();
+  return_value->SetBoolean("offline_mode", !notifier->is_connected());
 
   // IP address.
   return_value->SetString("ip_address", network_library->IPAddress());
@@ -320,8 +347,6 @@ void TestingAutomationProvider::GetNetworkInfo(DictionaryValue* args,
       item->SetString("usage_url", cellular_networks[i]->usage_url());
       item->SetString("network_technology",
                       cellular_networks[i]->GetNetworkTechnologyString());
-      item->SetString("connectivity_state",
-                      cellular_networks[i]->GetConnectivityStateString());
       item->SetString("activation_state",
                       cellular_networks[i]->GetActivationStateString());
       item->SetString("roaming_state",
@@ -427,12 +452,10 @@ void TestingAutomationProvider::ConnectToHiddenWifiNetwork(
     return;
   }
 
-  std::string ssid, security, password, identity, certpath;
+  std::string ssid, security, password;
   if (!args->GetString("ssid", &ssid) ||
       !args->GetString("security", &security) ||
-      !args->GetString("password", &password) ||
-      !args->GetString("identity", &identity) ||
-      !args->GetString("certpath", &certpath)) {
+      !args->GetString("password", &password)) {
     AutomationJSONReply(this, reply_message)
         .SendError("Invalid or missing args.");
     return;
@@ -458,8 +481,7 @@ void TestingAutomationProvider::ConnectToHiddenWifiNetwork(
   // Set up an observer (it will delete itself).
   new SSIDConnectObserver(this, reply_message, ssid);
 
-  network_library->ConnectToWifiNetwork(connection_security, ssid, password,
-                                        identity, certpath);
+  network_library->ConnectToWifiNetwork(ssid, connection_security, password);
 }
 
 void TestingAutomationProvider::DisconnectFromWifiNetwork(
@@ -514,5 +536,42 @@ void TestingAutomationProvider::SetReleaseTrack(DictionaryValue* args,
 
   UpdateLibrary* update_library = CrosLibrary::Get()->GetUpdateLibrary();
   update_library->SetReleaseTrack(track);
+  reply.SendSuccess(NULL);
+}
+
+void TestingAutomationProvider::GetVolumeInfo(DictionaryValue* args,
+                                              IPC::Message* reply_message) {
+  scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
+  chromeos::AudioHandler* audio_handler = chromeos::AudioHandler::GetInstance();
+  return_value->SetDouble("volume", audio_handler->GetVolumePercent());
+  return_value->SetBoolean("is_mute", audio_handler->IsMute());
+  AutomationJSONReply(this, reply_message).SendSuccess(return_value.get());
+}
+
+void TestingAutomationProvider::SetVolume(DictionaryValue* args,
+                                          IPC::Message* reply_message) {
+  AutomationJSONReply reply(this, reply_message);
+  double volume_percent;
+  if (!args->GetDouble("volume", &volume_percent)) {
+    reply.SendError("Invalid or missing args.");
+    return;
+  }
+
+  chromeos::AudioHandler* audio_handler = chromeos::AudioHandler::GetInstance();
+  audio_handler->SetVolumePercent(volume_percent);
+  reply.SendSuccess(NULL);
+}
+
+void TestingAutomationProvider::SetMute(DictionaryValue* args,
+                                        IPC::Message* reply_message) {
+  AutomationJSONReply reply(this, reply_message);
+  bool mute;
+  if (!args->GetBoolean("mute", &mute)) {
+    reply.SendError("Invalid or missing args.");
+    return;
+  }
+
+  chromeos::AudioHandler* audio_handler = chromeos::AudioHandler::GetInstance();
+  audio_handler->SetMute(mute);
   reply.SendSuccess(NULL);
 }

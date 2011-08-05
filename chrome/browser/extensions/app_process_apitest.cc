@@ -81,12 +81,25 @@ IN_PROC_BROWSER_TEST_F(AppApiTest, AppProcess) {
   replace_host.SetHostStr(host_str);
   base_url = base_url.ReplaceComponents(replace_host);
 
-  browser()->NewTab();
-  ui_test_utils::NavigateToURL(browser(), base_url.Resolve("path1/empty.html"));
+  // Test both opening a URL in a new tab, and opening a tab and then navigating
+  // it.  Either way, app tabs should be considered extension processes, but
+  // they have no elevated privileges and thus should not have WebUI bindings.
+  ui_test_utils::NavigateToURLWithDisposition(
+      browser(), base_url.Resolve("path1/empty.html"), NEW_FOREGROUND_TAB,
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
+  EXPECT_TRUE(browser()->GetTabContentsAt(1)->render_view_host()->process()->
+                  is_extension_process());
+  EXPECT_FALSE(browser()->GetTabContentsAt(1)->web_ui());
   browser()->NewTab();
   ui_test_utils::NavigateToURL(browser(), base_url.Resolve("path2/empty.html"));
+  EXPECT_TRUE(browser()->GetTabContentsAt(2)->render_view_host()->process()->
+                  is_extension_process());
+  EXPECT_FALSE(browser()->GetTabContentsAt(2)->web_ui());
   browser()->NewTab();
   ui_test_utils::NavigateToURL(browser(), base_url.Resolve("path3/empty.html"));
+  EXPECT_FALSE(browser()->GetTabContentsAt(3)->render_view_host()->process()->
+                  is_extension_process());
+  EXPECT_FALSE(browser()->GetTabContentsAt(3)->web_ui());
 
   // The extension should have opened 3 new tabs. Including the original blank
   // tab, we now have 4 tabs. Two should be part of the extension app, and
@@ -105,12 +118,9 @@ IN_PROC_BROWSER_TEST_F(AppApiTest, AppProcess) {
                    base_url.Resolve("path1/empty.html"), true);
   WindowOpenHelper(browser(), host,
                    base_url.Resolve("path2/empty.html"), true);
-  // TODO(creis): This should open in a new process (i.e., false for the last
-  // argument), but we temporarily avoid swapping processes away from an app
-  // until we're able to restore window.opener if the page later returns to an
-  // in-app URL.  See crbug.com/65953.
+  // This should open in a new process (i.e., false for the last argument).
   WindowOpenHelper(browser(), host,
-                   base_url.Resolve("path3/empty.html"), true);
+                   base_url.Resolve("path3/empty.html"), false);
 
   // Now let's have these pages navigate, into or out of the extension web
   // extent. They should switch processes.
@@ -118,10 +128,7 @@ IN_PROC_BROWSER_TEST_F(AppApiTest, AppProcess) {
   const GURL& non_app_url(base_url.Resolve("path3/empty.html"));
   NavigateTabHelper(browser()->GetTabContentsAt(2), non_app_url);
   NavigateTabHelper(browser()->GetTabContentsAt(3), app_url);
-  // TODO(creis): This should swap out of the app's process (i.e., EXPECT_NE),
-  // but we temporarily avoid swapping away from an app in case it needs to
-  // communicate with window.opener later.  See crbug.com/65953.
-  EXPECT_EQ(host->process(),
+  EXPECT_NE(host->process(),
             browser()->GetTabContentsAt(2)->render_view_host()->process());
   EXPECT_EQ(host->process(),
             browser()->GetTabContentsAt(3)->render_view_host()->process());
@@ -181,4 +188,54 @@ IN_PROC_BROWSER_TEST_F(AppApiTest, AppProcessRedirectBack) {
   RenderViewHost* host = browser()->GetTabContentsAt(1)->render_view_host();
   EXPECT_EQ(host->process(),
             browser()->GetTabContentsAt(2)->render_view_host()->process());
+}
+
+// Ensure that reloading a URL after installing or uninstalling it as an app
+// correctly swaps the process.  (http://crbug.com/80621)
+IN_PROC_BROWSER_TEST_F(AppApiTest, ReloadIntoAppProcess) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kDisablePopupBlocking);
+
+  host_resolver()->AddRule("*", "127.0.0.1");
+  ASSERT_TRUE(test_server()->Start());
+
+  // The app under test acts on URLs whose host is "localhost",
+  // so the URLs we navigate to must have host "localhost".
+  GURL::Replacements replace_host;
+  std::string host_str("localhost");  // must stay in scope with replace_host
+  replace_host.SetHostStr(host_str);
+  GURL base_url = test_server()->GetURL(
+      "files/extensions/api_test/app_process/");
+  base_url = base_url.ReplaceComponents(replace_host);
+
+  // Load an app URL before loading the app.
+  ui_test_utils::NavigateToURL(browser(), base_url.Resolve("path1/empty.html"));
+  TabContents* contents = browser()->GetTabContentsAt(0);
+  EXPECT_FALSE(contents->render_view_host()->process()->is_extension_process());
+
+  // Load app and reload page.
+  const Extension* app =
+      LoadExtension(test_data_dir_.AppendASCII("app_process"));
+  ASSERT_TRUE(app);
+  ui_test_utils::NavigateToURL(browser(), base_url.Resolve("path1/empty.html"));
+  EXPECT_TRUE(contents->render_view_host()->process()->is_extension_process());
+
+  // Disable app and reload page.
+  DisableExtension(app->id());
+  ui_test_utils::NavigateToURL(browser(), base_url.Resolve("path1/empty.html"));
+  EXPECT_FALSE(contents->render_view_host()->process()->is_extension_process());
+
+  // Enable app and reload via JavaScript.
+  EnableExtension(app->id());
+  ASSERT_TRUE(ui_test_utils::ExecuteJavaScript(contents->render_view_host(),
+                                               L"", L"location.reload();"));
+  ui_test_utils::WaitForNavigation(&contents->controller());
+  EXPECT_TRUE(contents->render_view_host()->process()->is_extension_process());
+
+  // Disable app and reload via JavaScript.
+  DisableExtension(app->id());
+  ASSERT_TRUE(ui_test_utils::ExecuteJavaScript(contents->render_view_host(),
+                                               L"", L"location.reload();"));
+  ui_test_utils::WaitForNavigation(&contents->controller());
+  EXPECT_FALSE(contents->render_view_host()->process()->is_extension_process());
 }

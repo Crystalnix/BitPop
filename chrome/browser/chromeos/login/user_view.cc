@@ -10,7 +10,7 @@
 #include "chrome/browser/chromeos/login/rounded_view.h"
 #include "chrome/browser/chromeos/view_ids.h"
 #include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
@@ -22,6 +22,7 @@
 #include "views/controls/image_view.h"
 #include "views/controls/label.h"
 #include "views/controls/link.h"
+#include "views/controls/link_listener.h"
 #include "views/painter.h"
 
 namespace {
@@ -66,7 +67,7 @@ using login::kUserImageSize;
 // The view that shows the Sign out button below the user's image.
 class SignoutView : public views::View {
  public:
-  explicit SignoutView(views::LinkController* link_controller) {
+  explicit SignoutView(views::LinkListener* link_listener) {
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
     const gfx::Font& font = rb.GetFont(ResourceBundle::SmallFont);
 
@@ -77,7 +78,7 @@ class SignoutView : public views::View {
 
     signout_link_ = new views::Link(
         UTF16ToWide(l10n_util::GetStringUTF16(IDS_SCREEN_LOCK_SIGN_OUT)));
-    signout_link_->SetController(link_controller);
+    signout_link_->set_listener(link_listener);
     signout_link_->SetFont(font);
     signout_link_->SetColor(kTextColor);
     signout_link_->SetFocusable(true);
@@ -147,7 +148,7 @@ class RemoveButton : public views::TextButton {
 
  protected:
   // Overridden from View:
-  virtual void OnMouseExited(const views::MouseEvent& event) {
+  virtual void OnMouseExited(const views::MouseEvent& event) OVERRIDE {
     SetIcon(icon_);
     views::TextButton::SetText(std::wstring());
     ClearMaxTextSize();
@@ -158,7 +159,7 @@ class RemoveButton : public views::TextButton {
     was_first_click_ = false;
   }
 
-  void NotifyClick(const views::Event& event) {
+  virtual void NotifyClick(const views::Event& event) OVERRIDE {
     if (!was_first_click_) {
       // On first click transform image to "remove" label.
       SetIcon(SkBitmap());
@@ -189,7 +190,7 @@ class RemoveButton : public views::TextButton {
     }
   }
 
-  void SetText(const std::wstring& text) {
+  virtual void SetText(const std::wstring& text) OVERRIDE {
     text_ = text;
   }
 
@@ -226,18 +227,16 @@ class PodImageView : public views::ImageView {
 
  protected:
   // Overridden from View:
-  virtual void OnMouseEntered(const views::MouseEvent& event) {
+  gfx::NativeCursor GetCursor(const views::MouseEvent& event) OVERRIDE {
+    return delegate_->IsUserSelected() ? NULL : gfx::GetCursor(GDK_HAND2);
+  }
+
+  virtual void OnMouseEntered(const views::MouseEvent& event) OVERRIDE {
     views::ImageView::SetImage(image_hot_);
   }
 
-  virtual void OnMouseExited(const views::MouseEvent& event) {
+  virtual void OnMouseExited(const views::MouseEvent& event) OVERRIDE {
     views::ImageView::SetImage(image_);
-  }
-
-  gfx::NativeCursor GetCursorForPoint(
-      ui::EventType event_type,
-      const gfx::Point& p) {
-    return (delegate_->IsUserSelected()) ? NULL : gfx::GetCursor(GDK_HAND2);
   }
 
  private:
@@ -252,6 +251,7 @@ class PodImageView : public views::ImageView {
 UserView::UserView(Delegate* delegate, bool is_login, bool need_background)
     : delegate_(delegate),
       signout_view_(NULL),
+      ignore_signout_click_(false),
       image_view_(NULL),
       remove_button_(NULL) {
   DCHECK(delegate);
@@ -314,17 +314,13 @@ gfx::Size UserView::GetPreferredSize() {
 }
 
 void UserView::SetSignoutEnabled(bool enabled) {
-  DCHECK(signout_view_);
-  signout_view_->signout_link()->SetEnabled(enabled);
-
-  // Relayout because active and inactive link has different preferred size.
-  Layout();
+  ignore_signout_click_ = !enabled;
 }
 
-void UserView::LinkActivated(views::Link* source, int event_flags) {
+void UserView::LinkClicked(views::Link* source, int event_flags) {
   DCHECK(delegate_);
   DCHECK(signout_view_);
-  if (signout_view_->signout_link() == source)
+  if (!ignore_signout_click_ && signout_view_->signout_link() == source)
     delegate_->OnSignout();
 }
 

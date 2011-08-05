@@ -21,6 +21,7 @@ var chrome = chrome || {};
   native function IsIncognitoProcess();
   native function GetUniqueSubEventName(eventName);
   native function GetLocalFileSystem(name, path);
+  native function DecodeJPEG(jpeg_image);
 
   var chromeHidden = GetChromeHidden();
 
@@ -254,12 +255,14 @@ var chrome = chrome || {};
   //   chrome.webRequest.onBeforeRequest.addListener(
   //       callback, {urls: "http://*.google.com/*"});
   //   ^ callback will only be called for onBeforeRequests matching the filter.
-  chrome.WebRequestEvent = function(eventName, opt_argSchemas) {
+  chrome.WebRequestEvent =
+     function(eventName, opt_argSchemas, opt_extraArgSchemas) {
     if (typeof eventName != "string")
       throw new Error("chrome.WebRequestEvent requires an event name.");
 
     this.eventName_ = eventName;
     this.argSchemas_ = opt_argSchemas;
+    this.extraArgSchemas_ = opt_extraArgSchemas;
     this.subEvents_ = [];
     this.callbackMap_ = {};
   };
@@ -273,6 +276,8 @@ var chrome = chrome || {};
     var subEventName = GetUniqueSubEventName(this.eventName_);
     // Note: this could fail to validate, in which case we would not add the
     // subEvent listener.
+    chromeHidden.validate(Array.prototype.slice.call(arguments, 1),
+                          this.extraArgSchemas_);
     chrome.experimental.webRequest.addEventListener(
         cb, opt_filter, opt_extraInfo, this.eventName_, subEventName);
 
@@ -341,12 +346,12 @@ var chrome = chrome || {};
 
   var customBindings = {};
 
-  function setupPreferences() {
-    customBindings['Preference'] = function(prefKey, valueSchema) {
+  function setupChromeSetting() {
+    customBindings['ChromeSetting'] = function(prefKey, valueSchema) {
       this.get = function(details, callback) {
         var getSchema = this.parameters.get;
         chromeHidden.validate([details, callback], getSchema);
-        return sendRequest('experimental.preferences.get',
+        return sendRequest('types.ChromeSetting.get',
                            [prefKey, details, callback],
                            extendSchema(getSchema));
       };
@@ -354,21 +359,21 @@ var chrome = chrome || {};
         var setSchema = this.parameters.set.slice();
         setSchema[0].properties.value = valueSchema;
         chromeHidden.validate([details, callback], setSchema);
-        return sendRequest('experimental.preferences.set',
+        return sendRequest('types.ChromeSetting.set',
                            [prefKey, details, callback],
                            extendSchema(setSchema));
       };
       this.clear = function(details, callback) {
         var clearSchema = this.parameters.clear;
         chromeHidden.validate([details, callback], clearSchema);
-        return sendRequest('experimental.preferences.clear',
+        return sendRequest('types.ChromeSetting.clear',
                            [prefKey, details, callback],
                            extendSchema(clearSchema));
       };
-      this.onChange = new chrome.Event('experimental.preferences.' + prefKey
-                                           + '.onChange');
+      this.onChange = new chrome.Event('types.ChromeSetting.' + prefKey +
+                                       '.onChange');
     };
-    customBindings['Preference'].prototype = new CustomBindingsObject();
+    customBindings['ChromeSetting'].prototype = new CustomBindingsObject();
   }
 
   // Page action events send (pageActionId, {tabId, tabUrl}).
@@ -500,9 +505,9 @@ var chrome = chrome || {};
     }
     chrome.initExtension(extensionId, false, IsIncognitoProcess());
 
-    // Setup the Preference class so we can use it to construct Preference
-    // objects from the API definition.
-    setupPreferences();
+    // Setup the ChromeSetting class so we can use it to construct
+    // ChromeSetting objects from the API definition.
+    setupChromeSetting();
 
     // |apiFunctions| is a hash of name -> object that stores the
     // name & definition of the apiFunction. Custom handling of api functions
@@ -588,7 +593,7 @@ var chrome = chrome || {};
           if (apiDef.namespace == "experimental.webRequest") {
             // WebRequest events have a special structure.
             module[eventDef.name] = new chrome.WebRequestEvent(eventName,
-                eventDef.parameters);
+                eventDef.parameters, eventDef.extraParameters);
           } else {
             module[eventDef.name] = new chrome.Event(eventName,
                 eventDef.parameters);
@@ -668,6 +673,11 @@ var chrome = chrome || {};
         if (request.callback)
           request.callback(fs);
         request.callback = null;
+      };
+
+    apiFunctions["chromePrivate.decodeJPEG"].handleRequest =
+      function(jpeg_image) {
+        return DecodeJPEG(jpeg_image);
       };
 
     apiFunctions["extension.getViews"].handleRequest = function(properties) {

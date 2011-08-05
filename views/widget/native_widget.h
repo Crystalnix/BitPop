@@ -36,6 +36,11 @@ class NativeWidget {
 
   virtual ~NativeWidget() {}
 
+  // Creates an appropriate default NativeWidget implementation for the current
+  // OS/circumstance.
+  static NativeWidget* CreateNativeWidget(
+      internal::NativeWidgetDelegate* delegate);
+
   // Retrieves the NativeWidget implementation associated with the given
   // NativeView or Window, or NULL if the supplied handle has no associated
   // NativeView.
@@ -58,12 +63,25 @@ class NativeWidget {
   static void ReparentNativeView(gfx::NativeView native_view,
                                  gfx::NativeView new_parent);
 
-  // Sets the create params for the NativeWidget.
-  virtual void SetCreateParams(const Widget::CreateParams& params) = 0;
+  // Initializes the NativeWidget.
+  virtual void InitNativeWidget(const Widget::InitParams& params) = 0;
 
   // Returns the Widget associated with this NativeWidget. This function is
   // guaranteed to return non-NULL for the lifetime of the NativeWidget.
   virtual Widget* GetWidget() = 0;
+  virtual const Widget* GetWidget() const = 0;
+
+  // Returns the NativeView/Window associated with this NativeWidget.
+  virtual gfx::NativeView GetNativeView() const = 0;
+  virtual gfx::NativeWindow GetNativeWindow() const = 0;
+
+  // Returns the enclosing Window, or NULL if there is no enclosing Window.
+  virtual Window* GetContainingWindow() = 0;
+  virtual const Window* GetContainingWindow() const = 0;
+
+  // Notifies the NativeWidget that a view was removed from the Widget's view
+  // hierarchy.
+  virtual void ViewRemoved(View* view) = 0;
 
   // Sets/Gets a native window property on the underlying native window object.
   // Returns NULL if the property does not exist. Setting the property value to
@@ -78,12 +96,20 @@ class NativeWidget {
   // Returns true if a system screen reader is active for the NativeWidget.
   virtual bool IsScreenReaderActive() const = 0;
 
+  // Notify native Accessibility clients of an event.
+  virtual void SendNativeAccessibilityEvent(
+      View* view,
+      ui::AccessibilityTypes::Event event_type) = 0;
+
   // Sets or releases event capturing for this native widget.
   virtual void SetMouseCapture() = 0;
   virtual void ReleaseMouseCapture() = 0;
 
   // Returns true if this native widget is capturing all events.
   virtual bool HasMouseCapture() const = 0;
+
+  // Returns true if any mouse button is currently pressed.
+  virtual bool IsMouseButtonDown() const = 0;
 
   // Returns the InputMethod for this native widget.
   // Note that all widgets in a widget hierarchy share the same input method.
@@ -98,6 +124,7 @@ class NativeWidget {
 
  protected:
   friend class Widget;
+  friend class NativeWidgetViews;
 
   // Returns a handle for the underlying native widget that can be used for
   // accelerated drawing.
@@ -109,16 +136,25 @@ class NativeWidget {
   virtual gfx::Rect GetClientAreaScreenBounds() const = 0;
   virtual void SetBounds(const gfx::Rect& bounds) = 0;
   virtual void SetSize(const gfx::Size& size) = 0;
+  virtual void SetBoundsConstrained(const gfx::Rect& bounds,
+                                    Widget* other_widget) = 0;
   virtual void MoveAbove(gfx::NativeView native_view) = 0;
   virtual void SetShape(gfx::NativeRegion shape) = 0;
   virtual void Close() = 0;
   virtual void CloseNow() = 0;
   virtual void Show() = 0;
   virtual void Hide() = 0;
-  virtual void SetOpacity(unsigned char opacity) = 0;
-  virtual void SetAlwaysOnTop(bool on_top) = 0;
   virtual bool IsVisible() const = 0;
+  virtual void Activate() = 0;
+  virtual void Deactivate() = 0;
   virtual bool IsActive() const = 0;
+  virtual void SetAlwaysOnTop(bool always_on_top) = 0;
+  virtual void Maximize() = 0;
+  virtual void Minimize() = 0;
+  virtual bool IsMaximized() const = 0;
+  virtual bool IsMinimized() const = 0;
+  virtual void Restore() = 0;
+  virtual void SetOpacity(unsigned char opacity) = 0;
   virtual bool IsAccessibleWidget() const = 0;
   virtual bool ContainsNativeView(gfx::NativeView native_view) const = 0;
   virtual void RunShellDrag(View* view,

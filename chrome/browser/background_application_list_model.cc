@@ -79,6 +79,18 @@ void GetServiceApplications(ExtensionService* service,
     if (BackgroundApplicationListModel::IsBackgroundApp(*extension))
       applications_result->push_back(extension);
   }
+
+  // Walk the list of terminated extensions also (just because an extension
+  // crashed doesn't mean we should ignore it).
+  extensions = service->terminated_extensions();
+  for (ExtensionList::const_iterator cursor = extensions->begin();
+       cursor != extensions->end();
+       ++cursor) {
+    const Extension* extension = *cursor;
+    if (BackgroundApplicationListModel::IsBackgroundApp(*extension))
+      applications_result->push_back(extension);
+  }
+
   std::string locale = g_browser_process->GetApplicationLocale();
   icu::Locale loc(locale.c_str());
   UErrorCode error = U_ZERO_ERROR;
@@ -96,11 +108,12 @@ bool HasBackgroundAppPermission(
 
 void
 BackgroundApplicationListModel::Observer::OnApplicationDataChanged(
-    const Extension* extension) {
+    const Extension* extension, Profile* profile) {
 }
 
 void
-BackgroundApplicationListModel::Observer::OnApplicationListChanged() {
+BackgroundApplicationListModel::Observer::OnApplicationListChanged(
+    Profile* profile) {
 }
 
 BackgroundApplicationListModel::Observer::~Observer() {
@@ -125,7 +138,7 @@ void BackgroundApplicationListModel::Application::OnImageLoaded(
   if (!image)
     return;
   icon_.reset(new SkBitmap(*image));
-  model_->OnApplicationDataChanged(extension_);
+  model_->SendApplicationDataChangedNotifications(extension_);
 }
 
 void BackgroundApplicationListModel::Application::RequestIcon(
@@ -263,9 +276,10 @@ void BackgroundApplicationListModel::Observe(
   }
 }
 
-void BackgroundApplicationListModel::OnApplicationDataChanged(
+void BackgroundApplicationListModel::SendApplicationDataChangedNotifications(
     const Extension* extension) {
-  FOR_EACH_OBSERVER(Observer, observers_, OnApplicationDataChanged(extension));
+  FOR_EACH_OBSERVER(Observer, observers_, OnApplicationDataChanged(extension,
+                                                                   profile_));
 }
 
 void BackgroundApplicationListModel::OnExtensionLoaded(Extension* extension) {
@@ -310,6 +324,6 @@ void BackgroundApplicationListModel::Update() {
   }
   if (old_cursor != extensions_.end() || new_cursor != extensions.end()) {
     extensions_ = extensions;
-    FOR_EACH_OBSERVER(Observer, observers_, OnApplicationListChanged());
+    FOR_EACH_OBSERVER(Observer, observers_, OnApplicationListChanged(profile_));
   }
 }

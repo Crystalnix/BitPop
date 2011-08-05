@@ -11,8 +11,8 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/common/net/url_fetcher.h"
 #include "content/browser/geolocation/device_data_provider.h"
+#include "content/common/url_fetcher.h"
 #include "googleurl/src/gurl.h"
 
 class URLFetcher;
@@ -71,7 +71,7 @@ class NetworkLocationRequest : private URLFetcher::Delegate {
                                   const GURL& url,
                                   const net::URLRequestStatus& status,
                                   int response_code,
-                                  const ResponseCookies& cookies,
+                                  const net::ResponseCookies& cookies,
                                   const std::string& data);
 
   scoped_refptr<net::URLRequestContextGetter> url_context_;

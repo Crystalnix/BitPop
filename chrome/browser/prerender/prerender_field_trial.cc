@@ -29,13 +29,7 @@ void ConfigurePrefetchAndPrerender(const CommandLine& command_line) {
         command_line.GetSwitchValueASCII(switches::kPrerender);
 
     if (switch_value == switches::kPrerenderSwitchValueAuto) {
-#if defined(OS_CHROMEOS)
-      // Prerender is temporarily disabled on CrOS.
-      // http://crosbug.com/12483
-      prerender_option = PRERENDER_OPTION_DISABLED;
-#else
       prerender_option = PRERENDER_OPTION_AUTO;
-#endif
     } else if (switch_value == switches::kPrerenderSwitchValueDisabled) {
       prerender_option = PRERENDER_OPTION_DISABLED;
     } else if (switch_value.empty() ||
@@ -53,18 +47,25 @@ void ConfigurePrefetchAndPrerender(const CommandLine& command_line) {
     }
   }
 
+#if defined(OS_CHROMEOS)
+  // Prerender is not enabled on CrOS by default..
+  // http://crosbug.com/12483
+  if (prerender_option == PRERENDER_OPTION_AUTO)
+    prerender_option = PRERENDER_OPTION_DISABLED;
+#endif
+
   switch (prerender_option) {
     case PRERENDER_OPTION_AUTO: {
       const base::FieldTrial::Probability kPrefetchDivisor = 1000;
       const base::FieldTrial::Probability kYesPrefetchProbability = 0;
-      const base::FieldTrial::Probability kPrerenderExp1Probability = 0;
-      const base::FieldTrial::Probability kPrerenderControl1Probability = 0;
-      const base::FieldTrial::Probability kPrerenderExp2Probability = 0;
-      const base::FieldTrial::Probability kPrerenderControl2Probability = 0;
+      const base::FieldTrial::Probability kPrerenderExp1Probability = 495;
+      const base::FieldTrial::Probability kPrerenderControl1Probability = 5;
+      const base::FieldTrial::Probability kPrerenderExp2Probability = 495;
+      const base::FieldTrial::Probability kPrerenderControl2Probability = 5;
 
       scoped_refptr<base::FieldTrial> trial(
           new base::FieldTrial("Prefetch", kPrefetchDivisor,
-                               "ContentPrefetchDisabled", 2011, 6, 30));
+                               "ContentPrefetchDisabled", 2012, 6, 30));
 
       const int kNoPrefetchGroup = trial->kDefaultGroupNumber;
       const int kYesPrefetchGroup =
@@ -91,12 +92,12 @@ void ConfigurePrefetchAndPrerender(const CommandLine& command_line) {
             PrerenderManager::PRERENDER_MODE_DISABLED);
       } else if (trial_group == kPrerenderExperiment1Group ||
                  trial_group == kPrerenderExperiment2Group) {
-        ResourceDispatcherHost::set_is_prefetch_enabled(true);
+        ResourceDispatcherHost::set_is_prefetch_enabled(false);
         PrerenderManager::SetMode(
             PrerenderManager::PRERENDER_MODE_EXPERIMENT_PRERENDER_GROUP);
       } else if (trial_group == kPrerenderControl1Group ||
                  trial_group == kPrerenderControl2Group) {
-        ResourceDispatcherHost::set_is_prefetch_enabled(true);
+        ResourceDispatcherHost::set_is_prefetch_enabled(false);
         PrerenderManager::SetMode(
             PrerenderManager::PRERENDER_MODE_EXPERIMENT_CONTROL_GROUP);
       } else {
@@ -109,7 +110,7 @@ void ConfigurePrefetchAndPrerender(const CommandLine& command_line) {
       PrerenderManager::SetMode(PrerenderManager::PRERENDER_MODE_DISABLED);
       break;
     case PRERENDER_OPTION_ENABLED:
-      ResourceDispatcherHost::set_is_prefetch_enabled(true);
+      ResourceDispatcherHost::set_is_prefetch_enabled(false);
       PrerenderManager::SetMode(PrerenderManager::PRERENDER_MODE_ENABLED);
       break;
     case PRERENDER_OPTION_PREFETCH_ONLY:

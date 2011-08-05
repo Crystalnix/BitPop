@@ -6,11 +6,12 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/message_loop.h"
+#include "base/scoped_temp_dir.h"
 #include "base/stl_util-inl.h"
 #include "base/task.h"
 #include "chrome/browser/sessions/session_service.h"
+#include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/sessions/session_service_test_helper.h"
 #include "chrome/browser/sync/abstract_profile_sync_service_test.h"
 #include "chrome/browser/sync/engine/syncapi.h"
@@ -28,10 +29,10 @@
 #include "chrome/browser/sync/test_profile_sync_service.h"
 #include "chrome/common/net/gaia/gaia_constants.h"
 #include "chrome/test/browser_with_test_window_test.h"
-#include "chrome/test/file_test_utils.h"
 #include "chrome/test/profile_mock.h"
 #include "chrome/test/sync/engine/test_id_factory.h"
 #include "chrome/test/testing_profile.h"
+#include "content/browser/browser_thread.h"
 #include "content/common/notification_observer.h"
 #include "content/common/notification_registrar.h"
 #include "content/common/notification_service.h"
@@ -54,7 +55,8 @@ class ProfileSyncServiceSessionTest
       public NotificationObserver {
  public:
   ProfileSyncServiceSessionTest()
-      : window_bounds_(0, 1, 2, 3),
+      : io_thread_(BrowserThread::IO),
+        window_bounds_(0, 1, 2, 3),
         notified_of_update_(false) {}
   ProfileSyncService* sync_service() { return sync_service_.get(); }
 
@@ -66,11 +68,14 @@ class ProfileSyncServiceSessionTest
   virtual void SetUp() {
     // BrowserWithTestWindowTest implementation.
     BrowserWithTestWindowTest::SetUp();
+    base::Thread::Options options;
+    options.message_loop_type = MessageLoop::TYPE_IO;
+    io_thread_.StartWithOptions(options);
     profile()->CreateRequestContext();
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     SessionService* session_service = new SessionService(temp_dir_.path());
     helper_.set_service(session_service);
-    service()->SetWindowType(window_id_, Browser::TYPE_NORMAL);
+    service()->SetWindowType(window_id_, Browser::TYPE_TABBED);
     service()->SetWindowBounds(window_id_, window_bounds_, false);
     registrar_.Add(this, NotificationType::FOREIGN_SESSION_UPDATED,
         NotificationService::AllSources());
@@ -90,16 +95,19 @@ class ProfileSyncServiceSessionTest
   }
 
   virtual void TearDown() {
-    helper_.set_service(NULL);
-    profile()->set_session_service(NULL);
+    if (SessionServiceFactory::GetForProfileIfExisting(profile()) == service())
+      helper_.ReleaseService(); // we transferred ownership to profile
+    else
+      helper_.set_service(NULL);
+    SessionServiceFactory::SetForTestProfile(profile(), NULL);
     sync_service_.reset();
-    {
-      // The request context gets deleted on the I/O thread. To prevent a leak
-      // supply one here.
-      BrowserThread io_thread(BrowserThread::IO, MessageLoop::current());
-      profile()->ResetRequestContext();
-    }
+    profile()->ResetRequestContext();
+    // Pump messages posted by the sync core thread (which may end up
+    // posting on the IO thread).
     MessageLoop::current()->RunAllPending();
+    io_thread_.Stop();
+    MessageLoop::current()->RunAllPending();
+    BrowserWithTestWindowTest::TearDown();
   }
 
   bool StartSyncService(Task* task, bool will_fail_association) {
@@ -107,7 +115,7 @@ class ProfileSyncServiceSessionTest
       return false;
     sync_service_.reset(new TestProfileSyncService(
         &factory_, profile(), "test user", false, task));
-    profile()->set_session_service(helper_.service());
+    SessionServiceFactory::SetForTestProfile(profile(), helper_.service());
 
     // Register the session data type.
     model_associator_ =
@@ -132,6 +140,7 @@ class ProfileSyncServiceSessionTest
     return true;
   }
 
+  BrowserThread io_thread_;
   // Path used in testing.
   ScopedTempDir temp_dir_;
   SessionServiceTestHelper helper_;
@@ -195,7 +204,13 @@ TEST_F(ProfileSyncServiceSessionTest, WriteSessionToNode) {
 
 // Test that we can fill this machine's session, write it to a node,
 // and then retrieve it.
-TEST_F(ProfileSyncServiceSessionTest, WriteFilledSessionToNode) {
+// Experiencing random crashes on windows. http://crbug.com/81104.
+#if defined(OS_WIN)
+#define MAYBE_WriteFilledSessionToNode DISABLED_WriteFilledSessionToNode
+#else
+#define MAYBE_WriteFilledSessionToNode WriteFilledSessionToNode
+#endif
+TEST_F(ProfileSyncServiceSessionTest, MAYBE_WriteFilledSessionToNode) {
   CreateRootTask task(this);
   ASSERT_TRUE(StartSyncService(&task, false));
   ASSERT_TRUE(task.success());
@@ -264,7 +279,7 @@ TEST_F(ProfileSyncServiceSessionTest, WriteForeignSessionToNode) {
   sync_pb::SessionHeader* header_s = meta_specifics.mutable_header();
   sync_pb::SessionWindow* window_s = header_s->add_window();
   window_s->add_tab(0);
-  window_s->set_browser_type(sync_pb::SessionWindow_BrowserType_TYPE_NORMAL);
+  window_s->set_browser_type(sync_pb::SessionWindow_BrowserType_TYPE_TABBED);
   window_s->set_selected_tab_index(1);
 
   sync_pb::SessionSpecifics tab_specifics;

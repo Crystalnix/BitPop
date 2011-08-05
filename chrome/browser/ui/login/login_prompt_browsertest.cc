@@ -7,6 +7,7 @@
 #include <map>
 
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/login/login_prompt.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
@@ -16,6 +17,7 @@
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
 #include "content/common/notification_service.h"
 #include "net/base/auth.h"
+#include "net/base/mock_host_resolver.h"
 
 namespace {
 
@@ -190,15 +192,21 @@ IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest, PrefetchAuthCancels) {
   class SetPrefetchForTest {
    public:
     explicit SetPrefetchForTest(bool prefetch)
-        : old_prefetch_state_(ResourceDispatcherHost::is_prefetch_enabled()) {
+        : old_prefetch_state_(ResourceDispatcherHost::is_prefetch_enabled()),
+          old_mode_(prerender::PrerenderManager::GetMode()) {
       ResourceDispatcherHost::set_is_prefetch_enabled(prefetch);
+      // Disable prerender so this is just a prefetch of the top-level page.
+      prerender::PrerenderManager::SetMode(
+          prerender::PrerenderManager::PRERENDER_MODE_DISABLED);
     }
 
     ~SetPrefetchForTest() {
       ResourceDispatcherHost::set_is_prefetch_enabled(old_prefetch_state_);
+      prerender::PrerenderManager::SetMode(old_mode_);
     }
    private:
     bool old_prefetch_state_;
+    prerender::PrerenderManager::PrerenderManagerMode old_mode_;
   } set_prefetch_for_test(true);
 
   TabContentsWrapper* contents =
@@ -464,6 +472,73 @@ IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest, NoLoginPromptForFavicon) {
   EXPECT_EQ(0, observer.auth_supplied_count_);
   EXPECT_EQ(1, observer.auth_needed_count_);
   EXPECT_EQ(1, observer.auth_cancelled_count_);
+  EXPECT_TRUE(test_server()->Stop());
+}
+
+// Block crossdomain subresource login prompting as a phishing defense.
+IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest, BlockCrossdomainPrompt) {
+  const char* kTestPage = "files/login/load_img_from_b.html";
+
+  host_resolver()->AddRule("www.a.com", "127.0.0.1");
+  host_resolver()->AddRule("www.b.com", "127.0.0.1");
+  ASSERT_TRUE(test_server()->Start());
+
+  TabContentsWrapper* contents = browser()->GetSelectedTabContentsWrapper();
+  ASSERT_TRUE(contents);
+
+  NavigationController* controller = &contents->controller();
+  LoginPromptBrowserTestObserver observer;
+  observer.Register(Source<NavigationController>(controller));
+
+  // Load a page that has a cross-domain sub-resource authentication.
+  // There should be no login prompt.
+  {
+    GURL test_page = test_server()->GetURL(kTestPage);
+    ASSERT_EQ("127.0.0.1", test_page.host());
+
+    // Change the host from 127.0.0.1 to www.a.com so that when the
+    // page tries to load from b, it will be cross-origin.
+    std::string new_host("www.a.com");
+    GURL::Replacements replacements;
+    replacements.SetHostStr(new_host);
+    test_page = test_page.ReplaceComponents(replacements);
+
+    WindowedLoadStopObserver load_stop_waiter(controller);
+    browser()->OpenURL(test_page, GURL(), CURRENT_TAB, PageTransition::TYPED);
+    load_stop_waiter.Wait();
+  }
+
+  EXPECT_EQ(0, observer.auth_needed_count_);
+
+  // Now request the same page, but from the same origin.
+  // There should be one login prompt.
+  {
+    GURL test_page = test_server()->GetURL(kTestPage);
+    ASSERT_EQ("127.0.0.1", test_page.host());
+
+    // Change the host from 127.0.0.1 to www.b.com so that when the
+    // page tries to load from b, it will be same-origin.
+    std::string new_host("www.b.com");
+    GURL::Replacements replacements;
+    replacements.SetHostStr(new_host);
+    test_page = test_page.ReplaceComponents(replacements);
+
+    WindowedAuthNeededObserver auth_needed_waiter(controller);
+    browser()->OpenURL(test_page, GURL(), CURRENT_TAB, PageTransition::TYPED);
+    auth_needed_waiter.Wait();
+    ASSERT_EQ(1u, observer.handlers_.size());
+
+    while (!observer.handlers_.empty()) {
+      WindowedAuthCancelledObserver auth_cancelled_waiter(controller);
+      LoginHandler* handler = *observer.handlers_.begin();
+
+      ASSERT_TRUE(handler);
+      handler->CancelAuth();
+      auth_cancelled_waiter.Wait();
+    }
+  }
+
+  EXPECT_EQ(1, observer.auth_needed_count_);
   EXPECT_TRUE(test_server()->Stop());
 }
 

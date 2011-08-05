@@ -241,15 +241,20 @@ void PolicyDefaultProvider::RegisterUserPrefs(PrefService* prefs) {
   // Preferences for default content setting policies. A policy is not set of
   // the corresponding preferences below is set to CONTENT_SETTING_DEFAULT.
   prefs->RegisterIntegerPref(prefs::kManagedDefaultCookiesSetting,
-      CONTENT_SETTING_DEFAULT);
+                             CONTENT_SETTING_DEFAULT,
+                             PrefService::UNSYNCABLE_PREF);
   prefs->RegisterIntegerPref(prefs::kManagedDefaultImagesSetting,
-      CONTENT_SETTING_DEFAULT);
+                             CONTENT_SETTING_DEFAULT,
+                             PrefService::UNSYNCABLE_PREF);
   prefs->RegisterIntegerPref(prefs::kManagedDefaultJavaScriptSetting,
-      CONTENT_SETTING_DEFAULT);
+                             CONTENT_SETTING_DEFAULT,
+                             PrefService::UNSYNCABLE_PREF);
   prefs->RegisterIntegerPref(prefs::kManagedDefaultPluginsSetting,
-      CONTENT_SETTING_DEFAULT);
+                             CONTENT_SETTING_DEFAULT,
+                             PrefService::UNSYNCABLE_PREF);
   prefs->RegisterIntegerPref(prefs::kManagedDefaultPopupsSetting,
-      CONTENT_SETTING_DEFAULT);
+                             CONTENT_SETTING_DEFAULT,
+                             PrefService::UNSYNCABLE_PREF);
 }
 
 // ////////////////////////////////////////////////////////////////////////////
@@ -257,22 +262,35 @@ void PolicyDefaultProvider::RegisterUserPrefs(PrefService* prefs) {
 
 // static
 void PolicyProvider::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterListPref(prefs::kManagedCookiesAllowedForUrls);
-  prefs->RegisterListPref(prefs::kManagedCookiesBlockedForUrls);
-  prefs->RegisterListPref(prefs::kManagedCookiesSessionOnlyForUrls);
-  prefs->RegisterListPref(prefs::kManagedImagesAllowedForUrls);
-  prefs->RegisterListPref(prefs::kManagedImagesBlockedForUrls);
-  prefs->RegisterListPref(prefs::kManagedJavaScriptAllowedForUrls);
-  prefs->RegisterListPref(prefs::kManagedJavaScriptBlockedForUrls);
-  prefs->RegisterListPref(prefs::kManagedPluginsAllowedForUrls);
-  prefs->RegisterListPref(prefs::kManagedPluginsBlockedForUrls);
-  prefs->RegisterListPref(prefs::kManagedPopupsAllowedForUrls);
-  prefs->RegisterListPref(prefs::kManagedPopupsBlockedForUrls);
+  prefs->RegisterListPref(prefs::kManagedCookiesAllowedForUrls,
+                          PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterListPref(prefs::kManagedCookiesBlockedForUrls,
+                          PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterListPref(prefs::kManagedCookiesSessionOnlyForUrls,
+                          PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterListPref(prefs::kManagedImagesAllowedForUrls,
+                          PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterListPref(prefs::kManagedImagesBlockedForUrls,
+                          PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterListPref(prefs::kManagedJavaScriptAllowedForUrls,
+                          PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterListPref(prefs::kManagedJavaScriptBlockedForUrls,
+                          PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterListPref(prefs::kManagedPluginsAllowedForUrls,
+                          PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterListPref(prefs::kManagedPluginsBlockedForUrls,
+                          PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterListPref(prefs::kManagedPopupsAllowedForUrls,
+                          PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterListPref(prefs::kManagedPopupsBlockedForUrls,
+                          PrefService::UNSYNCABLE_PREF);
 }
 
-PolicyProvider::PolicyProvider(Profile* profile)
+PolicyProvider::PolicyProvider(Profile* profile,
+                               DefaultProviderInterface* default_provider)
     : BaseProvider(profile->IsOffTheRecord()),
-      profile_(profile) {
+      profile_(profile),
+      default_provider_(default_provider) {
   Init();
 }
 
@@ -280,23 +298,10 @@ PolicyProvider::~PolicyProvider() {
   UnregisterObservers();
 }
 
-void PolicyProvider::ReadManagedContentSettingsTypes(
-    ContentSettingsType content_type) {
-  PrefService* prefs = profile_->GetPrefs();
-  if (kPrefToManageType[content_type] == NULL) {
-    content_type_is_managed_[content_type] = false;
-  } else {
-    content_type_is_managed_[content_type] =
-         prefs->IsManagedPreference(kPrefToManageType[content_type]);
-  }
-}
-
 void PolicyProvider::Init() {
   PrefService* prefs = profile_->GetPrefs();
 
   ReadManagedContentSettings(false);
-  for (int i = 0; i < CONTENT_SETTINGS_NUM_TYPES; ++i)
-    ReadManagedContentSettingsTypes(ContentSettingsType(i));
 
   pref_change_registrar_.Init(prefs);
   pref_change_registrar_.Add(prefs::kManagedCookiesBlockedForUrls, this);
@@ -311,19 +316,8 @@ void PolicyProvider::Init() {
   pref_change_registrar_.Add(prefs::kManagedPopupsBlockedForUrls, this);
   pref_change_registrar_.Add(prefs::kManagedPopupsAllowedForUrls, this);
 
-  pref_change_registrar_.Add(prefs::kManagedDefaultCookiesSetting, this);
-  pref_change_registrar_.Add(prefs::kManagedDefaultImagesSetting, this);
-  pref_change_registrar_.Add(prefs::kManagedDefaultJavaScriptSetting, this);
-  pref_change_registrar_.Add(prefs::kManagedDefaultPluginsSetting, this);
-  pref_change_registrar_.Add(prefs::kManagedDefaultPopupsSetting, this);
-
   notification_registrar_.Add(this, NotificationType::PROFILE_DESTROYED,
                               Source<Profile>(profile_));
-}
-
-bool PolicyProvider::ContentSettingsTypeIsManaged(
-    ContentSettingsType content_type) {
-  return content_type_is_managed_[content_type];
 }
 
 void PolicyProvider::GetContentSettingsFromPreferences(
@@ -346,18 +340,19 @@ void PolicyProvider::GetContentSettingsFromPreferences(
     for (size_t j = 0; j < pattern_str_list->GetSize(); ++j) {
       std::string original_pattern_str;
       pattern_str_list->GetString(j, &original_pattern_str);
-      ContentSettingsPattern pattern(original_pattern_str);
+      ContentSettingsPattern pattern =
+          ContentSettingsPattern::LegacyFromString(original_pattern_str);
       // Ignore invalid patterns.
       if (!pattern.IsValid()) {
         VLOG(1) << "Ignoring invalid content settings pattern: " <<
-                   pattern.AsString();
+                   pattern.ToString();
         continue;
       }
       rules->push_back(MakeTuple(
           pattern,
           pattern,
           kPrefsForManagedContentSettingsMap[i].content_type,
-          ProviderInterface::ResourceIdentifier(NO_RESOURCE_IDENTIFIER),
+          ResourceIdentifier(NO_RESOURCE_IDENTIFIER),
           kPrefsForManagedContentSettingsMap[i].setting));
     }
   }
@@ -395,11 +390,14 @@ ContentSetting PolicyProvider::GetContentSetting(
     const GURL& embedding_url,
     ContentSettingsType content_type,
     const ResourceIdentifier& resource_identifier) const {
-  return BaseProvider::GetContentSetting(
+  ContentSetting setting = BaseProvider::GetContentSetting(
       requesting_url,
       embedding_url,
       content_type,
       NO_RESOURCE_IDENTIFIER);
+  if (setting == CONTENT_SETTING_DEFAULT && default_provider_)
+    setting = default_provider_->ProvideDefaultSetting(content_type);
+  return setting;
 }
 
 void PolicyProvider::ClearAllContentSettingsRules(
@@ -452,22 +450,6 @@ void PolicyProvider::Observe(NotificationType type,
       ReadManagedContentSettings(true);
       NotifyObservers(ContentSettingsDetails(
           ContentSettingsPattern(), CONTENT_SETTINGS_TYPE_DEFAULT, ""));
-      // We do not want to sent a notification when managed default content
-      // settings change. The DefaultProvider will take care of that. We are
-      // only a passive observer.
-      // TODO(markusheintz): NOTICE: This is still work in progress and part of
-      // a larger refactoring. The code will change and be much cleaner and
-      // clearer in the end.
-    } else if (*name == prefs::kManagedDefaultCookiesSetting) {
-      ReadManagedContentSettingsTypes(CONTENT_SETTINGS_TYPE_COOKIES);
-    } else if (*name == prefs::kManagedDefaultImagesSetting) {
-      ReadManagedContentSettingsTypes(CONTENT_SETTINGS_TYPE_IMAGES);
-    } else if (*name == prefs::kManagedDefaultJavaScriptSetting) {
-      ReadManagedContentSettingsTypes(CONTENT_SETTINGS_TYPE_JAVASCRIPT);
-    } else if (*name == prefs::kManagedDefaultPluginsSetting) {
-      ReadManagedContentSettingsTypes(CONTENT_SETTINGS_TYPE_PLUGINS);
-    } else if (*name == prefs::kManagedDefaultPopupsSetting) {
-      ReadManagedContentSettingsTypes(CONTENT_SETTINGS_TYPE_POPUPS);
     }
   } else if (type == NotificationType::PROFILE_DESTROYED) {
     DCHECK_EQ(profile_, Source<Profile>(source).ptr());

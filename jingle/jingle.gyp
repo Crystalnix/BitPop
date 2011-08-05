@@ -10,12 +10,12 @@
     # A library of various utils for integration with libjingle.
     {
       'target_name': 'jingle_glue',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         'glue/channel_socket_adapter.cc',
         'glue/channel_socket_adapter.h',
-        'glue/stream_socket_adapter.cc',
-        'glue/stream_socket_adapter.h',
+        'glue/pseudotcp_adapter.cc',
+        'glue/pseudotcp_adapter.h',
         'glue/thread_wrapper.cc',
         'glue/thread_wrapper.h',
         'glue/utils.cc',
@@ -24,9 +24,11 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../third_party/libjingle/libjingle.gyp:libjingle',
+        '../third_party/libjingle/libjingle.gyp:libjingle_p2p',
       ],
       'export_dependent_settings': [
         '../third_party/libjingle/libjingle.gyp:libjingle',
+        '../third_party/libjingle/libjingle.gyp:libjingle_p2p',
       ],
     },
     # A library for sending and receiving peer-issued notifications.
@@ -35,7 +37,7 @@
     # its own library.
     {
       'target_name': 'notifier',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         'notifier/base/chrome_async_socket.cc',
         'notifier/base/chrome_async_socket.h',
@@ -108,7 +110,7 @@
         '../third_party/libjingle/libjingle.gyp:libjingle',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk'
           ],
@@ -117,7 +119,7 @@
     },
     {
       'target_name': 'notifier_test_util',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         'notifier/base/fake_base_task.cc',
         'notifier/base/fake_base_task.h',
@@ -130,7 +132,7 @@
     },
     {
       'target_name': 'jingle_glue_test_util',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         'glue/fake_network_manager.cc',
         'glue/fake_network_manager.h',
@@ -149,7 +151,7 @@
         'glue/channel_socket_adapter_unittest.cc',
         'glue/jingle_glue_mock_objects.cc',
         'glue/jingle_glue_mock_objects.h',
-        'glue/stream_socket_adapter_unittest.cc',
+        'glue/pseudotcp_adapter_unittest.cc',
         'glue/thread_wrapper_unittest.cc',
         'notifier/base/chrome_async_socket_unittest.cc',
         'notifier/base/fake_ssl_client_socket_unittest.cc',

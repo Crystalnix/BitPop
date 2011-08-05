@@ -16,7 +16,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/task.h"
-#include "chrome/common/net/url_fetcher.h"
+#include "content/common/url_fetcher.h"
 #include "net/base/sdch_manager.h"
 
 class SdchDictionaryFetcher : public URLFetcher::Delegate,
@@ -54,7 +54,7 @@ class SdchDictionaryFetcher : public URLFetcher::Delegate,
                                   const GURL& url,
                                   const net::URLRequestStatus& status,
                                   int response_code,
-                                  const ResponseCookies& cookies,
+                                  const net::ResponseCookies& cookies,
                                   const std::string& data);
 
   // A queue of URLs that are being used to download dictionaries.

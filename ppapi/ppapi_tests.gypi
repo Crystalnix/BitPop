@@ -7,7 +7,7 @@
      {
       'target_name': 'ppapi_example',
       'dependencies': [
-        'ppapi_cpp'
+        'ppapi.gyp:ppapi_cpp'
       ],
       'xcode_settings': {
         'INFOPLIST_FILE': 'example/Info.plist',
@@ -31,7 +31,7 @@
             ],
           },
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+        ['os_posix == 1 and OS != "mac"', {
           'product_name': 'ppapi_example',
           'type': 'shared_library',
           'cflags': ['-fvisibility=hidden'],
@@ -64,7 +64,7 @@
 #      'target_name': 'ppapi_example_skeleton',
 #      'type': 'none',
 #      'dependencies': [
-#        'ppapi_cpp',
+#        'ppapi.gyp:ppapi_cpp',
 #      ],
 #      'export_dependent_setting': ['ppapi_cpp'],
 #      'direct_dependent_settings': {
@@ -199,12 +199,16 @@
         'tests/all_cpp_includes.h',
         'tests/arch_dependent_sizes_32.h',
         'tests/arch_dependent_sizes_64.h',
+        'tests/test_broker.cc',
+        'tests/test_broker.h',
         'tests/test_buffer.cc',
         'tests/test_buffer.h',
         'tests/test_c_includes.c',
         'tests/test_char_set.cc',
         'tests/test_char_set.h',
         'tests/test_cpp_includes.cc',
+        'tests/test_cursor_control.cc',
+        'tests/test_cursor_control.h',
         'tests/test_directory_reader.cc',
         'tests/test_directory_reader.h',
         'tests/test_file_io.cc',
@@ -224,8 +228,8 @@
         'tests/test_scrollbar.cc',
         'tests/test_scrollbar.h',
         'tests/test_struct_sizes.c',
-        'tests/test_transport.cc',
-        'tests/test_transport.h',
+        'tests/test_uma.cc',
+        'tests/test_uma.h',
         'tests/test_url_loader.cc',
         'tests/test_url_loader.h',
         'tests/test_url_util.cc',
@@ -242,7 +246,7 @@
         'tests/test_var_deprecated.h',
       ],
       'dependencies': [
-        'ppapi_cpp'
+        'ppapi.gyp:ppapi_cpp'
       ],
       'conditions': [
         ['OS=="win"', {
@@ -257,6 +261,12 @@
           'mac_bundle': 1,
           'product_name': 'ppapi_tests',
           'product_extension': 'plugin',
+        }],
+        ['p2p_apis==1', {
+          'sources': [
+            'tests/test_transport.cc',
+            'tests/test_transport.h',
+          ],
         }],
       ],
 # TODO(dmichael):  Figure out what is wrong with the script on Windows and add
@@ -288,6 +298,7 @@
         '../ipc/ipc.gyp:test_support_ipc',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
+        '../ui/gfx/surface/surface.gyp:surface',
       ],
       'sources': [
         'proxy/run_all_unittests.cc',

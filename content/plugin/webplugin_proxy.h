@@ -48,7 +48,7 @@ class WebPluginProxy : public webkit::npapi::WebPlugin {
                  const GURL& page_url,
                  gfx::NativeViewId containing_window,
                  int host_render_view_routing_id);
-  ~WebPluginProxy();
+  virtual ~WebPluginProxy();
 
   void set_delegate(webkit::npapi::WebPluginDelegateImpl* d) { delegate_ = d; }
 
@@ -61,6 +61,7 @@ class WebPluginProxy : public webkit::npapi::WebPlugin {
   virtual void WillDestroyWindow(gfx::PluginWindowHandle window);
 #if defined(OS_WIN)
   void SetWindowlessPumpEvent(HANDLE pump_messages_event);
+  void ReparentPluginWindow(HWND window, HWND parent);
 #endif
 
   virtual void CancelResource(unsigned long id);

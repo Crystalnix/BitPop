@@ -20,13 +20,14 @@
 #include "base/string_util.h"
 #include "base/sys_info.h"
 #include "base/utf_string_conversions.h"
+#include "base/version.h"
 #include "content/common/child_process.h"
 #include "content/common/plugin_messages.h"
 #include "content/common/view_messages.h"
 #include "content/plugin/npobject_proxy.h"
 #include "content/plugin/npobject_stub.h"
 #include "content/plugin/npobject_util.h"
-#include "content/renderer/command_buffer_proxy.h"
+#include "content/renderer/gpu/command_buffer_proxy.h"
 #include "content/renderer/content_renderer_client.h"
 #include "content/renderer/plugin_channel_host.h"
 #include "content/renderer/render_thread.h"
@@ -44,6 +45,7 @@
 #include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
+#include "webkit/plugins/npapi/plugin_group.h"
 #include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/sad_plugin.h"
 #include "webkit/glue/webkit_glue.h"
@@ -269,6 +271,29 @@ static bool SilverlightColorIsTransparent(const std::string& color) {
   return false;
 }
 
+#if defined(OS_MACOSX)
+// Returns true if the OS is 10.5 (Leopard).
+static bool OSIsLeopard() {
+  int32 major, minor, bugfix;
+  base::SysInfo::OperatingSystemVersionNumbers(&major, &minor, &bugfix);
+  return major == 10 && minor == 5;
+}
+
+// Returns true if the given Flash version assumes QuickDraw support is present
+// instead of checking using the negotiation system.
+static bool FlashVersionAssumesQuickDrawSupport(const string16& version) {
+  scoped_ptr<Version> plugin_version(
+      webkit::npapi::PluginGroup::CreateVersionFromString(version));
+  if (plugin_version.get() && plugin_version->components().size() >= 2) {
+    uint16 major = plugin_version->components()[0];
+    uint16 minor = plugin_version->components()[1];
+    return major < 10 || (major == 10 && minor < 3);
+  }
+  // If parsing fails for some reason, assume the best.
+  return false;
+}
+#endif
+
 bool WebPluginDelegateProxy::Initialize(
     const GURL& url,
     const std::vector<std::string>& arg_names,
@@ -298,7 +323,7 @@ bool WebPluginDelegateProxy::Initialize(
 
   scoped_refptr<PluginChannelHost> channel_host(
       PluginChannelHost::GetPluginChannelHost(
-          channel_handle, ChildProcess::current()->io_message_loop()));
+          channel_handle, ChildProcess::current()->io_message_loop_proxy()));
   if (!channel_host.get())
     return false;
 
@@ -335,31 +360,15 @@ bool WebPluginDelegateProxy::Initialize(
     }
   }
 #if defined(OS_MACOSX)
-  // Unless we have a real way to support accelerated (3D) drawing on Macs
-  // (which for now at least means the Core Animation drawing model), ask
-  // Flash to use windowless mode so that it use CoreGraphics instead of opening
-  // OpenGL contexts overlaying the browser window (which requires a very
-  // expensive extra copy for us).
-  if (!transparent_ && mime_type_ == "application/x-shockwave-flash") {
-    bool force_opaque_mode = false;
-    if (StartsWith(info_.version, ASCIIToUTF16("10.0"), false) ||
-        StartsWith(info_.version, ASCIIToUTF16("9."), false)) {
-      // Older versions of Flash don't support CA (and they assume QuickDraw
-      // support, so we can't rely on negotiation to do the right thing).
-      force_opaque_mode = true;
-    } else {
-      // Flash 10.1 doesn't respect QuickDraw negotiation either, so we still
-      // have to force opaque mode on 10.5 (where it doesn't use CA).
-      int32 major, minor, bugfix;
-      base::SysInfo::OperatingSystemVersionNumbers(&major, &minor, &bugfix);
-      if (major < 10 || (major == 10 && minor < 6))
-        force_opaque_mode = true;
-    }
-
-    if (force_opaque_mode) {
-      params.arg_names.push_back("wmode");
-      params.arg_values.push_back("opaque");
-    }
+  // Older versions of Flash just assume QuickDraw support during negotiation,
+  // so force everything but transparent mode to use opaque mode on 10.5
+  // (where Flash doesn't use CA) to prevent QuickDraw from being used.
+  // TODO(stuartmorgan): Remove this code once the two latest major Flash
+  // releases negotiate correctly.
+  if (flash && !transparent_ && OSIsLeopard() &&
+      FlashVersionAssumesQuickDrawSupport(info_.version)) {
+    params.arg_names.push_back("wmode");
+    params.arg_values.push_back("opaque");
   }
 #endif
   params.load_manually = load_manually;
@@ -719,7 +728,9 @@ void WebPluginDelegateProxy::Paint(WebKit::WebCanvas* canvas,
 
   // We're using the native OS APIs from here on out.
 #if WEBKIT_USING_SKIA
-  gfx::NativeDrawingContext context = skia::BeginPlatformPaint(canvas);
+  skia::ScopedPlatformPaint scoped_platform_paint(canvas);
+  gfx::NativeDrawingContext context =
+      scoped_platform_paint.GetPlatformSurface();
 #elif WEBKIT_USING_CG
   gfx::NativeDrawingContext context = canvas;
 #endif
@@ -755,10 +766,6 @@ void WebPluginDelegateProxy::Paint(WebKit::WebCanvas* canvas,
     invalidate_pending_ = false;
     Send(new PluginMsg_DidPaint(instance_id_));
   }
-
-#if WEBKIT_USING_SKIA
-  skia::EndPlatformPaint(canvas);
-#endif
 }
 
 bool WebPluginDelegateProxy::BackgroundChanged(
@@ -841,8 +848,10 @@ bool WebPluginDelegateProxy::BackgroundChanged(
   int page_start_x = content_rect.x() - context_offset_x;
   int page_start_y = content_rect.y() - context_offset_y;
 
-  CGContextRef bg_context =
-      background_store_canvas_->getTopPlatformDevice().GetBitmapContext();
+  skia::ScopedPlatformPaint scoped_platform_paint(
+      background_store_canvas_.get());
+  CGContextRef bg_context = scoped_platform_paint.GetPlatformSurface();
+
   DCHECK_EQ(CGBitmapContextGetBitsPerPixel(context),
             CGBitmapContextGetBitsPerPixel(bg_context));
   const unsigned char* bg_bytes = static_cast<const unsigned char*>(
@@ -860,9 +869,10 @@ bool WebPluginDelegateProxy::BackgroundChanged(
   int page_start_x = static_cast<int>(page_x_double);
   int page_start_y = static_cast<int>(page_y_double);
 
-  skia::PlatformDevice& device =
-      background_store_canvas_->getTopPlatformDevice();
-  cairo_surface_t* bg_surface = cairo_get_target(device.BeginPlatformPaint());
+  skia::ScopedPlatformPaint scoped_platform_paint(
+      background_store_canvas_.get());
+  cairo_surface_t* bg_surface =cairo_get_target(
+      scoped_platform_paint.GetPlatformSurface());
   DCHECK_EQ(cairo_surface_get_type(bg_surface), CAIRO_SURFACE_TYPE_IMAGE);
   DCHECK_EQ(cairo_image_surface_get_format(bg_surface), CAIRO_FORMAT_ARGB32);
   cairo_surface_flush(bg_surface);

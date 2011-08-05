@@ -7,6 +7,7 @@
 #pragma once
 
 #include "ui/gfx/native_widget_types.h"
+#include "views/widget/widget.h"
 #include "views/window/client_view.h"
 #include "views/window/native_window_delegate.h"
 #include "views/window/non_client_view.h"
@@ -29,18 +30,26 @@ class WindowDelegate;
 //
 // Encapsulates window-like behavior. See WindowDelegate.
 //
-//  TODO(beng): Subclass Widget as part of V2.
-//
-//  TODO(beng): Note that this class being non-abstract means that we have a
-//              violation of Google style in that we are using multiple
-//              inheritance. The intention is to split this into a separate
-//              object associated with but not equal to a NativeWidget
-//              implementation. Multiple inheritance is required for this
-//              transitional step.
-//
-class Window : public internal::NativeWindowDelegate {
+class Window : public Widget,
+               public internal::NativeWindowDelegate {
  public:
-  explicit Window(WindowDelegate* window_delegate);
+  struct InitParams {
+    // |window_delegate| cannot be NULL.
+    explicit InitParams(WindowDelegate* window_delegate);
+
+    WindowDelegate* window_delegate;
+    gfx::NativeWindow parent_window;
+    NativeWindow* native_window;
+    Widget::InitParams widget_init_params;
+  };
+
+  enum FrameType {
+    FRAME_TYPE_DEFAULT,         // Use whatever the default would be.
+    FRAME_TYPE_FORCE_CUSTOM,    // Force the custom frame.
+    FRAME_TYPE_FORCE_NATIVE     // Force the native frame.
+  };
+
+  Window();
   virtual ~Window();
 
   // Creates an instance of an object implementing this interface.
@@ -60,15 +69,9 @@ class Window : public internal::NativeWindowDelegate {
   static gfx::Size GetLocalizedContentsSize(int col_resource_id,
                                             int row_resource_id);
 
-  // Closes all windows that aren't identified as "app windows" via
-  // IsAppWindow. Called during application shutdown when the last "app window"
-  // is closed.
-  static void CloseAllSecondaryWindows();
-
-  // Used by |CloseAllSecondaryWindows|. If |widget|'s window is a secondary
-  // window, the window is closed. If |widget| has no window, it is closed.
-  // Does nothing if |widget| is null.
-  static void CloseSecondaryWidget(Widget* widget);
+  // Initializes the window. Must be called before any post-configuration
+  // operations are performed.
+  void InitWindow(const InitParams& params);
 
   // Retrieves the window's bounds, including its frame.
   gfx::Rect GetBounds() const;
@@ -76,55 +79,14 @@ class Window : public internal::NativeWindowDelegate {
   // Retrieves the restored bounds for the window.
   gfx::Rect GetNormalBounds() const;
 
-  // Sets the Window's bounds. The window is inserted after |other_window| in
-  // the window Z-order. If this window is not yet visible, other_window's
-  // monitor is used as the constraining rectangle, rather than this window's
-  // monitor.
-  void SetWindowBounds(const gfx::Rect& bounds, gfx::NativeWindow other_window);
-
-  // Makes the window visible.
-  void Show();
-
   // Like Show(), but does not activate the window.
   void ShowInactive();
-
-  // Hides the window. This does not delete the window, it just hides it. This
-  // always hides the window, it is separate from the stack maintained by
-  // Push/PopForceHidden.
-  virtual void HideWindow();
 
   // Prevents the window from being rendered as deactivated the next time it is.
   // This state is reset automatically as soon as the window becomes activated
   // again. There is no ability to control the state through this API as this
   // leads to sync problems.
   void DisableInactiveRendering();
-
-  // Activates the window, assuming it already exists and is visible.
-  void Activate();
-
-  // Deactivates the window, making the next window in the Z order the active
-  // window.
-  void Deactivate();
-
-  // Closes the window, ultimately destroying it. The window hides immediately,
-  // and is destroyed after a return to the message loop. Close() can be called
-  // multiple times.
-  void CloseWindow();
-
-  // Maximizes/minimizes/restores the window.
-  void Maximize();
-  void Minimize();
-  void Restore();
-
-  // Whether or not the window is currently active.
-  bool IsActive() const;
-
-  // Whether or not the window is currently visible.
-  bool IsVisible() const;
-
-  // Whether or not the window is maximized or minimized.
-  bool IsMaximized() const;
-  bool IsMinimized() const;
 
   // Accessors for fullscreen state.
   void SetFullscreen(bool fullscreen);
@@ -133,11 +95,6 @@ class Window : public internal::NativeWindowDelegate {
   // Sets whether or not the window should show its frame as a "transient drag
   // frame" - slightly transparent and without the standard window controls.
   void SetUseDragFrame(bool use_drag_frame);
-
-  // Returns true if the Window is considered to be an "app window" - i.e.
-  // any window which when it is the last of its type closed causes the
-  // application to exit.
-  virtual bool IsAppWindow() const;
 
   // Toggles the enable state for the Close button (and the Close menu item in
   // the system menu).
@@ -149,27 +106,28 @@ class Window : public internal::NativeWindowDelegate {
   // Tell the window to update its icon from the delegate.
   void UpdateWindowIcon();
 
-  // Sets whether or not the window is always-on-top.
-  void SetIsAlwaysOnTop(bool always_on_top);
-
   // Creates an appropriate NonClientFrameView for this window.
   virtual NonClientFrameView* CreateFrameViewForWindow();
 
   // Updates the frame after an event caused it to be changed.
   virtual void UpdateFrameAfterFrameChange();
 
-  // Retrieves the Window's native window handle.
-  gfx::NativeWindow GetNativeWindow() const;
+  void set_frame_type(FrameType frame_type) { frame_type_ = frame_type; }
+  FrameType frame_type() const { return frame_type_; }
 
   // Whether we should be using a native frame.
-  virtual bool ShouldUseNativeFrame() const;
+  bool ShouldUseNativeFrame() const;
+
+  // Forces the frame into the alternate frame type (custom or native) depending
+  // on its current state.
+  void DebugToggleFrameType();
 
   // Tell the window that something caused the frame type to change.
   void FrameTypeChanged();
 
-  // TODO(beng): remove once Window subclasses Widget.
-  Widget* AsWidget();
-  const Widget* AsWidget() const;
+  // Overridden from Widget:
+  virtual void Show() OVERRIDE;
+  virtual void Close() OVERRIDE;
 
   WindowDelegate* window_delegate() {
     return const_cast<WindowDelegate*>(
@@ -198,17 +156,12 @@ class Window : public internal::NativeWindowDelegate {
   NativeWindow* native_window() { return native_window_; }
 
  protected:
-  // TODO(beng): Temporarily provided as a way to associate the subclass'
-  //             implementation of NativeWidget with this.
-  void SetNativeWindow(NativeWindow* native_window);
-
   // Overridden from NativeWindowDelegate:
   virtual bool CanActivate() const OVERRIDE;
   virtual bool IsInactiveRenderingDisabled() const OVERRIDE;
   virtual void EnableInactiveRendering() OVERRIDE;
   virtual bool IsModal() const OVERRIDE;
   virtual bool IsDialogBox() const OVERRIDE;
-  virtual bool IsUsingNativeFrame() const OVERRIDE;
   virtual gfx::Size GetMinimumSize() const OVERRIDE;
   virtual int GetNonClientComponent(const gfx::Point& point) const OVERRIDE;
   virtual bool ExecuteCommand(int command_id) OVERRIDE;
@@ -219,10 +172,10 @@ class Window : public internal::NativeWindowDelegate {
   virtual void OnNativeWindowDestroying() OVERRIDE;
   virtual void OnNativeWindowDestroyed() OVERRIDE;
   virtual void OnNativeWindowBoundsChanged() OVERRIDE;
+  virtual Window* AsWindow() OVERRIDE;
+  virtual internal::NativeWidgetDelegate* AsNativeWidgetDelegate() OVERRIDE;
 
  private:
-  Window();
-
   // Sizes and positions the window just after it is created.
   void SetInitialBounds(const gfx::Rect& bounds);
 
@@ -254,6 +207,10 @@ class Window : public internal::NativeWindowDelegate {
 
   // Set to true if the window is in the process of closing .
   bool window_closed_;
+
+  // The current frame type in use by this window. Defaults to
+  // FRAME_TYPE_DEFAULT.
+  FrameType frame_type_;
 
   DISALLOW_COPY_AND_ASSIGN(Window);
 };

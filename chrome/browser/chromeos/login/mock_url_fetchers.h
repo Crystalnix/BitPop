@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,8 @@
 #include <string>
 
 #include "base/message_loop.h"
-#include "chrome/common/net/url_fetcher.h"
+#include "base/task.h"
+#include "content/common/url_fetcher.h"
 #include "googleurl/src/gurl.h"
 #include "net/url_request/url_request_status.h"
 
@@ -26,13 +27,12 @@ class ExpectCanceledFetcher : public URLFetcher {
                         URLFetcher::Delegate* d);
   virtual ~ExpectCanceledFetcher();
 
-  void Start();
+  virtual void Start();
 
-  static void CompleteFetch();
+  void CompleteFetch();
 
  private:
-  CancelableTask* task_;
-
+  ScopedRunnableMethodFactory<ExpectCanceledFetcher> complete_fetch_factory_;
   DISALLOW_COPY_AND_ASSIGN(ExpectCanceledFetcher);
 };
 
@@ -45,7 +45,7 @@ class GotCanceledFetcher : public URLFetcher {
                      URLFetcher::Delegate* d);
   virtual ~GotCanceledFetcher();
 
-  void Start();
+  virtual void Start();
 
  private:
   GURL url_;
@@ -62,7 +62,7 @@ class SuccessFetcher : public URLFetcher {
                  URLFetcher::Delegate* d);
   virtual ~SuccessFetcher();
 
-  void Start();
+  virtual void Start();
 
  private:
   GURL url_;
@@ -79,7 +79,7 @@ class FailFetcher : public URLFetcher {
               URLFetcher::Delegate* d);
   virtual ~FailFetcher();
 
-  void Start();
+  virtual void Start();
 
  private:
   GURL url_;
@@ -100,7 +100,7 @@ class CaptchaFetcher : public URLFetcher {
   static std::string GetCaptchaUrl();
   static std::string GetUnlockUrl();
 
-  void Start();
+  virtual void Start();
 
  private:
   static const char kCaptchaToken[];
@@ -121,7 +121,7 @@ class HostedFetcher : public URLFetcher {
                 URLFetcher::Delegate* d);
   virtual ~HostedFetcher();
 
-  void Start();
+  virtual void Start();
 
  private:
   GURL url_;

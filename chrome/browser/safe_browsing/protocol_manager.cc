@@ -12,6 +12,7 @@
 #include "base/metrics/histogram.h"
 #include "base/rand_util.h"
 #include "base/stl_util-inl.h"
+#include "base/stringprintf.h"
 #include "base/string_util.h"
 #include "base/task.h"
 #include "base/timer.h"
@@ -209,7 +210,7 @@ void SafeBrowsingProtocolManager::OnURLFetchComplete(
     const GURL& url,
     const net::URLRequestStatus& status,
     int response_code,
-    const ResponseCookies& cookies,
+    const net::ResponseCookies& cookies,
     const std::string& data) {
   scoped_ptr<const URLFetcher> fetcher;
   bool parsed_ok = true;
@@ -725,9 +726,9 @@ std::string SafeBrowsingProtocolManager::ComposeUrl(
     const std::string& additional_query) {
   DCHECK(!prefix.empty() && !method.empty() &&
          !client_name.empty() && !version.empty());
-  std::string url = StringPrintf("%s/%s?client=%s&appver=%s&pver=2.2",
-                                 prefix.c_str(), method.c_str(),
-                                 client_name.c_str(), version.c_str());
+  std::string url = base::StringPrintf("%s/%s?client=%s&appver=%s&pver=2.2",
+                                       prefix.c_str(), method.c_str(),
+                                       client_name.c_str(), version.c_str());
   if (!additional_query.empty()) {
     DCHECK(url.find("?") != std::string::npos);
     url.append("&");
@@ -768,7 +769,8 @@ GURL SafeBrowsingProtocolManager::SafeBrowsingHitUrl(
   DCHECK(threat_type == SafeBrowsingService::URL_MALWARE ||
          threat_type == SafeBrowsingService::URL_PHISHING ||
          threat_type == SafeBrowsingService::BINARY_MALWARE_URL ||
-         threat_type == SafeBrowsingService::BINARY_MALWARE_HASH);
+         threat_type == SafeBrowsingService::BINARY_MALWARE_HASH ||
+         threat_type == SafeBrowsingService::CLIENT_SIDE_PHISHING_URL);
   // The malware and phishing hits go over HTTP.
   std::string url = ComposeUrl(http_url_prefix_, "report", client_name_,
                                version_, additional_query_);
@@ -786,10 +788,13 @@ GURL SafeBrowsingProtocolManager::SafeBrowsingHitUrl(
     case SafeBrowsingService::BINARY_MALWARE_HASH:
       threat_list = "binhashhit";
       break;
+    case SafeBrowsingService::CLIENT_SIDE_PHISHING_URL:
+      threat_list = "phishcsdhit";
+      break;
     default:
       NOTREACHED();
   }
-  return GURL(StringPrintf("%s&evts=%s&evtd=%s&evtr=%s&evhr=%s&evtb=%d",
+  return GURL(base::StringPrintf("%s&evts=%s&evtd=%s&evtr=%s&evhr=%s&evtb=%d",
       url.c_str(), threat_list.c_str(),
       EscapeQueryParamValue(malicious_url.spec(), true).c_str(),
       EscapeQueryParamValue(page_url.spec(), true).c_str(),
@@ -799,7 +804,7 @@ GURL SafeBrowsingProtocolManager::SafeBrowsingHitUrl(
 
 GURL SafeBrowsingProtocolManager::MalwareDetailsUrl() const {
   // The malware details go over HTTPS.
-  std::string url = StringPrintf(
+  std::string url = base::StringPrintf(
           "%s/clientreport/malware?client=%s&appver=%s&pver=1.0",
           https_url_prefix_.c_str(),
           client_name_.c_str(),

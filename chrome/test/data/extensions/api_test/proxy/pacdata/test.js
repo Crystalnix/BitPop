@@ -11,26 +11,35 @@ function expect(expected, message) {
   });
 }
 
+var pacScriptObject = {
+  data: "function FindProxyForURL(url, host) {\n" +
+        "  if (host == 'foobar.com')\n" +
+        "    return 'PROXY blackhole:80';\n" +
+        "  return 'DIRECT';\n" +
+        "}",
+  mandatory: false
+};
+var config = {
+  mode: "pac_script",
+  pacScript: pacScriptObject
+};
+
 chrome.test.runTests([
+  // Verify that execution has started to make sure flaky timeouts are not
+  // caused by us.
+  function verifyTestsHaveStarted() {
+    chrome.test.succeed();
+  },
   function setAutoSettings() {
-    var pacScriptObject = {
-      data: "function FindProxyForURL(url, host) {\n" +
-            "  if (host == 'foobar.com')\n" +
-            "    return 'PROXY blackhole:80';\n" +
-            "  return 'DIRECT';\n" +
-            "}"
-    };
-    var config = {
-      mode: "pac_script",
-      pacScript: pacScriptObject
-    };
-    chrome.experimental.proxy.settings.set(
+    chrome.proxy.settings.set(
         {'value': config},
         chrome.test.callbackPass());
-    chrome.experimental.proxy.settings.get(
+  },
+  function verifySettings() {
+    chrome.proxy.settings.get(
         {'incognito': false},
         expect({ 'value': config,
-                 'levelOfControl': "ControlledByThisExtension" },
+                 'levelOfControl': "controlled_by_this_extension" },
                "invalid proxy settings"));
   }
 ]);

@@ -8,6 +8,8 @@
 #include "base/sys_string_conversions.h"
 
 #import <Cocoa/Cocoa.h>
+#import <SystemConfiguration/SCDynamicStore.h>
+#import <SystemConfiguration/SCDynamicStoreCopySpecific.h>
 
 #include <string>
 
@@ -36,6 +38,15 @@ const MacFolderNamesToSPDMaping mac_folder_mapping[] = {
 FilePath::StringType ExpandPathVariables(
     const FilePath::StringType& untranslated_string) {
   FilePath::StringType result(untranslated_string);
+  if (result.length() == 0)
+    return result;
+  // Sanitize quotes in case of any around the whole string.
+  if (result.length() > 1 &&
+      ((result[0] == '"' && result[result.length() - 1] == '"') ||
+      (result[0] == '\'' && result[result.length() - 1] == '\''))) {
+    // Strip first and last char which should be matching quotes now.
+    result = result.substr(1, result.length() - 2);
+  }
   // First translate all path variables we recognize.
   for (size_t i = 0; i < arraysize(mac_folder_mapping); ++i) {
     size_t position = result.find(mac_folder_mapping[i].name);
@@ -62,13 +73,19 @@ FilePath::StringType ExpandPathVariables(
   }
   position = result.find(kMachineNamePolicyVarName);
   if (position != std::string::npos) {
-    NSString* machinename = [[NSHost currentHost] name];
+    SCDynamicStoreContext context = { 0, NULL, NULL, NULL };
+    SCDynamicStoreRef store = SCDynamicStoreCreate(kCFAllocatorDefault,
+                                                   CFSTR("policy_subsystem"),
+                                                   NULL, &context);
+    CFStringRef machinename = SCDynamicStoreCopyLocalHostName(store);
     if (machinename) {
       result.replace(position, strlen(kMachineNamePolicyVarName),
-                     base::SysNSStringToUTF8(machinename));
+                     base::SysCFStringRefToUTF8(machinename));
+      CFRelease(machinename);
     } else {
       LOG(ERROR) << "Machine name variable can not be resolved.";
     }
+    CFRelease(store);
   }
   return result;
 }

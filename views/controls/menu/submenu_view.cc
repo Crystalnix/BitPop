@@ -13,11 +13,15 @@
 #include "views/widget/root_view.h"
 #include "views/widget/widget.h"
 
+namespace {
+
 // Height of the drop indicator. This should be an even number.
-static const int kDropIndicatorHeight = 2;
+const int kDropIndicatorHeight = 2;
 
 // Color of the drop indicator.
-static const SkColor kDropIndicatorColor = SK_ColorBLACK;
+const SkColor kDropIndicatorColor = SK_ColorBLACK;
+
+}  // namespace
 
 namespace views {
 
@@ -33,7 +37,8 @@ SubmenuView::SubmenuView(MenuItemView* parent)
       drop_item_(NULL),
       drop_position_(MenuDelegate::DROP_NONE),
       scroll_view_container_(NULL),
-      max_accelerator_width_(0) {
+      max_accelerator_width_(0),
+      minimum_preferred_width_(0) {
   DCHECK(parent);
   // We'll delete ourselves, otherwise the ScrollView would delete us on close.
   set_parent_owned(false);
@@ -119,8 +124,10 @@ gfx::Size SubmenuView::GetPreferredSize() {
         MenuConfig::instance().label_to_accelerator_padding;
   }
   gfx::Insets insets = GetInsets();
-  return gfx::Size(max_width + max_accelerator_width_ + insets.width(),
-                   height + insets.height());
+  return gfx::Size(
+      std::max(max_width + max_accelerator_width_ + insets.width(),
+               minimum_preferred_width_ - 2 * kSubmenuBorderSize),
+      height + insets.height());
 }
 
 void SubmenuView::GetAccessibleState(ui::AccessibleViewState* state) {
@@ -229,24 +236,14 @@ void SubmenuView::ShowAt(gfx::NativeWindow parent,
                          bool do_capture) {
   if (host_) {
     host_->ShowMenuHost(do_capture);
-
-    GetScrollViewContainer()->GetWidget()->NotifyAccessibilityEvent(
-        GetScrollViewContainer(),
-        ui::AccessibilityTypes::EVENT_MENUSTART,
-        true);
-    GetWidget()->NotifyAccessibilityEvent(
-        this,
-        ui::AccessibilityTypes::EVENT_MENUPOPUPSTART,
-        true);
-    return;
+  } else {
+    host_ = new MenuHost(this);
+    // Force construction of the scroll view container.
+    GetScrollViewContainer();
+    // Make sure the first row is visible.
+    ScrollRectToVisible(gfx::Rect(gfx::Point(), gfx::Size(1, 1)));
+    host_->InitMenuHost(parent, bounds, scroll_view_container_, do_capture);
   }
-
-  host_ = new MenuHost(this);
-  // Force construction of the scroll view container.
-  GetScrollViewContainer();
-  // Make sure the first row is visible.
-  ScrollRectToVisible(gfx::Rect(gfx::Point(), gfx::Size(1, 1)));
-  host_->InitMenuHost(parent, bounds, scroll_view_container_, do_capture);
 
   GetScrollViewContainer()->GetWidget()->NotifyAccessibilityEvent(
       GetScrollViewContainer(),
@@ -291,6 +288,10 @@ void SubmenuView::ReleaseCapture() {
 
 bool SubmenuView::SkipDefaultKeyEventProcessing(const views::KeyEvent& e) {
   return views::FocusManager::IsTabTraversalKeyEvent(e);
+}
+
+MenuItemView* SubmenuView::GetMenuItem() const {
+  return parent_menu_item_;
 }
 
 void SubmenuView::SetDropMenuItem(MenuItemView* item,

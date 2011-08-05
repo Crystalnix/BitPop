@@ -106,7 +106,7 @@ void AddInstallerCopyTasks(const InstallerState& installer_state,
   // otherwise), there is no need to do this for the archive.  Setup.exe, on
   // the other hand, is created elsewhere so it must always be copied.
   install_list->AddMoveTreeWorkItem(archive_path.value(), archive_dst.value(),
-                                    temp_path.value());
+                                    temp_path.value(), WorkItem::ALWAYS_MOVE);
 }
 
 // This method adds work items to create (or update) Chrome uninstall entry in
@@ -146,7 +146,7 @@ void AddUninstallShortcutWorkItems(const InstallerState& installer_state,
     for (size_t i = 0; i < products.size(); ++i) {
       const Product& p = *products[i];
       if (!p.is_chrome() && !p.ShouldCreateUninstallEntry())
-        p.AppendProductFlags(&uninstall_arguments);
+        p.AppendUninstallFlags(&uninstall_arguments);
     }
   }
 
@@ -250,12 +250,7 @@ void AddProductSpecificWorkItems(const InstallationState& original_state,
   }
 }
 
-// Adds work items that make registry adjustments for Google Update.  When a
-// product is installed (including overinstall), Google Update will write the
-// channel ("ap") value into either Chrome or Chrome Frame's ClientState key.
-// In the multi-install case, this value is used as the basis upon which the
-// package's channel value is built (by adding the ordered list of installed
-// products and their options).
+// Adds work items that make registry adjustments for Google Update.
 void AddGoogleUpdateWorkItems(const InstallationState& original_state,
                               const InstallerState& installer_state,
                               WorkItemList* install_list) {
@@ -291,8 +286,60 @@ void AddGoogleUpdateWorkItems(const InstallationState& original_state,
     }
   }
 
+  AddUsageStatsWorkItems(original_state, installer_state, install_list);
+
   // TODO(grt): check for other keys/values we should put in the package's
   // ClientState and/or Clients key.
+}
+
+void AddUsageStatsWorkItems(const InstallationState& original_state,
+                            const InstallerState& installer_state,
+                            WorkItemList* install_list) {
+  DCHECK(installer_state.operation() == InstallerState::MULTI_INSTALL ||
+         installer_state.operation() == InstallerState::MULTI_UPDATE);
+
+  HKEY root_key = installer_state.root_key();
+  bool value_found = false;
+  DWORD usagestats = 0;
+  const Products& products = installer_state.products();
+
+  // Search for an existing usagestats value for any product.
+  for (Products::const_iterator scan = products.begin(), end = products.end();
+       !value_found && scan != end; ++scan) {
+    BrowserDistribution* dist = (*scan)->distribution();
+    const ProductState* product_state =
+        original_state.GetNonVersionedProductState(
+            installer_state.system_install(), dist->GetType());
+    value_found = product_state->GetUsageStats(&usagestats);
+  }
+
+  // If a value was found, write it in the appropriate location for the
+  // binaries and remove all values from the products.
+  if (value_found) {
+    std::wstring state_key(
+        installer_state.multi_package_binaries_distribution()->GetStateKey());
+    install_list->AddCreateRegKeyWorkItem(root_key, state_key);
+    install_list->AddSetRegValueWorkItem(root_key, state_key,
+                                         google_update::kRegUsageStatsField,
+                                         usagestats, false);
+
+    for (Products::const_iterator scan = products.begin(), end = products.end();
+         scan != end; ++scan) {
+      BrowserDistribution* dist = (*scan)->distribution();
+      if (installer_state.system_install()) {
+        install_list->AddDeleteRegValueWorkItem(
+            root_key, dist->GetStateMediumKey(),
+            google_update::kRegUsageStatsField);
+        // Previous versions of Chrome also wrote a value in HKCU even for
+        // system-level installs, so clean that up.
+        install_list->AddDeleteRegValueWorkItem(
+            HKEY_CURRENT_USER, dist->GetStateKey(),
+            google_update::kRegUsageStatsField);
+      }
+      install_list->AddDeleteRegValueWorkItem(root_key, dist->GetStateKey(),
+          google_update::kRegUsageStatsField);
+    }
+  }
 }
 
 // This is called when an MSI installation is run. It may be that a user is
@@ -395,11 +442,11 @@ bool AppendPostInstallTasks(const InstallerState& installer_state,
 
       // Adding this registry entry for all products is overkill.
       // However, as it stands, we don't have a way to know which distribution
-      // will check the key and run the command, so we add it for all.
-      // After the first run, the subsequent runs should just be noops.
-      // (see upgrade_utils::SwapNewChromeExeIfPresent).
+      // will check the key and run the command, so we add it for all.  The
+      // first to run it will perform the operation and clean up the other
+      // values.
       CommandLine product_rename_cmd(rename);
-      products[i]->AppendProductFlags(&product_rename_cmd);
+      products[i]->AppendRenameFlags(&product_rename_cmd);
       in_use_update_work_items->AddSetRegValueWorkItem(
           root,
           version_key,
@@ -519,17 +566,25 @@ void AddInstallWorkItems(const InstallationState& original_state,
     install_list->AddMoveTreeWorkItem(
         src_path.Append(installer::kWowHelperExe).value(),
         target_path.Append(installer::kWowHelperExe).value(),
-        temp_path.value());
+        temp_path.value(),
+        WorkItem::ALWAYS_MOVE);
   }
 
   // In the past, we copied rather than moved for system level installs so that
   // the permissions of %ProgramFiles% would be picked up.  Now that |temp_path|
   // is in %ProgramFiles% for system level installs (and in %LOCALAPPDATA%
   // otherwise), there is no need to do this.
+  // Note that we pass true for check_duplicates to avoid failing on in-use
+  // repair runs if the current_version is the same as the new_version.
+  bool check_for_duplicates =
+      (current_version != NULL && current_version->get() != NULL &&
+       current_version->get()->Equals(new_version));
   install_list->AddMoveTreeWorkItem(
       src_path.AppendASCII(new_version.GetString()).value(),
       target_path.AppendASCII(new_version.GetString()).value(),
-      temp_path.value());
+      temp_path.value(),
+      check_for_duplicates ? WorkItem::CHECK_DUPLICATES :
+                             WorkItem::ALWAYS_MOVE);
 
   // Copy the default Dictionaries only if the folder doesn't exist already.
   // TODO(grt): Use AddMoveTreeWorkItem in a conditional WorkItemList, which
@@ -572,6 +627,7 @@ void AddInstallWorkItems(const InstallationState& original_state,
   AddProductSpecificWorkItems(original_state, installer_state, setup_path,
                               new_version, install_list);
 
+  // Copy over brand, usagestats, and other values.
   AddGoogleUpdateWorkItems(original_state, installer_state, install_list);
 
   AddQuickEnableWorkItems(installer_state, original_state, &setup_path,
@@ -827,7 +883,7 @@ void AppendUninstallCommandLineFlags(const InstallerState& installer_state,
   uninstall_cmd->AppendSwitch(installer::switches::kUninstall);
 
   // Append the product-specific uninstall flags.
-  product.AppendProductFlags(uninstall_cmd);
+  product.AppendUninstallFlags(uninstall_cmd);
   if (installer_state.is_msi()) {
     uninstall_cmd->AppendSwitch(installer::switches::kMsi);
     // See comment in uninstall.cc where we check for the kDeleteProfile switch.

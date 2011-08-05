@@ -91,11 +91,11 @@ bool CustomButton::IsHotTracked() const {
   return state_ == BS_HOT;
 }
 
-void CustomButton::SetEnabled(bool enabled) {
-  if (enabled ? (state_ != BS_DISABLED) : (state_ == BS_DISABLED))
+void CustomButton::OnEnabledChanged() {
+  if (View::IsEnabled() ? (state_ != BS_DISABLED) : (state_ == BS_DISABLED))
     return;
 
-  if (enabled)
+  if (View::IsEnabled())
     SetState(IsMouseHovered() ? BS_HOT : BS_NORMAL);
   else
     SetState(BS_DISABLED);
@@ -196,11 +196,11 @@ bool CustomButton::OnKeyReleased(const KeyEvent& event) {
 }
 
 bool CustomButton::AcceleratorPressed(const Accelerator& accelerator) {
-  if (!enabled_)
+  if (!View::IsEnabled())
     return false;
 
   SetState(BS_NORMAL);
-  KeyEvent key_event(ui::ET_KEY_RELEASED, accelerator.GetKeyCode(),
+  KeyEvent key_event(ui::ET_KEY_RELEASED, accelerator.key_code(),
                      accelerator.modifiers());
   NotifyClick(key_event);
   return true;

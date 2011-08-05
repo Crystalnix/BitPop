@@ -13,6 +13,7 @@
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/js_arg_list.h"
+#include "chrome/browser/sync/js_event_details.h"
 #include "chrome/browser/sync/js_frontend.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/sync_ui_util.h"
@@ -42,22 +43,22 @@ SyncInternalsUI::~SyncInternalsUI() {
   }
 }
 
-void SyncInternalsUI::ProcessWebUIMessage(
-    const ExtensionHostMsg_DomMessage_Params& params) {
-  const std::string& name = params.name;
-  browser_sync::JsArgList args(params.arguments);
+void SyncInternalsUI::OnWebUISend(const GURL& source_url,
+                                  const std::string& name,
+                                  const ListValue& content) {
+  scoped_ptr<ListValue> content_copy(content.DeepCopy());
+  browser_sync::JsArgList args(content_copy.get());
   VLOG(1) << "Received message: " << name << " with args "
           << args.ToString();
   // We handle this case directly because it needs to work even if
   // the sync service doesn't exist.
   if (name == "getAboutInfo") {
-    ListValue args;
+    ListValue return_args;
     DictionaryValue* about_info = new DictionaryValue();
-    args.Append(about_info);
+    return_args.Append(about_info);
     ProfileSyncService* service = GetProfile()->GetProfileSyncService();
     sync_ui_util::ConstructAboutInformation(service, about_info);
-    HandleJsEvent("onGetAboutInfoFinished",
-                  browser_sync::JsArgList(args));
+    HandleJsMessageReply(name, browser_sync::JsArgList(&return_args));
   } else {
     browser_sync::JsFrontend* backend = GetJsFrontend();
     if (backend) {
@@ -69,11 +70,24 @@ void SyncInternalsUI::ProcessWebUIMessage(
   }
 }
 
-void SyncInternalsUI::HandleJsEvent(const std::string& name,
-                                    const browser_sync::JsArgList& args) {
-  VLOG(1) << "Handling event: " << name << " with args " << args.ToString();
+void SyncInternalsUI::HandleJsEvent(
+    const std::string& name,
+    const browser_sync::JsEventDetails& details) {
+  VLOG(1) << "Handling event: " << name << " with details "
+          << details.ToString();
+  const std::string& event_handler = "chrome.sync." + name + ".fire";
+  std::vector<const Value*> arg_list(1, &details.Get());
+  CallJavascriptFunction(event_handler, arg_list);
+}
+
+void SyncInternalsUI::HandleJsMessageReply(
+    const std::string& name,
+    const browser_sync::JsArgList& args) {
+  VLOG(1) << "Handling reply for " << name << " message with args "
+          << args.ToString();
+  const std::string& reply_handler = "chrome.sync." + name + ".handleReply";
   std::vector<const Value*> arg_list(args.Get().begin(), args.Get().end());
-  CallJavascriptFunction(name, arg_list);
+  CallJavascriptFunction(reply_handler, arg_list);
 }
 
 browser_sync::JsFrontend* SyncInternalsUI::GetJsFrontend() {

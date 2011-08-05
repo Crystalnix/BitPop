@@ -8,17 +8,20 @@
 #include "base/stl_util-inl.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/history/history.h"
-#include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/sessions/session_service.h"
-#include "chrome/browser/sessions/session_service_test_helper.h"
+//  These are only used for commented out tests.  If someone wants to enable
+//  them, they should be moved to chrome first.
+//  #include "chrome/browser/history/history.h"
+//  #include "chrome/browser/profiles/profile_manager.h"
+//  #include "chrome/browser/sessions/session_service.h"
+//  #include "chrome/browser/sessions/session_service_factory.h"
+//  #include "chrome/browser/sessions/session_service_test_helper.h"
 #include "chrome/browser/sessions/session_types.h"
-#include "chrome/common/render_messages.h"
 #include "chrome/test/test_notification_tracker.h"
 #include "chrome/test/testing_profile.h"
 #include "content/browser/renderer_host/test_render_view_host.h"
 #include "content/browser/site_instance.h"
 #include "content/browser/tab_contents/navigation_controller.h"
+#include "content/browser/tab_contents/navigation_details.h"
 #include "content/browser/tab_contents/navigation_entry.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/browser/tab_contents/tab_contents_delegate.h"
@@ -36,101 +39,6 @@ using base::Time;
 class NavigationControllerTest : public RenderViewHostTestHarness {
  public:
   NavigationControllerTest() {}
-};
-
-// NavigationControllerHistoryTest ---------------------------------------------
-
-class NavigationControllerHistoryTest : public NavigationControllerTest {
- public:
-  NavigationControllerHistoryTest()
-      : url0("http://foo1"),
-        url1("http://foo1"),
-        url2("http://foo1"),
-        profile_manager_(NULL) {
-  }
-
-  virtual ~NavigationControllerHistoryTest() {
-    // Prevent our base class from deleting the profile since profile's
-    // lifetime is managed by profile_manager_.
-    STLDeleteElements(&windows_);
-  }
-
-  // testing::Test overrides.
-  virtual void SetUp() {
-    NavigationControllerTest::SetUp();
-
-    // Force the session service to be created.
-    SessionService* service = new SessionService(profile());
-    profile()->set_session_service(service);
-    service->SetWindowType(window_id, Browser::TYPE_NORMAL);
-    service->SetWindowBounds(window_id, gfx::Rect(0, 1, 2, 3), false);
-    service->SetTabIndexInWindow(window_id,
-                                 controller().session_id(), 0);
-    controller().SetWindowID(window_id);
-
-    session_helper_.set_service(service);
-  }
-
-  virtual void TearDown() {
-    // Release profile's reference to the session service. Otherwise the file
-    // will still be open and we won't be able to delete the directory below.
-    profile()->set_session_service(NULL);
-    session_helper_.set_service(NULL);
-
-    // Make sure we wait for history to shut down before continuing. The task
-    // we add will cause our message loop to quit once it is destroyed.
-    HistoryService* history =
-        profile()->GetHistoryService(Profile::IMPLICIT_ACCESS);
-    if (history) {
-      history->SetOnBackendDestroyTask(new MessageLoop::QuitTask);
-      MessageLoop::current()->Run();
-    }
-
-    // Do normal cleanup before deleting the profile directory below.
-    NavigationControllerTest::TearDown();
-
-    ASSERT_TRUE(file_util::Delete(test_dir_, true));
-    ASSERT_FALSE(file_util::PathExists(test_dir_));
-  }
-
-  // Deletes the current profile manager and creates a new one. Indirectly this
-  // shuts down the history database and reopens it.
-  void ReopenDatabase() {
-    session_helper_.set_service(NULL);
-    profile()->set_session_service(NULL);
-
-    SessionService* service = new SessionService(profile());
-    profile()->set_session_service(service);
-    session_helper_.set_service(service);
-  }
-
-  void GetLastSession() {
-    profile()->GetSessionService()->TabClosed(controller().window_id(),
-                                              controller().session_id(),
-                                              false);
-
-    ReopenDatabase();
-    Time close_time;
-
-    session_helper_.ReadWindows(&windows_);
-  }
-
-  CancelableRequestConsumer consumer;
-
-  // URLs for testing.
-  const GURL url0;
-  const GURL url1;
-  const GURL url2;
-
-  std::vector<SessionWindow*> windows_;
-
-  SessionID window_id;
-
-  SessionServiceTestHelper session_helper_;
-
- private:
-  ProfileManager* profile_manager_;
-  FilePath test_dir_;
 };
 
 void RegisterForAllNavNotifications(TestNotificationTracker* tracker,
@@ -245,7 +153,10 @@ TEST_F(NavigationControllerTest, LoadURL) {
   EXPECT_FALSE(controller().CanGoForward());
   EXPECT_EQ(contents()->GetMaxPageID(), 0);
 
-  rvh()->SendNavigate(1, url2);
+  // Simulate the beforeunload ack for the cross-site transition, and then the
+  // commit.
+  rvh()->SendShouldCloseACK(true);
+  contents()->pending_rvh()->SendNavigate(1, url2);
   EXPECT_TRUE(notifications.Check1AndReset(
       NotificationType::NAV_ENTRY_COMMITTED));
 
@@ -369,9 +280,10 @@ TEST_F(NavigationControllerTest, LoadURL_NewPending) {
                                   PageTransition::TYPED);
   EXPECT_EQ(0U, notifications.size());
 
-  // Before that commits, do a new navigation.
+  // After the beforeunload but before it commits, do a new navigation.
+  rvh()->SendShouldCloseACK(true);
   const GURL kNewURL("http://see");
-  rvh()->SendNavigate(3, kNewURL);
+  contents()->pending_rvh()->SendNavigate(3, kNewURL);
 
   // There should no longer be any pending entry, and the third navigation we
   // just made should be committed.
@@ -390,14 +302,14 @@ TEST_F(NavigationControllerTest, LoadURL_ExistingPending) {
   RegisterForAllNavNotifications(&notifications, &controller());
 
   // First make some history.
-  const GURL kExistingURL1("http://eh");
+  const GURL kExistingURL1("http://foo/eh");
   controller().LoadURL(kExistingURL1, GURL(),
                                   PageTransition::TYPED);
   rvh()->SendNavigate(0, kExistingURL1);
   EXPECT_TRUE(notifications.Check1AndReset(
       NotificationType::NAV_ENTRY_COMMITTED));
 
-  const GURL kExistingURL2("http://bee");
+  const GURL kExistingURL2("http://foo/bee");
   controller().LoadURL(kExistingURL2, GURL(),
                                   PageTransition::TYPED);
   rvh()->SendNavigate(1, kExistingURL2);
@@ -412,8 +324,8 @@ TEST_F(NavigationControllerTest, LoadURL_ExistingPending) {
   EXPECT_EQ(1, controller().last_committed_entry_index());
 
   // Before that commits, do a new navigation.
-  const GURL kNewURL("http://see");
-  NavigationController::LoadCommittedDetails details;
+  const GURL kNewURL("http://foo/see");
+  content::LoadCommittedDetails details;
   rvh()->SendNavigate(3, kNewURL);
 
   // There should no longer be any pending entry, and the third navigation we
@@ -433,20 +345,20 @@ TEST_F(NavigationControllerTest, LoadURL_BackPreemptsPending) {
   RegisterForAllNavNotifications(&notifications, &controller());
 
   // First make some history.
-  const GURL kExistingURL1("http://eh");
+  const GURL kExistingURL1("http://foo/eh");
   controller().LoadURL(kExistingURL1, GURL(), PageTransition::TYPED);
   rvh()->SendNavigate(0, kExistingURL1);
   EXPECT_TRUE(notifications.Check1AndReset(
       NotificationType::NAV_ENTRY_COMMITTED));
 
-  const GURL kExistingURL2("http://bee");
+  const GURL kExistingURL2("http://foo/bee");
   controller().LoadURL(kExistingURL2, GURL(), PageTransition::TYPED);
   rvh()->SendNavigate(1, kExistingURL2);
   EXPECT_TRUE(notifications.Check1AndReset(
       NotificationType::NAV_ENTRY_COMMITTED));
 
   // Now make a pending new navigation.
-  const GURL kNewURL("http://see");
+  const GURL kNewURL("http://foo/see");
   controller().LoadURL(kNewURL, GURL(), PageTransition::TYPED);
   EXPECT_EQ(0U, notifications.size());
   EXPECT_EQ(-1, controller().pending_entry_index());
@@ -616,9 +528,9 @@ TEST_F(NavigationControllerTest, Back_GeneratesNewPage) {
   TestNotificationTracker notifications;
   RegisterForAllNavNotifications(&notifications, &controller());
 
-  const GURL url1("http://foo1");
-  const GURL url2("http://foo2");
-  const GURL url3("http://foo3");
+  const GURL url1("http://foo/1");
+  const GURL url2("http://foo/2");
+  const GURL url3("http://foo/3");
 
   controller().LoadURL(url1, GURL(), PageTransition::TYPED);
   rvh()->SendNavigate(0, url1);
@@ -863,7 +775,7 @@ TEST_F(NavigationControllerTest, Redirect) {
   params.is_post = false;
   params.content_state = webkit_glue::CreateHistoryStateForURL(GURL(url2));
 
-  NavigationController::LoadCommittedDetails details;
+  content::LoadCommittedDetails details;
 
   EXPECT_EQ(0U, notifications.size());
   EXPECT_TRUE(controller().RendererDidNavigate(params, 0, &details));
@@ -919,7 +831,7 @@ TEST_F(NavigationControllerTest, PostThenRedirect) {
   params.is_post = false;
   params.content_state = webkit_glue::CreateHistoryStateForURL(GURL(url2));
 
-  NavigationController::LoadCommittedDetails details;
+  content::LoadCommittedDetails details;
 
   EXPECT_EQ(0U, notifications.size());
   EXPECT_TRUE(controller().RendererDidNavigate(params, 0, &details));
@@ -965,7 +877,7 @@ TEST_F(NavigationControllerTest, ImmediateRedirect) {
   params.is_post = false;
   params.content_state = webkit_glue::CreateHistoryStateForURL(GURL(url2));
 
-  NavigationController::LoadCommittedDetails details;
+  content::LoadCommittedDetails details;
 
   EXPECT_EQ(0U, notifications.size());
   EXPECT_TRUE(controller().RendererDidNavigate(params, 0, &details));
@@ -1005,7 +917,7 @@ TEST_F(NavigationControllerTest, NewSubframe) {
   params.is_post = false;
   params.content_state = webkit_glue::CreateHistoryStateForURL(GURL(url2));
 
-  NavigationController::LoadCommittedDetails details;
+  content::LoadCommittedDetails details;
   EXPECT_TRUE(controller().RendererDidNavigate(params, 0, &details));
   EXPECT_TRUE(notifications.Check1AndReset(
       NotificationType::NAV_ENTRY_COMMITTED));
@@ -1041,7 +953,7 @@ TEST_F(NavigationControllerTest, SubframeOnEmptyPage) {
   params.is_post = false;
   params.content_state = webkit_glue::CreateHistoryStateForURL(GURL(url));
 
-  NavigationController::LoadCommittedDetails details;
+  content::LoadCommittedDetails details;
   EXPECT_FALSE(controller().RendererDidNavigate(params, 0, &details));
   EXPECT_EQ(0U, notifications.size());
 }
@@ -1068,7 +980,7 @@ TEST_F(NavigationControllerTest, AutoSubframe) {
   params.content_state = webkit_glue::CreateHistoryStateForURL(GURL(url2));
 
   // Navigating should do nothing.
-  NavigationController::LoadCommittedDetails details;
+  content::LoadCommittedDetails details;
   EXPECT_FALSE(controller().RendererDidNavigate(params, 0, &details));
   EXPECT_EQ(0U, notifications.size());
 
@@ -1099,7 +1011,7 @@ TEST_F(NavigationControllerTest, BackSubframe) {
   params.content_state = webkit_glue::CreateHistoryStateForURL(GURL(url2));
 
   // This should generate a new entry.
-  NavigationController::LoadCommittedDetails details;
+  content::LoadCommittedDetails details;
   EXPECT_TRUE(controller().RendererDidNavigate(params, 0, &details));
   EXPECT_TRUE(notifications.Check1AndReset(
       NotificationType::NAV_ENTRY_COMMITTED));
@@ -1183,7 +1095,7 @@ TEST_F(NavigationControllerTest, InPage) {
   params.content_state = webkit_glue::CreateHistoryStateForURL(GURL(url2));
 
   // This should generate a new entry.
-  NavigationController::LoadCommittedDetails details;
+  content::LoadCommittedDetails details;
   EXPECT_TRUE(controller().RendererDidNavigate(params, 0, &details));
   EXPECT_TRUE(notifications.Check1AndReset(
       NotificationType::NAV_ENTRY_COMMITTED));
@@ -1264,7 +1176,7 @@ TEST_F(NavigationControllerTest, InPage_Replace) {
   params.content_state = webkit_glue::CreateHistoryStateForURL(GURL(url2));
 
   // This should NOT generate a new entry.
-  NavigationController::LoadCommittedDetails details;
+  content::LoadCommittedDetails details;
   EXPECT_TRUE(controller().RendererDidNavigate(params, 0, &details));
   EXPECT_TRUE(notifications.Check2AndReset(
       NotificationType::NAV_LIST_PRUNED,
@@ -1315,7 +1227,7 @@ TEST_F(NavigationControllerTest, ClientRedirectAfterInPageNavigation) {
     params.content_state = webkit_glue::CreateHistoryStateForURL(GURL(url));
 
     // This should NOT generate a new entry.
-    NavigationController::LoadCommittedDetails details;
+    content::LoadCommittedDetails details;
     EXPECT_TRUE(controller().RendererDidNavigate(params, 0, &details));
     EXPECT_TRUE(notifications.Check2AndReset(
         NotificationType::NAV_LIST_PRUNED,
@@ -1340,7 +1252,7 @@ TEST_F(NavigationControllerTest, ClientRedirectAfterInPageNavigation) {
     params.content_state = webkit_glue::CreateHistoryStateForURL(GURL(url));
 
     // This SHOULD generate a new entry.
-    NavigationController::LoadCommittedDetails details;
+    content::LoadCommittedDetails details;
     EXPECT_TRUE(controller().RendererDidNavigate(params, 0, &details));
     EXPECT_TRUE(notifications.Check1AndReset(
         NotificationType::NAV_ENTRY_COMMITTED));
@@ -1374,7 +1286,7 @@ class PrunedListener : public NotificationObserver {
                        const NotificationDetails& details) {
     if (type == NotificationType::NAV_LIST_PRUNED) {
       notification_count_++;
-      details_ = *(Details<NavigationController::PrunedDetails>(details).ptr());
+      details_ = *(Details<content::PrunedDetails>(details).ptr());
     }
   }
 
@@ -1382,7 +1294,7 @@ class PrunedListener : public NotificationObserver {
   int notification_count_;
 
   // Details from the last NAV_LIST_PRUNED.
-  NavigationController::PrunedDetails details_;
+  content::PrunedDetails details_;
 
  private:
   NotificationRegistrar registrar_;
@@ -1472,7 +1384,7 @@ TEST_F(NavigationControllerTest, RestoreNavigate) {
   params.gesture = NavigationGestureUser;
   params.is_post = false;
   params.content_state = webkit_glue::CreateHistoryStateForURL(GURL(url));
-  NavigationController::LoadCommittedDetails details;
+  content::LoadCommittedDetails details;
   our_controller.RendererDidNavigate(params, 0, &details);
 
   // There should be no longer any pending entry and one committed one. This
@@ -1509,13 +1421,13 @@ TEST_F(NavigationControllerTest, Interstitial) {
 }
 
 TEST_F(NavigationControllerTest, RemoveEntry) {
-  const GURL url1("http://foo1");
-  const GURL url2("http://foo2");
-  const GURL url3("http://foo3");
-  const GURL url4("http://foo4");
-  const GURL url5("http://foo5");
-  const GURL pending_url("http://pending");
-  const GURL default_url("http://default");
+  const GURL url1("http://foo/1");
+  const GURL url2("http://foo/2");
+  const GURL url3("http://foo/3");
+  const GURL url4("http://foo/4");
+  const GURL url5("http://foo/5");
+  const GURL pending_url("http://foo/pending");
+  const GURL default_url("http://foo/default");
 
   controller().LoadURL(url1, GURL(), PageTransition::TYPED);
   rvh()->SendNavigate(0, url1);
@@ -1572,12 +1484,12 @@ TEST_F(NavigationControllerTest, TransientEntry) {
   TestNotificationTracker notifications;
   RegisterForAllNavNotifications(&notifications, &controller());
 
-  const GURL url0("http://foo0");
-  const GURL url1("http://foo1");
-  const GURL url2("http://foo2");
-  const GURL url3("http://foo3");
-  const GURL url4("http://foo4");
-  const GURL transient_url("http://transient");
+  const GURL url0("http://foo/0");
+  const GURL url1("http://foo/1");
+  const GURL url2("http://foo/2");
+  const GURL url3("http://foo/3");
+  const GURL url4("http://foo/4");
+  const GURL transient_url("http://foo/transient");
 
   controller().LoadURL(url0, GURL(), PageTransition::TYPED);
   rvh()->SendNavigate(0, url0);
@@ -1737,7 +1649,7 @@ TEST_F(NavigationControllerTest, SameSubframe) {
   params.gesture = NavigationGestureAuto;
   params.is_post = false;
   params.content_state = webkit_glue::CreateHistoryStateForURL(GURL(subframe));
-  NavigationController::LoadCommittedDetails details;
+  content::LoadCommittedDetails details;
   EXPECT_FALSE(controller().RendererDidNavigate(params, 0, &details));
 
   // Nothing should have changed.
@@ -1764,7 +1676,7 @@ TEST_F(NavigationControllerTest, ViewSourceRedirect) {
   params.is_post = false;
   params.content_state =
       webkit_glue::CreateHistoryStateForURL(GURL(result_url));
-  NavigationController::LoadCommittedDetails details;
+  content::LoadCommittedDetails details;
   controller().RendererDidNavigate(params, 0, &details);
 
   EXPECT_EQ(ASCIIToUTF16(kExpected), contents()->GetTitle());
@@ -1828,7 +1740,7 @@ TEST_F(NavigationControllerTest, SubframeWhilePending) {
   params.gesture = NavigationGestureAuto;
   params.is_post = false;
   params.content_state = webkit_glue::CreateHistoryStateForURL(GURL(url1_sub));
-  NavigationController::LoadCommittedDetails details;
+  content::LoadCommittedDetails details;
 
   // This should return false meaning that nothing was actually updated.
   EXPECT_FALSE(controller().RendererDidNavigate(params, 0, &details));
@@ -2031,9 +1943,9 @@ TEST_F(NavigationControllerTest, CopyStateFromAndPrune6) {
 // Tests that navigations initiated from the page (with the history object)
 // work as expected without navigation entries.
 TEST_F(NavigationControllerTest, HistoryNavigate) {
-  const GURL url1("http://foo1");
-  const GURL url2("http://foo2");
-  const GURL url3("http://foo3");
+  const GURL url1("http://foo/1");
+  const GURL url2("http://foo/2");
+  const GURL url3("http://foo/3");
 
   NavigateAndCommit(url1);
   NavigateAndCommit(url2);
@@ -2088,9 +2000,9 @@ TEST_F(NavigationControllerTest, PruneAllButActiveForSingle) {
 
 // Test call to PruneAllButActive for last entry.
 TEST_F(NavigationControllerTest, PruneAllButActiveForLast) {
-  const GURL url1("http://foo1");
-  const GURL url2("http://foo2");
-  const GURL url3("http://foo3");
+  const GURL url1("http://foo/1");
+  const GURL url2("http://foo/2");
+  const GURL url3("http://foo/3");
 
   NavigateAndCommit(url1);
   NavigateAndCommit(url2);
@@ -2107,9 +2019,9 @@ TEST_F(NavigationControllerTest, PruneAllButActiveForLast) {
 
 // Test call to PruneAllButActive for intermediate entry.
 TEST_F(NavigationControllerTest, PruneAllButActiveForIntermediate) {
-  const GURL url1("http://foo1");
-  const GURL url2("http://foo2");
-  const GURL url3("http://foo3");
+  const GURL url1("http://foo/1");
+  const GURL url2("http://foo/2");
+  const GURL url3("http://foo/3");
 
   NavigateAndCommit(url1);
   NavigateAndCommit(url2);
@@ -2125,9 +2037,9 @@ TEST_F(NavigationControllerTest, PruneAllButActiveForIntermediate) {
 
 // Test call to PruneAllButActive for intermediate entry.
 TEST_F(NavigationControllerTest, PruneAllButActiveForPending) {
-  const GURL url1("http://foo1");
-  const GURL url2("http://foo2");
-  const GURL url3("http://foo3");
+  const GURL url1("http://foo/1");
+  const GURL url2("http://foo/2");
+  const GURL url3("http://foo/3");
 
   NavigateAndCommit(url1);
   NavigateAndCommit(url2);
@@ -2141,9 +2053,9 @@ TEST_F(NavigationControllerTest, PruneAllButActiveForPending) {
 
 // Test call to PruneAllButActive for transient entry.
 TEST_F(NavigationControllerTest, PruneAllButActiveForTransient) {
-  const GURL url0("http://foo0");
-  const GURL url1("http://foo1");
-  const GURL transient_url("http://transient");
+  const GURL url0("http://foo/0");
+  const GURL url1("http://foo/1");
+  const GURL transient_url("http://foo/transient");
 
   controller().LoadURL(url0, GURL(), PageTransition::TYPED);
   rvh()->SendNavigate(0, url0);
@@ -2165,6 +2077,100 @@ TEST_F(NavigationControllerTest, PruneAllButActiveForTransient) {
 /* TODO(brettw) These test pass on my local machine but fail on the XP buildbot
    (but not Vista) cleaning up the directory after they run.
    This should be fixed.
+
+// NavigationControllerHistoryTest ---------------------------------------------
+
+class NavigationControllerHistoryTest : public NavigationControllerTest {
+ public:
+  NavigationControllerHistoryTest()
+      : url0("http://foo1"),
+        url1("http://foo1"),
+        url2("http://foo1"),
+        profile_manager_(NULL) {
+  }
+
+  virtual ~NavigationControllerHistoryTest() {
+    // Prevent our base class from deleting the profile since profile's
+    // lifetime is managed by profile_manager_.
+    STLDeleteElements(&windows_);
+  }
+
+  // testing::Test overrides.
+  virtual void SetUp() {
+    NavigationControllerTest::SetUp();
+
+    // Force the session service to be created.
+    SessionService* service = new SessionService(profile());
+    SessionServiceFactory::SetForTestProfile(profile(), service);
+    service->SetWindowType(window_id, Browser::TYPE_TABBED);
+    service->SetWindowBounds(window_id, gfx::Rect(0, 1, 2, 3), false);
+    service->SetTabIndexInWindow(window_id,
+                                 controller().session_id(), 0);
+    controller().SetWindowID(window_id);
+
+    session_helper_.set_service(service);
+  }
+
+  virtual void TearDown() {
+    // Release profile's reference to the session service. Otherwise the file
+    // will still be open and we won't be able to delete the directory below.
+    session_helper_.ReleaseService(); // profile owns this
+    SessionServiceFactory::SetForTestProfile(profile(), NULL);
+
+    // Make sure we wait for history to shut down before continuing. The task
+    // we add will cause our message loop to quit once it is destroyed.
+    HistoryService* history =
+        profile()->GetHistoryService(Profile::IMPLICIT_ACCESS);
+    if (history) {
+      history->SetOnBackendDestroyTask(new MessageLoop::QuitTask);
+      MessageLoop::current()->Run();
+    }
+
+    // Do normal cleanup before deleting the profile directory below.
+    NavigationControllerTest::TearDown();
+
+    ASSERT_TRUE(file_util::Delete(test_dir_, true));
+    ASSERT_FALSE(file_util::PathExists(test_dir_));
+  }
+
+  // Deletes the current profile manager and creates a new one. Indirectly this
+  // shuts down the history database and reopens it.
+  void ReopenDatabase() {
+    session_helper_.set_service(NULL);
+    SessionServiceFactory::SetForTestProfile(profile(), NULL);
+
+    SessionService* service = new SessionService(profile());
+    SessionServiceFactory::SetForTestProfile(profile(), service);
+    session_helper_.set_service(service);
+  }
+
+  void GetLastSession() {
+    SessionServiceFactory::GetForProfile(profile())->TabClosed(
+        controller().window_id(), controller().session_id(), false);
+
+    ReopenDatabase();
+    Time close_time;
+
+    session_helper_.ReadWindows(&windows_);
+  }
+
+  CancelableRequestConsumer consumer;
+
+  // URLs for testing.
+  const GURL url0;
+  const GURL url1;
+  const GURL url2;
+
+  std::vector<SessionWindow*> windows_;
+
+  SessionID window_id;
+
+  SessionServiceTestHelper session_helper_;
+
+ private:
+  ProfileManager* profile_manager_;
+  FilePath test_dir_;
+};
 
 // A basic test case. Navigates to a single url, and make sure the history
 // db matches.

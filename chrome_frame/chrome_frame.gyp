@@ -80,6 +80,7 @@
         '../chrome/app/policy/cloud_policy_codegen.gyp:policy',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
+        'chrome_frame_launcher.gyp:chrome_frame_helper_lib',
         'chrome_frame_ie',
         'chrome_frame_strings',
         'chrome_tab_idl',
@@ -105,6 +106,7 @@
         'test/infobar_unittests.cc',
         'test/policy_settings_unittest.cc',
         'test/ready_mode_unittest.cc',
+        'test/registry_watcher_unittest.cc',
         'test/simulate_input.h',
         'test/simulate_input.cc',
         'test/urlmon_moniker_tests.h',
@@ -138,11 +140,6 @@
           ],
           'conditions': [
             ['OS=="win"', {
-              'msvs_settings': {
-                'VCLinkerTool': {
-                  'DelayLoadDLLs': ['xpcom.dll', 'nspr4.dll'],
-                },
-              },
               'dependencies': [
                 # TODO(slightlyoff): Get automation targets working on OS X
                 '../chrome/chrome.gyp:automation',
@@ -263,6 +260,7 @@
       ],
       'include_dirs': [
         '<(DEPTH)/third_party/wtl/include',
+        '<(DEPTH)/breakpad/src',
       ],
       'resource_include_dirs': [
         '<(INTERMEDIATE_DIR)',
@@ -273,11 +271,6 @@
             'libraries': [
               '-loleacc.lib',
             ],
-          },
-          'msvs_settings': {
-            'VCLinkerTool': {
-              'DelayLoadDLLs': ['xpcom.dll', 'nspr4.dll'],
-            },
           },
           'dependencies': [
             '../chrome/chrome.gyp:crash_service',
@@ -370,11 +363,6 @@
               '-loleacc.lib',
             ],
           },
-          'msvs_settings': {
-            'VCLinkerTool': {
-              'IgnoreDefaultLibraryNames': ['nspr.lib', 'nspr4.lib'],
-            },
-          },
           'dependencies': [
             '../breakpad/breakpad.gyp:breakpad_handler',
             '../chrome/chrome.gyp:automation',
@@ -410,6 +398,9 @@
         'chrome_frame_ie',
         'chrome_tab_idl',
         'npchrome_frame',
+      ],
+      'include_dirs': [
+        '<(DEPTH)/breakpad/src',
       ],
       'sources': [
         '../net/url_request/url_request_unittest.cc',
@@ -584,6 +575,7 @@
       ],
       'include_dirs': [
         '<(DEPTH)/third_party/wtl/include',
+        '<(DEPTH)/breakpad/src',
         # To allow including "chrome_tab.h"
         '<(INTERMEDIATE_DIR)',
       ],
@@ -596,11 +588,6 @@
             'libraries': [
               '-loleacc.lib',
             ],
-          },
-          'msvs_settings': {
-            'VCLinkerTool': {
-              'DelayLoadDLLs': ['xpcom.dll', 'nspr4.dll'],
-            },
           },
           'dependencies': [
             '../chrome/chrome.gyp:crash_service',
@@ -663,7 +650,6 @@
     {
       'target_name': 'chrome_frame_utils',
        # The intent is that shared util code can be built into a separate lib.
-       # Currently on the resource loading code is here.
       'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base_i18n',
@@ -731,6 +717,7 @@
         'exception_barrier.cc',
         'exception_barrier.h',
         'exception_barrier_lowlevel.asm',
+        'extra_system_apis.h',
         'find_dialog.cc',
         'find_dialog.h',
         'function_stub.cc',
@@ -740,7 +727,6 @@
         'http_negotiate.cc',
         'http_negotiate.h',
         'iids.cc',
-        'in_place_menu.h',
         'infobars/infobar_content.h',
         'infobars/internal/displaced_window_manager.cc',
         'infobars/internal/displaced_window_manager.h',
@@ -753,7 +739,6 @@
         'infobars/infobar_manager.cc',
         'metrics_service.cc',
         'metrics_service.h',
-        'ole_document_impl.h',
         'policy_settings.cc',
         'policy_settings.h',
         'protocol_sink_wrap.cc',
@@ -773,7 +758,8 @@
         'register_bho.rgs',
         'stream_impl.cc',
         'stream_impl.h',
-        'extra_system_apis.h',
+        'third_party/active_doc/in_place_menu.h',
+        'third_party/active_doc/ole_document_impl.h',
         'urlmon_bind_status_callback.h',
         'urlmon_bind_status_callback.cc',
         'urlmon_moniker.h',
@@ -869,7 +855,13 @@
         'sync_msg_reply_dispatcher.cc',
         'task_marshaller.h',
         'task_marshaller.cc',
-      ]
+      ],
+      'dependencies': [
+        '../base/base.gyp:base',
+      ],
+      'export_dependent_settings': [
+        '../base/base.gyp:base',
+      ],
     },
     {
       'target_name': 'npchrome_frame',

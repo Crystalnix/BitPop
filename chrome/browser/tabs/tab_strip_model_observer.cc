@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,10 +21,10 @@ void TabStripModelObserver::TabDetachedAt(TabContentsWrapper* contents,
 void TabStripModelObserver::TabDeselected(TabContentsWrapper* contents) {
 }
 
-void TabStripModelObserver::TabSelectedAt(TabContentsWrapper* old_contents,
-                                          TabContentsWrapper* new_contents,
-                                          int index,
-                                          bool user_gesture) {
+void TabStripModelObserver::ActiveTabChanged(TabContentsWrapper* old_contents,
+                                             TabContentsWrapper* new_contents,
+                                             int index,
+                                             bool user_gesture) {
 }
 
 void TabStripModelObserver::TabMoved(TabContentsWrapper* contents,
@@ -58,3 +58,5 @@ void TabStripModelObserver::TabBlockedStateChanged(TabContentsWrapper* contents,
 void TabStripModelObserver::TabStripEmpty() {}
 
 void TabStripModelObserver::TabStripModelDeleted() {}
+
+void TabStripModelObserver::ActiveTabClicked(int index) {}

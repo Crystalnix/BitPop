@@ -197,10 +197,6 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, UnloadPageAction) {
   ASSERT_TRUE(WaitForPageActionCountChangeTo(0));
 }
 
-// Flaky crash on Mac debug. http://crbug.com/45079
-#if defined(OS_MACOSX)
-#define PageActionRefreshCrash PageActionRefreshCrash
-#endif
 // Tests that we can load page actions in the Omnibox.
 IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, PageActionRefreshCrash) {
   base::TimeTicks start_time = base::TimeTicks::Now();
@@ -719,6 +715,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, MAYBE_PluginLoadUnload) {
   EXPECT_FALSE(result);
 
   ExtensionService* service = browser()->profile()->GetExtensionService();
+  service->set_show_extensions_prompts(false);
   const size_t size_before = service->extensions()->size();
   ASSERT_TRUE(LoadExtension(extension_dir));
   EXPECT_EQ(size_before + 1, service->extensions()->size());
@@ -767,6 +764,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, MAYBE_PluginPrivate) {
       test_data_dir_.AppendASCII("uitest").AppendASCII("plugins_private");
 
   ExtensionService* service = browser()->profile()->GetExtensionService();
+  service->set_show_extensions_prompts(false);
   const size_t size_before = service->extensions()->size();
   ASSERT_TRUE(LoadExtension(extension_dir));
   EXPECT_EQ(size_before + 1, service->extensions()->size());

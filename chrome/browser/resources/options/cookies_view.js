@@ -24,6 +24,20 @@ cr.define('options', function() {
   CookiesView.prototype = {
     __proto__: OptionsPage.prototype,
 
+    /**
+     * The timer id of the timer set on search query change events.
+     * @type {number}
+     * @private
+     */
+    queryDelayTimerId_: 0,
+
+    /**
+     * The most recent search query, or null if the query is empty.
+     * @type {?string}
+     * @private
+     */
+    lastQuery_ : null,
+
     initializePage: function() {
       OptionsPage.prototype.initializePage.call(this);
 
@@ -36,14 +50,13 @@ cr.define('options', function() {
 
       var cookiesList = $('cookies-list');
       options.CookiesList.decorate(cookiesList);
+      window.addEventListener('resize', this.handleResize_.bind(this));
 
       this.addEventListener('visibleChange', this.handleVisibleChange_);
     },
 
-    lastQuery_ : null,
-
     /**
-     * Search cookie using text in cookiesSearchBox.
+     * Search cookie using text in |cookies-search-box|.
      */
     searchCookie: function() {
       this.queryDelayTimerId_ = 0;
@@ -54,12 +67,10 @@ cr.define('options', function() {
       }
     },
 
-    queryDelayTimerId_: 0,
-
     /**
      * Handles search query changes.
-     * @private
      * @param {!Event} e The event object.
+     * @private
      */
     handleSearchQueryChange_: function(e) {
       if (this.queryDelayTimerId_)
@@ -73,18 +84,35 @@ cr.define('options', function() {
 
     /**
      * Handler for OptionsPage's visible property change event.
-     * @private
      * @param {Event} e Property change event.
+     * @private
      */
     handleVisibleChange_: function(e) {
       if (!this.visible)
         return;
+      // Resize the cookies list whenever the options page becomes visible.
+      this.handleResize_(null);
       if (!this.initialized_) {
         this.initialized_ = true;
         this.searchCookie();
       } else {
         $('cookies-list').redraw();
       }
+    },
+
+    /**
+     * Handler for when the window changes size. Resizes the cookies list to
+     * match the window height.
+     * @param {?Event} e Window resize event, or null if called directly.
+     * @private
+     */
+    handleResize_: function(e) {
+      if (!this.visible)
+        return;
+      var cookiesList = $('cookies-list');
+      // 25 pixels from the window bottom seems like a visually pleasing amount.
+      var height = window.innerHeight - cookiesList.offsetTop - 25;
+      cookiesList.style.height = height + 'px';
     },
   };
 

@@ -21,9 +21,9 @@ BrowserAccessibility* BrowserAccessibilityFactory::Create() {
 // static
 int32 BrowserAccessibilityManager::next_child_id_ = -1;
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
 // There's no OS-specific implementation of BrowserAccessibilityManager
-// on Linux, so just instantiate the base class.
+// on Unix, so just instantiate the base class.
 // static
 BrowserAccessibilityManager* BrowserAccessibilityManager::Create(
     gfx::NativeView parent_view,
@@ -84,6 +84,17 @@ BrowserAccessibility* BrowserAccessibilityManager::GetFromChildID(
   } else {
     return NULL;
   }
+}
+
+BrowserAccessibility* BrowserAccessibilityManager::GetFromRendererID(
+    int32 renderer_id) {
+  base::hash_map<int32, int32>::iterator iter =
+      renderer_id_to_child_id_map_.find(renderer_id);
+  if (iter == renderer_id_to_child_id_map_.end())
+    return NULL;
+
+  int32 child_id = iter->second;
+  return GetFromChildID(child_id);
 }
 
 void BrowserAccessibilityManager::Remove(int32 child_id, int32 renderer_id) {
@@ -282,6 +293,9 @@ BrowserAccessibility* BrowserAccessibilityManager::UpdateNode(
     return current;
   }
 
+  BrowserAccessibility* current_parent = current->parent();
+  int current_index_in_parent = current->index_in_parent();
+
   // Detach all of the nodes in the old tree and get a single flat vector
   // of all node pointers.
   std::vector<BrowserAccessibility*> old_tree_nodes;
@@ -289,7 +303,8 @@ BrowserAccessibility* BrowserAccessibilityManager::UpdateNode(
 
   // Build a new tree, reusing old nodes if possible. Each node that's
   // reused will have its reference count incremented by one.
-  current = CreateAccessibilityTree(NULL, src, -1);
+  current =
+      CreateAccessibilityTree(current_parent, src, current_index_in_parent);
 
   // Decrement the reference count of all nodes in the old tree, which will
   // delete any nodes no longer needed.
@@ -324,13 +339,15 @@ BrowserAccessibility* BrowserAccessibilityManager::CreateAccessibilityTree(
   if (instance && instance->role() != src.role)
     instance = NULL;
 
-  if (instance) {
-    // If we're reusing a node, it should already be detached from a parent
-    // and any children. If not, that means we have a serious bug somewhere,
-    // like the same child is reachable from two places in the same tree.
-    DCHECK_EQ(static_cast<BrowserAccessibility*>(NULL), instance->parent());
-    DCHECK_EQ(0U, instance->child_count());
+  // If we're reusing a node, it should already be detached from a parent
+  // and any children. If not, that means we have a serious bug somewhere,
+  // like the same child is reachable from two places in the same tree.
+  if (instance && (instance->parent() != NULL || instance->child_count() > 0)) {
+    NOTREACHED();
+    instance = NULL;
+  }
 
+  if (instance) {
     // If we're reusing a node, update its parent and increment its
     // reference count.
     instance->UpdateParent(parent, index_in_parent);

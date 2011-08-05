@@ -10,7 +10,6 @@
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_edit.h"
-#include "chrome/browser/autocomplete/autocomplete_edit_view_mac.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_popup_model.h"
 #include "chrome/browser/instant/instant_confirm_dialog.h"
@@ -21,6 +20,7 @@
 #import "chrome/browser/ui/cocoa/location_bar/instant_opt_in_controller.h"
 #import "chrome/browser/ui/cocoa/location_bar/instant_opt_in_view.h"
 #import "chrome/browser/ui/cocoa/location_bar/omnibox_popup_view.h"
+#include "chrome/browser/ui/cocoa/omnibox/omnibox_view_mac.h"
 #include "grit/theme_resources.h"
 #include "skia/ext/skia_utils_mac.h"
 #import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
@@ -28,6 +28,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/text/text_elider.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
 namespace {
 
@@ -123,7 +124,7 @@ NSMutableAttributedString* AutocompletePopupViewMac::DecorateMatchedString(
   for (ACMatchClassifications::const_iterator i = classifications.begin();
        i != classifications.end(); ++i) {
     const BOOL isLast = (i+1) == classifications.end();
-    const size_t nextOffset = (isLast ? matchString.length() : (i+1)->offset);
+    const size_t nextOffset = (isLast ? matchString.length() : (i + 1)->offset);
     const NSInteger location = static_cast<NSInteger>(i->offset);
     const NSInteger length = static_cast<NSInteger>(nextOffset - i->offset);
     const NSRange range = NSMakeRange(location, length);
@@ -176,7 +177,7 @@ NSMutableAttributedString* AutocompletePopupViewMac::ElideString(
 
   // The ellipses should be the last character, and everything before
   // that should match the original string.
-  const size_t i(elided.size() - 1);
+  const size_t i(elided.length() - 1);
   DCHECK_NE(0, elided.compare(0, i, originalString));
 
   // Replace the end of |aString| with the ellipses from |elided|.
@@ -280,17 +281,17 @@ NSAttributedString* AutocompletePopupViewMac::MatchText(
 @end
 
 AutocompletePopupViewMac::AutocompletePopupViewMac(
-    AutocompleteEditViewMac* edit_view,
+    OmniboxViewMac* omnibox_view,
     AutocompleteEditModel* edit_model,
     Profile* profile,
     NSTextField* field)
     : model_(new AutocompletePopupModel(this, edit_model, profile)),
-      edit_view_(edit_view),
+      omnibox_view_(omnibox_view),
       field_(field),
       popup_(nil),
       opt_in_controller_(nil),
       targetPopupFrame_(NSZeroRect) {
-  DCHECK(edit_view);
+  DCHECK(omnibox_view);
   DCHECK(edit_model);
   DCHECK(profile);
 }
@@ -421,7 +422,7 @@ NSImage* AutocompletePopupViewMac::ImageForMatch(
 
   const int resource_id = match.starred ?
       IDR_OMNIBOX_STAR : AutocompleteMatch::TypeToIcon(match.type);
-  return AutocompleteEditViewMac::ImageForResource(resource_id);
+  return OmniboxViewMac::ImageForResource(resource_id);
 }
 
 void AutocompletePopupViewMac::UpdatePopupAppearance() {
@@ -447,7 +448,7 @@ void AutocompletePopupViewMac::UpdatePopupAppearance() {
   CreatePopupIfNeeded();
 
   // The popup's font is a slightly smaller version of the field's.
-  NSFont* fieldFont = AutocompleteEditViewMac::GetFieldFont();
+  NSFont* fieldFont = OmniboxViewMac::GetFieldFont();
   const CGFloat resultFontSize = [fieldFont pointSize] + kEditFontAdjust;
   gfx::Font resultFont(base::SysNSStringToUTF16([fieldFont fontName]),
                        static_cast<int>(resultFontSize));
@@ -538,16 +539,15 @@ void AutocompletePopupViewMac::OpenURLForRow(int row, bool force_background) {
         event_utils::WindowOpenDispositionFromNSEvent([NSApp currentEvent]);
   }
 
-  // OpenURL() may close the popup, which will clear the result set
+  // OpenMatch() may close the popup, which will clear the result set
   // and, by extension, |match| and its contents.  So copy the
-  // relevant strings out to make sure they stay alive until the call
+  // relevant match out to make sure it stays alive until the call
   // completes.
-  const AutocompleteMatch& match = model_->result().match_at(row);
-  const GURL url(match.destination_url);
+  AutocompleteMatch match = model_->result().match_at(row);
   string16 keyword;
   const bool is_keyword_hint = model_->GetKeywordForMatch(match, &keyword);
-  edit_view_->OpenURL(url, disposition, match.transition, GURL(), row,
-                      is_keyword_hint ? string16() : keyword);
+  omnibox_view_->OpenMatch(match, disposition, GURL(), row,
+                           is_keyword_hint ? string16() : keyword);
 }
 
 void AutocompletePopupViewMac::UserPressedOptIn(bool opt_in) {
@@ -823,10 +823,9 @@ bool AutocompletePopupViewMac::ShouldShowInstantOptIn() {
                        bottomRightCornerRadius:kPopupRoundingRadius];
 
   // Draw the matrix clipped to our border.
-  [NSGraphicsContext saveGraphicsState];
+  gfx::ScopedNSGraphicsContextSaveGState scopedGState;
   [path addClip];
   [super drawRect:rect];
-  [NSGraphicsContext restoreGraphicsState];
 }
 
 @end

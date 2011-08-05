@@ -6,6 +6,8 @@
 
 #include <winspool.h>
 
+#include <algorithm>
+
 #include "base/i18n/file_util_icu.h"
 #include "base/i18n/time_formatting.h"
 #include "base/message_loop.h"
@@ -15,9 +17,66 @@
 #include "printing/print_job_constants.h"
 #include "printing/print_settings_initializer_win.h"
 #include "printing/printed_document.h"
-#include "skia/ext/platform_device_win.h"
+#include "skia/ext/platform_device.h"
 
 using base::Time;
+
+namespace {
+
+// Retrieves the printer's PRINTER_INFO_* structure.
+// Output |level| can be 9 (user-default), 8 (admin-default), or 2
+// (printer-default).
+// |devmode| is a pointer points to the start of DEVMODE structure in
+// |buffer|.
+bool GetPrinterInfo(HANDLE printer,
+                    const std::wstring &device_name,
+                    int* level,
+                    scoped_array<uint8>* buffer,
+                    DEVMODE** dev_mode) {
+  DCHECK(buffer);
+
+  // A PRINTER_INFO_9 structure specifying the per-user default printer
+  // settings.
+  printing::PrintingContextWin::GetPrinterHelper(printer, 9, buffer);
+  if (buffer->get()) {
+    PRINTER_INFO_9* info_9 = reinterpret_cast<PRINTER_INFO_9*>(buffer->get());
+    if (info_9->pDevMode != NULL) {
+      *level = 9;
+      *dev_mode = info_9->pDevMode;
+      return true;
+    }
+    buffer->reset();
+  }
+
+  // A PRINTER_INFO_8 structure specifying the global default printer settings.
+  printing::PrintingContextWin::GetPrinterHelper(printer, 8, buffer);
+  if (buffer->get()) {
+    PRINTER_INFO_8* info_8 = reinterpret_cast<PRINTER_INFO_8*>(buffer->get());
+    if (info_8->pDevMode != NULL) {
+      *level = 8;
+      *dev_mode = info_8->pDevMode;
+      return true;
+    }
+    buffer->reset();
+  }
+
+  // A PRINTER_INFO_2 structure specifying the driver's default printer
+  // settings.
+  printing::PrintingContextWin::GetPrinterHelper(printer, 2, buffer);
+  if (buffer->get()) {
+    PRINTER_INFO_2* info_2 = reinterpret_cast<PRINTER_INFO_2*>(buffer->get());
+    if (info_2->pDevMode != NULL) {
+      *level = 2;
+      *dev_mode = info_2->pDevMode;
+      return true;
+    }
+    buffer->reset();
+  }
+
+  return false;
+}
+
+}  // anonymous namespace
 
 namespace printing {
 
@@ -220,9 +279,8 @@ PrintingContext::Result PrintingContextWin::UseDefaultSettings() {
                               &count_returned);
     if (ret && count_returned) {  // have printers
       // Open the first successfully found printer.
-      for (DWORD count = 0; count < count_returned; count++) {
-        PRINTER_INFO_2* info_2;
-        info_2 = reinterpret_cast<PRINTER_INFO_2*>(
+      for (DWORD count = 0; count < count_returned; ++count) {
+        PRINTER_INFO_2* info_2 = reinterpret_cast<PRINTER_INFO_2*>(
             printer_info_buffer.get() + count * sizeof(PRINTER_INFO_2));
         std::wstring printer_name = info_2->pPrinterName;
         if (info_2->pDevMode == NULL || printer_name.length() == 0)
@@ -230,12 +288,10 @@ PrintingContext::Result PrintingContextWin::UseDefaultSettings() {
         if (!AllocateContext(printer_name, info_2->pDevMode, &context_))
           break;
         if (InitializeSettings(*info_2->pDevMode, printer_name,
-                               NULL, 0, false))
+                               NULL, 0, false)) {
           break;
-        if (context_) {
-          ::DeleteDC(context_);
-          context_ = NULL;
         }
+        ReleaseContext();
       }
       if (context_)
         return OK;
@@ -247,20 +303,99 @@ PrintingContext::Result PrintingContextWin::UseDefaultSettings() {
 }
 
 PrintingContext::Result PrintingContextWin::UpdatePrintSettings(
-    const DictionaryValue& job_settings, const PageRanges& ranges) {
+    const DictionaryValue& job_settings,
+    const PageRanges& ranges) {
   DCHECK(!in_print_job_);
 
+  bool collate;
+  bool color;
   bool landscape;
-  if (!job_settings.GetBoolean(kSettingLandscape, &landscape))
+  bool print_to_pdf;
+  int copies;
+  int duplex_mode;
+  string16 device_name;
+
+  if (!job_settings.GetBoolean(kSettingLandscape, &landscape) ||
+      !job_settings.GetBoolean(kSettingCollate, &collate) ||
+      !job_settings.GetBoolean(kSettingColor, &color) ||
+      !job_settings.GetBoolean(kSettingPrintToPDF, &print_to_pdf) ||
+      !job_settings.GetInteger(kSettingDuplexMode, &duplex_mode) ||
+      !job_settings.GetInteger(kSettingCopies, &copies) ||
+      !job_settings.GetString(kSettingDeviceName, &device_name)) {
+    return OnError();
+  }
+
+  if (print_to_pdf) {
+    // Pseudo printer: handle orientation and ranges only.
+    settings_.SetOrientation(landscape);
+    settings_.ranges = ranges;
+    return OK;
+  }
+
+  // Underlying |settings_| do not have these attributes, so we need to
+  // operate on printer directly, which involves reloading settings.
+  // Therefore, reset the settings anyway.
+  ResetSettings();
+
+  HANDLE printer;
+  LPWSTR device_name_wide = const_cast<wchar_t*>(device_name.c_str());
+  if (!OpenPrinter(device_name_wide, &printer, NULL))
     return OnError();
 
-  settings_.SetOrientation(landscape);
+  // Make printer changes local to Chrome.
+  // See MSDN documentation regarding DocumentProperties.
+  scoped_array<uint8> buffer;
+  DEVMODE* dev_mode = NULL;
+  LONG buffer_size = DocumentProperties(NULL, printer, device_name_wide,
+                                        NULL, NULL, 0);
+  if (buffer_size) {
+    buffer.reset(new uint8[buffer_size]);
+    memset(buffer.get(), 0, buffer_size);
+    if (DocumentProperties(NULL, printer, device_name_wide,
+                           reinterpret_cast<PDEVMODE>(buffer.get()), NULL,
+                           DM_OUT_BUFFER) == IDOK) {
+      dev_mode = reinterpret_cast<PDEVMODE>(buffer.get());
+    }
+  }
+  if (dev_mode == NULL) {
+    buffer.reset();
+    ClosePrinter(printer);
+    return OnError();
+  }
 
-  // TODO(kmadhusu): Update other print settings such as number of copies,
-  // collate, duplex printing, job title, etc.,
+  dev_mode->dmColor = color ? DMCOLOR_COLOR : DMCOLOR_MONOCHROME;
+  dev_mode->dmCopies = std::max(copies, 1);
+  if (dev_mode->dmCopies > 1)  // do not change collate unless multiple copies
+    dev_mode->dmCollate = collate ? DMCOLLATE_TRUE : DMCOLLATE_FALSE;
+  switch (duplex_mode) {
+    case LONG_EDGE:
+      dev_mode->dmDuplex = DMDUP_VERTICAL;
+      break;
+    case SHORT_EDGE:
+      dev_mode->dmDuplex = DMDUP_HORIZONTAL;
+      break;
+    default:  // simplex
+      dev_mode->dmDuplex = DMDUP_SIMPLEX;
+      break;
+  }
+  dev_mode->dmOrientation = landscape ? DMORIENT_LANDSCAPE : DMORIENT_PORTRAIT;
 
-  settings_.ranges = ranges;
+  // Update data using DocumentProperties.
+  if (DocumentProperties(NULL, printer, device_name_wide, dev_mode, dev_mode,
+                         DM_IN_BUFFER | DM_OUT_BUFFER) != IDOK) {
+    ClosePrinter(printer);
+    return OnError();
+  }
 
+  // Set printer then refresh printer settings.
+  if (!AllocateContext(device_name, dev_mode, &context_)) {
+    ClosePrinter(printer);
+    return OnError();
+  }
+  PrintSettingsInitializerWin::InitPrintSettings(context_, *dev_mode,
+                                                 ranges, device_name,
+                                                 false, &settings_);
+  ClosePrinter(printer);
   return OK;
 }
 
@@ -414,7 +549,7 @@ bool PrintingContextWin::InitializeSettings(const DEVMODE& dev_mode,
                                             const PRINTPAGERANGE* ranges,
                                             int number_ranges,
                                             bool selection_only) {
-  skia::PlatformDevice::InitializeDC(context_);
+  skia::InitializeDC(context_);
   DCHECK(GetDeviceCaps(context_, CLIPCAPS));
   DCHECK(GetDeviceCaps(context_, RASTERCAPS) & RC_STRETCHDIB);
   DCHECK(GetDeviceCaps(context_, RASTERCAPS) & RC_BITMAP64);
@@ -460,60 +595,24 @@ bool PrintingContextWin::GetPrinterSettings(HANDLE printer,
                                             const std::wstring& device_name) {
   DCHECK(!in_print_job_);
   scoped_array<uint8> buffer;
+  int level = 0;
+  DEVMODE* dev_mode = NULL;
 
-  // A PRINTER_INFO_9 structure specifying the per-user default printer
-  // settings.
-  GetPrinterHelper(printer, 9, &buffer);
-  if (buffer.get()) {
-    PRINTER_INFO_9* info_9 = reinterpret_cast<PRINTER_INFO_9*>(buffer.get());
-    if (info_9->pDevMode != NULL) {
-      if (!AllocateContext(device_name, info_9->pDevMode, &context_)) {
-        ResetSettings();
-        return false;
-      }
-      return InitializeSettings(*info_9->pDevMode, device_name, NULL, 0, false);
-    }
-    buffer.reset();
+  if (GetPrinterInfo(printer, device_name, &level, &buffer, &dev_mode) &&
+      AllocateContext(device_name, dev_mode, &context_)) {
+    return InitializeSettings(*dev_mode, device_name, NULL, 0, false);
   }
 
-  // A PRINTER_INFO_8 structure specifying the global default printer settings.
-  GetPrinterHelper(printer, 8, &buffer);
-  if (buffer.get()) {
-    PRINTER_INFO_8* info_8 = reinterpret_cast<PRINTER_INFO_8*>(buffer.get());
-    if (info_8->pDevMode != NULL) {
-      if (!AllocateContext(device_name, info_8->pDevMode, &context_)) {
-        ResetSettings();
-        return false;
-      }
-      return InitializeSettings(*info_8->pDevMode, device_name, NULL, 0, false);
-    }
-    buffer.reset();
-  }
-
-  // A PRINTER_INFO_2 structure specifying the driver's default printer
-  // settings.
-  GetPrinterHelper(printer, 2, &buffer);
-  if (buffer.get()) {
-    PRINTER_INFO_2* info_2 = reinterpret_cast<PRINTER_INFO_2*>(buffer.get());
-    if (info_2->pDevMode != NULL) {
-      if (!AllocateContext(device_name, info_2->pDevMode, &context_)) {
-        ResetSettings();
-        return false;
-      }
-      return InitializeSettings(*info_2->pDevMode, device_name, NULL, 0, false);
-    }
-    buffer.reset();
-  }
-  // Failed to retrieve the printer settings.
+  buffer.reset();
   ResetSettings();
   return false;
 }
 
 // static
-bool PrintingContextWin::AllocateContext(const std::wstring& printer_name,
+bool PrintingContextWin::AllocateContext(const std::wstring& device_name,
                                          const DEVMODE* dev_mode,
                                          gfx::NativeDrawingContext* context) {
-  *context = CreateDC(L"WINSPOOL", printer_name.c_str(), NULL, dev_mode);
+  *context = CreateDC(L"WINSPOOL", device_name.c_str(), NULL, dev_mode);
   DCHECK(*context);
   return *context != NULL;
 }

@@ -6,7 +6,14 @@
 
 namespace gfx {
 
-bool GLSurface::Initialize() {
+GLSurface::GLSurface() {
+}
+
+GLSurface::~GLSurface() {
+}
+
+bool GLSurface::Initialize()
+{
   return true;
 }
 

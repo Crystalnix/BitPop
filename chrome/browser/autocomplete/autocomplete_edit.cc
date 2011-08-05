@@ -12,7 +12,6 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
-#include "chrome/browser/autocomplete/autocomplete_edit_view.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_popup_model.h"
 #include "chrome/browser/autocomplete/autocomplete_popup_view.h"
@@ -22,15 +21,16 @@
 #include "chrome/browser/extensions/extension_omnibox_api.h"
 #include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/instant/instant_controller.h"
-#include "chrome/browser/metrics/user_metrics.h"
 #include "chrome/browser/net/predictor_api.h"
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_model.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/url_constants.h"
+#include "content/browser/user_metrics.h"
 #include "content/common/notification_service.h"
 #include "googleurl/src/gurl.h"
 #include "googleurl/src/url_util.h"
@@ -62,7 +62,7 @@ AutocompleteEditModel::State::~State() {
 // AutocompleteEditModel
 
 AutocompleteEditModel::AutocompleteEditModel(
-    AutocompleteEditView* view,
+    OmniboxView* view,
     AutocompleteEditController* controller,
     Profile* profile)
     : ALLOW_THIS_IN_INITIALIZER_LIST(
@@ -77,7 +77,6 @@ AutocompleteEditModel::AutocompleteEditModel(
       paste_state_(NONE),
       control_key_state_(UP),
       is_keyword_hint_(false),
-      paste_and_go_transition_(PageTransition::TYPED),
       profile_(profile),
       update_instant_(true),
       allow_exact_keyword_match_(false),
@@ -170,7 +169,9 @@ void AutocompleteEditModel::FinalizeInstantQuery(
   } else if (popup_->IsOpen()) {
     SearchProvider* search_provider =
         autocomplete_controller_->search_provider();
-    search_provider->FinalizeInstantQuery(input_text, suggest_text);
+    // There may be no providers during testing; guard against that.
+    if (search_provider)
+      search_provider->FinalizeInstantQuery(input_text, suggest_text);
   }
 }
 
@@ -260,24 +261,24 @@ bool AutocompleteEditModel::UseVerbatimInstant() {
   // TODO(suzhe): Fix Mac port to display Instant suggest in a separated NSView,
   // so that we can display instant suggest along with composition text.
   const AutocompleteInput& input = autocomplete_controller_->input();
-  if (input.initial_prevent_inline_autocomplete())
+  if (input.prevent_inline_autocomplete())
     return true;
 #endif
 
-  // The value of input.initial_prevent_inline_autocomplete() is determined by
+  // The value of input.prevent_inline_autocomplete() is determined by
   // following conditions:
   // 1. If the caret is at the end of the text (checked below).
   // 2. If it's in IME composition mode.
   // As we use a separated widget for displaying the instant suggest, it won't
   // interfere with IME composition, so we don't need to care about the value of
-  // input.initial_prevent_inline_autocomplete() here.
+  // input.prevent_inline_autocomplete() here.
   if (view_->DeleteAtEndPressed() || (popup_->selected_line() != 0) ||
       just_deleted_text_)
     return true;
 
-  string16::size_type start, end;
+  size_t start, end;
   view_->GetSelectionBounds(&start, &end);
-  return (start != end) || (start != view_->GetText().size());
+  return (start != end) || (start != view_->GetText().length());
 }
 
 string16 AutocompleteEditModel::GetDesiredTLD() const {
@@ -410,12 +411,9 @@ bool AutocompleteEditModel::CanPasteAndGo(const string16& text) const {
   if (!view_->GetCommandUpdater()->IsCommandEnabled(IDC_OPEN_CURRENT_URL))
     return false;
 
-  AutocompleteMatch match;
-  profile_->GetAutocompleteClassifier()->Classify(text, string16(), false,
-      &match, &paste_and_go_alternate_nav_url_);
-  paste_and_go_url_ = match.destination_url;
-  paste_and_go_transition_ = match.transition;
-  return paste_and_go_url_.is_valid();
+  profile_->GetAutocompleteClassifier()->Classify(text, string16(),
+      false, false, &paste_and_go_match_, &paste_and_go_alternate_nav_url_);
+  return paste_and_go_match_.destination_url.is_valid();
 }
 
 void AutocompleteEditModel::PasteAndGo() {
@@ -423,7 +421,7 @@ void AutocompleteEditModel::PasteAndGo() {
   // possible to "paste and go" a string that contains a keyword.  This is
   // enough of an edge case that we ignore this possibility.
   view_->RevertAll();
-  view_->OpenURL(paste_and_go_url_, CURRENT_TAB, paste_and_go_transition_,
+  view_->OpenMatch(paste_and_go_match_, CURRENT_TAB,
       paste_and_go_alternate_nav_url_, AutocompletePopupModel::kNoMatch,
       string16());
 }
@@ -473,17 +471,17 @@ void AutocompleteEditModel::AcceptInput(WindowOpenDisposition disposition,
 #endif
     }
   }
-  view_->OpenURL(match.destination_url, disposition, match.transition,
-                 alternate_nav_url, AutocompletePopupModel::kNoMatch,
-                 is_keyword_hint_ ? string16() : keyword_);
+
+  view_->OpenMatch(match, disposition, alternate_nav_url,
+                   AutocompletePopupModel::kNoMatch,
+                   is_keyword_hint_ ? string16() : keyword_);
 }
 
-void AutocompleteEditModel::OpenURL(const GURL& url,
-                                    WindowOpenDisposition disposition,
-                                    PageTransition::Type transition,
-                                    const GURL& alternate_nav_url,
-                                    size_t index,
-                                    const string16& keyword) {
+void AutocompleteEditModel::OpenMatch(const AutocompleteMatch& match,
+                                      WindowOpenDisposition disposition,
+                                      const GURL& alternate_nav_url,
+                                      size_t index,
+                                      const string16& keyword) {
   // We only care about cases where there is a selection (i.e. the popup is
   // open).
   if (popup_->IsOpen()) {
@@ -515,7 +513,7 @@ void AutocompleteEditModel::OpenURL(const GURL& url,
               current_match : result().match_at(index);
 
       // Strip the keyword + leading space off the input.
-      size_t prefix_length = match.template_url->keyword().size() + 1;
+      size_t prefix_length = match.template_url->keyword().length() + 1;
       ExtensionOmniboxEventRouter::OnInputEntered(
           profile_, match.template_url->GetExtensionId(),
           UTF16ToUTF8(match.fill_into_edit.substr(prefix_length)));
@@ -524,7 +522,7 @@ void AutocompleteEditModel::OpenURL(const GURL& url,
     }
 
     if (template_url) {
-      UserMetrics::RecordAction(UserMetricsAction("AcceptedKeyword"), profile_);
+      UserMetrics::RecordAction(UserMetricsAction("AcceptedKeyword"));
       template_url_model->IncrementUsageCount(template_url);
     }
 
@@ -536,8 +534,13 @@ void AutocompleteEditModel::OpenURL(const GURL& url,
     update_instant_ = false;
     view_->RevertAll();  // Revert the box to its unedited state
   }
-  controller_->OnAutocompleteAccept(url, disposition, transition,
-                                    alternate_nav_url);
+
+  if (match.type == AutocompleteMatch::EXTENSION_APP) {
+    LaunchAppFromOmnibox(match, profile_, disposition);
+  } else {
+    controller_->OnAutocompleteAccept(match.destination_url, disposition,
+                                      match.transition, alternate_nav_url);
+  }
 
   InstantController* instant = controller_->GetInstant();
   if (instant && !popup_->IsOpen())
@@ -556,7 +559,7 @@ bool AutocompleteEditModel::AcceptKeyword() {
                                // since the edit contents have disappeared.  It
                                // doesn't really matter, but we clear it to be
                                // consistent.
-  UserMetrics::RecordAction(UserMetricsAction("AcceptedKeywordHint"), profile_);
+  UserMetrics::RecordAction(UserMetricsAction("AcceptedKeywordHint"));
   return true;
 }
 
@@ -579,10 +582,13 @@ const AutocompleteResult& AutocompleteEditModel::result() const {
 void AutocompleteEditModel::OnSetFocus(bool control_down) {
   has_focus_ = true;
   control_key_state_ = control_down ? DOWN_WITHOUT_CHANGE : UP;
-  NotificationService::current()->Notify(
-      NotificationType::AUTOCOMPLETE_EDIT_FOCUSED,
-      Source<AutocompleteEditModel>(this),
-      NotificationService::NoDetails());
+  NotificationService::current()->Notify(NotificationType::OMNIBOX_FOCUSED,
+                                         Source<AutocompleteEditModel>(this),
+                                         NotificationService::NoDetails());
+  InstantController* instant = controller_->GetInstant();
+  TabContentsWrapper* tab = controller_->GetTabContentsWrapper();
+  if (instant && tab)
+    instant->OnAutocompleteGotFocus(tab);
 }
 
 void AutocompleteEditModel::OnWillKillFocus(
@@ -932,8 +938,8 @@ void AutocompleteEditModel::GetInfoForCurrentText(
     InfoForCurrentSelection(match, alternate_nav_url);
   } else {
     profile_->GetAutocompleteClassifier()->Classify(
-        UserTextFromDisplayText(view_->GetText()), GetDesiredTLD(), true,
-        match, alternate_nav_url);
+        UserTextFromDisplayText(view_->GetText()), GetDesiredTLD(),
+        KeywordIsSelected(), true, match, alternate_nav_url);
   }
 }
 

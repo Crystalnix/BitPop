@@ -18,8 +18,6 @@ from optparse import OptionParser
 _script_path = os.path.realpath(__file__)
 _build_dir = os.path.dirname(_script_path)
 _base_dir = os.path.normpath(_build_dir + "/..")
-_webkit_dir = _base_dir + "/../../../../third_party/WebKit"
-_devtools_dir = _webkit_dir + "/Source/WebCore/inspector/front-end"
 _static_dir = _base_dir + "/static"
 _js_dir = _base_dir + "/js"
 _template_dir = _base_dir + "/template"
@@ -27,7 +25,7 @@ _samples_dir = _base_dir + "/examples"
 _extension_api_dir = os.path.normpath(_base_dir + "/../api")
 
 _extension_api_json = _extension_api_dir + "/extension_api.json"
-_devtools_api_json = _devtools_dir + "/ExtensionAPISchema.json"
+_devtools_api_json = _extension_api_dir + "/devtools_api.json"
 _api_template_html = _template_dir + "/api_template.html"
 _page_shell_html = _template_dir + "/page_shell.html"
 _generator_html = _build_dir + "/generator.html"
@@ -38,8 +36,10 @@ _expected_output_postamble = "#END"
 
 # HACK! This is required because we can only depend on python 2.4 and
 # the calling environment may not be setup to set the PYTHONPATH
-sys.path.append(os.path.normpath(_base_dir +
-                                   "/../../../../third_party"))
+# Insert at the front so that we pick up our simplejson even if there's a
+# system simplejson installed, for predictable escaping.
+sys.path.insert(0, os.path.normpath(_base_dir +
+                   "/../../../../third_party"))
 import simplejson as json
 from directory import Sample
 from directory import ApiManifest
@@ -185,17 +185,13 @@ def main():
     dump_render_tree = FindDumpRenderTree()
 
   # Load the manifest of existing API Methods
-  api_manifest = ApiManifest(_extension_api_json)
-
-  # DevTools API is maintained separately, in WebCore land
-  devtools_api_manifest = ApiManifest(_devtools_api_json)
+  api_manifest = ApiManifest([_extension_api_json, _devtools_api_json])
 
   # Read static file names
   static_names = GetStaticFileNames()
 
   # Read module names
-  module_names = (api_manifest.getModuleNames() |
-      devtools_api_manifest.getModuleNames())
+  module_names = api_manifest.getModuleNames()
 
   # All pages to generate
   page_names = static_names | module_names

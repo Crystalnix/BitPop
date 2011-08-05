@@ -6,7 +6,7 @@
   'targets': [
     {
       'target_name': 'content_worker',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': 'C78D02D0-A366-4EC6-A248-AA8E64C4BA18',
       'dependencies': [
         'content_common',
@@ -23,6 +23,8 @@
         'worker/webworker_stub.h',
         'worker/webworkerclient_proxy.cc',
         'worker/webworkerclient_proxy.h',
+        'worker/worker_devtools_agent.cc',
+        'worker/worker_devtools_agent.h',
         'worker/worker_main.cc',
         'worker/worker_thread.cc',
         'worker/worker_thread.h',

@@ -7,19 +7,25 @@
 #include <windows.h>
 
 #include "chrome/browser/ui/views/bubble/border_contents.h"
+#include "views/widget/widget.h"
 
 BorderWidgetWin::BorderWidgetWin()
-    : border_contents_(NULL) {
-  set_window_style(WS_POPUP);
-  set_window_ex_style(WS_EX_TOOLWINDOW | WS_EX_LAYERED);
+    : views::NativeWidgetWin(new views::Widget),
+      border_contents_(NULL) {
 }
 
-void BorderWidgetWin::Init(BorderContents* border_contents, HWND owner) {
+void BorderWidgetWin::InitBorderWidgetWin(BorderContents* border_contents,
+                                          HWND owner) {
   DCHECK(!border_contents_);
   border_contents_ = border_contents;
   border_contents_->Init();
-  WidgetWin::Init(owner, gfx::Rect());
-  SetContentsView(border_contents_);
+
+  views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
+  params.transparent = true;
+  params.parent = owner;
+  params.native_widget = this;
+  GetWidget()->Init(params);
+  GetWidget()->SetContentsView(border_contents_);
   SetWindowPos(owner, 0, 0, 0, 0,
                SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOREDRAW);
 }
@@ -34,7 +40,7 @@ gfx::Rect BorderWidgetWin::SizeAndGetBounds(
   border_contents_->SizeAndGetBounds(position_relative_to, arrow_location,
                                      false, contents_size, &contents_bounds,
                                      &window_bounds);
-  SetBounds(window_bounds);
+  GetWidget()->SetBounds(window_bounds);
 
   // Return |contents_bounds| in screen coordinates.
   contents_bounds.Offset(window_bounds.origin());

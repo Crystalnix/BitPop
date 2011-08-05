@@ -10,7 +10,6 @@
 
 #include "base/basictypes.h"
 #include "base/file_path.h"
-#include "chrome/browser/net/chrome_url_request_context.h"
 #include "content/browser/browser_child_process_host.h"
 #include "content/browser/worker_host/worker_document_set.h"
 #include "googleurl/src/gurl.h"
@@ -37,18 +36,17 @@ class WorkerProcessHost : public BrowserChildProcessHost {
    public:
     WorkerInstance(const GURL& url,
                    bool shared,
-                   bool incognito,
                    const string16& name,
                    int worker_route_id,
                    int parent_process_id,
                    int parent_appcache_host_id,
                    int64 main_resource_appcache_id,
-                   const content::ResourceContext& resource_context);
+                   const content::ResourceContext* resource_context);
     // Used for pending instances. Rest of the parameters are ignored.
     WorkerInstance(const GURL& url,
                    bool shared,
-                   bool incognito,
-                   const string16& name);
+                   const string16& name,
+                   const content::ResourceContext* resource_context);
     ~WorkerInstance();
 
     // Unique identifier for a worker client.
@@ -71,7 +69,9 @@ class WorkerProcessHost : public BrowserChildProcessHost {
     // (per the comparison algorithm in the WebWorkers spec). This API only
     // applies to shared workers.
     bool Matches(
-        const GURL& url, const string16& name, bool incognito) const;
+        const GURL& url,
+        const string16& name,
+        const content::ResourceContext* resource_context) const;
 
     // Shares the passed instance's WorkerDocumentSet with this instance. This
     // instance's current WorkerDocumentSet is dereferenced (and freed if this
@@ -82,7 +82,6 @@ class WorkerProcessHost : public BrowserChildProcessHost {
 
     // Accessors
     bool shared() const { return shared_; }
-    bool incognito() const { return incognito_; }
     bool closed() const { return closed_; }
     void set_closed(bool closed) { closed_ = closed; }
     const GURL& url() const { return url_; }
@@ -96,15 +95,14 @@ class WorkerProcessHost : public BrowserChildProcessHost {
     WorkerDocumentSet* worker_document_set() const {
       return worker_document_set_;
     }
-    const content::ResourceContext& resource_context() const {
-      return *resource_context_;
+    const content::ResourceContext* resource_context() const {
+      return resource_context_;
     }
 
    private:
     // Set of all filters (clients) associated with this worker.
     GURL url_;
     bool shared_;
-    bool incognito_;
     bool closed_;
     string16 name_;
     int worker_route_id_;
@@ -119,7 +117,7 @@ class WorkerProcessHost : public BrowserChildProcessHost {
   WorkerProcessHost(
       const content::ResourceContext* resource_context,
       ResourceDispatcherHost* resource_dispatcher_host);
-  ~WorkerProcessHost();
+  virtual ~WorkerProcessHost();
 
   // Starts the process.  Returns true iff it succeeded.
   // |render_process_id| is the renderer process responsible for starting this
@@ -140,11 +138,16 @@ class WorkerProcessHost : public BrowserChildProcessHost {
   void DocumentDetached(WorkerMessageFilter* filter,
                         unsigned long long document_id);
 
+  typedef std::list<WorkerInstance> Instances;
+  const Instances& instances() const { return instances_; }
+
+  const content::ResourceContext* resource_context() const {
+    return resource_context_;
+  }
+
  protected:
   friend class WorkerService;
 
-  typedef std::list<WorkerInstance> Instances;
-  const Instances& instances() const { return instances_; }
   Instances& mutable_instances() { return instances_; }
 
  private:
@@ -165,6 +168,9 @@ class WorkerProcessHost : public BrowserChildProcessHost {
                        const string16& display_name,
                        unsigned long estimated_size,
                        bool* result);
+  void OnAllowFileSystem(int worker_route_id,
+                         const GURL& url,
+                         bool* result);
 
   // Relays a message to the given endpoint.  Takes care of parsing the message
   // if it contains a message port and sending it a valid route id.
@@ -176,8 +182,6 @@ class WorkerProcessHost : public BrowserChildProcessHost {
 
   // Updates the title shown in the task manager.
   void UpdateTitle();
-
-  ChromeURLRequestContext* GetChromeURLRequestContext();
 
   Instances instances_;
 

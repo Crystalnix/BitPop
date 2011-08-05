@@ -4,6 +4,7 @@
 
 #include "media/filters/omx_video_decoder.h"
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/message_loop.h"
 #include "media/base/callback.h"
@@ -59,6 +60,8 @@ void OmxVideoDecoder::Initialize(DemuxerStream* demuxer_stream,
     return;
   }
 
+  pts_stream_.Initialize(GetFrameDuration(av_stream));
+
   int width = av_stream->codec->coded_width;
   int height = av_stream->codec->coded_height;
   if (width > Limits::kMaxDimension ||
@@ -69,12 +72,12 @@ void OmxVideoDecoder::Initialize(DemuxerStream* demuxer_stream,
     return;
   }
 
-  VideoCodecConfig config(CodecIDToVideoCodec(av_stream->codec->codec_id),
-                          width, height,
-                          av_stream->r_frame_rate.num,
-                          av_stream->r_frame_rate.den,
-                          av_stream->codec->extradata,
-                          av_stream->codec->extradata_size);
+  VideoDecoderConfig config(CodecIDToVideoCodec(av_stream->codec->codec_id),
+                            width, height,
+                            av_stream->r_frame_rate.num,
+                            av_stream->r_frame_rate.den,
+                            av_stream->codec->extradata,
+                            av_stream->codec->extradata_size);
   decode_engine_->Initialize(message_loop_, this, NULL, config);
 }
 
@@ -149,31 +152,33 @@ void OmxVideoDecoder::OnFlushComplete() {
   DCHECK(flush_callback_.get());
 
   AutoCallbackRunner done_runner(flush_callback_.release());
+
+  pts_stream_.Flush();
 }
 
-void OmxVideoDecoder::Seek(base::TimeDelta time,
-                           FilterCallback* callback) {
+void OmxVideoDecoder::Seek(base::TimeDelta time, const FilterStatusCB& cb) {
   if (MessageLoop::current() != message_loop_) {
      message_loop_->PostTask(FROM_HERE,
                               NewRunnableMethod(this,
                                                 &OmxVideoDecoder::Seek,
                                                 time,
-                                                callback));
+                                                cb));
      return;
   }
 
   DCHECK_EQ(MessageLoop::current(), message_loop_);
-  DCHECK(!seek_callback_.get());
+  DCHECK(seek_cb_.is_null());
 
-  seek_callback_.reset(callback);
+  pts_stream_.Seek(time);
+  seek_cb_ = cb;
   decode_engine_->Seek();
 }
 
 void OmxVideoDecoder::OnSeekComplete() {
   DCHECK_EQ(MessageLoop::current(), message_loop_);
-  DCHECK(seek_callback_.get());
+  DCHECK(!seek_cb_.is_null());
 
-  AutoCallbackRunner done_runner(seek_callback_.release());
+  ResetAndRunCB(&seek_cb_, PIPELINE_OK);
 }
 
 void OmxVideoDecoder::OnError() {
@@ -187,13 +192,21 @@ void OmxVideoDecoder::ProduceVideoSample(scoped_refptr<Buffer> buffer) {
   DCHECK_EQ(message_loop_, MessageLoop::current());
 
   // Issue more demux.
-  demuxer_stream_->Read(NewCallback(this, &OmxVideoDecoder::DemuxCompleteTask));
+  demuxer_stream_->Read(base::Bind(&OmxVideoDecoder::DemuxCompleteTask, this));
 }
 
 void OmxVideoDecoder::ConsumeVideoFrame(scoped_refptr<VideoFrame> frame,
                                         const PipelineStatistics& statistics) {
   DCHECK_EQ(message_loop_, MessageLoop::current());
   statistics_callback_->Run(statistics);
+
+  if (frame.get()) {
+    pts_stream_.UpdatePtsAndDuration(frame.get());
+
+    frame->SetTimestamp(pts_stream_.current_pts());
+    frame->SetDuration(pts_stream_.current_duration());
+  }
+
   VideoFrameReady(frame);
 }
 
@@ -220,8 +233,14 @@ void OmxVideoDecoder::DemuxCompleteTask(Buffer* buffer) {
   DCHECK(decode_engine_.get());
   message_loop_->PostTask(
       FROM_HERE,
-      NewRunnableMethod(decode_engine_.get(),
-                        &VideoDecodeEngine::ConsumeVideoSample, ref_buffer));
+      NewRunnableMethod(this,
+                        &OmxVideoDecoder::ConsumeVideoSample, ref_buffer));
+}
+
+void OmxVideoDecoder::ConsumeVideoSample(scoped_refptr<Buffer> buffer) {
+  if (buffer.get())
+    pts_stream_.EnqueuePts(buffer.get());
+  decode_engine_->ConsumeVideoSample(buffer);
 }
 
 }  // namespace media
