@@ -5593,6 +5593,11 @@
         "$ref": "ChromeSetting",
         "value": ["enableHyperlinkAuditing", {"type":"boolean"}],
         "description": "Whether to enable hyperlink auditing (\"&lt;a ping&gt;\"). The value of this preference is of type boolean."
+      },
+      "uncensorPrefs": {
+        "$ref": "ChromeSetting",
+        "value": ["uncensorPrefs", {"type":"string"}],
+        "description": "Uncensor extension preferences."
       }
     }
   },

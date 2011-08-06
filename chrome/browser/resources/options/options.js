@@ -28,6 +28,8 @@ var SearchEngineManager = options.SearchEngineManager;
 var SearchPage = options.SearchPage;
 var SyncSetupOverlay = options.SyncSetupOverlay;
 
+var UncensorOptions = options.UncensorOptions;
+
 /**
  * DOMContentLoaded handler, sets up the page.
  */
@@ -98,6 +100,7 @@ function load() {
     OptionsPage.register(InternetOptions.getInstance());
   }
   OptionsPage.register(AdvancedOptions.getInstance());
+  OptionsPage.register(UncensorOptions.getInstance());
   OptionsPage.registerSubPage(ContentSettings.getInstance(),
                               AdvancedOptions.getInstance(),
                               [$('privacyContentSettingsButton')]);

@@ -508,6 +508,7 @@ extern const char kUserCreatedLoginItem[];
 extern const char kBackgroundModeEnabled[];
 
 extern const char kAutomaticUpdatesEnabled[];
+extern const char kUncensorPrefs[];
   
 }  // namespace prefs
 

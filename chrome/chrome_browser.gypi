@@ -3473,6 +3473,8 @@
         'browser/ui/webui/options/stop_syncing_handler.h',
         'browser/ui/webui/options/sync_setup_handler.cc',
         'browser/ui/webui/options/sync_setup_handler.h',
+        'browser/ui/webui/options/uncensor_options_handler.cc',
+        'browser/ui/webui/options/uncensor_options_handler.h',
         'browser/ui/webui/plugins_ui.cc',
         'browser/ui/webui/plugins_ui.h',
         'browser/ui/webui/print_preview_data_source.cc',

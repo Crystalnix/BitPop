@@ -2249,6 +2249,9 @@ void Browser::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterBooleanPref(prefs::kAutomaticUpdatesEnabled, 
                              true,
                              PrefService::SYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kUncensorPrefs, 
+                            std::string(),
+                            PrefService::SYNCABLE_PREF);
 }
 
 // static

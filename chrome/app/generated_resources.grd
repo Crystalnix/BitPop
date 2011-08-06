@@ -7038,6 +7038,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_OPTIONS_ADVANCED_TAB_LABEL" desc="The title of the Under the Hood tab">
         Under the Hood
       </message>
+      <message name="IDS_OPTIONS_UNCENSOR_TAB_LABEL" desc="The title of the Uncensor filter extension settings tab">
+        Uncensor Filter
+      </message>
       <message name="IDS_OPTIONS_TAB_TITLE" desc="The format of the title on the browser tab for an options subpage, e.g. Settings - Basics">
         <ph name="OPTIONS_TITLE">$1<ex>Settings</ex></ph> - <ph name="SUBPAGE_TITLE">$2<ex>Under the Hood</ex></ph>
       </message>
@@ -7710,6 +7713,41 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Predict network actions to improve page load performance
       </message>
 
+      <!-- Uncensor filter option strings -->
+      <message name="IDS_OPTIONS_UNCENSOR_PAGE_DESCRIPTION" desc="Second level header for uncensor filter options page">
+        BitPop will redirect you to new locations of unlawfully censored sites
+      </message>
+      <message name="IDS_OPTIONS_UNCENSOR_FILTER_CONTROL" desc="Heading for first option group of Uncensor filter extension">
+        Filter Control
+      </message>
+      <message name="IDS_OPTIONS_UNCENSOR_REDIRECT_ON" desc="Allow redirect radio label">
+        Always redirect / ON
+      </message>
+      <message name="IDS_OPTIONS_UNCENSOR_REDIRECT_OFF" desc="Deny redirect radio label">
+        Never redirect / OFF
+      </message>
+      <message name="IDS_OPTIONS_UNCENSOR_NOTICES" desc="Heading for second option group of Uncensor filter extension">
+        Notices
+      </message>
+      <message name="IDS_OPTIONS_UNCENSOR_SHOW_MESSAGE" desc="Label for checkbox toggling showing messages when redirected">
+        Show message when redirected
+      </message>
+      <message name="IDS_OPTIONS_UNCENSOR_NOTIFY_UPDATES" desc="Label for checkbox toggling filter list update notifications">
+        Be notified when list updates
+      </message>
+      <message name="IDS_OPTIONS_UNCENSOR_THE_FILTER" desc="Heading for third option group of Uncensor filter extension">
+        The Filter
+      </message>
+      <message name="IDS_OPTIONS_UNCENSOR_ORIGINAL_DOMAIN" desc="Table header for original domain column">
+        Original domain
+      </message>
+      <message name="IDS_OPTIONS_UNCENSOR_NEW_LOCATION" desc="Table header for new location column">
+        New location
+      </message>
+      <message name="IDS_OPTIONS_UNCENSOR_EXCEPTIONS" desc="Heading for the fourth option group of Uncensor filter extension (domain extensions)">
+        Exceptions
+      </message>
+      
       <!-- Collected cookies window -->
       <message name="IDS_COLLECTED_COOKIES_DIALOG_TITLE" desc="The title of the collect cookies dialog">
         Cookies set by this page

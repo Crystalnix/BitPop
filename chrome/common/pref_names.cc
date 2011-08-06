@@ -1379,5 +1379,5 @@ const char kIgnoredProtocolHandlers[] =
 const char kCustomHandlersEnabled[] = "custom_handlers.enabled";
 
 const char kAutomaticUpdatesEnabled[] = "automatic_updates.enabled";
-
+const char kUncensorPrefs[] = "profile.uncensor";
 }  // namespace prefs

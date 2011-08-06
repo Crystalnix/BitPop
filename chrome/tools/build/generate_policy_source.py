@@ -15,7 +15,7 @@ import sys;
 
 
 CHROME_SUBKEY = 'SOFTWARE\\\\Policies\\\\Google\\\\Chrome';
-CHROMIUM_SUBKEY = 'SOFTWARE\\\\Policies\\\\Chromium';
+CHROMIUM_SUBKEY = 'SOFTWARE\\\\Policies\\\\BitPop';
 
 
 def main():

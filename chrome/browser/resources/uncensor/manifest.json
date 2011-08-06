@@ -1,0 +1,18 @@
+{
+  "key": "MIGdMA0GCSqGSIb3DQEBAQUAA4GLADCBhwKBgQDwXhVzJXbc9tqR1AjQwMksRCopgDziDffza16CsGZ9Z6Jz2bB2uBBaESqXQM7rFY4TSpbFgjhHUgBbGu+fFvcL8VSeeVPk81cztLjyyQL+1TflsS/qr56xFuwGNFVLjlSyyX2IEK5efhN6ALdZcjuia6zAak7oXAByg8WoanVJKwIBIw==",
+  "name": "Uncensor Filter",
+  "version": "1.0",
+  "description": "BitPop will redirect you to new locations of unlawfully censored sites.",
+  "background_page": "background.html",
+  "permissions" : [
+    "experimental",
+    "contentSettings",
+    "tabs",
+    "notifications",
+    "chrome://resources/"
+  ],
+  "icons" : {
+    "48" : "48uncensor.png",
+    "128" : "128uncensor.png"
+  }
+}
