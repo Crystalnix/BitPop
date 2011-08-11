@@ -3,6 +3,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// class attribute management for dom elements
+function hasClass(ele,cls) {
+	return ele.className.match(new RegExp('(\\s|^)'+cls+'(\\s|$)'));
+}
+function addClass(ele,cls) {
+	if (!this.hasClass(ele,cls)) ele.className += " "+cls;
+}
+function removeClass(ele,cls) {
+	if (hasClass(ele,cls)) {
+		var reg = new RegExp('(\\s|^)'+cls+'(\\s|$)');
+		ele.className=ele.className.replace(reg,' ');
+	}
+}
+
+// options page object
 cr.define('options', function() {
   const OptionsPage = options.OptionsPage;
   const ArrayDataModel = cr.ui.ArrayDataModel;
@@ -32,44 +47,6 @@ cr.define('options', function() {
     
     needsUpdate: true,
     
-    downloadFilterData: function() {
-      var prefs = this.prefs_.dict;
-      
-      prefs.domainFilter = {
-        "google.ru": "google.com",
-        "torrents.ru": "rutracker.org",
-        "torrentfinder.com": "torrentfinder.info",
-        "re1ease.net": "scrrls.net",
-        "1a": "a",
-        "1b": "a",
-        "1c": "a",
-        "1d": "a",
-        "1e": "a",
-        "1f": "a",
-        "1g": "a",
-        "1h": "a",
-        "1i": "a",
-      };
-
-      this.prefs_.dict = prefs;
-
-      Preferences.setStringPref(this.prefs_.name, JSON.stringify(prefs));
-      this.updateDomainFilterTable();
-    },
-
-    firstInitPrefs: function() {
-      var prefs = {};
-      prefs.shouldRedirect = true;
-      prefs.showMessage = true;
-      prefs.notifyUpdate = true;
-      prefs.domainFilter = {};
-      prefs.domainExceptions = {};
-      
-      this.prefs_.dict = prefs;
-      
-      Preferences.setStringPref(this.prefs_.name, JSON.stringify(prefs));
-    },
-    
     initializePage: function() {
       // Call base class implementation to start preference initialization.
       OptionsPage.prototype.initializePage.call(this);
@@ -84,43 +61,49 @@ cr.define('options', function() {
         this.prefs_.managed = event.value["managed"];
       
         this.prefs_.dict = JSON.parse(this.prefs_.value);
+        
         if (this.needsUpdate) {
           this.needsUpdate = false;
           this.initUncensorOptions(this.prefs_.dict);
         }
-      }
-      else {
-        this.firstInitPrefs();
-        this.downloadFilterData();
+        
+        this.updateTables();
       }
     },
     
-    updateDomainFilterTable: function() {
+    updateTables: function() {
       var prefs = this.prefs_.dict;
+      var source = this;
       
-      var table = document.getElementById('domain_filter_table');
-      var tbody = table.getElementsByTagName('tbody').length ? table.getElementsByTagName('tbody')[0] : undefined;
-      if (tbody == undefined) {
-        tbody = document.createElement('tbody');
-        table.appendChild(tbody);
-      }
-      
-      if (tbody.hasChildNodes()) {
-        while (tbody.childNodes.length >= 1) {
-          tbody.removeChild( tbody.firstChild );       
-        } 
-      }
-      
-      for (var originalDomain in prefs.domainFilter) {
-        if (!(originalDomain in prefs.domainExceptions)) {
-          this.insertRow(table, { originalDomain: originalDomain,
-                                  newLocation: prefs.domainFilter[originalDomain] });
+      temp = function(a) {
+        var table = (a == prefs.domainFilter) ? document.getElementById('domain_filter_table') :
+                                                document.getElementById('domain_exceptions_table');
+        var tbody = table.getElementsByTagName('tbody').length ? table.getElementsByTagName('tbody')[0] : undefined;
+        if (tbody == undefined) {
+          tbody = document.createElement('tbody');
+          table.appendChild(tbody);
         }
-      }
+      
+        if (tbody.hasChildNodes()) {
+          while (tbody.childNodes.length >= 1) {
+            tbody.removeChild( tbody.firstChild );       
+          } 
+        }
+      
+        for (var originalDomain in a) {
+          if (a == prefs.domainExceptions || !(originalDomain in prefs.domainExceptions)) {
+            source.insertRow(table, { originalDomain: originalDomain,
+                                    newLocation: a[originalDomain] });
+          }
+        }
+      };
+      
+      temp(prefs.domainFilter);
+      temp(prefs.domainExceptions);      
     },
     
     save: function() {
-      var prefs = this.prefs_.dict;
+      var prefs = UncensorOptions.getInstance().prefs_.dict;
       prefs.shouldRedirect = document.getElementById('uncensor_always_redirect').checked;
       prefs.showMessage = document.getElementById('uncensor_show_message').checked;
       prefs.notifyUpdate = document.getElementById('uncensor_notify_update').checked;
@@ -157,8 +140,11 @@ cr.define('options', function() {
       }
 
       var newRow = tbody.insertRow(-1);
-      newRow.onmouseover = function() { this.className = 'highlight'; };
-      newRow.onmouseout = function() { this.className = ''; };
+      newRow.onmouseover = function() { addClass(this, 'highlight'); };
+      newRow.onmouseout = function() { removeClass(this, 'highlight'); };
+      if (tbody.children.length % 2 == 0) { // even row
+        addClass(newRow, 'uncensor-even-row');
+      }
 
       var oCell = newRow.insertCell(-1);
       oCell.innerHTML = "<img src='chrome-extension://ilhfbbmjdjgakaddblkoaadajjijpipm/web.png' width='16' height='16' alt='' />";
@@ -185,7 +171,8 @@ cr.define('options', function() {
       icon.height = "16";
       anchor.appendChild(icon);
 
-      anchor.addEventListener('click', function() {
+      
+      anchor.onclick = function() {
         var row;
         var rowIndex = 0;
         // Search current row index
@@ -197,20 +184,19 @@ cr.define('options', function() {
           if (rowCells[1].innerHTML == this.domainPair.originalDomain)
             break;
         }
-
+        
         UncensorOptions.getInstance().insertRow(compartmentTable, this.domainPair);
         tbody.deleteRow(rowIndex);
-
+        
         var prefs = UncensorOptions.getInstance().prefs_.dict;
-
+        
         prefs[compartmentDictionary][this.domainPair.originalDomain] = this.domainPair.newLocation;
         delete prefs[prefDictionary][this.domainPair.originalDomain];
-
+        
         Preferences.setStringPref("profile.uncensor", JSON.stringify(prefs));
         
         return false;
-      },
-      false);
+      };
 
       oCell.appendChild(anchor);
     },
@@ -231,8 +217,10 @@ cr.define('options', function() {
       document.getElementById('uncensor_notify_update').checked = prefs.notifyUpdate;
       var filterTable = document.getElementById("domain_filter_table");
       for (var originalDomain in prefs.domainFilter) {
-        this.insertRow(filterTable, { originalDomain: originalDomain,
-                              newLocation: prefs.domainFilter[originalDomain] });
+        if (!(originalDomain in prefs.domainExceptions)) {
+          this.insertRow(filterTable, { originalDomain: originalDomain,
+                                newLocation: prefs.domainFilter[originalDomain] });
+        }
       }
       var exceptionsTable = document.getElementById("domain_exceptions_table");
       for (var originalDomain in prefs.domainExceptions) {

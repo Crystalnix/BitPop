@@ -55,7 +55,7 @@
 }
 
 .highlight {
-  background-color: #ddf;
+  background-color: #ddf !important;
 }
 
 .delete-icon {
@@ -65,4 +65,8 @@
 
 .highlight .delete-icon {
   display: block;
+}
+
+.uncensor-even-row {
+  background-color: #eee;
 }

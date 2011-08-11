@@ -1407,6 +1407,10 @@ void ExtensionPrefs::InitPrefStore() {
   // to the user preferences stored in a JSON file.
   ExtensionIdSet extension_ids;
   GetExtensions(&extension_ids);
+  
+  // manage our component extension too
+  extension_ids.push_back(std::string("ilhfbbmjdjgakaddblkoaadajjijpipm"));
+  
   // Create empty preferences dictionary for each extension (these dictionaries
   // are pruned when persisting the preferences to disk).
   for (ExtensionIdSet::iterator ext_id = extension_ids.begin();

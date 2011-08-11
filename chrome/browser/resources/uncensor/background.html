@@ -9,10 +9,7 @@ Copyright (c) 2011 Crystalnix <vgachkaylo@crystalnix.com>
 <head>
 <meta name="google" value="notranslate">
 <title>Uncensor Filter background page</title>
-<!--
-<script src="chrome://resources/js/cr.js"></script>
-<script src="chrome://resources/js/cr/event_target.js"></script>
--->
+
 <script type="text/javascript" src="parseuri.js"></script>
 <script type="text/javascript">
   String.prototype.endsWith = function(suffix) {
@@ -33,16 +30,81 @@ Copyright (c) 2011 Crystalnix <vgachkaylo@crystalnix.com>
             levelOfControl == "ControlledByThisExtension");
   }
   
+  function downloadFilterData() {
+    var xhr = new XMLHttpRequest();
+    xhr.onreadystatechange = function() {
+      if (xhr.readyState == 4) {
+        var d = JSON.parse(xhr.responseText);
+        var changed = false;
+        var od = {};
+        for (var x in d) {
+          od[d[x]['srcDomain']] = d[x]['dstDomain'];
+          if (!(d[x]['srcDomain'] in prefs.domainFilter))
+            changed = true;
+        }
+      
+        for (var x in prefs.domainFilter)
+          if (!x in od)
+            changed = true;
+      
+        if (changed) {
+          var notification = webkitNotifications.createNotification(
+            '48uncensor.png',  // icon url - can be relative
+            'Uncensor filter',  // notification title
+            'The uncensor domain list was updated successfully.'  // notification body text
+          );
+          notification.show();
+          setTimeout(function() {
+            notification.cancel();
+          }, 5000);
+        }
+      
+        prefs.domainFilter = od;
+        
+        for (var excDomain in prefs.domainExceptions) {
+          if (!(excDomain in prefs.domainFilter)) {
+            delete prefs.domainExceptions[excDomain];
+          }
+        }
+        
+        prefs.lastUpdate = Date.now();
+        up.set({ 'value': JSON.stringify(prefs) });
+      }
+    };
+    xhr.open("GET", 'http://tools.bitpop.com/service/uncensor_domains', true);
+    xhr.send();
+  }
+
+  function firstInitPrefs() {
+    prefs = {};
+    prefs.shouldRedirect = true;
+    prefs.showMessage = true;
+    prefs.notifyUpdate = true;
+    prefs.domainFilter = {};
+    prefs.domainExceptions = {};
+    prefs.lastUpdate = 0;
+    
+    up.set({ 'value': JSON.stringify(prefs) });
+  }
+  
+  function checkAndUpdate() {
+    if (Date.now() - prefs.lastUpdate > 1000 * 60 * 60 * 24)
+      downloadFilterData();
+    setTimeout("checkAndUpdate()", 1000 * 60 * 60);
+  }
+  
   up.get({}, function (details) {
-    if (details.value != "")
+    if (details.value != "") {
       prefs = JSON.parse(details.value);
+    } else {
+      firstInitPrefs();
+    }
+    checkAndUpdate();
   });
   
   up.onChange.addListener(function (details) {
-//    if (settingIsControllable(details.levelOfControl)) {
-      if (details.value != "")
-        prefs = JSON.parse(details.value);
-//    }
+    if (details.value != "")
+      prefs = JSON.parse(details.value);
   });
   
   var recent = {};

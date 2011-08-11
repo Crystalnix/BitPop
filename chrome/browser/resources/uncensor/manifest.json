@@ -9,7 +9,8 @@
     "contentSettings",
     "tabs",
     "notifications",
-    "chrome://resources/"
+    "chrome://resources/",
+    "http://tools.bitpop.com/*"
   ],
   "icons" : {
     "48" : "48uncensor.png",
