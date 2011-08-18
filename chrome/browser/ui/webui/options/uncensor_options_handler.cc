@@ -20,6 +20,7 @@
 #include "grit/webkit_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/browser/tab_contents/background_contents.h"
 #include "chrome/browser/background_contents_service.h"
@@ -56,64 +57,24 @@ void UncensorOptionsHandler::GetLocalizedValues(DictionaryValue* localized_strin
 }
 
 void UncensorOptionsHandler::Initialize() {
-/*  Profile* profile = web_ui_->GetProfile();
-  
-  ExtensionService *service = profile->GetExtensionService();
-  const Extension *uncensor = service->GetExtensionById("ndhfinldkgmicnfcaobmkijoamgcfkhn", false);
-  
-  if (uncensor) {
-    ExtensionExtent &ee = const_cast<ExtensionExtent&>(uncensor->GetEffectiveHostPermissions());
-    URLPattern pat(URLPattern::SCHEME_CHROMEUI, "chrome://settings/uncensor");
-    ee.AddPattern(pat);
-  }
-
-  if (uncensor) {
-    GURL backgrUrl = uncensor->background_url();
-    
-    // BackgroundContentsService* background_contents_service =
-    //      BackgroundContentsServiceFactory::GetForProfile(profile);
-    // const std::vector<BackgroundContents*> bgrContents = background_contents_service->GetBackgroundContents();
-    // std::string s = backgrUrl.spec() + "\n\n";
-    // for (std::vector<BackgroundContents*>::const_iterator it = bgrContents.begin(); it != bgrContents.end(); it++) {
-    //   s += (*it)->GetURL().spec() + "\n";
-    // }
-  
-    scoped_ptr<Value> test_string(Value::CreateStringValue(backgrUrl.spec()));
-
-    web_ui_->CallJavascriptFunction("UncensorOptions.test",
-                                    *(test_string.get()));
-  }
-*/
 }
 
 void UncensorOptionsHandler::RegisterMessages() {
-//  web_ui_->RegisterMessageCallback(
-//      "testCallback",
-//      NewCallback(this, &UncensorOptionsHandler::TestCallback));
+  web_ui_->RegisterMessageCallback(
+      "setUncensorPrefs",
+      NewCallback(this, &UncensorOptionsHandler::setUncensorPrefsValue));
 }
 
-void UncensorOptionsHandler::TestCallback(const ListValue* args) {
-/*  Profile* profile = web_ui_->GetProfile();
+void UncensorOptionsHandler::setUncensorPrefsValue(const ListValue* args) {
+  Value* value;
+  if (!args->Get(0, &value))
+    return;
   
-  ExtensionService *service = profile->GetExtensionService();
-  const Extension *uncensor = service->GetExtensionById("ndhfinldkgmicnfcaobmkijoamgcfkhn", false);
-  
-//  ExtensionExtent &ee = const_cast<ExtensionExtent&>(uncensor->GetEffectiveHostPermissions());
-  
-//  ExtensionProcessManager* extProcManager = profile->GetExtensionProcessManager();
-//  ExtensionHost* extHost = extProcManager->GetBackgroundHostForExtension(uncensor);
-  
-  // BackgroundContentsService* background_contents_service =
-  //      BackgroundContentsServiceFactory::GetForProfile(profile);
-  // const std::vector<BackgroundContents*> bgrContents = background_contents_service->GetBackgroundContents();
-  // std::string s = "";
-  // for (std::vector<BackgroundContents*>::const_iterator it = bgrContents.begin(); it != bgrContents.end(); it++) {
-  //   s += (*it)->GetURL().spec() + "\n";
-  // }
-
-  scoped_ptr<Value> test_string(Value::CreateStringValue(s));
-
-  web_ui_->CallJavascriptFunction("UncensorOptions.test",
-                                  *(test_string.get()));
-*/
+  Profile* profile = web_ui_->GetProfile(); 
+    
+  ExtensionPrefs* prefs = profile->GetExtensionService()->extension_prefs();
+  prefs->SetExtensionControlledPref("ilhfbbmjdjgakaddblkoaadajjijpipm",
+                                    "profile.uncensor",
+                                    extension_prefs_scope::kRegular,
+                                    value->DeepCopy());
 }

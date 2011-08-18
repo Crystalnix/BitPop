@@ -30,3 +30,10 @@ parseUri.options = {
 		loose:  /^(?:(?![^:@]+:[^:@\/]*@)([^:\/?#.]+):)?(?:\/\/)?((?:(([^:@]*)(?::([^:@]*))?)?@)?([^:\/?#]*)(?::(\d*))?)(((\/(?:[^?#](?![^?#\/]*\.[^?#\/.]+(?:[?#]|$)))*\/?)?([^?#\/]*))(?:\?([^#]*))?(?:#(.*))?)/
 	}
 };
+
+function reconstructUri(uriObject) {
+  return uriObject['protocol'] + '://' + (uriObject['userInfo'] ? uriObject['userInfo'] + '@' : '') + 
+          (uriObject['host'] ? uriObject['host'] : '') + (uriObject['port'] ? ':' + uriObject['port'] : '') +
+          uriObject['path'] +
+          (uriObject['query'] ? '?' + uriObject['query'] : '');
+};

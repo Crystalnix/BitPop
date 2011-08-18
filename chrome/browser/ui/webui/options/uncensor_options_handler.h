@@ -21,7 +21,7 @@ class UncensorOptionsHandler : public OptionsPageUIHandler {
   virtual void RegisterMessages();
 
  private:
-  void TestCallback(const ListValue* args);
+  void setUncensorPrefsValue(const ListValue* args);
   
   DISALLOW_COPY_AND_ASSIGN(UncensorOptionsHandler);
 };

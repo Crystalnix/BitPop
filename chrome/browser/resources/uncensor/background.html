@@ -110,7 +110,6 @@ Copyright (c) 2011 Crystalnix <vgachkaylo@crystalnix.com>
   var recent = {};
   recent.tabId = -1;
   recent.url = "";
-  recent.timestamp = 0;
   
   // Called when the url of a tab changes.
   function redirectListener(tabId, changeInfo, tab) {
@@ -119,29 +118,23 @@ Copyright (c) 2011 Crystalnix <vgachkaylo@crystalnix.com>
       
     var uri = parseUri(tab.url);
     for (var domain in prefs.domainFilter) {
-      if (!(domain in prefs.domainExceptions) && uri["host"].endsWith(domain)) {
-        // in the next line, it will replace only first occurence of host string
-        var newUri = tab.url.replace(domain, prefs.domainFilter[domain]);
-                    
-        chrome.tabs.update(tabId, {"url": newUri});
-        if (prefs.showMessage &&
-            !(tabId == recent.tabId && tab.url == recent.url && (Date.now() - recent.timestamp) < 500)
-           ) {
-          var notification = webkitNotifications.createNotification(
-            '48uncensor.png',  // icon url - can be relative
-            'Uncensor filter',  // notification title
-            'You are being redirected to ' + newUri  // notification body text
-          );
-          notification.show();
-
-          setTimeout(function() {
-            notification.cancel();
-          }, 5000);
-        }
+      if (!(domain in prefs.domainExceptions) && uri["host"].endsWith(domain) && 
+          prefs.showMessage && changeInfo.status == "loading") {
         
-        recent.tabId = tabId;
-        recent.url = tab.url;
-        recent.timestamp = Date.now();
+        uri['host'] = uri['host'].replace(new RegExp(domain+'$', ''), prefs.domainFilter[domain]);
+        var newUri = reconstructUri(uri);
+        chrome.tabs.update(tabId, {"url": newUri});
+          
+        var notification = webkitNotifications.createNotification(
+          '48uncensor.png',  // icon url - can be relative
+          'Uncensor filter',  // notification title
+          'You are being redirected to ' + newUri  // notification body text
+        );
+        notification.show();
+
+        setTimeout(function() {
+          notification.cancel();
+        }, 5000);
       }
     }
   };

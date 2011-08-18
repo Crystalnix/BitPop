@@ -103,11 +103,11 @@ cr.define('options', function() {
     },
     
     save: function() {
-      var prefs = UncensorOptions.getInstance().prefs_.dict;
+      var prefs = this.prefs_.dict;
       prefs.shouldRedirect = document.getElementById('uncensor_always_redirect').checked;
       prefs.showMessage = document.getElementById('uncensor_show_message').checked;
       prefs.notifyUpdate = document.getElementById('uncensor_notify_update').checked;
-      Preferences.setStringPref("profile.uncensor", JSON.stringify(prefs));
+      chrome.send("setUncensorPrefs", [JSON.stringify(prefs)]);
     },
 
     insertRow: function(dst, domainPair)
@@ -191,9 +191,10 @@ cr.define('options', function() {
         var prefs = UncensorOptions.getInstance().prefs_.dict;
         
         prefs[compartmentDictionary][this.domainPair.originalDomain] = this.domainPair.newLocation;
-        delete prefs[prefDictionary][this.domainPair.originalDomain];
+        if (prefDictionary != 'domainFilter')
+            delete prefs[prefDictionary][this.domainPair.originalDomain];
         
-        Preferences.setStringPref("profile.uncensor", JSON.stringify(prefs));
+        chrome.send("setUncensorPrefs", [JSON.stringify(prefs)]);
         
         return false;
       };
@@ -228,10 +229,10 @@ cr.define('options', function() {
                               newLocation: prefs.domainExceptions[originalDomain] });
       }
 
-      document.getElementById('uncensor_always_redirect').onclick = this.save;
-      document.getElementById('uncensor_never_redirect').onclick = this.save;
-      document.getElementById('uncensor_show_message').onchange = this.save;
-      document.getElementById('uncensor_notify_update').onchange = this.save;
+      document.getElementById('uncensor_always_redirect').onclick = this.save.bind(this);
+      document.getElementById('uncensor_never_redirect').onclick = this.save.bind(this);
+      document.getElementById('uncensor_show_message').onchange = this.save.bind(this);
+      document.getElementById('uncensor_notify_update').onchange = this.save.bind(this);
     }
   };
   
