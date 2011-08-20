@@ -4,5 +4,9 @@
 {
   "nnbmlagghjjcbdhgmkedmbmedengocbn": {
     "external_update_url": "http://clients2.google.com/service/update2/crx"
+  },
+  "npifdfbbacjcpcbcebmdconiedfhnplj": {
+    "external_crx": "dropdown_most_visited.crx",
+    "external_version": "0.5"
   }
 }
