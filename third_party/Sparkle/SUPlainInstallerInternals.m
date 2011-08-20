@@ -66,7 +66,7 @@ static BOOL AuthorizationExecuteWithPrivilegesAndWait(AuthorizationRef authoriza
 	// Let's try to read the version number so the filename will be more meaningful.
 	NSString *postFix;
 	NSString *version;
-	if ((version = [[NSBundle bundleWithPath:path] objectForInfoDictionaryKey:@"CFBundleVersion"]) && ![version isEqualToString:@""])
+	if ((version = [[NSBundle bundleWithPath:path] objectForInfoDictionaryKey:@"CFBundleShortVersionString"]) && ![version isEqualToString:@""])
 	{
 		// We'll clean it up a little for safety.
 		// The cast is necessary because of a bug in the headers in pre-10.5 SDKs
