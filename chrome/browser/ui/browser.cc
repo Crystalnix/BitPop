@@ -299,6 +299,9 @@ Browser::Browser(Type type, Profile* profile)
   // Make sure TabFinder has been created. This does nothing if TabFinder is
   // not enabled.
   TabFinder::GetInstance();
+
+  friends_contents_.reset(new TabContents(profile, NULL, MSG_ROUTING_NONE, NULL, NULL));
+  friends_contents_->set_delegate(this);
 }
 
 Browser::~Browser() {
@@ -440,6 +443,9 @@ void Browser::InitBrowserWindow() {
       NotificationType::BROWSER_WINDOW_READY,
       Source<Browser>(this),
       NotificationService::NoDetails());
+  
+  friends_contents_->controller().LoadURL(GURL("http://www.google.com"), GURL(), PageTransition::START_PAGE);
+  window_->UpdateFriendsSidebar(friends_contents_.get());
 
   if (use_compact_navigation_bar_.GetValue()) {
     // This enables the compact navigation bar host.
@@ -3023,6 +3029,9 @@ void Browser::OpenURLFromTab(TabContents* source,
                              const GURL& referrer,
                              WindowOpenDisposition disposition,
                              PageTransition::Type transition) {
+  if (source == friends_contents_.get())
+    return;
+  
   browser::NavigateParams params(this, url, transition);
   params.source_contents =
     tabstrip_model()->GetTabContentsAt(
@@ -3037,6 +3046,9 @@ void Browser::OpenURLFromTab(TabContents* source,
 
 void Browser::NavigationStateChanged(const TabContents* source,
                                      unsigned changed_flags) {
+  if (source == friends_contents_.get())
+    return;
+  
   // Only update the UI when something visible has changed.
   if (changed_flags)
     ScheduleUIUpdate(source, changed_flags);
@@ -3052,6 +3064,9 @@ void Browser::AddNewContents(TabContents* source,
                              WindowOpenDisposition disposition,
                              const gfx::Rect& initial_pos,
                              bool user_gesture) {
+  if (source == friends_contents_.get())
+    return;
+  
   // No code for this yet.
   DCHECK(disposition != SAVE_TO_DISK);
   // Can't create a new contents for the current tab - invalid case.
@@ -3114,16 +3129,25 @@ void Browser::AddNewContents(TabContents* source,
 }
 
 void Browser::ActivateContents(TabContents* contents) {
+  if (contents == friends_contents_.get())
+    return;
+  
   tab_handler_->GetTabStripModel()->ActivateTabAt(
       tab_handler_->GetTabStripModel()->GetWrapperIndex(contents), false);
   window_->Activate();
 }
 
 void Browser::DeactivateContents(TabContents* contents) {
+  if (contents == friends_contents_.get())
+    return;
+  
   window_->Deactivate();
 }
 
 void Browser::LoadingStateChanged(TabContents* source) {
+  if (source == friends_contents_.get())
+    return;
+  
   window_->UpdateLoadingAnimations(
       tab_handler_->GetTabStripModel()->TabsAreLoading());
   window_->UpdateTitleBar();
@@ -3154,6 +3178,9 @@ void Browser::LoadingStateChanged(TabContents* source) {
 }
 
 void Browser::CloseContents(TabContents* source) {
+  if (source == friends_contents_.get())
+    return;
+  
   if (is_attempting_to_close_browser_) {
     // If we're trying to close the browser, just clear the state related to
     // waiting for unload to fire. Don't actually try to close the tab as it
@@ -3174,6 +3201,9 @@ void Browser::CloseContents(TabContents* source) {
 }
 
 void Browser::MoveContents(TabContents* source, const gfx::Rect& pos) {
+  if (source == friends_contents_.get())
+    return;
+  
   if (!IsPopupOrPanel(source)) {
     NOTREACHED() << "moving invalid browser type";
     return;
@@ -3182,6 +3212,9 @@ void Browser::MoveContents(TabContents* source, const gfx::Rect& pos) {
 }
 
 void Browser::DetachContents(TabContents* source) {
+  if (source == friends_contents_.get())
+    return;
+  
   int index = tab_handler_->GetTabStripModel()->GetWrapperIndex(source);
   if (index >= 0)
     tab_handler_->GetTabStripModel()->DetachTabContentsAt(index);
@@ -3194,6 +3227,9 @@ bool Browser::IsPopupOrPanel(const TabContents* source) const {
 
 void Browser::ContentsMouseEvent(
     TabContents* source, const gfx::Point& location, bool motion) {
+  if (source == friends_contents_.get())
+    return;
+  
   if (!GetStatusBubble())
     return;
 
@@ -3205,6 +3241,9 @@ void Browser::ContentsMouseEvent(
 }
 
 void Browser::UpdateTargetURL(TabContents* source, const GURL& url) {
+  if (source == friends_contents_.get())
+    return;
+  
   if (!GetStatusBubble())
     return;
 
@@ -3233,6 +3272,8 @@ void Browser::ContentsZoomChange(bool zoom_in) {
 }
 
 void Browser::SetTabContentBlocked(TabContents* contents, bool blocked) {
+  if (contents == friends_contents_.get())
+    return;
   int index = tabstrip_model()->GetWrapperIndex(contents);
   if (index == TabStripModel::kNoTab) {
     NOTREACHED();
@@ -3258,6 +3299,9 @@ bool Browser::IsApplication() const {
 }
 
 void Browser::ConvertContentsToApplication(TabContents* contents) {
+  if (contents == friends_contents_.get())
+    return;
+  
   const GURL& url = contents->controller().GetActiveEntry()->url();
   std::string app_name = web_app::GenerateApplicationNameFromURL(url);
 
@@ -3282,6 +3326,9 @@ bool Browser::ShouldDisplayURLField() {
 void Browser::BeforeUnloadFired(TabContents* tab,
                                 bool proceed,
                                 bool* proceed_to_fire_unload) {
+  if (tab == friends_contents_.get())
+    return;
+  
   if (!is_attempting_to_close_browser_) {
     *proceed_to_fire_unload = proceed;
     if (!proceed)
@@ -3338,6 +3385,8 @@ void Browser::ShowPageInfo(Profile* profile,
 }
 
 void Browser::ViewSourceForTab(TabContents* source, const GURL& page_url) {
+  if (source == friends_contents_.get())
+    return;
   DCHECK(source);
   int index = tabstrip_model()->GetWrapperIndex(source);
   TabContentsWrapper* wrapper = tabstrip_model()->GetTabContentsAt(index);
@@ -3347,6 +3396,9 @@ void Browser::ViewSourceForTab(TabContents* source, const GURL& page_url) {
 void Browser::ViewSourceForFrame(TabContents* source,
                                  const GURL& frame_url,
                                  const std::string& frame_content_state) {
+  
+  if (source == friends_contents_.get())
+    return;
   DCHECK(source);
   int index = tabstrip_model()->GetWrapperIndex(source);
   TabContentsWrapper* wrapper = tabstrip_model()->GetTabContentsAt(index);
@@ -3363,6 +3415,8 @@ void Browser::HandleKeyboardEvent(const NativeWebKeyboardEvent& event) {
 }
 
 void Browser::ShowRepostFormWarningDialog(TabContents *tab_contents) {
+  if (tab_contents == friends_contents_.get())
+    return;
   window()->ShowRepostFormWarningDialog(tab_contents);
 }
 
@@ -3384,6 +3438,8 @@ bool Browser::ShouldAddNavigationToHistory(
 }
 
 void Browser::ContentRestrictionsChanged(TabContents* source) {
+  if (source == friends_contents_.get())
+    return;
   UpdateCommandsForContentRestrictionState();
 }
 

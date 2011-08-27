@@ -524,6 +524,8 @@ void BrowserViewLayout::LayoutTabContents(int top, int bottom) {
   //     contents_split_ ->
   //         [sidebar_split -> [contents_container_ | sidebar]] | devtools
 
+  printf("Hello!\n");
+
   gfx::Rect sidebar_split_bounds;
   gfx::Rect contents_bounds;
   gfx::Rect sidebar_bounds;

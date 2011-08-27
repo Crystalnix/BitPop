@@ -123,6 +123,10 @@ void Panel::UpdateDevTools() {
   NOTIMPLEMENTED();
 }
 
+void Panel::UpdateFriendsSidebar(TabContents *contents) {
+  NOTIMPLEMENTED();
+}
+
 void Panel::UpdateLoadingAnimations(bool should_animate) {
   NOTIMPLEMENTED();
 }

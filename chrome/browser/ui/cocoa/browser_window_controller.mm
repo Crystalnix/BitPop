@@ -32,6 +32,7 @@
 #import "chrome/browser/ui/cocoa/dev_tools_controller.h"
 #import "chrome/browser/ui/cocoa/download/download_shelf_controller.h"
 #import "chrome/browser/ui/cocoa/event_utils.h"
+#import "chrome/browser/ui/cocoa/facebook_sidebar_controller.h"
 #import "chrome/browser/ui/cocoa/fast_resize_view.h"
 #import "chrome/browser/ui/cocoa/find_bar/find_bar_bridge.h"
 #import "chrome/browser/ui/cocoa/find_bar/find_bar_cocoa_controller.h"
@@ -288,13 +289,20 @@
     // Puts the incognito badge on the window frame, if necessary.
     [self installIncognitoBadge];
 
+    // Facebook sidebar split view creation
+    facebookSidebarController_.reset(
+        [[FacebookSidebarController alloc] initWithDelegate:self]);
+    [[facebookSidebarController_ view] setFrame:[[self tabContentArea] bounds]];
+    [[self tabContentArea] addSubview:[facebookSidebarController_ view]];
+
     // Create a sub-controller for the docked devTools and add its view to the
     // hierarchy.  This must happen before the sidebar controller is
     // instantiated.
     devToolsController_.reset(
         [[DevToolsController alloc] initWithDelegate:self]);
-    [[devToolsController_ view] setFrame:[[self tabContentArea] bounds]];
-    [[self tabContentArea] addSubview:[devToolsController_ view]];
+    [[devToolsController_ view] setFrame:
+        [[facebookSidebarController_ view] bounds]];
+    [[facebookSidebarController_ view] addSubview:[devToolsController_ view]];
 
     // Create a sub-controller for the docked sidebar and add its view to the
     // hierarchy.  This must happen before the previewable contents controller
@@ -513,6 +521,11 @@
 - (void)updateSidebarForContents:(TabContents*)contents {
   [sidebarController_ updateSidebarForTabContents:contents];
   [sidebarController_ ensureContentsVisible];
+}
+
+- (void)updateFriendsForContents:(TabContents*)contents {
+  [facebookSidebarController_ showSidebarContents:contents];
+  [facebookSidebarController_ ensureContentsVisible];
 }
 
 // Called when the user wants to close a window or from the shutdown process.

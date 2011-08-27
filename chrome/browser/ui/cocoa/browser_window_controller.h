@@ -33,6 +33,7 @@ class BrowserWindowCocoa;
 class ConstrainedWindowMac;
 @class DevToolsController;
 @class DownloadShelfController;
+@class FacebookSidebarController;
 @class FindBarCocoaController;
 @class FullscreenController;
 @class GTMWindowSheetController;
@@ -69,6 +70,7 @@ class TabContents;
   scoped_nsobject<InfoBarContainerController> infoBarContainerController_;
   scoped_nsobject<DownloadShelfController> downloadShelfController_;
   scoped_nsobject<BookmarkBarController> bookmarkBarController_;
+  scoped_nsobject<FacebookSidebarController> facebookSidebarController_;
   scoped_nsobject<DevToolsController> devToolsController_;
   scoped_nsobject<SidebarController> sidebarController_;
   scoped_nsobject<PreviewableContentsController> previewableContentsController_;
@@ -246,6 +248,10 @@ class TabContents;
 // Displays the active sidebar linked to the |contents| or hides sidebar UI,
 // if there's no such sidebar.
 - (void)updateSidebarForContents:(TabContents*)contents;
+
+// Displays the facebook friends sidebar with |contents| being the extension
+// tab contents.
+- (void)updateFriendsForContents:(TabContents*)contents;
 
 // Gets the current theme provider.
 - (ui::ThemeProvider*)themeProvider;

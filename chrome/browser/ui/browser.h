@@ -1225,6 +1225,8 @@ class Browser : public TabHandlerDelegate,
   scoped_ptr<InstantController> instant_;
   scoped_ptr<InstantUnloadHandler> instant_unload_handler_;
 
+  scoped_ptr<TabContents> friends_contents_;
+                  
   DISALLOW_COPY_AND_ASSIGN(Browser);
 };
 

@@ -113,6 +113,10 @@ void PanelBrowserWindowCocoa::UpdateDevTools() {
   NOTIMPLEMENTED();
 }
 
+void PanelBrowserWindowCocoa::UpdateFriendsSidebar(TabContents *contents) {
+  NOTIMPLEMENTED();
+}
+
 void PanelBrowserWindowCocoa::UpdateLoadingAnimations(bool should_animate) {
   NOTIMPLEMENTED();
 }

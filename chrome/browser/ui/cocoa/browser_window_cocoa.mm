@@ -183,6 +183,10 @@ void BrowserWindowCocoa::UpdateDevTools() {
       browser_->GetSelectedTabContents()];
 }
 
+void BrowserWindowCocoa::UpdateFriendsSidebar(TabContents *contents) {
+  [controller_ updateFriendsForContents: contents];
+}
+
 void BrowserWindowCocoa::UpdateLoadingAnimations(bool should_animate) {
   // Do nothing on Mac.
 }

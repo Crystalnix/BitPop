@@ -2368,6 +2368,8 @@
         'browser/ui/cocoa/extensions/extension_view_mac.mm',
         'browser/ui/cocoa/external_protocol_dialog.h',
         'browser/ui/cocoa/external_protocol_dialog.mm',
+        'browser/ui/cocoa/facebook_sidebar_controller.h',
+        'browser/ui/cocoa/facebook_sidebar_controller.mm',
         'browser/ui/cocoa/fast_resize_view.h',
         'browser/ui/cocoa/fast_resize_view.mm',
         'browser/ui/cocoa/find_bar/find_bar_bridge.h',

@@ -87,6 +87,9 @@ enum ViewID {
   // The spacer for the compact navigation bar.
   VIEW_ID_COMPACT_NAV_BAR_SPACER,
 
+  // The facebook friends sidebar
+  VIEW_ID_FACEBOOK_FRIENDS_SIDE_BAR_CONTAINER,
+
   // Used in chrome/browser/ui/gtk/view_id_util_browsertests.cc
   // If you add new ids, make sure the above test passes.
   VIEW_ID_PREDEFINED_COUNT
