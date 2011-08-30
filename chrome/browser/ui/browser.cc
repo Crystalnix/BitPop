@@ -443,10 +443,12 @@ void Browser::InitBrowserWindow() {
       NotificationType::BROWSER_WINDOW_READY,
       Source<Browser>(this),
       NotificationService::NoDetails());
-  
-  friends_contents_->controller().LoadURL(GURL("http://www.google.com"), GURL(), PageTransition::START_PAGE);
-  window_->UpdateFriendsSidebar(friends_contents_.get());
 
+  if (is_type_tabbed()) {
+    friends_contents_->controller().LoadURL(GURL("http://www.google.com"), GURL(), PageTransition::START_PAGE);
+    window_->UpdateFriendsSidebar(friends_contents_.get());
+  }
+  
   if (use_compact_navigation_bar_.GetValue()) {
     // This enables the compact navigation bar host.
     UseCompactNavigationBarChanged();
