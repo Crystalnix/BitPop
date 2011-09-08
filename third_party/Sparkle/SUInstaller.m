@@ -9,7 +9,7 @@
 #import "SUInstaller.h"
 #import "SUPlainInstaller.h"
 #import "SUPackageInstaller.h"
-#import "SUHost.h" 
+#import "SUHost.h"
 
 @implementation SUInstaller
 
@@ -19,17 +19,17 @@
 	OSStatus err = noErr;
 	Boolean aliasFileFlag, folderFlag;
 	NSURL *fileURL = [NSURL fileURLWithPath:path];
-	
+
 	if (FALSE == CFURLGetFSRef((CFURLRef)fileURL, &fileRef))
 		err = coreFoundationUnknownErr;
-	
+
 	if (noErr == err)
 		err = FSIsAliasFile(&fileRef, &aliasFileFlag, &folderFlag);
-	
+
 	if (noErr == err)
 		return (BOOL)(aliasFileFlag && folderFlag);
 	else
-		return NO;	
+		return NO;
 }
 
 
@@ -42,7 +42,7 @@
 	NSDirectoryEnumerator *dirEnum = [[NSFileManager defaultManager] enumeratorAtPath:updateFolder];
 	while ((currentFile = [dirEnum nextObject]))
 	{
-		NSString *currentPath = [updateFolder stringByAppendingPathComponent:currentFile];		
+		NSString *currentPath = [updateFolder stringByAppendingPathComponent:currentFile];
 		if ([[currentFile lastPathComponent] isEqualToString:bundleFileName] ||
 			[[currentFile lastPathComponent] isEqualToString:alternateBundleFileName]) // We found one!
 		{
@@ -76,7 +76,7 @@
 				break;
 			}
 		}
-		
+
 		// Some DMGs have symlinks into /Applications! That's no good!
 		if ([self isAliasFolderAtPath:currentPath])
 			[dirEnum skipDescendents];
@@ -89,7 +89,7 @@
 		isPackage = YES;
 		newAppDownloadPath = fallbackPackagePath;
 	}
-	
+
 	if (newAppDownloadPath == nil)
 	{
 		[self finishInstallationWithResult:NO host:host error:[NSError errorWithDomain:SUSparkleErrorDomain code:SUMissingUpdateError userInfo:[NSDictionary dictionaryWithObject:@"Couldn't find an appropriate update in the downloaded package." forKey:NSLocalizedDescriptionKey]] delegate:delegate];
@@ -128,7 +128,7 @@
 	{
 		if ([delegate respondsToSelector:@selector(installerForHost:failedWithError:)])
 			[delegate installerForHost:host failedWithError:error];
-	}		
+	}
 }
 
 @end

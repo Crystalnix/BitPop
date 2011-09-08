@@ -23,13 +23,13 @@ NSString *SUPackageInstallerDelegateKey = @"SUPackageInstallerDelegate";
 + (void)performInstallationWithInfo:(NSDictionary *)info
 {
 	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-	
+
 	NSTask *installer = [NSTask launchedTaskWithLaunchPath:[info objectForKey:SUPackageInstallerCommandKey] arguments:[info objectForKey:SUPackageInstallerArgumentsKey]];
 	[installer waitUntilExit];
-	
+
 	// Known bug: if the installation fails or is canceled, Sparkle goes ahead and restarts, thinking everything is fine.
 	[self performSelectorOnMainThread:@selector(finishInstallationWithInfo:) withObject:info waitUntilDone:NO];
-	
+
 	[pool drain];
 }
 
@@ -37,7 +37,7 @@ NSString *SUPackageInstallerDelegateKey = @"SUPackageInstallerDelegate";
 {
 	NSString *command;
 	NSArray *args;
-	
+
 	if (floor(NSAppKitVersionNumber) == NSAppKitVersionNumber10_4) {
 		// 10.4 uses Installer.app because the "open" command in 10.4 doesn't support -W and -n
 		command = [[NSBundle bundleWithIdentifier:@"com.apple.installer"] executablePath];
@@ -56,7 +56,7 @@ NSString *SUPackageInstallerDelegateKey = @"SUPackageInstallerDelegate";
 		NSError *error = [NSError errorWithDomain:SUSparkleErrorDomain code:SUMissingInstallerToolError userInfo:[NSDictionary dictionaryWithObject:@"Couldn't find Apple's installer tool!" forKey:NSLocalizedDescriptionKey]];
 		[self finishInstallationWithResult:NO host:host error:error delegate:delegate];
 	}
-	else 
+	else
 	{
 		NSDictionary *info = [NSDictionary dictionaryWithObjectsAndKeys:command, SUPackageInstallerCommandKey, args, SUPackageInstallerArgumentsKey, host, SUPackageInstallerHostKey, delegate, SUPackageInstallerDelegateKey, nil];
 		if (synchronously)

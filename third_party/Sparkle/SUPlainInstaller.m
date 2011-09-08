@@ -28,17 +28,17 @@ static NSString * const SUInstallerErrorKey = @"SUInstallerError";
 + (void)performInstallationWithInfo:(NSDictionary *)info
 {
 	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-	
+
 	NSError *error = nil;
-	
+
 	BOOL result = [self copyPathWithAuthentication:[info objectForKey:SUInstallerPathKey] overPath:[info objectForKey:SUInstallerTargetPathKey] temporaryName:[info objectForKey:SUInstallerTempNameKey] error:&error];
-	
+
 	NSMutableDictionary *mutableInfo = [[info mutableCopy] autorelease];
 	[mutableInfo setObject:[NSNumber numberWithBool:result] forKey:SUInstallerResultKey];
 	if (!result && error)
 		[mutableInfo setObject:error forKey:SUInstallerErrorKey];
 	[self performSelectorOnMainThread:@selector(finishInstallationWithInfo:) withObject:mutableInfo waitUntilDone:NO];
-    
+
 	[pool drain];
 }
 
@@ -52,7 +52,7 @@ static NSString * const SUInstallerErrorKey = @"SUInstallerError";
 		[self finishInstallationWithResult:NO host:host error:error delegate:delegate];
 		return;
 	}
-    
+
     NSString *targetPath = [host bundlePath];
     NSString *tempName = [self temporaryNameForPath:targetPath];
 	NSDictionary *info = [NSDictionary dictionaryWithObjectsAndKeys:path, SUInstallerPathKey, targetPath, SUInstallerTargetPathKey, tempName, SUInstallerTempNameKey, host, SUInstallerHostKey, delegate, SUInstallerDelegateKey, nil];

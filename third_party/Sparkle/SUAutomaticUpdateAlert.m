@@ -20,7 +20,7 @@
 		updateItem = [item retain];
 		delegate = del;
 		host = [aHost retain];
-		[self setShouldCascadeWindows:NO];	
+		[self setShouldCascadeWindows:NO];
 		[[self window] center];
 	}
 	return self;

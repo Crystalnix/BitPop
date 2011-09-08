@@ -240,7 +240,7 @@ void setUseAutomaticUpdates(bool useAutomaticUpdates)
 {
   [[SUUpdater sharedUpdater] setAutomaticallyDownloadsUpdates: (useAutomaticUpdates ? YES : NO)];
 }
-  
+
 bool getUseAutomaticUpdates()
 {
   return ([[SUUpdater sharedUpdater] automaticallyDownloadsUpdates] == YES);

@@ -552,7 +552,7 @@ void RecordLastRunAppBundlePath() {
   if (!parsed_command_line.HasSwitch(switches::kEnableExposeForTabs)) {
     [tabposeMenuItem_ setHidden:YES];
   }
-  
+
   [[NSUserDefaults standardUserDefaults] addObserver:self forKeyPath:@"SUAutomaticallyUpdate" options:NSKeyValueObservingOptionNew context:NULL];
 }
 

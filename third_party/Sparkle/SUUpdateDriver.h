@@ -19,7 +19,7 @@ extern NSString * const SUUpdateDriverFinishedNotification;
 	SUHost *host;
 	SUUpdater *updater;
 	NSURL *appcastURL;
-	
+
 	BOOL finished;
 }
 

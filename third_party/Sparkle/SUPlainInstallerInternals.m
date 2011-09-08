@@ -54,7 +54,7 @@ static BOOL AuthorizationExecuteWithPrivilegesAndWait(AuthorizationRef authoriza
 	}
 	else
 		returnValue = NO;
-		
+
 	signal(SIGCHLD, oldSigChildHandler);
 	return returnValue;
 }
@@ -90,10 +90,10 @@ static BOOL AuthorizationExecuteWithPrivilegesAndWait(AuthorizationRef authoriza
 	const char* srcPath = [src fileSystemRepresentation];
 	const char* tmpPath = [tmp fileSystemRepresentation];
 	const char* dstPath = [dst fileSystemRepresentation];
-	
+
 	struct stat dstSB;
 	stat(dstPath, &dstSB);
-	
+
 	AuthorizationRef auth = NULL;
 	OSStatus authStat = errAuthorizationDenied;
 	while (authStat == errAuthorizationDenied) {
@@ -102,15 +102,15 @@ static BOOL AuthorizationExecuteWithPrivilegesAndWait(AuthorizationRef authoriza
 									   kAuthorizationFlagDefaults,
 									   &auth);
 	}
-	
+
 	BOOL res = NO;
 	if (authStat == errAuthorizationSuccess) {
 		res = YES;
-		
+
 		char uidgid[42];
 		snprintf(uidgid, sizeof(uidgid), "%d:%d",
 				 dstSB.st_uid, dstSB.st_gid);
-		
+
 		const char* executables[] = {
 			"/bin/rm",
 			"/bin/mv",
@@ -121,7 +121,7 @@ static BOOL AuthorizationExecuteWithPrivilegesAndWait(AuthorizationRef authoriza
 			"/usr/sbin/chown",
 			NULL   // stop here for real
 		};
-		
+
 		// 4 is the maximum number of arguments to any command,
 		// including the NULL that signals the end of an argument
 		// list.
@@ -134,14 +134,14 @@ static BOOL AuthorizationExecuteWithPrivilegesAndWait(AuthorizationRef authoriza
 			{ "-R", uidgid, dstPath, NULL },  // chown
 			{ NULL }  // stop
 		};
-		
+
 		// Process the commands up until the first NULL
 		unsigned int commandIndex = 0;
 		for (; executables[commandIndex] != NULL; ++commandIndex) {
 			if (res)
 				res = AuthorizationExecuteWithPrivilegesAndWait(auth, executables[commandIndex], kAuthorizationFlagDefaults, argumentLists[commandIndex]);
 		}
-		
+
 		// If the currently-running application is trusted, the new
 		// version should be trusted as well.  Remove it from the
 		// quarantine to avoid a delay at launch, and to avoid
@@ -157,18 +157,18 @@ static BOOL AuthorizationExecuteWithPrivilegesAndWait(AuthorizationRef authoriza
 		if (res) {
 			[self performSelectorOnMainThread:@selector(releaseFromQuarantine:) withObject:dst waitUntilDone:YES];
 		}
-		
+
 		// Now move past the NULL we found and continue executing
 		// commands from the list.
 		++commandIndex;
-		
+
 		for (; executables[commandIndex] != NULL; ++commandIndex) {
 			if (res)
 				res = AuthorizationExecuteWithPrivilegesAndWait(auth, executables[commandIndex], kAuthorizationFlagDefaults, argumentLists[commandIndex]);
 		}
-		
+
 		AuthorizationFree(auth, 0);
-		
+
 		if (!res)
 		{
 			// Something went wrong somewhere along the way, but we're not sure exactly where.
@@ -196,7 +196,7 @@ static BOOL AuthorizationExecuteWithPrivilegesAndWait(AuthorizationRef authoriza
 {
 	FSRef srcRef, dstRef, targetRef, movedRef;
 	OSStatus err;
-	
+
 	err = FSPathMakeRefWithOptions((UInt8 *)[dst fileSystemRepresentation], kFSPathMakeRefDoNotFollowLeafSymlink, &dstRef, NULL);
 	if (err != noErr)
 	{
@@ -205,12 +205,12 @@ static BOOL AuthorizationExecuteWithPrivilegesAndWait(AuthorizationRef authoriza
 			*error = [NSError errorWithDomain:SUSparkleErrorDomain code:SUFileCopyFailure userInfo:[NSDictionary dictionaryWithObject:errorMessage forKey:NSLocalizedDescriptionKey]];
 		return NO;
 	}
-	
+
 	NSString *tmpPath = [[dst stringByDeletingLastPathComponent] stringByAppendingPathComponent:tmp];
-	
+
 	if (0 != access([dst fileSystemRepresentation], W_OK) || 0 != access([[dst stringByDeletingLastPathComponent] fileSystemRepresentation], W_OK))
 		return [self copyPathWithForcedAuthentication:src toPath:dst temporaryPath:tmpPath error:error];
-	
+
 	err = FSPathMakeRef((UInt8 *)[[dst stringByDeletingLastPathComponent] fileSystemRepresentation], &targetRef, NULL);
 	if (err == noErr)
 		err = FSMoveObjectSync(&dstRef, &targetRef, (CFStringRef)tmp, &movedRef, 0);
@@ -218,7 +218,7 @@ static BOOL AuthorizationExecuteWithPrivilegesAndWait(AuthorizationRef authoriza
 	{
 		if (error != nil)
 			*error = [NSError errorWithDomain:SUSparkleErrorDomain code:SUFileCopyFailure userInfo:[NSDictionary dictionaryWithObject:[NSString stringWithFormat:@"Couldn't move %@ to %@.", dst, tmpPath] forKey:NSLocalizedDescriptionKey]];
-		return NO;			
+		return NO;
 	}
 	err = FSPathMakeRef((UInt8 *)[src fileSystemRepresentation], &srcRef, NULL);
 	if (err == noErr)
@@ -229,9 +229,9 @@ static BOOL AuthorizationExecuteWithPrivilegesAndWait(AuthorizationRef authoriza
 		FSMoveObjectSync(&movedRef, &targetRef, (CFStringRef)[dst lastPathComponent], &movedRef, 0);
 		if (error != nil)
 			*error = [NSError errorWithDomain:SUSparkleErrorDomain code:SUFileCopyFailure userInfo:[NSDictionary dictionaryWithObject:[NSString stringWithFormat:@"Couldn't copy %@ to %@.", src, dst] forKey:NSLocalizedDescriptionKey]];
-		return NO;			
+		return NO;
 	}
-	
+
 	// Trash the old copy of the app.
 #if MAC_OS_X_VERSION_MAX_ALLOWED > MAC_OS_X_VERSION_10_4
 	if (FSMoveObjectToTrashSync == NULL)
@@ -241,7 +241,7 @@ static BOOL AuthorizationExecuteWithPrivilegesAndWait(AuthorizationRef authoriza
 #else
 	[self performSelectorOnMainThread:@selector(movePathToTrash:) withObject:tmpPath waitUntilDone:YES];
 #endif
-	
+
 	// If the currently-running application is trusted, the new
 	// version should be trusted as well.  Remove it from the
 	// quarantine to avoid a delay at launch, and to avoid
@@ -252,7 +252,7 @@ static BOOL AuthorizationExecuteWithPrivilegesAndWait(AuthorizationRef authoriza
 	// happens, the move is actually a copy, and it may result
 	// in the application being quarantined.
 	[self performSelectorOnMainThread:@selector(releaseFromQuarantine:) withObject:dst waitUntilDone:YES];
-	
+
 	return YES;
 }
 
@@ -271,7 +271,7 @@ static BOOL AuthorizationExecuteWithPrivilegesAndWait(AuthorizationRef authoriza
 	typedef int (*removexattr_type)(const char*, const char*, int);
 	// Reference removexattr directly, it's in the SDK.
 	static removexattr_type removexattr_func = removexattr;
-	
+
 	// Make sure that the symbol is present.  This checks the deployment
 	// target instead of the SDK so that it's able to catch dlsym failures
 	// as well as the null symbol that would result from building with the
@@ -280,7 +280,7 @@ static BOOL AuthorizationExecuteWithPrivilegesAndWait(AuthorizationRef authoriza
 		errno = ENOSYS;
 		return -1;
 	}
-	
+
 	const char* path = NULL;
 	@try {
 		path = [file fileSystemRepresentation];
@@ -293,7 +293,7 @@ static BOOL AuthorizationExecuteWithPrivilegesAndWait(AuthorizationRef authoriza
 		errno = EDOM;
 		return -1;
 	}
-	
+
 	return removexattr_func(path, name, options);
 }
 
@@ -301,11 +301,11 @@ static BOOL AuthorizationExecuteWithPrivilegesAndWait(AuthorizationRef authoriza
 {
 	const char* quarantineAttribute = "com.apple.quarantine";
 	const int removeXAttrOptions = XATTR_NOFOLLOW;
-	
+
 	[self removeXAttr:quarantineAttribute
 			 fromFile:root
 			  options:removeXAttrOptions];
-	
+
 	// Only recurse if it's actually a directory.  Don't recurse into a
 	// root-level symbolic link.
 #if MAC_OS_X_VERSION_MIN_REQUIRED <= MAC_OS_X_VERSION_10_4
@@ -314,7 +314,7 @@ static BOOL AuthorizationExecuteWithPrivilegesAndWait(AuthorizationRef authoriza
 	NSDictionary* rootAttributes = [[NSFileManager defaultManager] attributesOfItemAtPath:root error:nil];
 #endif
 	NSString* rootType = [rootAttributes objectForKey:NSFileType];
-	
+
 	if (rootType == NSFileTypeDirectory) {
 		// The NSDirectoryEnumerator will avoid recursing into any contained
 		// symbolic links, so no further type checks are needed.

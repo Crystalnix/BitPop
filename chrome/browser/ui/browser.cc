@@ -2246,10 +2246,10 @@ void Browser::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterBooleanPref(prefs::kWebKitAllowDisplayingInsecureContent,
                              true,
                              PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterBooleanPref(prefs::kAutomaticUpdatesEnabled, 
+  prefs->RegisterBooleanPref(prefs::kAutomaticUpdatesEnabled,
                              true,
                              PrefService::SYNCABLE_PREF);
-  prefs->RegisterStringPref(prefs::kUncensorPrefs, 
+  prefs->RegisterStringPref(prefs::kUncensorPrefs,
                             std::string(),
                             PrefService::SYNCABLE_PREF);
 }

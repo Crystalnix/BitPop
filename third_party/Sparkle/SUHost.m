@@ -46,10 +46,10 @@
 {
 	NSString *name = [bundle objectForInfoDictionaryKey:@"CFBundleDisplayName"];
 	if (name) return name;
-	
+
 	name = [self objectForInfoDictionaryKey:@"CFBundleName"];
 	if (name) return name;
-	
+
 	return [[[NSFileManager defaultManager] displayNameAtPath:[bundle bundlePath]] stringByDeletingPathExtension];
 }
 
@@ -85,7 +85,7 @@
 	// Use a default icon if none is defined.
 	if (!icon) {
 		BOOL isMainBundle = (bundle == [NSBundle mainBundle]);
-		
+
 		// Starting with 10.6, iconForFileType: accepts a UTI.
 		NSString *fileType = nil;
 		if (floor(NSAppKitVersionNumber) <= NSAppKitVersionNumber10_5)
@@ -98,7 +98,7 @@
 }
 
 - (BOOL)isRunningOnReadOnlyVolume
-{	
+{
 	struct statfs statfs_info;
 	statfs([[bundle bundlePath] fileSystemRepresentation], &statfs_info);
 	return (statfs_info.f_flags & MNT_RDONLY);
@@ -120,7 +120,7 @@
 	// Maybe the key is just a string in the Info.plist.
 	NSString *key = [bundle objectForInfoDictionaryKey:SUPublicDSAKeyKey];
 	if (key) { return key; }
-	
+
 	// More likely, we've got a reference to a Resources file by filename:
 	NSString *keyFilename = [self objectForInfoDictionaryKey:SUPublicDSAKeyFileKey];
 	if (!keyFilename) { return nil; }
@@ -150,7 +150,7 @@
 	// back to using NSUserDefaults, but only if the host bundle is the main bundle.
 	if (bundle == [NSBundle mainBundle])
 		return [[NSUserDefaults standardUserDefaults] objectForKey:defaultName];
-	
+
 	CFPropertyListRef obj = CFPreferencesCopyAppValue((CFStringRef)defaultName, (CFStringRef)[bundle bundleIdentifier]);
 	return [(id)CFMakeCollectable(obj) autorelease];
 }
@@ -173,7 +173,7 @@
 {
 	if (bundle == [NSBundle mainBundle])
 		return [[NSUserDefaults standardUserDefaults] boolForKey:defaultName];
-	
+
 	BOOL value;
 	CFPropertyListRef plr = CFPreferencesCopyAppValue((CFStringRef)defaultName, (CFStringRef)[bundle bundleIdentifier]);
 	if (plr == NULL)

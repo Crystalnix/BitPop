@@ -1,4 +1,4 @@
-# Sparkle 
+# Sparkle
 is an easy-to-use software update framework for Cocoa developers.
 
 * True self-updating--no work required from the user.

@@ -3,7 +3,7 @@
  * All rights reserved
  *
  * Redistribution and use in source and binary forms, with or without
- * modification, are permitted providing that the following conditions 
+ * modification, are permitted providing that the following conditions
  * are met:
  * 1. Redistributions of source code must retain the above copyright
  *    notice, this list of conditions and the following disclaimer.
@@ -221,7 +221,7 @@ static off_t search(off_t *I, u_char *old, off_t oldsize,
 }
 
 /* offtout(x, buf)
- * 
+ *
  * Writes the off_t 'x' portably to the array 'buf'. */
 static void offtout(off_t x, u_char *buf)
 {
@@ -356,7 +356,7 @@ int bsdiff(int argc, char *argv[])
             /* Choose this as our match if it contains more than eight
              * characters that would be wrong if matched with a forward
              * extension of the previous match instead. */
-            if (((len == oldscore) && (len != 0)) || 
+            if (((len == oldscore) && (len != 0)) ||
                 (len > oldscore + 8))
                 break;
 

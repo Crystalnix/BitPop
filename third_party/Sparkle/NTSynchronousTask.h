@@ -15,7 +15,7 @@
     NSTask *mv_task;
     NSPipe *mv_outputPipe;
     NSPipe *mv_inputPipe;
-	
+
 	NSData* mv_output;
 	BOOL mv_done;
 	int mv_result;

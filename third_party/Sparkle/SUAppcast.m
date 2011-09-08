@@ -51,7 +51,7 @@
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringCacheData timeoutInterval:30.0];
     if (userAgentString)
         [request setValue:userAgentString forHTTPHeaderField:@"User-Agent"];
-            
+
     download = [[NSURLDownload alloc] initWithRequest:request delegate:self];
 }
 
@@ -72,18 +72,18 @@
 }
 
 - (void)downloadDidFinish:(NSURLDownload *)aDownload
-{    
+{
 	NSError *error = nil;
-	
+
 	NSXMLDocument *document = nil;
 	BOOL failed = NO;
 	NSArray *xmlItems = nil;
 	NSMutableArray *appcastItems = [NSMutableArray array];
-	
+
 	if (downloadFilename)
 	{
 		document = [[[NSXMLDocument alloc] initWithContentsOfURL:[NSURL fileURLWithPath:downloadFilename] options:0 error:&error] autorelease];
-	
+
 #if MAC_OS_X_VERSION_MIN_REQUIRED <= MAC_OS_X_VERSION_10_4
 		[[NSFileManager defaultManager] removeFileAtPath:downloadFilename handler:nil];
 #else
@@ -96,7 +96,7 @@
 	{
 		failed = YES;
 	}
-    
+
     if (nil == document)
     {
         failed = YES;
@@ -109,15 +109,15 @@
             failed = YES;
         }
     }
-    
+
 	if (failed == NO)
     {
-		
+
 		NSEnumerator *nodeEnum = [xmlItems objectEnumerator];
 		NSXMLNode *node;
 		NSMutableDictionary *nodesDict = [NSMutableDictionary dictionary];
 		NSMutableDictionary *dict = [NSMutableDictionary dictionary];
-		
+
 		while (failed == NO && (node = [nodeEnum nextObject]))
         {
 			// First, we'll "index" all the first-level children of this appcast item so we can pick them out by language later.
@@ -140,7 +140,7 @@
                     node = [node nextSibling];
                 }
             }
-            
+
             NSEnumerator *nameEnum = [nodesDict keyEnumerator];
             NSString *name;
             while ((name = [nameEnum nextObject]))
@@ -151,7 +151,7 @@
 					// enclosure is flattened as a separate dictionary for some reason
 					NSDictionary *encDict = [(NSXMLElement *)node attributesAsDictionary];
 					[dict setObject:encDict forKey:@"enclosure"];
-					
+
 				}
                 else if ([name isEqualToString:@"pubDate"])
                 {
@@ -177,7 +177,7 @@
 					[dict setObject:[[node stringValue] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] forKey:name];
 				}
             }
-            
+
 			NSString *errString;
 			SUAppcastItem *anItem = [[[SUAppcastItem alloc] initWithDictionary:dict failureReason:&errString] autorelease];
             if (anItem)
@@ -192,14 +192,14 @@
             [dict removeAllObjects];
 		}
 	}
-	
+
 	if ([appcastItems count])
     {
 		NSSortDescriptor *sort = [[[NSSortDescriptor alloc] initWithKey:@"date" ascending:NO] autorelease];
 		[appcastItems sortUsingDescriptors:[NSArray arrayWithObject:sort]];
 		items = [appcastItems copy];
 	}
-	
+
 	if (failed)
     {
         [self reportError:[NSError errorWithDomain:SUSparkleErrorDomain code:SUAppcastParseError userInfo:[NSDictionary dictionaryWithObjectsAndKeys:SULocalizedString(@"An error occurred while parsing the update feed.", nil), NSLocalizedDescriptionKey, nil]]];
@@ -222,7 +222,7 @@
 	}
     [downloadFilename release];
     downloadFilename = nil;
-    
+
 	[self reportError:error];
 }
 
@@ -246,7 +246,7 @@
         return [nodes objectAtIndex:0];
     else if ([nodes count] == 0)
         return nil;
-    
+
     NSEnumerator *nodeEnum = [nodes objectEnumerator];
     NSXMLElement *node;
     NSMutableArray *languages = [NSMutableArray array];

@@ -62,13 +62,13 @@
 
 - (void)displayReleaseNotes
 {
-	// Set the default font	
+	// Set the default font
 	[releaseNotesView setPreferencesIdentifier:[SPARKLE_BUNDLE bundleIdentifier]];
 	[[releaseNotesView preferences] setStandardFontFamily:[[NSFont systemFontOfSize:8] familyName]];
 	[[releaseNotesView preferences] setDefaultFontSize:(int)[NSFont systemFontSizeForControlSize:NSSmallControlSize]];
 	[releaseNotesView setFrameLoadDelegate:self];
 	[releaseNotesView setPolicyDelegate:self];
-	
+
 	// Stick a nice big spinner in the middle of the web view until the page is loaded.
 	NSRect frame = [[releaseNotesView superview] frame];
 	releaseNotesSpinner = [[[NSProgressIndicator alloc] initWithFrame:NSMakeRect(NSMidX(frame)-16, NSMidY(frame)-16, 32, 32)] autorelease];
@@ -76,7 +76,7 @@
 	[releaseNotesSpinner startAnimation:self];
 	webViewFinishedLoading = NO;
 	[[releaseNotesView superview] addSubview:releaseNotesSpinner];
-	
+
 	// If there's a release notes URL, load it; otherwise, just stick the contents of the description into the web view.
 	if ([updateItem releaseNotesURL])
 	{
@@ -92,7 +92,7 @@
 	else
 	{
 		[[releaseNotesView mainFrame] loadHTMLString:[updateItem itemDescription] baseURL:nil];
-	}	
+	}
 }
 
 - (BOOL)showsReleaseNotes
@@ -112,19 +112,19 @@
 }
 
 - (void)awakeFromNib
-{	
+{
 	[[self window] setLevel:NSFloatingWindowLevel];
-		
+
 	// We're gonna do some frame magic to match the window's size to the description field and the presence of the release notes view.
 	NSRect frame = [[self window] frame];
-	
+
 	if (![self showsReleaseNotes])
 	{
 		// Resize the window to be appropriate for not having a huge release notes view.
 		frame.size.height -= [releaseNotesView frame].size.height + 40; // Extra 40 is for the release notes label and margin.
 		[[self window] setShowsResizeIndicator:NO];
 	}
-	
+
 	if (![self allowsAutomaticUpdates])
 	{
 		NSRect boxFrame = [[[releaseNotesView superview] superview] frame];
@@ -132,10 +132,10 @@
 		boxFrame.size.height += 20;
 		[[[releaseNotesView superview] superview] setFrame:boxFrame];
 	}
-	
+
 	[[self window] setFrame:frame display:NO];
 	[[self window] center];
-	
+
 	if ([self showsReleaseNotes])
 	{
 		[self displayReleaseNotes];
@@ -184,9 +184,9 @@
 {
     if (webViewFinishedLoading) {
         [[NSWorkspace sharedWorkspace] openURL:[request URL]];
-		
+
         [listener ignore];
-    }    
+    }
     else {
         [listener use];
     }
@@ -196,7 +196,7 @@
 - (NSArray *)webView:(WebView *)sender contextMenuItemsForElement:(NSDictionary *)element defaultMenuItems:(NSArray *)defaultMenuItems
 {
 	NSMutableArray *webViewMenuItems = [[defaultMenuItems mutableCopy] autorelease];
-	
+
 	if (webViewMenuItems)
 	{
 		NSEnumerator *itemEnumerator = [defaultMenuItems objectEnumerator];
@@ -204,7 +204,7 @@
 		while ((menuItem = [itemEnumerator nextObject]))
 		{
 			NSInteger tag = [menuItem tag];
-			
+
 			switch (tag)
 			{
 				case WebMenuItemTagOpenLinkInNewWindow:
@@ -215,12 +215,12 @@
 				case WebMenuItemTagGoBack:
 				case WebMenuItemTagGoForward:
 				case WebMenuItemTagStop:
-				case WebMenuItemTagReload:		
+				case WebMenuItemTagReload:
 					[webViewMenuItems removeObjectIdenticalTo: menuItem];
 			}
 		}
 	}
-	
+
 	return webViewMenuItems;
 }
 

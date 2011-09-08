@@ -17,7 +17,7 @@
 #include <sys/stat.h>
 
 extern int xar_close(void*) __attribute__((weak_import));
-    
+
 int binaryDeltaSupported(void)
 {
     // OS X 10.4 didn't include libxar, so we link against it weakly.
@@ -83,7 +83,7 @@ static void _hashOfFile(unsigned char* hash, FTSENT *ent)
             close(fileDescriptor);
             return;
         }
-		
+
         void *buffer = mmap(0, fileSize, PROT_READ, MAP_FILE | MAP_PRIVATE, fileDescriptor, 0);
         if (buffer == (void*)-1) {
             close(fileDescriptor);
@@ -161,5 +161,5 @@ void copyTree(NSString *source, NSString *dest)
     [[NSFileManager defaultManager] copyItemAtPath:source toPath:dest error:0];
 #else
     [[NSFileManager defaultManager] copyPath:source toPath:dest handler:nil];
-#endif    
+#endif
 }

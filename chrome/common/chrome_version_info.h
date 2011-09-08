@@ -33,7 +33,7 @@ class VersionInfo {
 
   // Version number, e.g. "6.0.490.1".
   std::string Version() const;
-  
+
   // Base Chromium release version number (used for user-agent string)
   std::string ChromiumReleaseVersion() const;
 

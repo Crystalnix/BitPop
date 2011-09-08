@@ -32,7 +32,7 @@ parseUri.options = {
 };
 
 function reconstructUri(uriObject) {
-  return uriObject['protocol'] + '://' + (uriObject['userInfo'] ? uriObject['userInfo'] + '@' : '') + 
+  return uriObject['protocol'] + '://' + (uriObject['userInfo'] ? uriObject['userInfo'] + '@' : '') +
           (uriObject['host'] ? uriObject['host'] : '') + (uriObject['port'] ? ':' + uriObject['port'] : '') +
           uriObject['path'] +
           (uriObject['query'] ? '?' + uriObject['query'] : '');

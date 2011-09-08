@@ -22,7 +22,7 @@ class UncensorOptionsHandler : public OptionsPageUIHandler {
 
  private:
   void setUncensorPrefsValue(const ListValue* args);
-  
+
   DISALLOW_COPY_AND_ASSIGN(UncensorOptionsHandler);
 };
 

@@ -73,7 +73,7 @@
           },
           'sources': [
             '<@(sparkle_public_headers)',
-            '<@(sparkle_private_headers)',            
+            '<@(sparkle_private_headers)',
             'SUUpdater.m',
             'SUPlainInstallerInternals.m',
             'SUAppcast.m',
@@ -157,7 +157,7 @@
               'action': [
                 '/usr/bin/env', 'ruby',
                 '-e', 'resources = "#{ENV["BUILT_PRODUCTS_DIR"]}/#{ENV["WRAPPER_NAME"]}/Resources"',
-                '-e', '`ln -sfh "fr.lproj" "#{resources}/fr_CA.lproj"`', 
+                '-e', '`ln -sfh "fr.lproj" "#{resources}/fr_CA.lproj"`',
               ],
             },
             {

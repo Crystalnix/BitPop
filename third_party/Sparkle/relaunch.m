@@ -58,14 +58,14 @@
 int main (int argc, const char * argv[])
 {
 	if (argc != 3) return EXIT_FAILURE;
-	
+
 	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-	
+
 	[NSApplication sharedApplication];
 	[[[TerminationListener alloc] initWithExecutablePath:argv[1] parentProcessId:atoi(argv[2])] autorelease];
 	[[NSApplication sharedApplication] run];
-	
+
 	[pool drain];
-	
+
 	return EXIT_SUCCESS;
 }

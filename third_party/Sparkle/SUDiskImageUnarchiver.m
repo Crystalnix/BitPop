@@ -19,10 +19,10 @@
 }
 
 - (void)extractDMG
-{		
+{
 	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 	BOOL mountedSuccessfully = NO;
-	
+
 	// get a unique mount point path
 	NSString *mountPointName = nil;
 	NSString *mountPoint = nil;
@@ -42,16 +42,16 @@
 		}
 	}
 	while (noErr == FSPathMakeRefWithOptions((UInt8 *)[mountPoint fileSystemRepresentation], kFSPathMakeRefDoNotFollowLeafSymlink, &tmpRef, NULL));
-	
+
 	NSArray* arguments = [NSArray arrayWithObjects:@"attach", archivePath, @"-mountpoint", mountPoint, @"-noverify", @"-nobrowse", @"-noautoopen", nil];
 	// set up a pipe and push "yes" (y works too), this will accept any license agreement crap
 	// not every .dmg needs this, but this will make sure it works with everyone
 	NSData* yesData = [[[NSData alloc] initWithBytes:"yes\n" length:4] autorelease];
-	
+
 	NSData *result = [NTSynchronousTask task:@"/usr/bin/hdiutil" directory:@"/" withArgs:arguments input:yesData];
 	if (!result) goto reportError;
 	mountedSuccessfully = YES;
-	
+
 	// Now that we've mounted it, we need to copy out its contents.
 	FSRef srcRef, dstRef;
 	OSStatus err;
@@ -59,13 +59,13 @@
 	if (err != noErr) goto reportError;
 	err = FSPathMakeRef((UInt8 *)[[archivePath stringByDeletingLastPathComponent] fileSystemRepresentation], &dstRef, NULL);
 	if (err != noErr) goto reportError;
-	
+
 	err = FSCopyObjectSync(&srcRef, &dstRef, (CFStringRef)mountPointName, NULL, kFSFileOperationSkipSourcePermissionErrors);
 	if (err != noErr) goto reportError;
-	
+
 	[self performSelectorOnMainThread:@selector(notifyDelegateOfSuccess) withObject:nil waitUntilDone:NO];
 	goto finally;
-	
+
 reportError:
 	[self performSelectorOnMainThread:@selector(notifyDelegateOfFailure) withObject:nil waitUntilDone:NO];
 

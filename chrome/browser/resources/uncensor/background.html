@@ -18,7 +18,7 @@ Copyright (c) 2011 Crystalnix <vgachkaylo@crystalnix.com>
 
   var up = chrome.experimental.contentSettings.misc.uncensorPrefs;
   var prefs = null;
-  
+
   /**
    * Returns whether the |levelOfControl| means that the extension can change the
    * preference value.
@@ -29,7 +29,7 @@ Copyright (c) 2011 Crystalnix <vgachkaylo@crystalnix.com>
     return (levelOfControl == "ControllableByThisExtension" ||
             levelOfControl == "ControlledByThisExtension");
   }
-  
+
   function downloadFilterData() {
     var xhr = new XMLHttpRequest();
     xhr.onreadystatechange = function() {
@@ -42,11 +42,11 @@ Copyright (c) 2011 Crystalnix <vgachkaylo@crystalnix.com>
           if (!(d[x]['srcDomain'] in prefs.domainFilter))
             changed = true;
         }
-      
+
         for (var x in prefs.domainFilter)
           if (!x in od)
             changed = true;
-      
+
         if (changed) {
           var notification = webkitNotifications.createNotification(
             '48uncensor.png',  // icon url - can be relative
@@ -58,15 +58,15 @@ Copyright (c) 2011 Crystalnix <vgachkaylo@crystalnix.com>
             notification.cancel();
           }, 5000);
         }
-      
+
         prefs.domainFilter = od;
-        
+
         for (var excDomain in prefs.domainExceptions) {
           if (!(excDomain in prefs.domainFilter)) {
             delete prefs.domainExceptions[excDomain];
           }
         }
-        
+
         prefs.lastUpdate = Date.now();
         up.set({ 'value': JSON.stringify(prefs) });
       }
@@ -83,16 +83,16 @@ Copyright (c) 2011 Crystalnix <vgachkaylo@crystalnix.com>
     prefs.domainFilter = {};
     prefs.domainExceptions = {};
     prefs.lastUpdate = 0;
-    
+
     up.set({ 'value': JSON.stringify(prefs) });
   }
-  
+
   function checkAndUpdate() {
     if (Date.now() - prefs.lastUpdate > 1000 * 60 * 60 * 24)
       downloadFilterData();
     setTimeout("checkAndUpdate()", 1000 * 60 * 60);
   }
-  
+
   up.get({}, function (details) {
     if (details.value != "") {
       prefs = JSON.parse(details.value);
@@ -101,30 +101,30 @@ Copyright (c) 2011 Crystalnix <vgachkaylo@crystalnix.com>
     }
     checkAndUpdate();
   });
-  
+
   up.onChange.addListener(function (details) {
     if (details.value != "")
       prefs = JSON.parse(details.value);
   });
-  
+
   var recent = {};
   recent.tabId = -1;
   recent.url = "";
-  
+
   // Called when the url of a tab changes.
   function redirectListener(tabId, changeInfo, tab) {
     if (!prefs || !prefs.shouldRedirect)
       return;
-      
+
     var uri = parseUri(tab.url);
     for (var domain in prefs.domainFilter) {
-      if (!(domain in prefs.domainExceptions) && uri["host"].endsWith(domain) && 
+      if (!(domain in prefs.domainExceptions) && uri["host"].endsWith(domain) &&
           prefs.showMessage && changeInfo.status == "loading") {
-        
+
         uri['host'] = uri['host'].replace(new RegExp(domain+'$', ''), prefs.domainFilter[domain]);
         var newUri = reconstructUri(uri);
         chrome.tabs.update(tabId, {"url": newUri});
-          
+
         var notification = webkitNotifications.createNotification(
           '48uncensor.png',  // icon url - can be relative
           'Uncensor filter',  // notification title

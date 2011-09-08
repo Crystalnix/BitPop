@@ -14,12 +14,12 @@ Build instructions:
 - $ git clone git://github.com/crystalnix/BitPop.git src
   this will clone the repo to PROJECT_DIR/src directory
   (you should use exact name "src")
-- install the depot_tools using 
+- install the depot_tools using
   http://dev.chromium.org/developers/how-tos/install-depot-tools
   as a reference
 - $ gclient config http://src.chromium.org/svn/releases/12.0.742.100
 - Optionally: edit .gclient file replacing "custom_deps" entry with
-  "custom_deps": {      
+  "custom_deps": {
     "src/third_party/WebKit/LayoutTests": None,
     "src/chrome/tools/test/reference_build/chrome": None,
     "src/chrome_frame/tools/test/reference_build/chrome": None,
@@ -36,4 +36,4 @@ Build instructions:
   Mac:
     - $ cd src/chrome
     - $ xcodebuild -project chrome.xcodeproj -configuration Debug -target chrome
-    - do what you like with a build in src/xcodebuild/Debug 
+    - do what you like with a build in src/xcodebuild/Debug

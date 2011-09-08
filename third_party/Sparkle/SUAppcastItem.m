@@ -61,7 +61,7 @@
     [DSASignature release];
     DSASignature = [aDSASignature copy];
 }
-			
+
 
 - (NSURL *)fileURL { return [[fileURL retain] autorelease]; }
 
@@ -125,7 +125,7 @@
 	if (self)
 	{
 		id enclosure = [dict objectForKey:@"enclosure"];
-		
+
 		if (!enclosure)
 		{
 			if (error)
@@ -133,7 +133,7 @@
 			[self release];
 			return nil;
 		}
-		
+
 		// Try to find a version string.
 		// Finding the new version number from the RSS feed is a little bit hacky. There are two ways:
 		// 1. A "sparkle:version" attribute on the enclosure tag, an extension from the RSS spec.
@@ -151,7 +151,7 @@
 			if ([fileComponents count] > 1)
 				newVersion = [[fileComponents lastObject] stringByDeletingPathExtension];
 		}
-		
+
 		if (![enclosure objectForKey:@"url"] )
 		{
 			if (error)
@@ -159,7 +159,7 @@
 			[self release];
 			return nil;
 		}
-		
+
 		if(!newVersion )
 		{
 			if (error)
@@ -167,7 +167,7 @@
 			[self release];
 			return nil;
 		}
-        
+
 		if (enclosure == nil || [enclosure objectForKey:@"url"] == nil || newVersion == nil)
         {
             [self release];
@@ -179,20 +179,20 @@
             [self setTitle:[dict objectForKey:@"title"]];
             [self setDate:[dict objectForKey:@"pubDate"]];
             [self setItemDescription:[dict objectForKey:@"description"]];
-            
+
 			NSString *fileURLString = [[[enclosure objectForKey:@"url"] stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding] stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
             [self setFileURL:[NSURL URLWithString:fileURLString]];
-            [self setDSASignature:[enclosure objectForKey:@"sparkle:dsaSignature"]];		
-            
+            [self setDSASignature:[enclosure objectForKey:@"sparkle:dsaSignature"]];
+
             [self setVersionString:newVersion];
             [self setMinimumSystemVersion:[dict objectForKey:@"sparkle:minimumSystemVersion"]];
-            
+
             NSString *shortVersionString = [enclosure objectForKey:@"sparkle:shortVersionString"];
             if (shortVersionString)
                 [self setDisplayVersionString:shortVersionString];
             else
                 [self setDisplayVersionString:[self versionString]];
-            
+
             // Find the appropriate release notes URL.
             if ([dict objectForKey:@"sparkle:releaseNotesLink"])
                 [self setReleaseNotesURL:[NSURL URLWithString:[dict objectForKey:@"sparkle:releaseNotesLink"]]];

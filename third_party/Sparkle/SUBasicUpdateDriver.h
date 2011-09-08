@@ -16,10 +16,10 @@
 @interface SUBasicUpdateDriver : SUUpdateDriver {
 	SUAppcastItem *updateItem;
 	SUAppcastItem *nonDeltaUpdateItem;
-	
+
 	NSURLDownload *download;
 	NSString *downloadPath;
-	
+
 	NSString *relaunchPath;
 }
 

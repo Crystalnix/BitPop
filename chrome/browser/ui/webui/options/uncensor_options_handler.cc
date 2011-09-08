@@ -27,11 +27,11 @@
 #include "chrome/browser/background_contents_service_factory.h"
 
 UncensorOptionsHandler::UncensorOptionsHandler() {
-  
+
 }
 
 UncensorOptionsHandler::~UncensorOptionsHandler() {
-  
+
 }
 
 void UncensorOptionsHandler::GetLocalizedValues(DictionaryValue* localized_strings) {
@@ -50,7 +50,7 @@ void UncensorOptionsHandler::GetLocalizedValues(DictionaryValue* localized_strin
     { "uncensorNewLocation", IDS_OPTIONS_UNCENSOR_NEW_LOCATION },
     { "uncensorExceptions", IDS_OPTIONS_UNCENSOR_EXCEPTIONS }
   };
-  
+
   RegisterStrings(localized_strings, resources, arraysize(resources));
   RegisterTitle(localized_strings, "uncensorPage",
                 IDS_OPTIONS_UNCENSOR_TAB_LABEL);
@@ -69,9 +69,9 @@ void UncensorOptionsHandler::setUncensorPrefsValue(const ListValue* args) {
   Value* value;
   if (!args->Get(0, &value))
     return;
-  
-  Profile* profile = web_ui_->GetProfile(); 
-    
+
+  Profile* profile = web_ui_->GetProfile();
+
   ExtensionPrefs* prefs = profile->GetExtensionService()->extension_prefs();
   prefs->SetExtensionControlledPref("ilhfbbmjdjgakaddblkoaadajjijpipm",
                                     "profile.uncensor",

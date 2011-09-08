@@ -11,12 +11,12 @@
 
 @implementation NTSynchronousTask
 
-//---------------------------------------------------------- 
-//  task 
-//---------------------------------------------------------- 
+//----------------------------------------------------------
+//  task
+//----------------------------------------------------------
 - (NSTask *)task
 {
-    return mv_task; 
+    return mv_task;
 }
 
 - (void)setTask:(NSTask *)theTask
@@ -27,12 +27,12 @@
     }
 }
 
-//---------------------------------------------------------- 
-//  outputPipe 
-//---------------------------------------------------------- 
+//----------------------------------------------------------
+//  outputPipe
+//----------------------------------------------------------
 - (NSPipe *)outputPipe
 {
-    return mv_outputPipe; 
+    return mv_outputPipe;
 }
 
 - (void)setOutputPipe:(NSPipe *)theOutputPipe
@@ -43,12 +43,12 @@
     }
 }
 
-//---------------------------------------------------------- 
-//  inputPipe 
-//---------------------------------------------------------- 
+//----------------------------------------------------------
+//  inputPipe
+//----------------------------------------------------------
 - (NSPipe *)inputPipe
 {
-    return mv_inputPipe; 
+    return mv_inputPipe;
 }
 
 - (void)setInputPipe:(NSPipe *)theInputPipe
@@ -59,12 +59,12 @@
     }
 }
 
-//---------------------------------------------------------- 
-//  output 
-//---------------------------------------------------------- 
+//----------------------------------------------------------
+//  output
+//----------------------------------------------------------
 - (NSData *)output
 {
-    return mv_output; 
+    return mv_output;
 }
 
 - (void)setOutput:(NSData *)theOutput
@@ -75,9 +75,9 @@
     }
 }
 
-//---------------------------------------------------------- 
-//  done 
-//---------------------------------------------------------- 
+//----------------------------------------------------------
+//  done
+//----------------------------------------------------------
 - (BOOL)done
 {
     return mv_done;
@@ -88,9 +88,9 @@
     mv_done = flag;
 }
 
-//---------------------------------------------------------- 
-//  result 
-//---------------------------------------------------------- 
+//----------------------------------------------------------
+//  result
+//----------------------------------------------------------
 - (int)result
 {
     return mv_result;
@@ -104,7 +104,7 @@
 - (void)taskOutputAvailable:(NSNotification*)note
 {
 	[self setOutput:[[note userInfo] objectForKey:NSFileHandleNotificationDataItem]];
-	
+
 	[self setDone:YES];
 }
 
@@ -121,17 +121,17 @@
 		[self setTask:[[[NSTask alloc] init] autorelease]];
 		[self setOutputPipe:[[[NSPipe alloc] init] autorelease]];
 		[self setInputPipe:[[[NSPipe alloc] init] autorelease]];
-		
+
 		[[self task] setStandardInput:[self inputPipe]];
 		[[self task] setStandardOutput:[self outputPipe]];
 	}
-	
+
     return self;
 }
 
-//---------------------------------------------------------- 
+//----------------------------------------------------------
 // dealloc
-//---------------------------------------------------------- 
+//----------------------------------------------------------
 - (void)dealloc
 {
 	[[NSNotificationCenter defaultCenter] removeObserver:self];
@@ -147,32 +147,32 @@
 - (void)run:(NSString*)toolPath directory:(NSString*)currentDirectory withArgs:(NSArray*)args input:(NSData*)input;
 {
 	BOOL success = NO;
-	
+
 	if (currentDirectory)
 		[[self task] setCurrentDirectoryPath: currentDirectory];
-	
+
 	[[self task] setLaunchPath:toolPath];
 	[[self task] setArguments:args];
-				
+
 	[[NSNotificationCenter defaultCenter] addObserver:self
 											 selector:@selector(taskOutputAvailable:)
 												 name:NSFileHandleReadToEndOfFileCompletionNotification
 											   object:[[self outputPipe] fileHandleForReading]];
-		
+
 	[[NSNotificationCenter defaultCenter] addObserver:self
 											 selector:@selector(taskDidTerminate:)
 												 name:NSTaskDidTerminateNotification
-											   object:[self task]];	
-	
+											   object:[self task]];
+
 	[[[self outputPipe] fileHandleForReading] readToEndOfFileInBackgroundAndNotifyForModes:[NSArray arrayWithObjects:NSDefaultRunLoopMode, NSModalPanelRunLoopMode, NSEventTrackingRunLoopMode, nil]];
-	
+
 	@try
 	{
 		[[self task] launch];
 		success = YES;
 	}
 	@catch (NSException *localException) { }
-	
+
 	if (success)
 	{
 		if (input)
@@ -181,17 +181,17 @@
 			[[[self inputPipe] fileHandleForWriting] writeData:input];
 			[[[self inputPipe] fileHandleForWriting] closeFile];
 		}
-						
+
 		// loop until we are done receiving the data
 		if (![self done])
 		{
 			double resolution = 1;
 			BOOL isRunning;
 			NSDate* next;
-			
+
 			do {
-				next = [NSDate dateWithTimeIntervalSinceNow:resolution]; 
-				
+				next = [NSDate dateWithTimeIntervalSinceNow:resolution];
+
 				isRunning = [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
 													 beforeDate:next];
 			} while (isRunning && ![self done]);
@@ -204,25 +204,25 @@
 	// we need this wacky pool here, otherwise we run out of pipes, the pipes are internally autoreleased
 	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 	NSData* result=nil;
-	
+
 	@try
 	{
 		NTSynchronousTask* task = [[NTSynchronousTask alloc] init];
-		
+
 		[task run:toolPath directory:currentDirectory withArgs:args input:input];
-		
+
 		if ([task result] == 0)
 			result = [[task output] retain];
-				
+
 		[task release];
-	}	
+	}
 	@catch (NSException *localException) { }
-	
+
 	[pool drain];
-	
+
 	// retained above
 	[result autorelease];
-	
+
     return result;
 }
 
