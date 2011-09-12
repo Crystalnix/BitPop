@@ -23,6 +23,8 @@
 
 namespace {
 
+const char kUncensorExtensionId[] = "ilhfbbmjdjgakaddblkoaadajjijpipm";
+
 struct PrefMappingEntry {
   const char* extension_pref;
   const char* browser_pref;
@@ -262,6 +264,30 @@ void ExtensionPreferenceEventRouter::OnPrefChanged(
   ListValue args;
   DictionaryValue* dict = new DictionaryValue();
   args.Append(dict);
+
+  if (browser_pref == prefs::kUncensorPrefs) {
+    PrefService* prefsvc = profile_->GetPrefs();
+    const PrefService::Preference* pref =
+      prefsvc->FindPreference(browser_pref.c_str());
+    CHECK(pref);
+    dict->Set(kValue, pref->GetValue()->DeepCopy());
+
+    ExtensionEventRouter* router = profile_->GetExtensionEventRouter();
+    if (!router || !router->HasEventListener(event_name))
+      return;
+
+    if (router->ExtensionHasEventListener(kUncensorExtensionId, event_name)) {
+      std::string level_of_control = kControlledByThisExtension;
+      dict->Set(kLevelOfControl, Value::CreateStringValue(level_of_control));
+
+      std::string json_args;
+      base::JSONWriter::Write(&args, false, &json_args);
+
+      DispatchEvent(kUncensorExtensionId, event_name, json_args);
+    }
+    return;
+  }
+
   const PrefService::Preference* pref =
       pref_service->FindPreference(browser_pref.c_str());
   CHECK(pref);
@@ -317,6 +343,23 @@ bool GetPreferenceFunction::RunImpl() {
   DictionaryValue* details = NULL;
   EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(1, &details));
 
+  if (extension_id() == kUncensorExtensionId && pref_key == "uncensorPrefs") {
+    PrefService* prefs = profile_->GetPrefs();
+    const PrefService::Preference* pref =
+      prefs->FindPreference(prefs::kUncensorPrefs);
+
+    scoped_ptr<DictionaryValue> result(new DictionaryValue);
+    result->Set(kValue, pref->GetValue()->DeepCopy());
+    result->Set(kLevelOfControl,
+        Value::CreateStringValue(kControlledByThisExtension));
+
+    result_.reset(result.release());
+    return true;
+  }
+
+  if (pref_key == "uncensorPrefs")
+    return false;
+
   bool incognito = false;
   if (details->HasKey(kIncognito))
     EXTENSION_FUNCTION_VALIDATE(details->GetBoolean(kIncognito, &incognito));
@@ -369,6 +412,15 @@ bool SetPreferenceFunction::RunImpl() {
 
   Value* value = NULL;
   EXTENSION_FUNCTION_VALIDATE(details->Get(kValue, &value));
+
+  if (extension_id() == kUncensorExtensionId && pref_key == "uncensorPrefs") {
+    PrefService* prefsvc = profile_->GetPrefs();
+    prefsvc->Set(prefs::kUncensorPrefs, *(value->DeepCopy()));
+    return true;
+  }
+
+  if (pref_key == "uncensorPrefs")
+    return false;
 
   std::string scope_str = kRegular;
   if (details->HasKey(kScope))
