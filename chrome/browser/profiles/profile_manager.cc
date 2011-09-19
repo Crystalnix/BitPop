@@ -293,7 +293,7 @@ bool ProfileManager::AddProfile(Profile* profile) {
   }
 
   RegisterProfile(profile, true);
-  DoFinalInit(profile);
+  //DoFinalInit(profile);
   return true;
 }
 

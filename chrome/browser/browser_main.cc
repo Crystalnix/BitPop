@@ -1690,6 +1690,8 @@ int BrowserMain(const MainFunctionParams& parameters) {
     Browser::SetNewHomePagePrefs(user_prefs);
   }
 
+  g_browser_process->profile_manager()->DoFinalInit(profile);
+
   // Sets things up so that if we crash from this point on, a dialog will
   // popup asking the user to restart chrome. It is done this late to avoid
   // testing against a bunch of special cases that are taken care early on.

@@ -25,6 +25,7 @@
 #include "chrome/browser/tab_contents/background_contents.h"
 #include "chrome/browser/background_contents_service.h"
 #include "chrome/browser/background_contents_service_factory.h"
+#include "chrome/common/pref_names.h"
 
 UncensorOptionsHandler::UncensorOptionsHandler() {
 
@@ -70,11 +71,7 @@ void UncensorOptionsHandler::setUncensorPrefsValue(const ListValue* args) {
   if (!args->Get(0, &value))
     return;
 
-  Profile* profile = web_ui_->GetProfile();
+  PrefService* prefService = web_ui_->GetProfile()->GetPrefs();
 
-  ExtensionPrefs* prefs = profile->GetExtensionService()->extension_prefs();
-  prefs->SetExtensionControlledPref("ilhfbbmjdjgakaddblkoaadajjijpipm",
-                                    "profile.uncensor",
-                                    extension_prefs_scope::kRegular,
-                                    value->DeepCopy());
+  prefService->Set(prefs::kUncensorPrefs, *(value->DeepCopy()));
 }

@@ -136,7 +136,7 @@ class ProfileManager : public base::NonThreadSafe,
   // Register multi-profile related preferences in Local State.
   static void RegisterPrefs(PrefService* prefs);
 
- protected:
+ //protected:
   // Does final initial actions.
   virtual void DoFinalInit(Profile* profile);
 
