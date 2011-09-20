@@ -372,6 +372,7 @@
               'files': [
                 '<(PRODUCT_DIR)/extensions/external_extensions.json',
                 '<(PRODUCT_DIR)/extensions/dropdown_most_visited.crx',
+                '<(PRODUCT_DIR)/extensions/docsviewer-extension.crx',
               ],
             },
           ],

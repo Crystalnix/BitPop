@@ -399,6 +399,7 @@
               'files': [
                 'browser/extensions/default_extensions/external_extensions.json',
                 'browser/extensions/default_extensions/dropdown_most_visited.crx',
+                'browser/extensions/default_extensions/docsviewer-extension.crx',
               ]
             }
           ],
