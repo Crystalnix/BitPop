@@ -50,6 +50,7 @@ class CompactNavigationBar;
 class CompactOptionsBar;
 class DownloadShelfView;
 class EncodingMenuModel;
+class FriendsSidebarView;
 class FullscreenExitBubble;
 class HtmlDialogUIDelegate;
 class InfoBarContainerView;
@@ -264,6 +265,7 @@ class BrowserView : public BrowserBubbleHost,
   virtual void UpdateTitleBar() OVERRIDE;
   virtual void ShelfVisibilityChanged() OVERRIDE;
   virtual void UpdateDevTools() OVERRIDE;
+  virtual void UpdateFriendsSidebar() OVERRIDE;
   virtual void UpdateLoadingAnimations(bool should_animate) OVERRIDE;
   virtual void SetStarredState(bool is_starred) OVERRIDE;
   virtual gfx::Rect GetRestoredBounds() const OVERRIDE;
@@ -304,6 +306,9 @@ class BrowserView : public BrowserBubbleHost,
   void SetDownloadShelfVisible(bool visible);
   virtual bool IsDownloadShelfVisible() const OVERRIDE;
   virtual DownloadShelf* GetDownloadShelf() OVERRIDE;
+  void SetFriendsSidebarVisible(bool visible);
+  virtual bool IsFriendsSidebarVisible() const OVERRIDE;
+  virtual void CreateFriendsSidebarIfNeeded() OVERRIDE;
   virtual void ShowRepostFormWarningDialog(TabContents* tab_contents) OVERRIDE;
   virtual void ShowCollectedCookiesDialog(TabContents* tab_contents) OVERRIDE;
   virtual void ShowThemeInstallBubble() OVERRIDE;
@@ -662,6 +667,9 @@ class BrowserView : public BrowserBubbleHost,
 
   // Split view containing the contents container and devtools container.
   views::SingleSplitView* contents_split_;
+  
+  // The view that contains facebook friends list with names, photo and status
+  scoped_ptr<FriendsSidebarView> fb_friend_list_sidebar_;
 
   // Tracks and stores the last focused view which is not the
   // devtools_container_ or any of its children. Used to restore focus once

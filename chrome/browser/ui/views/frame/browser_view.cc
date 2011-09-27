@@ -53,6 +53,7 @@
 #include "chrome/browser/ui/views/default_search_view.h"
 #include "chrome/browser/ui/views/download/download_in_progress_dialog_view.h"
 #include "chrome/browser/ui/views/download/download_shelf_view.h"
+#include "chrome/browser/ui/views/facebook_chat/friends_sidebar_view.h"
 #include "chrome/browser/ui/views/frame/browser_view_layout.h"
 #include "chrome/browser/ui/views/frame/contents_container.h"
 #include "chrome/browser/ui/views/fullscreen_exit_bubble.h"
@@ -323,6 +324,7 @@ BrowserView::BrowserView(Browser* browser)
       preview_container_(NULL),
       contents_(NULL),
       contents_split_(NULL),
+      fb_friend_list_sidebar_(NULL),
       initialized_(false),
       ignore_layout_(true)
 #if defined(OS_WIN)
@@ -723,6 +725,24 @@ void BrowserView::UpdateDevTools() {
   Layout();
 }
 
+void BrowserView::UpdateFriendsSidebar() {
+  if (!fb_friend_list_sidebar_.get())
+    return;
+
+  bool should_show = !fb_friend_list_sidebar_->IsVisible();
+  bool should_hide = fb_friend_list_sidebar_->IsVisible();
+
+  if (should_show) {
+    fb_friend_list_sidebar_->SetVisible(true);
+    contents_split_->InvalidateLayout();
+    Layout();
+  } else if (should_hide) {
+    fb_friend_list_sidebar_->SetVisible(false);
+    contents_split_->InvalidateLayout();
+    Layout();
+  }
+}
+
 void BrowserView::UpdateLoadingAnimations(bool should_animate) {
   if (should_animate) {
     if (!loading_animation_timer_.IsRunning()) {
@@ -1070,6 +1090,28 @@ DownloadShelf* BrowserView::GetDownloadShelf() {
     download_shelf_->set_parent_owned(false);
   }
   return download_shelf_.get();
+}
+
+void BrowserView::SetFriendsSidebarVisible(bool visible) {
+  if (browser_ == NULL)
+    return;
+
+  if (visible && IsFriendsSidebarVisible() != visible) {
+    CreateFriendsSidebarIfNeeded();
+  }
+  
+  ToolbarSizeChanged(false);
+}
+
+bool BrowserView::IsFriendsSidebarVisible() const {
+  return fb_friend_list_sidebar_.get() && fb_friend_list_sidebar_->IsVisible();
+}
+
+void BrowserView::CreateFriendsSidebarIfNeeded() {
+  if (!fb_friend_list_sidebar_.get()) {
+    fb_friend_list_sidebar_.reset(new FriendsSidebarView(browser_.get(), this));
+    fb_friend_list_sidebar_->set_parent_owned(false);
+  }
 }
 
 void BrowserView::ShowRepostFormWarningDialog(TabContents* tab_contents) {

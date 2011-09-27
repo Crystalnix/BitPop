@@ -123,7 +123,7 @@ void Panel::UpdateDevTools() {
   NOTIMPLEMENTED();
 }
 
-void Panel::UpdateFriendsSidebar(TabContents *contents) {
+void Panel::UpdateFriendsSidebar() {
   NOTIMPLEMENTED();
 }
 
@@ -264,6 +264,15 @@ bool Panel::IsDownloadShelfVisible() const {
 DownloadShelf* Panel::GetDownloadShelf() {
   NOTIMPLEMENTED();
   return NULL;
+}
+
+bool Panel::IsFriendsSidebarVisible() const {
+  NOTIMPLEMENTED();
+  return false;
+}
+
+void Panel::CreateFriendsSidebarIfNeeded() {
+	NOTIMPLEMENTED();
 }
 
 void Panel::ShowRepostFormWarningDialog(TabContents* tab_contents) {

@@ -10,6 +10,7 @@
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
 #include "chrome/browser/ui/views/download/download_shelf_view.h"
+#include "chrome/browser/ui/views/facebook_chat/friends_sidebar_view.h"
 #include "chrome/browser/ui/views/frame/browser_frame.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/contents_container.h"
@@ -75,6 +76,7 @@ BrowserViewLayout::BrowserViewLayout()
       compact_spacer_(NULL),
       download_shelf_(NULL),
       active_bookmark_bar_(NULL),
+      friends_sidebar_(NULL),
       browser_view_(NULL),
       find_bar_y_(0) {
 }
@@ -239,6 +241,7 @@ void BrowserViewLayout::Installed(views::View* host) {
   infobar_container_ = NULL;
   download_shelf_ = NULL;
   active_bookmark_bar_ = NULL;
+  friends_sidebar_ = NULL;
   tabstrip_ = NULL;
   compact_navigation_bar_ = NULL;
   compact_options_bar_ = NULL;
@@ -282,6 +285,9 @@ void BrowserViewLayout::ViewAdded(views::View* host, views::View* view) {
     case VIEW_ID_COMPACT_OPT_BAR:
       compact_options_bar_ = view;
       break;
+    case VIEW_ID_FACEBOOK_FRIENDS_SIDE_BAR_CONTAINER:
+      friends_sidebar_ = static_cast<FriendsSidebarView*>(view);
+      break;
   }
 }
 
@@ -303,11 +309,12 @@ void BrowserViewLayout::Layout(views::View* host) {
   }
   top = LayoutToolbar(top);
   top = LayoutBookmarkAndInfoBars(top);
-  int bottom = LayoutDownloadShelf(browser_view_->height());
+  int right = LayoutFriendsSidebar(top);
+  int bottom = LayoutDownloadShelf(browser_view_->height(), right);
   int active_top_margin = GetTopMarginForActiveContent();
   top -= active_top_margin;
   contents_container_->SetActiveTopMargin(active_top_margin);
-  LayoutTabContents(top, bottom);
+  LayoutTabContents(top, bottom, right);
   // This must be done _after_ we lay out the TabContents since this
   // code calls back into us to find the bounding box the find bar
   // must be laid out within, and that code depends on the
@@ -512,7 +519,7 @@ void BrowserViewLayout::UpdateReservedContentsRect(
   source->SetReservedContentsRect(reserved_rect);
 }
 
-void BrowserViewLayout::LayoutTabContents(int top, int bottom) {
+void BrowserViewLayout::LayoutTabContents(int top, int bottom, int right) {
   // The ultimate idea is to calcualte bounds and reserved areas for all
   // contents views first and then resize them all, so every view
   // (and its contents) is resized and laid out only once.
@@ -524,15 +531,14 @@ void BrowserViewLayout::LayoutTabContents(int top, int bottom) {
   //     contents_split_ ->
   //         [sidebar_split -> [contents_container_ | sidebar]] | devtools
 
-  printf("Hello!\n");
-
   gfx::Rect sidebar_split_bounds;
   gfx::Rect contents_bounds;
   gfx::Rect sidebar_bounds;
   gfx::Rect devtools_bounds;
 
+  int new_layout_width = right - vertical_layout_rect_.x();
   gfx::Rect contents_split_bounds(vertical_layout_rect_.x(), top,
-                                  vertical_layout_rect_.width(),
+                                  new_layout_width,
                                   std::max(0, bottom - top));
   contents_split_->CalculateChildrenBounds(
       contents_split_bounds, &sidebar_split_bounds, &devtools_bounds);
@@ -614,7 +620,7 @@ int BrowserViewLayout::GetTopMarginForActiveContent() {
       views::NonClientFrameView::kClientEdgeThickness;
 }
 
-int BrowserViewLayout::LayoutDownloadShelf(int bottom) {
+int BrowserViewLayout::LayoutDownloadShelf(int bottom, int right) {
   // Re-layout the shelf either if it is visible or if it's close animation
   // is currently running.
   if (browser_view_->IsDownloadShelfVisible() ||
@@ -625,11 +631,29 @@ int BrowserViewLayout::LayoutDownloadShelf(int bottom) {
     int height = visible ? download_shelf_->GetPreferredSize().height() : 0;
     download_shelf_->SetVisible(visible);
     download_shelf_->SetBounds(vertical_layout_rect_.x(), bottom - height,
-                               vertical_layout_rect_.width(), height);
+                               right, height);
     download_shelf_->Layout();
     bottom -= height;
   }
   return bottom;
+}
+
+int BrowserViewLayout::LayoutFriendsSidebar(int top) {
+  int right = vertical_layout_rect_.width() + vertical_layout_rect_.x();
+  if (browser_view_->IsFriendsSidebarVisible()) {
+    bool visible = true;
+    DCHECK(friends_sidebar_);
+    int width = visible ? friends_sidebar_->GetPreferredSize().width() : 0;
+    friends_sidebar_->SetVisible(visible);
+    friends_sidebar_->SetBounds(
+        right - width,
+        top,
+        width,
+        vertical_layout_rect_.height() - top + vertical_layout_rect_.y());
+    friends_sidebar_->Layout();
+    right -= width;
+  }
+  return right;
 }
 
 bool BrowserViewLayout::InfobarVisible() const {

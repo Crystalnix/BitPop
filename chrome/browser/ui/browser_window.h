@@ -115,7 +115,7 @@ class BrowserWindow {
   // changed.
   virtual void UpdateDevTools() = 0;
 
-  virtual void UpdateFriendsSidebar(TabContents *contents) = 0;
+  virtual void UpdateFriendsSidebar() = 0;
 
   // Update any loading animations running in the window. |should_animate| is
   // true if there are tabs loading and the animations should continue, false
@@ -234,6 +234,12 @@ class BrowserWindow {
 
   // Returns the DownloadShelf.
   virtual DownloadShelf* GetDownloadShelf() = 0;
+
+  // Whether or not the facebook friends sidebar is visible
+  virtual bool IsFriendsSidebarVisible() const = 0;
+
+  // Creates the facebook friends sidebar
+  virtual void CreateFriendsSidebarIfNeeded() = 0;
 
   // Shows the repost form confirmation dialog box.
   virtual void ShowRepostFormWarningDialog(TabContents* tab_contents) = 0;

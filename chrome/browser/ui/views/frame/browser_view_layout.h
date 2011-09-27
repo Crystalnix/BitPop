@@ -16,6 +16,7 @@ class Browser;
 class BrowserView;
 class ContentsContainer;
 class DownloadShelfView;
+class FriendsSidebarView;
 class TabContentsContainer;
 class ToolbarView;
 
@@ -86,7 +87,7 @@ class BrowserViewLayout : public views::LayoutManager {
 
   // Layout the TabContents container, between the coordinates |top| and
   // |bottom|.
-  void LayoutTabContents(int top, int bottom);
+  void LayoutTabContents(int top, int bottom, int right);
 
   // Returns the top margin to adjust the contents_container_ by. This is used
   // to make the bookmark bar and contents_container_ overlap so that the
@@ -95,7 +96,10 @@ class BrowserViewLayout : public views::LayoutManager {
 
   // Layout the Download Shelf, returns the coordinate of the top of the
   // control, for laying out the previous control.
-  int LayoutDownloadShelf(int bottom);
+  int LayoutDownloadShelf(int bottom, int right);
+
+  // Returns the coordinate of the new right boundary for contents_split_
+  int LayoutFriendsSidebar(int top);
 
   // Returns true if an infobar is showing.
   bool InfobarVisible() const;
@@ -119,6 +123,7 @@ class BrowserViewLayout : public views::LayoutManager {
   views::View* compact_spacer_;
   DownloadShelfView* download_shelf_;
   BookmarkBarView* active_bookmark_bar_;
+  FriendsSidebarView* friends_sidebar_;
 
   BrowserView* browser_view_;
 
