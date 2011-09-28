@@ -115,7 +115,7 @@ class BrowserWindow {
   // changed.
   virtual void UpdateDevTools() = 0;
 
-  virtual void UpdateFriendsSidebar() = 0;
+  virtual void UpdateFriendsSidebarForContents(TabContents *friends_contents) = 0;
 
   // Update any loading animations running in the window. |should_animate| is
   // true if there are tabs loading and the animations should continue, false

@@ -85,7 +85,7 @@ private:
   /* data */
   Browser* browser_;
   BrowserView* parent_;
-  static scoped_ptr<TabContents> extension_page_contents_;
+  //static scoped_ptr<TabContents> extension_page_contents_;
 };
 #endif // CHROME_BROWSER_UI_VIEWS_FACEBOOK_CHAT_FRIENDS_SIDEBAR_VIEW_H_
 

@@ -725,12 +725,17 @@ void BrowserView::UpdateDevTools() {
   Layout();
 }
 
-void BrowserView::UpdateFriendsSidebar() {
+void BrowserView::UpdateFriendsSidebarForContents(TabContents *friends_contents) {
   if (!fb_friend_list_sidebar_.get())
     return;
 
-  bool should_show = fb_friend_list_sidebar_->IsVisible();
-  bool should_hide = !fb_friend_list_sidebar_->IsVisible();
+  bool should_show = friends_contents && !fb_friend_list_sidebar_->IsVisible();
+  bool should_hide = !friends_contents && fb_friend_list_sidebar_->IsVisible();
+
+  if (friends_contents)
+	  friends_contents->set_delegate(fb_friend_list_sidebar_.get());
+
+  fb_friend_list_sidebar_->ChangeTabContents(friends_contents);
 
   if (should_show) {
     fb_friend_list_sidebar_->SetVisible(true);

@@ -50,7 +50,7 @@ class Panel : public BrowserWindow {
   virtual void UpdateTitleBar() OVERRIDE;
   virtual void ShelfVisibilityChanged() OVERRIDE;
   virtual void UpdateDevTools() OVERRIDE;
-  virtual void UpdateFriendsSidebar() OVERRIDE;
+  virtual void UpdateFriendsSidebarForContents(TabContents *friends_contents) OVERRIDE;
   virtual void UpdateLoadingAnimations(bool should_animate) OVERRIDE;
   virtual void SetStarredState(bool is_starred) OVERRIDE;
   virtual gfx::Rect GetRestoredBounds() const OVERRIDE;

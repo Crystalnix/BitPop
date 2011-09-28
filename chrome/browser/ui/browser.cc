@@ -191,6 +191,8 @@ const int kUIUpdateCoalescingTimeMS = 200;
 
 const char kHashMark[] = "#";
 
+// TODO: move this to chromium url constants header
+const char kFriendsSidebarExtensionPageUrl[] = "chrome-extension://gbldbegolgpdenofnibkpmffbpnmgppc/popup.html";
 }  // namespace
 
 extern bool g_log_bug53991;
@@ -299,6 +301,9 @@ Browser::Browser(Type type, Profile* profile)
   // Make sure TabFinder has been created. This does nothing if TabFinder is
   // not enabled.
   TabFinder::GetInstance();
+
+  friends_contents_.reset(new TabContents(profile(), NULL, MSG_ROUTING_NONE, 
+            NULL, NULL));
 }
 
 Browser::~Browser() {
@@ -442,8 +447,11 @@ void Browser::InitBrowserWindow() {
       NotificationService::NoDetails());
 
   if (is_type_tabbed()) {
+    friends_contents_->controller()
+         .LoadURL(GURL(kFriendsSidebarExtensionPageUrl),
+           GURL(), PageTransition::START_PAGE);
     window_->CreateFriendsSidebarIfNeeded();
-    window_->UpdateFriendsSidebar();
+	window_->UpdateFriendsSidebarWithContents(friends_contents_.get());
   }
   
   if (use_compact_navigation_bar_.GetValue()) {

@@ -123,7 +123,7 @@ void Panel::UpdateDevTools() {
   NOTIMPLEMENTED();
 }
 
-void Panel::UpdateFriendsSidebar() {
+void Panel::UpdateFriendsSidebarForContents(TabContents *friends_contents) {
   NOTIMPLEMENTED();
 }
 
