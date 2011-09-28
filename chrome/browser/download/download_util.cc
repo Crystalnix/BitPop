@@ -76,7 +76,10 @@
 #if defined(OS_WIN)
 #include "base/win/scoped_comptr.h"
 #include "chrome/browser/ui/browser_list.h"
+#pragma warning(push)
+#pragma warning(disable : 4005)
 #include "chrome/browser/ui/views/frame/browser_view.h"
+#pragma warning(pop)
 #include "ui/base/dragdrop/drag_source.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_win.h"
 #endif

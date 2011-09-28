@@ -536,7 +536,7 @@ void BrowserViewLayout::LayoutTabContents(int top, int bottom, int right) {
   gfx::Rect sidebar_bounds;
   gfx::Rect devtools_bounds;
 
-  int new_layout_width = right - vertical_layout_rect_.x();
+  int new_layout_width = std::max(0, right - vertical_layout_rect_.x());
   gfx::Rect contents_split_bounds(vertical_layout_rect_.x(), top,
                                   new_layout_width,
                                   std::max(0, bottom - top));

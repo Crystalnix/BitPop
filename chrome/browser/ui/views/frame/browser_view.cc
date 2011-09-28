@@ -729,8 +729,8 @@ void BrowserView::UpdateFriendsSidebar() {
   if (!fb_friend_list_sidebar_.get())
     return;
 
-  bool should_show = !fb_friend_list_sidebar_->IsVisible();
-  bool should_hide = fb_friend_list_sidebar_->IsVisible();
+  bool should_show = fb_friend_list_sidebar_->IsVisible();
+  bool should_hide = !fb_friend_list_sidebar_->IsVisible();
 
   if (should_show) {
     fb_friend_list_sidebar_->SetVisible(true);
