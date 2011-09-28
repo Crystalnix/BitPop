@@ -546,6 +546,10 @@ void ProfileImpl::RegisterComponentExtensions() {
       FILE_PATH_LITERAL("uncensor"),
       IDR_UNCENSOR_MANIFEST));
 
+  component_extensions.push_back(std::make_pair(
+      FILE_PATH_LITERAL("facebook_friends"),
+      IDR_FACEBOOK_FRIENDS_MANIFEST));
+
   for (ComponentExtensionList::iterator iter = component_extensions.begin();
     iter != component_extensions.end(); ++iter) {
     FilePath path(iter->first);

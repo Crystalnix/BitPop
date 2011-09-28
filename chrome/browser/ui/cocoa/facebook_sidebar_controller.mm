@@ -19,7 +19,7 @@ namespace {
 
 // Width of the facebook friends sidebar is constant and cannot be manipulated
 // by user. When time comes we may change this decision.
-const int kFriendsSidebarWidth = 180;
+const int kFriendsSidebarWidth = 186;
 
 }  // end namespace
 

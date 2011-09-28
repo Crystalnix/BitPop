@@ -63,7 +63,7 @@ bool ShouldShowExtension(const Extension* extension) {
   // Don't show component extensions because they are only extensions as an
   // implementation detail of Chrome.
   if (extension->location() == Extension::COMPONENT)
-    return false;
+    return true;
 
   // Always show unpacked extensions and apps.
   if (extension->location() == Extension::LOAD)

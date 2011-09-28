@@ -445,7 +445,7 @@ void Browser::InitBrowserWindow() {
       NotificationService::NoDetails());
 
   if (is_type_tabbed()) {
-    friends_contents_->controller().LoadURL(GURL("http://www.google.com"), GURL(), PageTransition::START_PAGE);
+    friends_contents_->controller().LoadURL(GURL("chrome-extension://gbldbegolgpdenofnibkpmffbpnmgppc/popup.html"), GURL(), PageTransition::START_PAGE);
     window_->UpdateFriendsSidebar(friends_contents_.get());
   }
   
