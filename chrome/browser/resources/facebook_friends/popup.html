@@ -1,0 +1,85 @@
+<html>
+  <head>
+    <title>Facebook Connect For Chrome Extension</title>
+    <style type="text/css">
+      html, body {
+        overflow: hidden;
+        width: 186px;
+        margin: 0;
+        padding: 0;
+        font-family: Helvetica,Arial,sans-serif;
+        font-size: 12px;
+      }
+      ul {
+        list-style-type: none;
+        margin: 0;
+        padding: 0;
+        width: 100%;
+      }
+      ul li {
+        border-bottom: 1px solid #ccc;
+        display: block;
+        margin: 0;
+        padding: 3px;
+        width: 100%;
+        background-color: white;
+        cursor: pointer;
+      }
+      ul li:hover { background-color: #eee; }
+      ul li img {
+        vertical-align:middle;
+        width: 32px;
+        height: 32px;
+      }
+      ul li img.status {
+        width: 16px;
+        height: 16px;
+        margin-left: 3px;
+      }
+      span.leftSide {
+        display: inline-block;
+        width: 160px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+    </style>
+  </head>
+  <body>
+  <script type="text/javascript">
+    //<![CDATA[
+      function alphabetical(a, b)
+      {
+           var A = a.toLowerCase();
+           var B = b.toLowerCase();
+           if (A < B){
+              return -1;
+           }else if (A > B){
+             return  1;
+           }else{
+             return 0;
+           }
+      }
+  
+      chrome.extension.sendRequest({ requestType: 'getFriendList' }, function(response) {
+        response.sort(function (a,b) { return alphabetical(a.name, b.name); });
+
+        var listHtml = '';
+        for (var i in response) {
+        listHtml += '<li><span class="leftSide">' + 
+              '<img src="' + response[i].pic_square + '" alt="" />' +
+              ' ' + response[i].name + '</span>';
+          if (response[i].online_presence) {
+            listHtml += '<img class="status" src="' + 
+              response[i].online_presence + '.png" alt="" />';
+          }
+          listHtml += '</li>';
+        }
+        var ul = document.createElement('ul');
+        ul.innerHTML = listHtml;
+        document.body.appendChild(ul);
+      });
+    // ]]></script>
+  </body>
+</html>
+

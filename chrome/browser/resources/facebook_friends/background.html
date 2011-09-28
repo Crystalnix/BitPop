@@ -1,0 +1,201 @@
+<html>
+<head>
+  <title>Facebook Connect For Chrome Extension</title>
+<!--  <script src="http://connect.facebook.net/en_US/all.js"></script>
+  <script>
+//<![CDATA[
+  var bitpopAppId = '190635611002798';
+  var redirectUri = 'http://www.facebook.com/connect/login_success.html';
+  
+  window.addEventListener('load', function() {
+    FB.init({appId: bitpopAppId, cookie: true, status: true, oauth: true});
+    openAuthWindow();
+  }, false);
+  
+  // chrome.extension.onRequest.addListener(function (request, sender, sendResponse) {
+  //   console.log(request.requestType + ' received.');
+  //   if (request.requestType && request.requestType == 'getFriendList') {
+  //     updateFriendList(sendResponse);
+  //   }
+  // });
+  
+  chrome.extension.onRequest.addListener(
+    function(request, sender, sendResponse) {
+      if(!request.message)
+      return;
+
+      switch(request.message)
+      {
+        case "setSession":
+        {
+          //localStorage.session = JSON.stringify(request.session);
+          //session = request.session;
+          console.log(request.session);
+          sendResponse();
+          
+          FB.api(function(response) { console.log(response); });
+          
+          break;
+        }
+        case "getSession":
+        {
+          //sendResponse(session);
+          break;
+        }
+      }
+    });
+  
+  function openAuthWindow() {
+    var url = "https://www.facebook.com/dialog/oauth?client_id=" + bitpopAppId +
+        "&response_type=token&redirect_uri=" + escape(redirectUri) + 
+        '&display=popup' +
+        '&scope=xmpp_login,user_online_presence,friends_online_presence';
+
+    window.open(url, 'facebookAuthWindow',
+        'height=580,width=400,toolbar=no,directories=no,status=no,' +
+        'menubar=no,scrollbars=no,resizable=no,modal=yes');
+  }
+//]]>
+  </script>
+</head>
+<body>
+  <div id="fb-root"></div>
+</body>
+</html>
+
+-->
+        <script>
+            var appId = "190635611002798";
+            var successURL = 'http://www.facebook.com/connect/login_success.html';
+            var friendsCallback = null;
+ 
+            function onFacebookLogin() {
+              if (!localStorage.accessToken) {
+                chrome.windows.getLastFocused(function (window) {
+                  chrome.tabs.getAllInWindow(window.id, function(tabs) {
+                      for (var i = 0; i < tabs.length; i++) {
+                        if (tabs[i].url.indexOf(successURL) == 0) {
+                          var params = tabs[i].url.split('#')[1];
+                          var paramsArray = params.split('&');
+                          for (var j in paramsArray) {
+                            var paramTuple = paramsArray[j].split('=');
+                            if (paramTuple[0] == 'access_token') {
+                              localStorage.accessToken = paramTuple[1];
+                              chrome.tabs.remove(tabs[i].id);
+                              break;
+                            }
+                          }
+                          // localStorage.accessToken = params;
+                          chrome.tabs.onUpdated.removeListener(onFacebookLogin);
+                          updateFriendList();
+                          return;
+                        }
+                      }
+                  });
+                });
+              }
+            }
+            chrome.tabs.onUpdated.addListener(onFacebookLogin);
+            
+            function openAuthWindow(appId, redirectUri) {
+              var url = "https://www.facebook.com/dialog/oauth?client_id=" + appId +
+                  "&response_type=token&redirect_uri=" + redirectUri + 
+                  '&display=popup' +
+                  '&scope=xmpp_login,user_online_presence,friends_online_presence';
+
+              window.open(url, 'facebookAuthWindow',
+                  'height=580,width=400,toolbar=no,directories=no,status=no,' +
+                  'menubar=no,scrollbars=no,resizable=no,modal=yes');
+            }
+
+            function onPageLoad() {
+              if (!localStorage.accessToken) {
+                openAuthWindow(appId, successURL);
+              }
+              else
+                sendValidateToken();
+            }
+            
+            function appendRequestScript(url) {
+              var script = document.createElement("script");
+              script.src = url;
+              document.body.appendChild(script);
+            }
+
+            function fqlQuery(query, callback_s) {
+              if (localStorage.accessToken) {
+                var fqlUrl = 'https://api.facebook.com/method/fql.query?query=' +
+                    escape(query) + '&format=json&callback=' + escape(callback_s) +
+                    '&access_token=' + localStorage.accessToken;
+                appendRequestScript(fqlUrl);
+              }
+            }
+
+            function sendValidateToken() {
+              var graphUrl = "https://graph.facebook.com/me?access_token=" +
+                    localStorage.accessToken + '&callback=validateAccessToken';
+              appendRequestScript(graphUrl);
+            }
+
+            function preHandleResponse(response) {
+              if ('error' in response) {
+                var error = response.error;
+                console.log(error.type + ': ' + error.message);
+                if (error.type == "OAuthException") {
+                  openAuthWindow(appId, successURL);
+                }
+
+                return false;
+              }
+
+              return true;
+            }
+
+            function preHandleFqlResponse(response) {
+              if ('error_code' in response) {
+                console.log('Error: ' + response.error_code + ': ' +
+                    (response.error_msg ? response.error_msg : 'No info.'));
+                // may had the error_code checked
+                // consult http://www.takwing.idv.hk/tech/fb_dev/faq/general/gen_10.html
+                sendValidateToken();
+                
+                return false;
+              }
+
+              return true;
+            }
+
+            function validateAccessToken(response) {
+              preHandleResponse(response);
+              console.log('Access token validation success.');
+            }
+            
+            function updateFriendList() {
+              if (!localStorage.accessToken)
+                return;
+              var friendsFql = 'SELECT uid, name, pic_square, online_presence' +
+                               ' FROM user WHERE uid IN' +
+                               ' (SELECT uid2 FROM friend WHERE uid1=me())';
+              fqlQuery(friendsFql, 'friendListHandleResponse');
+              return true;    
+            }
+
+            function friendListHandleResponse(response) {
+              preHandleFqlResponse(response) && (function() {
+                friendsCallback(response);
+                return true;
+              })();
+            }
+
+            window.addEventListener('load', onPageLoad, false);
+            chrome.extension.onRequest.addListener(function (request, sender, sendResponse) {
+              console.log(request.requestType + ' received.');
+              if (request.requestType && request.requestType == 'getFriendList') {
+                friendsCallback = sendResponse;
+                updateFriendList();
+              }
+            });
+
+       </script>
+    </body>
+</html>
