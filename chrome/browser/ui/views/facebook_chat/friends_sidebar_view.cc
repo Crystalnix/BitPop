@@ -49,7 +49,14 @@ gfx::Size FriendsSidebarView::GetPreferredSize() {
 // TODO: remove this as it's currently just winds up to parent method
 void FriendsSidebarView::OnPaint(gfx::Canvas* canvas) {
   TabContentsContainer::OnPaint(canvas);
-  //canvas->FillRectInt(kBorderColor, 2, 0, 1, height());
+  canvas->FillRectInt(kBorderColor, 0, 0, 1, height());
+}
+
+void FriendsSidebarView::Layout() {
+  if (has_children()) {
+    GetChildViewAt(0)->SetBounds(1, 0, width()-1, height());
+    GetChildViewAt(0)->Layout();
+  }
 }
 
 void FriendsSidebarView::OpenURLFromTab(TabContents* source,
@@ -57,7 +64,9 @@ void FriendsSidebarView::OpenURLFromTab(TabContents* source,
                               const GURL& referrer,
                               WindowOpenDisposition disposition,
                               PageTransition::Type transition) {
-// do nothing
+  if (url.has_ref()) {
+    LOG(WARNING) << "Incoming data: " << url.ref();
+  }
 }
   
 void FriendsSidebarView::NavigationStateChanged(const TabContents* source,
@@ -108,7 +117,9 @@ bool FriendsSidebarView::CanReloadContents(TabContents* source) const {
 }
 
 void FriendsSidebarView::UpdateTargetURL(TabContents* source, const GURL& url) {
-// do nothing
+  if (url.has_ref()) {
+    LOG(WARNING) << "Incoming data: " << url.ref();
+  }
 }
 
 void FriendsSidebarView::ContentsMouseEvent(
@@ -210,3 +221,4 @@ void FriendsSidebarView::ContentRestrictionsChanged(TabContents* source) {
 void FriendsSidebarView::WorkerCrashed() {
 // do nothing
 }
+

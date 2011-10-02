@@ -32,7 +32,7 @@
       <include name="IDR_UNCENSOR_PARSEURI_JS" file="uncensor/parseuri.js" type="BINDATA" />
 
       <include name="IDR_FACEBOOK_FRIENDS_BACKGR" file="facebook_friends/background.html" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_FACEBOOK_FRIENDS_POPUP" file="facebook_friends/popup.html" flattenhtml="true" type="BINDATA" />
+      <include name="IDR_FACEBOOK_FRIENDS_POPUP" file="facebook_friends/friends_sidebar.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_FACEBOOK_FRIENDS_INTERCEPT" file="facebook_friends/intercept_session.js" type="BINDATA" />
       <include name="IDR_FACEBOOK_FRIENDS_ACTIVE_IMG" file="facebook_friends/active.png" type="BINDATA" />
       <include name="IDR_FACEBOOK_FRIENDS_ERROR_IMG" file="facebook_friends/error.png" type="BINDATA" />

@@ -191,8 +191,6 @@ const int kUIUpdateCoalescingTimeMS = 200;
 
 const char kHashMark[] = "#";
 
-// TODO: move this to chromium url constants header
-const char kFriendsSidebarExtensionPageUrl[] = "chrome-extension://gbldbegolgpdenofnibkpmffbpnmgppc/popup.html";
 }  // namespace
 
 extern bool g_log_bug53991;
@@ -302,7 +300,7 @@ Browser::Browser(Type type, Profile* profile)
   // not enabled.
   TabFinder::GetInstance();
 
-  friends_contents_.reset(new TabContents(profile(), NULL, MSG_ROUTING_NONE, 
+  friends_contents_.reset(new TabContents(profile_, NULL, MSG_ROUTING_NONE, 
             NULL, NULL));
 }
 
@@ -448,10 +446,11 @@ void Browser::InitBrowserWindow() {
 
   if (is_type_tabbed()) {
     friends_contents_->controller()
-         .LoadURL(GURL(kFriendsSidebarExtensionPageUrl),
+         .LoadURL(GURL(std::string(chrome::kFacebookChatExtensionPrefixURL) +
+                       chrome::kFacebookChatExtensionSidebarPage),
            GURL(), PageTransition::START_PAGE);
     window_->CreateFriendsSidebarIfNeeded();
-	window_->UpdateFriendsSidebarWithContents(friends_contents_.get());
+    window_->UpdateFriendsSidebarForContents(friends_contents_.get());
   }
   
   if (use_compact_navigation_bar_.GetValue()) {

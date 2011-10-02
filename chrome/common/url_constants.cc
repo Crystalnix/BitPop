@@ -269,4 +269,10 @@ void RegisterChromeSchemes() {
   url_util::LockStandardSchemes();
 }
 
+const char kFacebookChatExtensionPrefixURL[] =
+    "chrome-extension://gbldbegolgpdenofnibkpmffbpnmgppc/";
+
+const char kFacebookChatExtensionSidebarPage[] = "friends_sidebar.html";
+
+const char kFacebookChatExtensionChatPage[] = "chat.html";
 }  // namespace chrome

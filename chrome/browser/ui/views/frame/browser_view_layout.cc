@@ -644,12 +644,13 @@ int BrowserViewLayout::LayoutFriendsSidebar(int top) {
     bool visible = true;
     DCHECK(friends_sidebar_);
     int width = visible ? friends_sidebar_->GetPreferredSize().width() : 0;
+    int height = vertical_layout_rect_.height() - top + vertical_layout_rect_.y();
     friends_sidebar_->SetVisible(visible);
     friends_sidebar_->SetBounds(
         right - width,
         top,
         width,
-        vertical_layout_rect_.height() - top + vertical_layout_rect_.y());
+        height);
     friends_sidebar_->Layout();
     right -= width;
   }

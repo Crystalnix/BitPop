@@ -733,7 +733,7 @@ void BrowserView::UpdateFriendsSidebarForContents(TabContents *friends_contents)
   bool should_hide = !friends_contents && fb_friend_list_sidebar_->IsVisible();
 
   if (friends_contents)
-	  friends_contents->set_delegate(fb_friend_list_sidebar_.get());
+    friends_contents->set_delegate(fb_friend_list_sidebar_.get());
 
   fb_friend_list_sidebar_->ChangeTabContents(friends_contents);
 

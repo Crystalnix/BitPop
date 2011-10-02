@@ -21,7 +21,7 @@ public:
 
   // Implementation of View.
   virtual gfx::Size GetPreferredSize();
-  // virtual void Layout();
+  virtual void Layout();
   virtual void OnPaint(gfx::Canvas* canvas);
 
   // Overriden from TabContentsDelegate

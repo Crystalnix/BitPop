@@ -78,6 +78,13 @@
         var ul = document.createElement('ul');
         ul.innerHTML = listHtml;
         document.body.appendChild(ul);
+
+        var blocks = document.getElementsByClassName('leftSide');
+        for (var i = 0; i < blocks.length; ++i) {
+        blocks[i].onclick = function () {
+            window.location.hash = "doSomethingAmazinglyStupid";
+          };
+        }
       });
     // ]]></script>
   </body>
