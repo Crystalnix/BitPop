@@ -929,6 +929,8 @@
         'browser/extensions/extension_event_router.h',
         'browser/extensions/extension_event_router_forwarder.cc',
         'browser/extensions/extension_event_router_forwarder.h',
+        'browser/extensions/extension_facebook_chat_api.cc',
+        'browser/extensions/extension_facebook_chat_api.h',
         'browser/extensions/extension_file_browser_private_api.cc',
         'browser/extensions/extension_file_browser_private_api.h',
         'browser/extensions/extension_function.cc',

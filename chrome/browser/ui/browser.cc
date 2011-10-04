@@ -115,6 +115,7 @@
 #include "content/browser/tab_contents/navigation_entry.h"
 #include "content/browser/tab_contents/tab_contents_view.h"
 #include "content/browser/user_metrics.h"
+#include "content/common/bindings_policy.h"
 #include "content/common/content_restriction.h"
 #include "content/common/notification_service.h"
 #include "content/common/page_transition_types.h"
@@ -300,8 +301,16 @@ Browser::Browser(Type type, Profile* profile)
   // not enabled.
   TabFinder::GetInstance();
 
-  friends_contents_.reset(new TabContents(profile_, NULL, MSG_ROUTING_NONE, 
-            NULL, NULL));
+  // Create TabContents with friends sidebar.
+  friends_contents_ =
+      Browser::TabContentsFactory(profile, NULL, MSG_ROUTING_NONE, NULL, NULL);
+  friends_contents_->tab_contents()->
+      render_view_host()->AllowBindings(BindingsPolicy::EXTENSION);
+  friends_contents_->controller().LoadURL(
+      GURL(std::string(chrome::kFacebookChatExtensionPrefixURL) +
+        chrome::kFacebookChatExtensionSidebarPage),
+    GURL(),
+    PageTransition::START_PAGE);
 }
 
 Browser::~Browser() {
@@ -445,12 +454,8 @@ void Browser::InitBrowserWindow() {
       NotificationService::NoDetails());
 
   if (is_type_tabbed()) {
-    friends_contents_->controller()
-         .LoadURL(GURL(std::string(chrome::kFacebookChatExtensionPrefixURL) +
-                       chrome::kFacebookChatExtensionSidebarPage),
-           GURL(), PageTransition::START_PAGE);
     window_->CreateFriendsSidebarIfNeeded();
-    window_->UpdateFriendsSidebarForContents(friends_contents_.get());
+    window_->UpdateFriendsSidebarForContents(friends_contents_->tab_contents());
   }
   
   if (use_compact_navigation_bar_.GetValue()) {
@@ -3230,6 +3235,11 @@ void Browser::UpdateTargetURL(TabContents* source, const GURL& url) {
 void Browser::UpdateDownloadShelfVisibility(bool visible) {
   if (GetStatusBubble())
     GetStatusBubble()->UpdateDownloadShelfVisibility(visible);
+}
+
+void Browser::UpdateFriendsSidebarVisibility(bool visible) {
+    window_->UpdateFriendsSidebarForContents(visible ? 
+        friends_contents_->tab_contents() : NULL);
 }
 
 bool Browser::UseVerticalTabs() const {

@@ -60,7 +60,13 @@
              return 0;
            }
       }
-  
+
+      chrome.browserAction.onClicked.addListener(function (tab) {
+        chrome.chromePrivate.getFriendsSidebarVisible(function(is_visible) {
+          chrome.chromePrivate.setFriendsSidebarVisible(!is_visible);
+        });
+      });
+
       chrome.extension.sendRequest({ requestType: 'getFriendList' }, function(response) {
         response.sort(function (a,b) { return alphabetical(a.name, b.name); });
 

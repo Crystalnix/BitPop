@@ -3329,6 +3329,33 @@
           "description": "Decoded bitmap RGB array formatted as (B | G << 8 | R << 16)",
           "items": {"type": "number"}
         }
+      },
+      {
+        "name": "setFriendsSidebarVisible",
+        "description": "Can show and hide the friends sidebar in browser",
+        "parameters": [
+          {
+            "name": "is_visible",
+            "type": "boolean",
+            "optional": false,
+            "description": "Visibility flag"
+          }
+        ]
+      },
+      {
+        "name": "getFriendsSidebarVisible",
+        "description": "Gets the visibility state of the friends sidebar",
+        "parameters": [
+        {
+          "type": "function", "name": "callback", "parameters": [
+            {
+              "name": "is_visible",
+              "type": "boolean",
+              "optional": false,
+              "description": "Visibility flag"
+            }
+          ]
+        }]
       }
     ]
   },

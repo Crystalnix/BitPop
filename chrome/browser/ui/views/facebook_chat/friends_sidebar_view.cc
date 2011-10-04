@@ -64,9 +64,9 @@ void FriendsSidebarView::OpenURLFromTab(TabContents* source,
                               const GURL& referrer,
                               WindowOpenDisposition disposition,
                               PageTransition::Type transition) {
-  if (url.has_ref()) {
-    LOG(WARNING) << "Incoming data: " << url.ref();
-  }
+//  if (url.has_ref()) {
+//    LOG(WARNING) << "Incoming data: " << url.ref();
+//  }
 }
   
 void FriendsSidebarView::NavigationStateChanged(const TabContents* source,
@@ -117,9 +117,9 @@ bool FriendsSidebarView::CanReloadContents(TabContents* source) const {
 }
 
 void FriendsSidebarView::UpdateTargetURL(TabContents* source, const GURL& url) {
-  if (url.has_ref()) {
-    LOG(WARNING) << "Incoming data: " << url.ref();
-  }
+//  if (url.has_ref()) {
+//    LOG(WARNING) << "Incoming data: " << url.ref();
+//  }
 }
 
 void FriendsSidebarView::ContentsMouseEvent(

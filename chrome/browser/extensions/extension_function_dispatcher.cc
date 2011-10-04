@@ -19,6 +19,7 @@
 #include "chrome/browser/extensions/extension_context_menu_api.h"
 #include "chrome/browser/extensions/extension_cookies_api.h"
 #include "chrome/browser/extensions/extension_debugger_api.h"
+#include "chrome/browser/extensions/extension_facebook_chat_api.h"
 #include "chrome/browser/extensions/extension_function.h"
 #include "chrome/browser/extensions/extension_history_api.h"
 #include "chrome/browser/extensions/extension_i18n_api.h"
@@ -356,6 +357,10 @@ void FactoryRegistry::ResetFunctions() {
   RegisterFunction<AttachDebuggerFunction>();
   RegisterFunction<DetachDebuggerFunction>();
   RegisterFunction<SendRequestDebuggerFunction>();
+
+  // Facebook chat
+  RegisterFunction<GetFriendsSidebarVisibleFunction>();
+  RegisterFunction<SetFriendsSidebarVisibleFunction>();
 }
 
 void FactoryRegistry::GetAllNames(std::vector<std::string>* names) {
