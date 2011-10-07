@@ -1,210 +1,152 @@
 <html>
 <head>
   <title>Facebook Connect For Chrome Extension</title>
-<!--  <script src="http://connect.facebook.net/en_US/all.js"></script>
   <script>
-//<![CDATA[
-  var bitpopAppId = '190635611002798';
-  var redirectUri = 'http://www.facebook.com/connect/login_success.html';
-  
-  window.addEventListener('load', function() {
-    FB.init({appId: bitpopAppId, cookie: true, status: true, oauth: true});
-    openAuthWindow();
-  }, false);
-  
-  // chrome.extension.onRequest.addListener(function (request, sender, sendResponse) {
-  //   console.log(request.requestType + ' received.');
-  //   if (request.requestType && request.requestType == 'getFriendList') {
-  //     updateFriendList(sendResponse);
-  //   }
-  // });
-  
-  chrome.extension.onRequest.addListener(
-    function(request, sender, sendResponse) {
-      if(!request.message)
-      return;
+      var appId = "190635611002798";
+      var successURL = 'http://www.facebook.com/connect/login_success.html';
+      var friendsCallback = null;
+      // Facebook error codes
+      var FB = {
+        API_EC_PARAM_ACCESS_TOKEN: 190
+      };
+      var friendsCached = null;
+      var friendsLastUpdateTime = 0;
 
-      switch(request.message)
-      {
-        case "setSession":
-        {
-          //localStorage.session = JSON.stringify(request.session);
-          //session = request.session;
-          console.log(request.session);
-          sendResponse();
-          
-          FB.api(function(response) { console.log(response); });
-          
-          break;
-        }
-        case "getSession":
-        {
-          //sendResponse(session);
-          break;
+      chrome.browserAction.setIcon({ path: "facebook_icon.png" });
+      chrome.browserAction.setTitle({ title: "Facebook chat" });
+
+      chrome.tabs.onUpdated.addListener(onFacebookLogin);
+
+      function onFacebookLogin(tabId, changeInfo, tab) {
+        if (!localStorage.accessToken || localStorage.invalidToken) {
+          if (changeInfo.url && changeInfo.url.indexOf(successURL) == 0) {
+            var params = changeInfo.url.split('#');
+            if (params.length > 1) {
+              var paramsArray = params[1].split('&');
+              for (var j in paramsArray) {
+                var paramTuple = paramsArray[j].split('=');
+                if (paramTuple[0] == 'access_token') {
+                  localStorage.invalidToken = false;
+                  localStorage.accessToken = paramTuple[1];
+                  chrome.extension.sendRequest(
+                      { requestType: "serviceAvailable" });
+                  break;
+                }
+              }
+            }
+            else {
+              localStorage.clear();
+              chrome.extension.sendRequest({ requestType: 'loggedOut' });
+            }
+
+            chrome.tabs.remove(tabId);
+          }
         }
       }
-    });
-  
-  function openAuthWindow() {
-    var url = "https://www.facebook.com/dialog/oauth?client_id=" + bitpopAppId +
-        "&response_type=token&redirect_uri=" + escape(redirectUri) + 
-        '&display=popup' +
-        '&scope=xmpp_login,user_online_presence,friends_online_presence';
+      
+      function openAuthWindow(appId, redirectUri) {
+        var url = "https://www.facebook.com/dialog/oauth?client_id=" + appId +
+            "&response_type=token&redirect_uri=" + redirectUri + 
+            '&display=popup' +
+            '&scope=xmpp_login,offline_access,' +
+              'user_online_presence,friends_online_presence';
+              
+        window.open(url, 'facebookAuthWindow',
+            'height=580,width=400,toolbar=no,directories=no,status=no,' +
+            'menubar=no,scrollbars=no,resizable=no,modal=yes');
+      }
 
-    window.open(url, 'facebookAuthWindow',
-        'height=580,width=400,toolbar=no,directories=no,status=no,' +
-        'menubar=no,scrollbars=no,resizable=no,modal=yes');
-  }
-//]]>
-  </script>
-</head>
-<body>
-  <div id="fb-root"></div>
-</body>
-</html>
+      chrome.extension.onRequest.addListener(function (request, sender, sendResponse) {
+        if (!request.requestType)
+          return;
 
--->
-        <script>
-            var appId = "190635611002798";
-            var successURL = 'http://www.facebook.com/connect/login_success.html';
-            var friendsCallback = null;
- 
-            function onFacebookLogin() {
-              if (!localStorage.accessToken || localStorage.invalidToken) {
-                chrome.windows.getLastFocused(function (window) {
-                  chrome.tabs.getAllInWindow(window.id, function(tabs) {
-                      for (var i = 0; i < tabs.length; i++) {
-                        if (tabs[i].url.indexOf(successURL) == 0) {
-                          var params = tabs[i].url.split('#')[1];
-                          var paramsArray = params.split('&');
-                          for (var j in paramsArray) {
-                            var paramTuple = paramsArray[j].split('=');
-                            if (paramTuple[0] == 'access_token') {
-                              localStorage.accessToken = paramTuple[1];
-                              chrome.tabs.remove(tabs[i].id);
-                              localStorage.invalidToken = false;
-                              break;
-                            }
-                          }
-                          // localStorage.accessToken = params;
-                          chrome.tabs.onUpdated.removeListener(onFacebookLogin);
-                          updateFriendList();
-                          return;
-                        }
-                      }
-                  });
-                });
-              }
-            }
-            chrome.tabs.onUpdated.addListener(onFacebookLogin);
-            
-            function openAuthWindow(appId, redirectUri) {
-              var url = "https://www.facebook.com/dialog/oauth?client_id=" + appId +
-                  "&response_type=token&redirect_uri=" + redirectUri + 
-                  '&display=popup' +
-                  '&scope=xmpp_login,user_online_presence,friends_online_presence';
+        if (request.requestType == 'getFriendList') {
+          if (Date.now() - friendsLastUpdateTime >= 1 * 60 * 1000 || 
+              !friendsCached) 
+            getFriendList();
+          else
+            friendListSent(friendsCached);
+        }
+        else if (request.requestType == 'setAccessToken') {
+          localStorage.accessToken = request.accessToken;
+          sendResponse.call(window);
+          chrome.extension.sendRequest({ requestType: "serviceAvailable" });
+        }
+        else if (request.requestType == 'login') {
+          openAuthWindow(appId, successURL);
+        }
+        else if (request.requestType == 'loggedOut') {
+          
+        }
+      });
 
-              window.open(url, 'facebookAuthWindow',
-                  'height=580,width=400,toolbar=no,directories=no,status=no,' +
-                  'menubar=no,scrollbars=no,resizable=no,modal=yes');
-            }
+      function getFqlQueryUrl(query) {
+        var fqlUrl = 'https://api.facebook.com/method/fql.query?query=' +
+              escape(query) + '&format=json' +
+              '&access_token=' + localStorage.accessToken;
+        return fqlUrl;
+      }
 
-            function onPageLoad() {
-              if (!localStorage.accessToken) {
-                openAuthWindow(appId, successURL);
-              }
-              else
-                sendValidateToken();
+      function friendListSent(obj) {
+        chrome.extension.sendRequest({ requestType: 'sentFriendList', 
+                                       data: obj });
+      }
 
-              chrome.browserAction.setIcon({ path: "facebook_icon.png" });
-              chrome.browserAction.setTitle({ title: "Facebook chat" });
-              // chrome.browserAction.onClicked.addListener(function (tab) {
-              //   alert('Yo!');
-              // });
-            }
-            
-            function appendRequestScript(url) {
-              var script = document.createElement("script");
-              script.src = url;
-              document.body.appendChild(script);
-            }
+      function getFriendList() {
+        if (!localStorage.accessToken) {
+          // send error through callback
+          friendListSent({ error: 'Not authenticated to use' +
+                                         ' Facebook services.' });
+        }
 
-            function fqlQuery(query, callback_s) {
-              if (localStorage.accessToken) {
-                var fqlUrl = 'https://api.facebook.com/method/fql.query?query=' +
-                    escape(query) + '&format=json&callback=' + escape(callback_s) +
-                    '&access_token=' + localStorage.accessToken;
-                appendRequestScript(fqlUrl);
-              }
-            }
+        var friendListQuery = 
+            'SELECT uid, name, pic_square, online_presence' +
+            ' FROM user WHERE uid IN' +
+            ' (SELECT uid2 FROM friend WHERE uid1=me())';
 
-            function sendValidateToken() {
-              var graphUrl = "https://graph.facebook.com/me?access_token=" +
-                    localStorage.accessToken + '&callback=validateAccessToken';
-              appendRequestScript(graphUrl);
-            }
+        try {
+          var req = new XMLHttpRequest();
+          req.onreadystatechange = function () {
+            if (req.readyState == 4) {
+              if (req.status == 200) {
+                resp = JSON.parse(req.responseText);
+                if ('error_code' in resp) { // handle error first
+                  var param = {};
+                  param.error = 'FQL query failed: ' +
+                    '(' + resp.error_code + ') ' +
+                    (resp.error_msg ? resp.error_msg : 'No info.');
+                  if (resp.error_code == FB.API_EC_PARAM_ACCESS_TOKEN) {
+                    param.waitForService = true;
+                    localStorage.invalidToken = true;
+                    openAuthWindow(appId, successURL);
+                  }
 
-            function preHandleResponse(response) {
-              if ('error' in response) {
-                var error = response.error;
-                console.log(error.type + ': ' + error.message);
-                if (error.type == "OAuthException") {
-                  localStorage.invalidToken = true;
-                  openAuthWindow(appId, successURL);
+                  friendListSent(param);
                 }
-
-                return false;
+                else {
+                  // return result, success
+                  friendListSent(resp);
+                  friendsCached = resp;
+                  friendsLastUpdateTime = Date.now();
+                }
+              }
+              else {
+                friendListSent({ error: 'There was a problem' +
+                      ' retrieving the data: ' + req.statusText });
               }
 
-              return true;
+              req = null;
             }
-
-            function preHandleFqlResponse(response) {
-              if ('error_code' in response) {
-                console.log('Error: ' + response.error_code + ': ' +
-                    (response.error_msg ? response.error_msg : 'No info.'));
-                // may had the error_code checked
-                // consult http://www.takwing.idv.hk/tech/fb_dev/faq/general/gen_10.html
-                localStorage.invalidToken = true;
-                sendValidateToken();
-                
-                return false;
-              }
-
-              return true;
-            }
-
-            function validateAccessToken(response) {
-              preHandleResponse(response);
-              console.log('Access token validation success.');
-            }
-            
-            function updateFriendList() {
-              if (!localStorage.accessToken)
-                return;
-              var friendsFql = 'SELECT uid, name, pic_square, online_presence' +
-                               ' FROM user WHERE uid IN' +
-                               ' (SELECT uid2 FROM friend WHERE uid1=me())';
-              fqlQuery(friendsFql, 'friendListHandleResponse');
-              return true;    
-            }
-
-            function friendListHandleResponse(response) {
-              preHandleFqlResponse(response) && (function() {
-                friendsCallback(response);
-                return true;
-              })();
-            }
-
-            window.addEventListener('load', onPageLoad, false);
-            chrome.extension.onRequest.addListener(function (request, sender, sendResponse) {
-              console.log(request.requestType + ' received.');
-              if (request.requestType && request.requestType == 'getFriendList') {
-                friendsCallback = sendResponse;
-                updateFriendList();
-              }
-            });
-
-       </script>
-    </body>
+          };
+          req.open("GET", getFqlQueryUrl(friendListQuery), true);
+          req.send(null);
+        }
+        catch(e) {
+          // send error through callback
+          friendListSent({ error: 'Can\'t connect to server: ' +
+                            e.toString() });
+        }
+      }
+ </script>
+</head>
 </html>

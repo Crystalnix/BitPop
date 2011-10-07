@@ -1,53 +1,67 @@
 <html>
-  <head>
-    <title>Facebook Connect For Chrome Extension</title>
-    <style type="text/css">
-      html, body {
-        overflow: hidden;
-        width: 186px;
-        margin: 0;
-        padding: 0;
-        font-family: Helvetica,Arial,sans-serif;
-        font-size: 12px;
-      }
-      ul {
-        list-style-type: none;
-        margin: 0;
-        padding: 0;
-        width: 100%;
-      }
-      ul li {
-        border-bottom: 1px solid #ccc;
-        display: block;
-        margin: 0;
-        padding: 3px;
-        width: 100%;
-        background-color: white;
-        cursor: pointer;
-      }
-      ul li:hover { background-color: #eee; }
-      ul li img {
-        vertical-align:middle;
-        width: 32px;
-        height: 32px;
-      }
-      ul li img.status {
-        width: 16px;
-        height: 16px;
-        margin-left: 3px;
-      }
-      span.leftSide {
-        display: inline-block;
-        width: 160px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-    </style>
-  </head>
-  <body>
+<head>
+  <title>Facebook Connect For Chrome Extension</title>
+  <style type="text/css">
+    html, body {
+      overflow: hidden;
+      width: 186px;
+      margin: 0;
+      padding: 0;
+      font-family: Helvetica,Arial,sans-serif;
+      font-size: 12px;
+    }
+    ul {
+      list-style-type: none;
+      margin: 0;
+      padding: 0;
+      width: 100%;
+    }
+    ul li {
+      border-bottom: 1px solid #ccc;
+      display: block;
+      margin: 0;
+      padding: 3px;
+      width: 100%;
+      background-color: white;
+      cursor: pointer;
+    }
+    ul li:first-child { border-top: 1px solid #ccc }
+    ul li:hover { background-color: #eee; }
+    ul li img {
+      vertical-align:middle;
+      width: 32px;
+      height: 32px;
+    }
+    ul li img.status {
+      width: 16px;
+      height: 16px;
+      margin-left: 3px;
+    }
+    span.leftSide {
+      display: inline-block;
+      width: 160px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #unavail { float: left; padding-left: 3px }
+    #login { float:right; padding-right: 3px }
+    #logout { float:right; clear: right; padding-right: 3px }
+    .disabled { opacity: 0.4; }
+    .clr { clear: both; overflow: hidden; height: 1px }
+  </style>
+</head>
+<body>
+  <p id="unavail">Service unavailable.</p>
+  <p id="login"><a href="javascript:login()">Login</a></p>
+  <p id="logout" style="display:none"><a href="javascript:logout()">Logout</a></p>
+  <div class="clr"></div>
   <script type="text/javascript">
     //<![CDATA[
+
+      var $ = function (el) { return document.getElementById(el); };
+      var successURL = 'http://www.facebook.com/connect/login_success.html';
+
       function alphabetical(a, b)
       {
            var A = a.toLowerCase();
@@ -61,16 +75,65 @@
            }
       }
 
+      function login() {
+        chrome.extension.sendRequest({ requestType: 'login' });
+      }
+
+      function logout() {
+        var url = 'https://www.facebook.com/logout.php?next=' + 
+          escape(successURL) +
+          '&access_token=' + localStorage.accessToken;
+        chrome.windows.create({ url: url, type: "popup", 
+                                top: 0, left: 0, width: 50, height: 50 });
+      }
+
       chrome.browserAction.onClicked.addListener(function (tab) {
         chrome.chromePrivate.getFriendsSidebarVisible(function(is_visible) {
           chrome.chromePrivate.setFriendsSidebarVisible(!is_visible);
         });
       });
 
-      chrome.extension.sendRequest({ requestType: 'getFriendList' }, function(response) {
+      chrome.extension.onRequest.addListener(function (request, sender, sendResponse) {
+        if (!request.requestType)
+          return;
+        if (request.requestType == "serviceAvailable") {
+          $('login').style.display = 'none';
+          $('friend_list').className = 'block';
+          requestUpdateFriendList();
+        }
+        else if (request.requestType == 'sentFriendList') {
+          if (!("data" in request))
+            return;
+          updateFriendList(request.data);
+        }
+        else if (request.requestType == 'loggedOut') {
+          $('unavail').style.display = 'block';
+          $('logout').style.display = 'none';
+          $('login').style.display = 'block';
+          $('friend_list').className = 'disabled';
+        }
+      });
+
+      function requestUpdateFriendList() {
+        if (localStorage.accessToken)
+          chrome.extension.sendRequest({ requestType: 'getFriendList' });
+      }
+
+      function updateFriendList(response) {
+        if (response.error) {
+          console.log(response.error);
+          $('unavail').style.display = 'block';
+          $('logout').style.display = 'none';
+          return;
+        }
+
+        $('login').style.display = 'none';
+        $('unavail').style.display = 'none';
+        $('logout').style.display = 'block';
+
         response.sort(function (a,b) { return alphabetical(a.name, b.name); });
 
-        var listHtml = '';
+        var listHtml = '<ul>';
         for (var i in response) {
         listHtml += '<li><span class="leftSide">' + 
               '<img src="' + response[i].pic_square + '" alt="" />' +
@@ -81,17 +144,26 @@
           }
           listHtml += '</li>';
         }
-        var ul = document.createElement('ul');
+        listHtml += '</ul>';
+        var prevUl = $('friend_list');
+        if (prevUl)
+          document.body.removeChild(prevUl);
+
+        var ul = document.createElement('div');
+        ul.id = 'friend_list';
         ul.innerHTML = listHtml;
         document.body.appendChild(ul);
 
-        var blocks = document.getElementsByClassName('leftSide');
-        for (var i = 0; i < blocks.length; ++i) {
-        blocks[i].onclick = function () {
-            window.location.hash = "doSomethingAmazinglyStupid";
-          };
-        }
-      });
+        // var blocks = document.getElementsByClassName('leftSide');
+        // for (var i = 0; i < blocks.length; ++i) {
+        // blocks[i].onclick = function () {
+        //     window.location.hash = "doSomethingAmazinglyStupid";
+        //   };
+        // }
+      }
+
+      setInterval(requestUpdateFriendList, 1 * 60 * 1000);
+      requestUpdateFriendList();
     // ]]></script>
   </body>
 </html>

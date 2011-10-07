@@ -7,16 +7,11 @@
   "browser_action": {
     "default_title": "Facebook chat"
   },
-  "content_scripts": [
-  {
-    "matches": ["http://www.facebook.com/connect/login_success.html*"],
-    "js": ["intercept_session.js"]
-  }
-  ],
   "permissions": [
     "tabs",
     "chromePrivate",
-    "*.facebook.com/*"
+    "*.facebook.com/*",
+    "https://api.facebook.com/*"
   ]
 }
 

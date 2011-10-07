@@ -306,11 +306,6 @@ Browser::Browser(Type type, Profile* profile)
       Browser::TabContentsFactory(profile, NULL, MSG_ROUTING_NONE, NULL, NULL);
   friends_contents_->tab_contents()->
       render_view_host()->AllowBindings(BindingsPolicy::EXTENSION);
-  friends_contents_->controller().LoadURL(
-      GURL(std::string(chrome::kFacebookChatExtensionPrefixURL) +
-        chrome::kFacebookChatExtensionSidebarPage),
-    GURL(),
-    PageTransition::START_PAGE);
 }
 
 Browser::~Browser() {
@@ -454,8 +449,13 @@ void Browser::InitBrowserWindow() {
       NotificationService::NoDetails());
 
   if (is_type_tabbed()) {
+    friends_contents_->controller().LoadURL(
+        GURL(std::string(chrome::kFacebookChatExtensionPrefixURL) +
+          chrome::kFacebookChatExtensionSidebarPage),
+      GURL(),
+      PageTransition::START_PAGE);
     window_->CreateFriendsSidebarIfNeeded();
-    window_->UpdateFriendsSidebarForContents(friends_contents_->tab_contents());
+    window_->UpdateFriendsSidebarForContents(NULL/*friends_contents_->tab_contents()*/);
   }
   
   if (use_compact_navigation_bar_.GetValue()) {
