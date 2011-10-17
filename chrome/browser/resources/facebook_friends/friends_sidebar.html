@@ -98,7 +98,8 @@
           return;
         if (request.requestType == "serviceAvailable") {
           $('login').style.display = 'none';
-          $('friend_list').className = 'block';
+          if ($('friendList'))
+            $('friend_list').className = '';
           requestUpdateFriendList();
         }
         else if (request.requestType == 'sentFriendList') {
@@ -110,7 +111,8 @@
           $('unavail').style.display = 'block';
           $('logout').style.display = 'none';
           $('login').style.display = 'block';
-          $('friend_list').className = 'disabled';
+          if ($('friend_list'))
+            $('friend_list').className = 'disabled';
         }
       });
 
