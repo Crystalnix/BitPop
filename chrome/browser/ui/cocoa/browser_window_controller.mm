@@ -524,7 +524,7 @@
 }
 
 - (void)updateFriendsForContents:(TabContents*)contents {
-  [facebookSidebarController_ showSidebarContents:contents];
+  [facebookSidebarController_ updateFriendsForTabContents:contents];
   [facebookSidebarController_ ensureContentsVisible];
 }
 
@@ -1370,6 +1370,18 @@
     [downloadShelfController_ show:nil];
   }
   return downloadShelfController_;
+}
+
+- (BOOL)isFriendsSidebarVisible {
+  return facebookSidebarController_ != nil &&
+      [facebookSidebarController_ isSidebarVisible];
+}
+
+- (void)createFriendsSidebarIfNeeded {
+  // do nothing
+  // friends sidebar controller is always created
+  // maybe remove TabContentsController member creation from
+  // facebook_sidebar_controller.mm and put a call for creation here
 }
 
 - (void)addFindBar:(FindBarCocoaController*)findBarCocoaController {

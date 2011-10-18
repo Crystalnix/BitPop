@@ -47,7 +47,7 @@ class BrowserWindowCocoa : public BrowserWindow,
   virtual void UpdateTitleBar();
   virtual void ShelfVisibilityChanged();
   virtual void UpdateDevTools();
-  virtual void UpdateFriendsSidebar(TabContents *contents);
+  virtual void UpdateFriendsSidebarForContents(TabContents *contents);
   virtual void UpdateLoadingAnimations(bool should_animate);
   virtual void SetStarredState(bool is_starred);
   virtual gfx::Rect GetRestoredBounds() const;
@@ -80,6 +80,8 @@ class BrowserWindowCocoa : public BrowserWindow,
   virtual void ShowBookmarkBubble(const GURL& url, bool already_bookmarked);
   virtual bool IsDownloadShelfVisible() const;
   virtual DownloadShelf* GetDownloadShelf();
+  virtual bool IsFriendsSidebarVisible() const;
+  virtual void CreateFriendsSidebarIfNeeded();
   virtual void ShowRepostFormWarningDialog(TabContents* tab_contents);
   virtual void ShowCollectedCookiesDialog(TabContents* tab_contents);
   virtual void ShowThemeInstallBubble();

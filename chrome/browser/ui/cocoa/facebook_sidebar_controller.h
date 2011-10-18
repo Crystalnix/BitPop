@@ -26,6 +26,8 @@ class TabContents;
 
   // Manages currently displayed sidebar contents.
   scoped_nsobject<TabContentsController> contentsController_;
+
+  BOOL sidebarVisible_;
 }
 
 - (id)initWithDelegate:(id<TabContentsControllerDelegate>)delegate;
@@ -40,13 +42,14 @@ class TabContents;
 // Depending on |contents|'s state, decides whether the sidebar
 // should be shown or hidden and adjusts its width (|delegate_| handles
 // the actual resize).
-// - (void)updateSidebarForTabContents:(TabContents*)contents;
-- (void)showSidebarContents:(TabContents*)sidebarContents;
+- (void)updateFriendsForTabContents:(TabContents*)contents;
+// - (void)showSidebarContents:(TabContents*)sidebarContents;
 
 // Call when the sidebar view is properly sized and the render widget host view
 // should be put into the view hierarchy.
 - (void)ensureContentsVisible;
 
+- (BOOL)isSidebarVisible;
 @end
 
 #endif  // CHROME_BROWSER_UI_COCOA_FACEBOOK_SIDEBAR_CONTROLLER_H_

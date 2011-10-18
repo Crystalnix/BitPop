@@ -113,7 +113,7 @@ void PanelBrowserWindowCocoa::UpdateDevTools() {
   NOTIMPLEMENTED();
 }
 
-void PanelBrowserWindowCocoa::UpdateFriendsSidebar(TabContents *contents) {
+void PanelBrowserWindowCocoa::UpdateFriendsSidebarForContents(TabContents *friends_contents) {
   NOTIMPLEMENTED();
 }
 
@@ -249,6 +249,15 @@ bool PanelBrowserWindowCocoa::IsDownloadShelfVisible() const {
 DownloadShelf* PanelBrowserWindowCocoa::GetDownloadShelf() {
   NOTIMPLEMENTED();
   return NULL;
+}
+
+bool PanelBrowserWindowCocoa::IsFriendsSidebarVisible() const {
+  NOTIMPLEMENTED();
+  return NULL;
+}
+
+void PanelBrowserWindowCocoa::CreateFriendsSidebarIfNeeded() {
+  NOTIMPLEMENTED();
 }
 
 void PanelBrowserWindowCocoa::ShowRepostFormWarningDialog(

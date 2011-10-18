@@ -210,6 +210,10 @@ class TabContents;
 // Lazily creates the download shelf in visible state if it doesn't exist yet.
 - (DownloadShelfController*)downloadShelf;
 
+- (BOOL)isFriendsSidebarVisible;
+
+- (void)createFriendsSidebarIfNeeded;
+
 // Retains the given FindBarCocoaController and adds its view to this
 // browser window.  Must only be called once per
 // BrowserWindowController.

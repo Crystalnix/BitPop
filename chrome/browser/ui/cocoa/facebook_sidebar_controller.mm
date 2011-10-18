@@ -26,6 +26,7 @@ const int kFriendsSidebarWidth = 186;
 
 @interface FacebookSidebarController (Private)
 - (void)resizeSidebarToNewWidth:(CGFloat)width;
+- (void)showSidebarContents:(TabContents*)sidebarContents;
 @end
 
 
@@ -42,6 +43,7 @@ const int kFriendsSidebarWidth = 186;
     contentsController_.reset(
         [[TabContentsController alloc] initWithContents:NULL
                                                delegate:delegate]);
+    sidebarVisible_ = NO;
   }
   return self;
 }
@@ -59,30 +61,24 @@ const int kFriendsSidebarWidth = 186;
   return splitView_.get();
 }
 
-// - (void)updateSidebarForTabContents:(TabContents*)contents {
-//   // Get the active sidebar content.
-//   if (SidebarManager::GetInstance() == NULL)  // Happens in tests.
-//     return;
-// 
-//   TabContents* sidebarContents = NULL;
-//   if (contents && SidebarManager::IsSidebarAllowed()) {
-//     SidebarContainer* activeSidebar =
-//         SidebarManager::GetInstance()->GetActiveSidebarContainerFor(contents);
-//     if (activeSidebar)
-//       sidebarContents = activeSidebar->sidebar_contents();
-//   }
-// 
-//   TabContents* oldSidebarContents = [contentsController_ tabContents];
-//   if (oldSidebarContents == sidebarContents)
-//     return;
-// 
-//   // Adjust sidebar view.
-//   [self showSidebarContents:sidebarContents];
-// 
-//   // Notify extensions.
-//   SidebarManager::GetInstance()->NotifyStateChanges(
-//       oldSidebarContents, sidebarContents);
-// }
+- (BOOL)isSidebarVisible {
+  return sidebarVisible_;
+}
+
+- (void)updateFriendsForTabContents:(TabContents*)contents {
+  TabContents* sidebarContents = contents;
+
+  TabContents* oldSidebarContents = [contentsController_ tabContents];
+  if (oldSidebarContents == sidebarContents)
+    return;
+
+  // Adjust sidebar view.
+  [self showSidebarContents:sidebarContents];
+
+  // // Notify extensions.
+  // SidebarManager::GetInstance()->NotifyStateChanges(
+  //     oldSidebarContents, sidebarContents);
+}
 
 - (void)ensureContentsVisible {
   [contentsController_ ensureContentsVisible];
@@ -113,6 +109,7 @@ const int kFriendsSidebarWidth = 186;
      //        NSWidth([splitView_ frame]) * kDefaultSidebarWidthRatio;
      //  }
       [splitView_ addSubview:[contentsController_ view]];
+      sidebarVisible_ = YES;
     } else {
       DCHECK_EQ([subviews count], 2u);
       // sidebarWidth = NSWidth([[subviews objectAtIndex:1] frame]);
@@ -135,6 +132,7 @@ const int kFriendsSidebarWidth = 186;
       //     prefs::kExtensionSidebarWidth, sidebarWidth);
       [oldSidebarContentsView removeFromSuperview];
       [splitView_ adjustSubviews];
+      sidebarVisible_ = NO;
     }
   }
 

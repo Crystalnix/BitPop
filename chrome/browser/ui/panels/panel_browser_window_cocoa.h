@@ -38,7 +38,7 @@ class PanelBrowserWindowCocoa : public BrowserWindow {
   virtual void UpdateTitleBar() OVERRIDE;
   virtual void ShelfVisibilityChanged() OVERRIDE;
   virtual void UpdateDevTools() OVERRIDE;
-  virtual void UpdateFriendsSidebar(TabContents *contents) OVERRIDE;
+  virtual void UpdateFriendsSidebarForContents(TabContents *friends_contents) OVERRIDE;
   virtual void UpdateLoadingAnimations(bool should_animate) OVERRIDE;
   virtual void SetStarredState(bool is_starred) OVERRIDE;
   virtual gfx::Rect GetRestoredBounds() const OVERRIDE;
@@ -72,6 +72,8 @@ class PanelBrowserWindowCocoa : public BrowserWindow {
                                   bool already_bookmarked) OVERRIDE;
   virtual bool IsDownloadShelfVisible() const OVERRIDE;
   virtual DownloadShelf* GetDownloadShelf() OVERRIDE;
+  virtual bool IsFriendsSidebarVisible() const OVERRIDE;
+  virtual void CreateFriendsSidebarIfNeeded() OVERRIDE;
   virtual void ShowRepostFormWarningDialog(TabContents* tab_contents) OVERRIDE;
   virtual void ShowCollectedCookiesDialog(TabContents* tab_contents) OVERRIDE;
   virtual void ShowThemeInstallBubble() OVERRIDE;

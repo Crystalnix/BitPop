@@ -183,7 +183,7 @@ void BrowserWindowCocoa::UpdateDevTools() {
       browser_->GetSelectedTabContents()];
 }
 
-void BrowserWindowCocoa::UpdateFriendsSidebar(TabContents *contents) {
+void BrowserWindowCocoa::UpdateFriendsSidebarForContents(TabContents *contents) {
   [controller_ updateFriendsForContents: contents];
 }
 
@@ -331,6 +331,14 @@ bool BrowserWindowCocoa::IsDownloadShelfVisible() const {
 DownloadShelf* BrowserWindowCocoa::GetDownloadShelf() {
   DownloadShelfController* shelfController = [controller_ downloadShelf];
   return [shelfController bridge];
+}
+
+bool BrowserWindowCocoa::IsFriendsSidebarVisible() const {
+  return [controller_ isFriendsSidebarVisible] != NO;
+}
+
+void BrowserWindowCocoa::CreateFriendsSidebarIfNeeded() {
+  [controller_ createFriendsSidebarIfNeeded]; 
 }
 
 void BrowserWindowCocoa::ShowRepostFormWarningDialog(
