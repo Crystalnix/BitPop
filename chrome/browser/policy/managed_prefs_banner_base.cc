@@ -88,9 +88,9 @@ void ManagedPrefsBannerBase::Init(PrefService* local_state,
       AddUserPref(prefs::kNetworkPredictionEnabled);
       AddUserPref(prefs::kDisableSpdy);
       AddUserPref(prefs::kSafeBrowsingEnabled);
-#if defined(GOOGLE_CHROME_BUILD)
+//#if defined(GOOGLE_CHROME_BUILD)
       AddLocalStatePref(prefs::kMetricsReportingEnabled);
-#endif
+//#endif
       AddUserPref(prefs::kProxy);
       AddUserPref(prefs::kCloudPrintProxyEnabled);
       AddUserPref(prefs::kDownloadDefaultDirectory);

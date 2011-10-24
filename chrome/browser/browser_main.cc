@@ -592,7 +592,7 @@ MetricsService* BrowserMainParts::InitializeMetrics(
   // If the user permits metrics reporting with the checkbox in the
   // prefs, we turn on recording.  We disable metrics completely for
   // non-official builds.
-#if defined(GOOGLE_CHROME_BUILD)
+//#if defined(GOOGLE_CHROME_BUILD)
 #if defined(OS_CHROMEOS)
   bool enabled = chromeos::MetricsCrosSettingsProvider::GetMetricsStatus();
 #else
@@ -601,7 +601,7 @@ MetricsService* BrowserMainParts::InitializeMetrics(
   if (enabled) {
     metrics->Start();
   }
-#endif  // defined(GOOGLE_CHROME_BUILD)
+//#endif  // defined(GOOGLE_CHROME_BUILD)
 
   return metrics;
 }

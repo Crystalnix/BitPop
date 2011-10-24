@@ -160,6 +160,7 @@ v8.log
 /chrome/app/policy/cloud_policy_backend_header_compile.xml
 /chrome/browser/sync/protocol/sync_proto.xml
 *.swp
+*.swo
 /chrome/in_memory_url_index_cache_proto.xml
 /chrome/installer/mini_installer.xml
 /chrome/installer_util_strings.xml

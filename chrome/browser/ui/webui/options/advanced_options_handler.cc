@@ -378,7 +378,7 @@ void AdvancedOptionsHandler::HandleAutoOpenButton(const ListValue* args) {
 
 void AdvancedOptionsHandler::HandleMetricsReportingCheckbox(
     const ListValue* args) {
-#if defined(GOOGLE_CHROME_BUILD) && !defined(OS_CHROMEOS)
+#if !defined(OS_CHROMEOS)
   std::string checked_str = UTF16ToUTF8(ExtractStringValue(args));
   bool enabled = checked_str == "true";
   UserMetricsRecordAction(
@@ -535,7 +535,7 @@ void AdvancedOptionsHandler::RemoveCloudPrintProxySection() {
 #endif
 
 void AdvancedOptionsHandler::SetupMetricsReportingCheckbox() {
-#if defined(GOOGLE_CHROME_BUILD) && !defined(OS_CHROMEOS)
+#if !defined(OS_CHROMEOS)
   FundamentalValue checked(enable_metrics_recording_.GetValue());
   FundamentalValue disabled(enable_metrics_recording_.IsManaged());
   web_ui_->CallJavascriptFunction(
@@ -545,7 +545,7 @@ void AdvancedOptionsHandler::SetupMetricsReportingCheckbox() {
 }
 
 void AdvancedOptionsHandler::SetupMetricsReportingSettingVisibility() {
-#if defined(GOOGLE_CHROME_BUILD) && defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS)
   // Don't show the reporting setting if we are in the guest mode.
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kGuestSession)) {
     FundamentalValue visible(false);

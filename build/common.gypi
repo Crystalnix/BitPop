@@ -474,10 +474,18 @@
           # Feature variables for enabling Mac Breakpad and Keystone auto-update
           # support.  Both features are on by default in official builds with
           # Chrome branding.
-          ['branding=="Chrome" and buildtype=="Official"', {
+          # ['branding=="Chrome" and buildtype=="Official"', {
+          #   'mac_breakpad%': 1,
+          #   'mac_keystone%': 1,
+          # }, { # else: branding!="Chrome" or buildtype!="Official"
+          #   'mac_breakpad%': 0,
+          #   'mac_keystone%': 0,
+          # }],
+
+          ['buildtype=="Official"', {
             'mac_breakpad%': 1,
-            'mac_keystone%': 1,
-          }, { # else: branding!="Chrome" or buildtype!="Official"
+            'mac_keystone%': 0,
+          }, { # else: buildtype!="Official"
             'mac_breakpad%': 0,
             'mac_keystone%': 0,
           }],
