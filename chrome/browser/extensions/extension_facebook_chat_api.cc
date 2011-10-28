@@ -10,6 +10,8 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "content/browser/tab_contents/tab_contents.h"
+#include "chrome/common/pref_names.h"
+#include "chrome/browser/prefs/pref_service.h"
 
 namespace {
 // Errors.
@@ -51,7 +53,9 @@ bool SetFriendsSidebarVisibleFunction::RunImpl() {
     return false;
   }
 
-  browser->UpdateFriendsSidebarVisibility(is_visible);
+  PrefService *prefService = browser->profile()->GetPrefs();
+  prefService->SetBoolean(prefs::kFacebookShowFriendsList, is_visible);
+
   return true;
 }
 

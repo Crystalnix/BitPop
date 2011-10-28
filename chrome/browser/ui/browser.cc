@@ -259,6 +259,7 @@ Browser::Browser(Type type, Profile* profile)
   profile_pref_registrar_.Add(prefs::kDevToolsDisabled, this);
   profile_pref_registrar_.Add(prefs::kEditBookmarksEnabled, this);
   profile_pref_registrar_.Add(prefs::kInstantEnabled, this);
+  profile_pref_registrar_.Add(prefs::kFacebookShowFriendsList, this);
 
   InitCommandState();
   BrowserList::AddBrowser(this);
@@ -455,7 +456,7 @@ void Browser::InitBrowserWindow() {
       GURL(),
       PageTransition::START_PAGE);
     window_->CreateFriendsSidebarIfNeeded();
-    window_->UpdateFriendsSidebarForContents(NULL/*friends_contents_->tab_contents()*/);
+    UpdateFriendsSidebarVisibility();
   }
   
   if (use_compact_navigation_bar_.GetValue()) {
@@ -2269,6 +2270,9 @@ void Browser::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterStringPref(prefs::kUncensorPrefs,
                             std::string(),
                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kFacebookShowFriendsList,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
 }
 
 // static
@@ -3237,7 +3241,9 @@ void Browser::UpdateDownloadShelfVisibility(bool visible) {
     GetStatusBubble()->UpdateDownloadShelfVisibility(visible);
 }
 
-void Browser::UpdateFriendsSidebarVisibility(bool visible) {
+void Browser::UpdateFriendsSidebarVisibility() {
+    bool visible = profile()->GetPrefs()->GetBoolean(
+        prefs::kFacebookShowFriendsList);
     window_->UpdateFriendsSidebarForContents(visible ? 
         friends_contents_->tab_contents() : NULL);
 }
@@ -3672,6 +3678,9 @@ void Browser::Observe(NotificationType type,
       } else if (pref_name == prefs::kAllowFileSelectionDialogs) {
         UpdateSaveAsState(GetContentRestrictionsForSelectedTab());
         UpdateOpenFileState();
+      } else if (pref_name == prefs::kFacebookShowFriendsList &&
+                  is_type_tabbed()) {
+        UpdateFriendsSidebarVisibility();
       } else {
         NOTREACHED();
       }

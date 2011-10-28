@@ -589,7 +589,7 @@ class Browser : public TabHandlerDelegate,
   void OpenPluginsTabAndActivate();
 
   virtual void UpdateDownloadShelfVisibility(bool visible);
-  virtual void UpdateFriendsSidebarVisibility(bool visible);
+  virtual void UpdateFriendsSidebarVisibility();
 
   // Overridden from TabStripModelDelegate:
   virtual bool UseVerticalTabs() const;

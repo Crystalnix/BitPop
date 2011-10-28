@@ -92,11 +92,15 @@ class TabContents;
   CGFloat windowTopGrowth_;
   CGFloat windowBottomGrowth_;
 
+  CGFloat windowLeftGrowth_;
+  CGFloat windowRightGrowth_;
+
   // YES only if we're shrinking the window from an apparent zoomed state (which
   // we'll only do if we grew it to the zoomed state); needed since we'll then
   // restrict the amount of shrinking by the amounts specified above. Reset to
   // NO on growth.
   BOOL isShrinkingFromZoomed_;
+  BOOL isShrinkingWFromZoomed_;
 
   // The raw accumulated zoom value and the actual zoom increments made for an
   // an in-progress pinch gesture.
@@ -396,6 +400,8 @@ class TabContents;
 // prefers to grow the window down, but will grow up if needed.  Calls to this
 // function should be followed by a call to |layoutSubviews|.
 - (void)adjustWindowHeightBy:(CGFloat)deltaH;
+
+- (void)adjustWindowWidthBy:(CGFloat)deltaW;
 
 // Return an autoreleased NSWindow suitable for fullscreen use.
 - (NSWindow*)createFullscreenWindow;

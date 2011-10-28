@@ -509,7 +509,7 @@ extern const char kBackgroundModeEnabled[];
 
 extern const char kAutomaticUpdatesEnabled[];
 extern const char kUncensorPrefs[];
-
+extern const char kFacebookShowFriendsList[];
 }  // namespace prefs
 
 #endif  // CHROME_COMMON_PREF_NAMES_H_

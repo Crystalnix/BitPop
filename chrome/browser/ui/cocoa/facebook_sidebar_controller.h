@@ -39,6 +39,8 @@ class TabContents;
 // returns an NSSplitView, so provide a differently-named method.
 - (NSSplitView*)splitView;
 
+- (TabContentsController*)sidebarContentsController;
+
 // Depending on |contents|'s state, decides whether the sidebar
 // should be shown or hidden and adjusts its width (|delegate_| handles
 // the actual resize).

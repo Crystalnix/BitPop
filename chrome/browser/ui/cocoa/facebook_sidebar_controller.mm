@@ -61,6 +61,10 @@ const int kFriendsSidebarWidth = 186;
   return splitView_.get();
 }
 
+- (TabContentsController*)sidebarContentsController {
+  return contentsController_;
+}
+
 - (BOOL)isSidebarVisible {
   return sidebarVisible_;
 }
