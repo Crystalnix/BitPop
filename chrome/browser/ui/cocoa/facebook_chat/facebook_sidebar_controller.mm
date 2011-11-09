@@ -78,7 +78,7 @@ const int kFriendsSidebarWidth = 186;
     view_id_util::SetID(
         sidebarContents->GetNativeView(),
         VIEW_ID_FACEBOOK_FRIENDS_SIDE_BAR_CONTAINER);
-    
+
     rc.size.width = kFriendsSidebarWidth;
     sidebarVisible_ = YES;
   } else {

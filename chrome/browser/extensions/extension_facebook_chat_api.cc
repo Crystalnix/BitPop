@@ -79,7 +79,7 @@ bool GetFriendsSidebarVisibleFunction::RunImpl() {
 bool AddChatFunction::RunImpl() {
   if (!args_.get())
     return false;
-  
+
   std::string jid(""), username(""), status("");
 
   if (IsArgumentListEmpty(args_.get()) || args_->GetSize() != 3) {
@@ -109,5 +109,5 @@ bool AddChatFunction::RunImpl() {
 
   return true;
 }
-  
+
 

@@ -19,7 +19,7 @@ class FacebookChatItem {
       AVAILABLE,
       OFFLINE
     };
- 
+
     FacebookChatItem(FacebookChatManager *manager,
         const std::string &jid,
         const std::string &username,

@@ -22,16 +22,16 @@ class FacebookChatItem;
 @interface FacebookChatbarController : NSViewController {
  @private
   IBOutlet HoverButton *hoverCloseButton_;
-   
+
   BOOL barIsVisible_;
-   
+
   BOOL isFullscreen_;
 
   scoped_ptr<FacebookChatbar> bridge_;
 
   // Height of the shelf when it's fully visible.
   CGFloat maxBarHeight_;
-   
+
   // The download items we have added to our shelf.
   scoped_nsobject<NSMutableArray> chatItemControllers_;
 

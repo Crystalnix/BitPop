@@ -68,7 +68,7 @@ FacebookChatItem* FacebookChatManager::CreateFacebookChat(
 
   return item;
 }
-  
+
 void FacebookChatManager::StartChat(const std::string &jid) {
   ChatMap::iterator it = jid_chats_map_.find(jid);
   if (it != jid_chats_map_.end()) {

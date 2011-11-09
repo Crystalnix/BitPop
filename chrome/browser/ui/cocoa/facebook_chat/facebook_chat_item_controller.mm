@@ -5,36 +5,34 @@
 
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_chat_item_controller.h"
 
+#include "base/mac/mac_util.h"
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_chatbar_controller.h"
 
 namespace {
-  const int kButtonWidth = 200;
-  const int kButtonHeight = 25;
+  const int kButtonWidth = 163;
+  const int kButtonHeight = 23;
 }
 
 @implementation FacebookChatItemController
 
 - (id)initWithModel:(FacebookChatItem*)downloadModel
             chatbar:(FacebookChatbarController*)chatbar {
-  if ((self = [super init])) {
+  if ((self = [super initWithNibName:@"FacebookChatItem"
+                              bundle:base::mac::MainAppBundle()])) {
     bridge_.reset(new FacebookChatItemMac(downloadModel, self));
 
     chatbarController_ = chatbar;
-
-    NSRect buttonFrame = NSZeroRect;
-    buttonFrame.size.width = kButtonWidth;
-    buttonFrame.size.height = kButtonHeight;
-
-    button_ = [[NSButton alloc] initWithFrame:buttonFrame];
-    [button_ setBezelStyle:NSRoundedBezelStyle];
-    [button_ setTitle:
-        [NSString stringWithUTF8String:downloadModel->username().c_str()]];
-    [button_ setTarget:self];
-    [button_ setAction:@selector(remove:)];
-    
-    [self setView:button_];
   }
   return self;
+}
+
+- (void)awakeFromNib {
+  [button_ setTitle:
+        [NSString stringWithUTF8String:bridge_->chat()->username().c_str()]];
+}
+
+- (void)openChatWindow:(id)sender {
+
 }
 
 - (void)remove:(id)sender {

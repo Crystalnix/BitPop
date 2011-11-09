@@ -353,7 +353,7 @@ bool BrowserWindowCocoa::IsFriendsSidebarVisible() const {
 }
 
 void BrowserWindowCocoa::CreateFriendsSidebarIfNeeded() {
-  //[controller_ createFriendsSidebarIfNeeded]; 
+  //[controller_ createFriendsSidebarIfNeeded];
 }
 
 void BrowserWindowCocoa::ShowRepostFormWarningDialog(

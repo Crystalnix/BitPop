@@ -83,10 +83,10 @@
       }
 
       function logout() {
-        var url = 'https://www.facebook.com/logout.php?next=' + 
+        var url = 'https://www.facebook.com/logout.php?next=' +
           escape(successURL) +
           '&access_token=' + localStorage.accessToken;
-        chrome.windows.create({ url: url, type: "popup", 
+        chrome.windows.create({ url: url, type: "popup",
                                 top: 0, left: 0, width: 50, height: 50 });
       }
 
@@ -140,11 +140,11 @@
 
         var listHtml = '<ul>';
         for (var i in response) {
-        listHtml += '<li><span class="leftSide" id="buddy' + i + '">' + 
+        listHtml += '<li><span class="leftSide" id="buddy' + i + '">' +
               '<img src="' + response[i].pic_square + '" alt="" />' +
               ' ' + response[i].name + '</span>';
           if (response[i].online_presence) {
-            listHtml += '<img class="status" src="' + 
+            listHtml += '<img class="status" src="' +
               response[i].online_presence + '.png" alt="" />';
           }
           listHtml += '</li>';

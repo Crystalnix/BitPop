@@ -9,7 +9,7 @@
 FacebookChatItem::FacebookChatItem(FacebookChatManager *manager,
                                    const std::string &jid,
                                    const std::string &username,
-                                   Status status) 
+                                   Status status)
 : jid_(jid),
   username_(username),
   status_(status),
@@ -83,5 +83,5 @@ void FacebookChatItem::RemoveHighlight() {
     UpdateObservers();
   }
 }
-  
+
 

@@ -18,3 +18,7 @@ FacebookChatItemMac::~FacebookChatItemMac() {
 
 void FacebookChatItemMac::OnChatUpdated(FacebookChatItem *source) {
 }
+
+FacebookChatItem* FacebookChatItemMac::chat() const {
+  return model_;
+}

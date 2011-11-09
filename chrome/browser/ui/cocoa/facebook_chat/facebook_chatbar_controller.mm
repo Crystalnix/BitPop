@@ -20,6 +20,8 @@ const NSSize kHoverCloseButtonDefaultSize = { 16, 16 };
 const NSUInteger kMaxChatItemCount = 5;
 
 const NSInteger kChatItemPadding = 10;
+
+const NSInteger kChatbarHeight = 44;
 }  // namespace
 
 @interface FacebookChatbarController(Private)
@@ -74,14 +76,14 @@ const NSInteger kChatItemPadding = 10;
 - (void)showChatbar:(BOOL)enable {
   if ([self isVisible] == enable)
     return;
-  
+
   if (enable)
     [resizeDelegate_ resizeView:self.view newHeight:maxBarHeight_];
   else
     [resizeDelegate_ resizeView:self.view newHeight:0];
 
   barIsVisible_ = enable;
-  [self updateCloseButton]; 
+  [self updateCloseButton];
 }
 
 - (void)show:(id)sender {
@@ -140,7 +142,7 @@ const NSInteger kChatItemPadding = 10;
 
   NSRect rc = [[controller view] frame];
   rc.size = [controller preferredSize];
-  rc.origin.y = [[self view] bounds].size.height / 2 - rc.size.height / 2;
+  rc.origin.y = kChatbarHeight / 2 - rc.size.height / 2;
   [[controller view] setFrame:rc];
 
   // Keep only a limited number of items in the shelf.
@@ -176,7 +178,7 @@ const NSInteger kChatItemPadding = 10;
   for (FacebookChatItemController* itemController
       in chatItemControllers_.get()) {
     NSRect frame = [[itemController view] frame];
-    frame.origin.x = ([[self view] bounds].size.width - 30 - 
+    frame.origin.x = ([[self view] bounds].size.width - 30 -
         [itemController preferredSize].width) - currentX;
     if (frame.origin.x < 10) {
       [[itemController view] setHidden:YES];

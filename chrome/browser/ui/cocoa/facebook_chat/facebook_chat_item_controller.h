@@ -14,11 +14,13 @@
 #include "chrome/browser/ui/cocoa/facebook_chat/facebook_chat_item_mac.h"
 
 @class FacebookChatbarController;
+@class HoverButton;
 
 @interface FacebookChatItemController : NSViewController {
 @private
-  NSButton *button_;
-  
+  IBOutlet NSButton* button_;
+  IBOutlet HoverButton* hoverCloseButton_;
+
   scoped_ptr<FacebookChatItemMac> bridge_;
   FacebookChatbarController *chatbarController_;
 }
@@ -27,7 +29,8 @@
 - (id)initWithModel:(FacebookChatItem*)downloadModel
             chatbar:(FacebookChatbarController*)chatbar;
 
-- (void)remove:(id)sender;
+- (IBAction)openChatWindow:(id)sender;
+- (IBAction)remove:(id)sender;
 
 - (NSSize)preferredSize;
 @end

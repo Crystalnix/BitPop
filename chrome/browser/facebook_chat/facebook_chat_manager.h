@@ -61,7 +61,7 @@ class FacebookChatManager : public base::RefCountedThreadSafe<FacebookChatManage
 
     typedef std::set<FacebookChatItem*> ChatSet;
     typedef base::hash_map<std::string, FacebookChatItem*> ChatMap;
-    
+
     ChatSet chats_;
     ChatMap jid_chats_map_;
 

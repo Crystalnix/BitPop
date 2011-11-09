@@ -520,12 +520,12 @@
 
 - (void)updateFriendsForContents:(TabContents*)contents {
   bool initialized = facebookSidebarController_.get() != NULL;
-  FacebookSidebarController *fsController = [self friendsSidebar]; 
+  FacebookSidebarController *fsController = [self friendsSidebar];
   BOOL hadTabContents = (fsController.tabContents != NULL);
   [fsController updateFriendsForTabContents:contents];
   if (((contents && !hadTabContents) || (!contents && hadTabContents)) &&
       initialized) {
-    [self adjustWindowWidthBy: (hadTabContents ? -1 : 1) * 
+    [self adjustWindowWidthBy: (hadTabContents ? -1 : 1) *
         // + 1 is needed to change size of tabContentsArea_ slightly so that
         // the resize corner is taken into account
         ([fsController maxWidth] + 1)];
@@ -1024,7 +1024,7 @@
       [bookmarkBarController_ isAnimatingBetweenState:bookmarks::kHiddenState
                                              andState:bookmarks::kShowingState];
   if ((shouldAdjustBookmarkHeight && view == [bookmarkBarController_ view]) ||
-      view == [downloadShelfController_ view] || 
+      view == [downloadShelfController_ view] ||
       view == [facebookChatbarController_ view]) {
     [[self window] disableScreenUpdatesUntilFlush];
     CGFloat deltaH = height - frame.size.height;
