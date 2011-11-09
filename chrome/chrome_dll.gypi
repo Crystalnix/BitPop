@@ -222,6 +222,7 @@
                 'app/nibs/ExtensionInstalledBubble.xib',
                 'app/nibs/ExtensionInstallPrompt.xib',
                 'app/nibs/ExtensionInstallPromptNoWarnings.xib',
+                'app/nibs/FacebookChatbar.xib',
                 'app/nibs/FindBar.xib',
                 'app/nibs/FirstRunBubble.xib',
                 'app/nibs/FirstRunDialog.xib',

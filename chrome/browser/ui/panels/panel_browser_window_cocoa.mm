@@ -393,3 +393,12 @@ NSRect PanelBrowserWindowCocoa::ConvertCoordinatesToCocoa(
       bounds.width(), bounds.height());
 }
 
+bool PanelBrowserWindowCocoa::IsChatbarVisible() const {
+  NOTIMPLEMENTED();
+  return false;
+}
+
+FacebookChatbar* PanelBrowserWindowCocoa::GetChatbar() {
+  NOTIMPLEMENTED();
+  return NULL;
+}

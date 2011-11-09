@@ -361,6 +361,7 @@ void FactoryRegistry::ResetFunctions() {
   // Facebook chat
   RegisterFunction<GetFriendsSidebarVisibleFunction>();
   RegisterFunction<SetFriendsSidebarVisibleFunction>();
+  RegisterFunction<AddChatFunction>();
 }
 
 void FactoryRegistry::GetAllNames(std::vector<std::string>* names) {

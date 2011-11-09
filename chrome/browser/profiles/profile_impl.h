@@ -77,10 +77,12 @@ class ProfileImpl : public Profile,
   virtual TemplateURLModel* GetTemplateURLModel();
   virtual TemplateURLFetcher* GetTemplateURLFetcher();
   virtual DownloadManager* GetDownloadManager();
+  virtual FacebookChatManager* GetFacebookChatManager();
   virtual PersonalDataManager* GetPersonalDataManager();
   virtual fileapi::FileSystemContext* GetFileSystemContext();
   virtual quota::QuotaManager* GetQuotaManager();
   virtual bool HasCreatedDownloadManager() const;
+  virtual bool HasCreatedFacebookChatManager() const;
   virtual net::URLRequestContextGetter* GetRequestContext();
   virtual net::URLRequestContextGetter* GetRequestContextForRenderProcess(
       int renderer_child_id);
@@ -234,6 +236,7 @@ class ProfileImpl : public Profile,
   scoped_refptr<UserStyleSheetWatcher> user_style_sheet_watcher_;
   scoped_ptr<FindBarState> find_bar_state_;
   scoped_refptr<DownloadManager> download_manager_;
+  scoped_refptr<FacebookChatManager> facebook_chat_manager_;
   scoped_refptr<HistoryService> history_service_;
   scoped_refptr<FaviconService> favicon_service_;
   scoped_ptr<AutocompleteClassifier> autocomplete_classifier_;

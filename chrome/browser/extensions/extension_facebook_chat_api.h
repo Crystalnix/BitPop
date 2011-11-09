@@ -36,5 +36,12 @@ class GetFriendsSidebarVisibleFunction : public SyncExtensionFunction {
   DECLARE_EXTENSION_FUNCTION_NAME("chromePrivate.getFriendsSidebarVisible");
 };
 
+class AddChatFunction : public SyncExtensionFunction {
+  public:
+    virtual bool RunImpl();
+  private:
+    DECLARE_EXTENSION_FUNCTION_NAME("chromePrivate.addChat");
+};
+
 #endif  // CHROME_BROWSER_EXTENSIONS_EXTENSION_FACEBOOK_CHAT_API_H_
 

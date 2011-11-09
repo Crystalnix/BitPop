@@ -69,6 +69,15 @@
                               maxY:(CGFloat)maxY
                              width:(CGFloat)width;
 
+// returns new maxX
+- (CGFloat)layoutFriendsSidebarAtMaxX:(CGFloat)maxX
+                                 minY:(CGFloat)minY
+                                 maxY:(CGFloat)maxY;
+
+- (CGFloat)layoutChatbarAtMinX:(CGFloat)minX
+                          minY:(CGFloat)minY
+                         width:(CGFloat)width;
+
 // Lay out the view which draws the background for the floating bar when in
 // fullscreen mode, with the given frame and fullscreen-mode-status. Should be
 // called even when not in fullscreen mode to hide the backing view.

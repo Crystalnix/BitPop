@@ -33,6 +33,7 @@ class BrowserWindowCocoa;
 class ConstrainedWindowMac;
 @class DevToolsController;
 @class DownloadShelfController;
+@class FacebookChatbarController;
 @class FacebookSidebarController;
 @class FindBarCocoaController;
 @class FullscreenController;
@@ -69,6 +70,7 @@ class TabContents;
   scoped_nsobject<FindBarCocoaController> findBarCocoaController_;
   scoped_nsobject<InfoBarContainerController> infoBarContainerController_;
   scoped_nsobject<DownloadShelfController> downloadShelfController_;
+  scoped_nsobject<FacebookChatbarController> facebookChatbarController_;
   scoped_nsobject<BookmarkBarController> bookmarkBarController_;
   scoped_nsobject<FacebookSidebarController> facebookSidebarController_;
   scoped_nsobject<DevToolsController> devToolsController_;
@@ -214,9 +216,13 @@ class TabContents;
 // Lazily creates the download shelf in visible state if it doesn't exist yet.
 - (DownloadShelfController*)downloadShelf;
 
+- (BOOL)isChatbarVisible;
+
+- (FacebookChatbarController*)facebookChatbar;
+
 - (BOOL)isFriendsSidebarVisible;
 
-- (void)createFriendsSidebarIfNeeded;
+- (FacebookSidebarController*)friendsSidebar;
 
 // Retains the given FindBarCocoaController and adds its view to this
 // browser window.  Must only be called once per

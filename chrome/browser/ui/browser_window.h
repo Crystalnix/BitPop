@@ -14,6 +14,7 @@
 class Browser;
 class BrowserWindowTesting;
 class DownloadShelf;
+class FacebookChatbar;
 class FindBar;
 class GURL;
 class HtmlDialogUIDelegate;
@@ -234,6 +235,9 @@ class BrowserWindow {
 
   // Returns the DownloadShelf.
   virtual DownloadShelf* GetDownloadShelf() = 0;
+
+  virtual bool IsChatbarVisible() const = 0;
+  virtual FacebookChatbar* GetChatbar() = 0;
 
   // Whether or not the facebook friends sidebar is visible
   virtual bool IsFriendsSidebarVisible() const = 0;

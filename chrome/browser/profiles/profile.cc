@@ -23,6 +23,7 @@
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager.h"
 #include "chrome/browser/net/pref_proxy_config_service.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/off_the_record_profile_io_data.h"
@@ -420,6 +421,20 @@ class OffTheRecordProfileImpl : public Profile,
     return (download_manager_.get() != NULL);
   }
 
+  virtual FacebookChatManager* GetFacebookChatManager() {
+    if (!facebook_chat_manager_.get()) {
+      scoped_refptr<FacebookChatManager> fbcm(
+          new FacebookChatManager());
+      fbcm->Init(this);
+      facebook_chat_manager_.swap(fbcm);
+    }
+    return facebook_chat_manager_.get();
+  }
+
+  virtual bool HasCreatedFacebookChatManager() const {
+    return (facebook_chat_manager_.get() != NULL);
+  }
+
   virtual PersonalDataManager* GetPersonalDataManager() {
     return NULL;
   }
@@ -628,6 +643,11 @@ class OffTheRecordProfileImpl : public Profile,
       download_manager_->Shutdown();
       download_manager_ = NULL;
     }
+
+    if (facebook_chat_manager_.get()) {
+      facebook_chat_manager_->Shutdown();
+      facebook_chat_manager_ = NULL;
+    }
   }
 
   virtual void OnBrowserAdded(const Browser* browser) {
@@ -741,6 +761,8 @@ class OffTheRecordProfileImpl : public Profile,
 
   // The download manager that only stores downloaded items in memory.
   scoped_refptr<DownloadManager> download_manager_;
+
+  scoped_refptr<FacebookChatManager> facebook_chat_manager_;
 
   // We use a non-writable content settings map for OTR.
   scoped_refptr<HostContentSettingsMap> host_content_settings_map_;

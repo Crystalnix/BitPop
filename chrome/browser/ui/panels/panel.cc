@@ -397,3 +397,13 @@ void Panel::ShowKeyboardOverlay(gfx::NativeWindow owning_window) {
 void Panel::DestroyBrowser() {
   NOTIMPLEMENTED();
 }
+
+bool Panel::IsChatbarVisible() const {
+  NOTIMPLEMENTED();
+  return false;
+}
+
+FacebookChatbar* Panel::GetChatbar() {
+  NOTIMPLEMENTED();
+  return NULL;
+}

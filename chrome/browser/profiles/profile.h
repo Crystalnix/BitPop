@@ -64,6 +64,7 @@ class ExtensionPrefValueMap;
 class ExtensionProcessManager;
 class ExtensionService;
 class ExtensionSpecialStoragePolicy;
+class FacebookChatManager;
 class FaviconService;
 class FilePath;
 class FindBarState;
@@ -321,6 +322,10 @@ class Profile {
   // Returns the DownloadManager associated with this profile.
   virtual DownloadManager* GetDownloadManager() = 0;
   virtual bool HasCreatedDownloadManager() const = 0;
+
+  // Returns the FacebookChatManager associated with this profile
+  virtual FacebookChatManager* GetFacebookChatManager() = 0;
+  virtual bool HasCreatedFacebookChatManager() const = 0;
 
   // Returns the PersonalDataManager associated with this profile.
   virtual PersonalDataManager* GetPersonalDataManager() = 0;

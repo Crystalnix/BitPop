@@ -35,6 +35,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/extensions/user_script_master.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/geolocation/geolocation_content_settings_map.h"
 #include "chrome/browser/history/history.h"
@@ -1187,6 +1188,20 @@ DownloadManager* ProfileImpl::GetDownloadManager() {
 
 bool ProfileImpl::HasCreatedDownloadManager() const {
   return created_download_manager_;
+}
+
+FacebookChatManager* ProfileImpl::GetFacebookChatManager() {
+  if (!facebook_chat_manager_.get()) {
+    scoped_refptr<FacebookChatManager> fbcm(
+        new FacebookChatManager());
+    fbcm->Init(this);
+    facebook_chat_manager_.swap(fbcm);
+  }
+  return facebook_chat_manager_.get();
+}
+
+bool ProfileImpl::HasCreatedFacebookChatManager() const {
+  return (facebook_chat_manager_.get() != NULL);
 }
 
 PersonalDataManager* ProfileImpl::GetPersonalDataManager() {

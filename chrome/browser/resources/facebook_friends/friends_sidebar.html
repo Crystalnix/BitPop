@@ -2,6 +2,9 @@
 <head>
   <title>Facebook Connect For Chrome Extension</title>
   <style type="text/css">
+    html {
+      border-left: solid 1px #ccc;
+    }
     html, body {
       overflow: hidden;
       width: 186px;
@@ -137,7 +140,7 @@
 
         var listHtml = '<ul>';
         for (var i in response) {
-        listHtml += '<li><span class="leftSide">' + 
+        listHtml += '<li><span class="leftSide" id="buddy' + i + '">' + 
               '<img src="' + response[i].pic_square + '" alt="" />' +
               ' ' + response[i].name + '</span>';
           if (response[i].online_presence) {
@@ -156,12 +159,21 @@
         ul.innerHTML = listHtml;
         document.body.appendChild(ul);
 
-        // var blocks = document.getElementsByClassName('leftSide');
-        // for (var i = 0; i < blocks.length; ++i) {
-        // blocks[i].onclick = function () {
-        //     window.location.hash = "doSomethingAmazinglyStupid";
-        //   };
-        // }
+        for (var i in response) {
+          var item = document.getElementById('buddy' + i);
+          item.jid = response[i].uid.toString();
+          item.username = response[i].name;
+          item.online_status = (response[i].online_presence == 'active') ?
+            'available' : 'offline';
+        }
+
+        var blocks = document.getElementsByClassName('leftSide');
+        for (var i = 0; i < blocks.length; ++i) {
+        blocks[i].onclick = function () {
+          chrome.chromePrivate.addChat(this.jid, this.username,
+              this.online_status);
+          };
+        }
       }
 
       setInterval(requestUpdateFriendList, 1 * 60 * 1000);

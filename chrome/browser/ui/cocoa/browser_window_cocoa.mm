@@ -11,6 +11,9 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/download/download_shelf.h"
+#include "chrome/browser/facebook_chat/facebook_chatbar.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager.h"
+#include "chrome/browser/facebook_chat/facebook_chat_item.h"
 #include "chrome/browser/global_keyboard_shortcuts_mac.h"
 #include "chrome/browser/page_info_window.h"
 #include "chrome/browser/prefs/pref_service.h"
@@ -24,6 +27,7 @@
 #import "chrome/browser/ui/cocoa/chrome_event_processing_window.h"
 #import "chrome/browser/ui/cocoa/content_settings/collected_cookies_mac.h"
 #import "chrome/browser/ui/cocoa/download/download_shelf_controller.h"
+#import "chrome/browser/ui/cocoa/facebook_chat/facebook_chatbar_controller.h"
 #import "chrome/browser/ui/cocoa/html_dialog_window_controller.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
 #import "chrome/browser/ui/cocoa/nsmenuitem_additions.h"
@@ -54,6 +58,8 @@ BrowserWindowCocoa::BrowserWindowCocoa(Browser* browser,
                  NotificationService::AllSources());
   registrar_.Add(this, NotificationType::SIDEBAR_CHANGED,
                  NotificationService::AllSources());
+  registrar_.Add(this, NotificationType::FACEBOOK_CHATBAR_ADD_CHAT,
+                 Source<Profile>(browser_->profile()));
 }
 
 BrowserWindowCocoa::~BrowserWindowCocoa() {
@@ -333,12 +339,21 @@ DownloadShelf* BrowserWindowCocoa::GetDownloadShelf() {
   return [shelfController bridge];
 }
 
+bool BrowserWindowCocoa::IsChatbarVisible() const {
+  return [controller_ isChatbarVisible] != NO;
+}
+
+FacebookChatbar* BrowserWindowCocoa::GetChatbar() {
+  FacebookChatbarController *chatbarController = [controller_ facebookChatbar];
+  return [chatbarController bridge];
+}
+
 bool BrowserWindowCocoa::IsFriendsSidebarVisible() const {
   return [controller_ isFriendsSidebarVisible] != NO;
 }
 
 void BrowserWindowCocoa::CreateFriendsSidebarIfNeeded() {
-  [controller_ createFriendsSidebarIfNeeded]; 
+  //[controller_ createFriendsSidebarIfNeeded]; 
 }
 
 void BrowserWindowCocoa::ShowRepostFormWarningDialog(
@@ -596,6 +611,14 @@ void BrowserWindowCocoa::Observe(NotificationType type,
     case NotificationType::SIDEBAR_CHANGED:
       UpdateSidebarForContents(
           Details<SidebarContainer>(details)->tab_contents());
+      break;
+    case NotificationType::FACEBOOK_CHATBAR_ADD_CHAT: {
+        Details<FacebookChatCreateInfo> chat_info(details);
+        FacebookChatManager *mgr = browser_->profile()->GetFacebookChatManager();
+        FacebookChatItem *newItem = mgr->CreateFacebookChat(*(chat_info.ptr()));
+        GetChatbar()->AddChatItem(newItem);
+        mgr->StartChat(newItem->jid());
+      }
       break;
     default:
       NOTREACHED();  // we don't ask for anything else!

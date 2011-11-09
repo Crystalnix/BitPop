@@ -32,7 +32,8 @@
 #import "chrome/browser/ui/cocoa/dev_tools_controller.h"
 #import "chrome/browser/ui/cocoa/download/download_shelf_controller.h"
 #import "chrome/browser/ui/cocoa/event_utils.h"
-#import "chrome/browser/ui/cocoa/facebook_sidebar_controller.h"
+#import "chrome/browser/ui/cocoa/facebook_chat/facebook_chatbar_controller.h"
+#import "chrome/browser/ui/cocoa/facebook_chat/facebook_sidebar_controller.h"
 #import "chrome/browser/ui/cocoa/fast_resize_view.h"
 #import "chrome/browser/ui/cocoa/find_bar/find_bar_bridge.h"
 #import "chrome/browser/ui/cocoa/find_bar/find_bar_cocoa_controller.h"
@@ -289,20 +290,14 @@
     // Puts the incognito badge on the window frame, if necessary.
     [self installIncognitoBadge];
 
-    // Facebook sidebar split view creation
-    facebookSidebarController_.reset(
-        [[FacebookSidebarController alloc] initWithDelegate:self]);
-    [[facebookSidebarController_ view] setFrame:[[self tabContentArea] bounds]];
-    [[self tabContentArea] addSubview:[facebookSidebarController_ view]];
-
     // Create a sub-controller for the docked devTools and add its view to the
     // hierarchy.  This must happen before the sidebar controller is
     // instantiated.
     devToolsController_.reset(
         [[DevToolsController alloc] initWithDelegate:self]);
     [[devToolsController_ view] setFrame:
-        [[facebookSidebarController_ view] bounds]];
-    [[facebookSidebarController_ view] addSubview:[devToolsController_ view]];
+        [[self tabContentArea] bounds]];
+    [[self tabContentArea] addSubview:[devToolsController_ view]];
 
     // Create a sub-controller for the docked sidebar and add its view to the
     // hierarchy.  This must happen before the previewable contents controller
@@ -524,16 +519,19 @@
 }
 
 - (void)updateFriendsForContents:(TabContents*)contents {
-  BOOL hadTabContents = [facebookSidebarController_ 
-                          sidebarContentsController].tabContents != NULL;
-  [facebookSidebarController_ updateFriendsForTabContents:contents];
-  if ((contents && !hadTabContents) || (!contents && hadTabContents)) {
-    NSRect macRc = [[[facebookSidebarController_ 
-                      sidebarContentsController] view] bounds]; 
-    [self adjustWindowWidthBy: (hadTabContents ? -1 : 1) * (macRc.size.width + 1)];
+  bool initialized = facebookSidebarController_.get() != NULL;
+  FacebookSidebarController *fsController = [self friendsSidebar]; 
+  BOOL hadTabContents = (fsController.tabContents != NULL);
+  [fsController updateFriendsForTabContents:contents];
+  if (((contents && !hadTabContents) || (!contents && hadTabContents)) &&
+      initialized) {
+    [self adjustWindowWidthBy: (hadTabContents ? -1 : 1) * 
+        // + 1 is needed to change size of tabContentsArea_ slightly so that
+        // the resize corner is taken into account
+        ([fsController maxWidth] + 1)];
   }
 
-  [facebookSidebarController_ ensureContentsVisible];
+  [fsController ensureContentsVisible];
   [self layoutSubviews];
 }
 
@@ -1004,6 +1002,7 @@
   DCHECK(view == [toolbarController_ view] ||
          view == [infoBarContainerController_ view] ||
          view == [downloadShelfController_ view] ||
+         view == [facebookChatbarController_ view] ||
          view == [bookmarkBarController_ view]);
 
   // Change the height of the view and call |-layoutSubViews|. We set the height
@@ -1025,7 +1024,8 @@
       [bookmarkBarController_ isAnimatingBetweenState:bookmarks::kHiddenState
                                              andState:bookmarks::kShowingState];
   if ((shouldAdjustBookmarkHeight && view == [bookmarkBarController_ view]) ||
-      view == [downloadShelfController_ view]) {
+      view == [downloadShelfController_ view] || 
+      view == [facebookChatbarController_ view]) {
     [[self window] disableScreenUpdatesUntilFlush];
     CGFloat deltaH = height - frame.size.height;
     [self adjustWindowHeightBy:deltaH];
@@ -1487,16 +1487,34 @@
   return downloadShelfController_;
 }
 
+- (BOOL)isChatbarVisible {
+  return facebookChatbarController_ != nil &&
+      [facebookChatbarController_ isVisible];
+}
+
+- (FacebookChatbarController*)facebookChatbar {
+  if (!facebookChatbarController_.get()) {
+    facebookChatbarController_.reset([[FacebookChatbarController alloc]
+        initWithBrowser:browser_.get() resizeDelegate:self]);
+    [[[self window] contentView] addSubview:[facebookChatbarController_ view]];
+    [facebookChatbarController_ show:nil];
+  }
+  return facebookChatbarController_;
+}
+
 - (BOOL)isFriendsSidebarVisible {
   return facebookSidebarController_ != nil &&
       [facebookSidebarController_ isSidebarVisible];
 }
 
-- (void)createFriendsSidebarIfNeeded {
-  // do nothing
-  // friends sidebar controller is always created
-  // maybe remove TabContentsController member creation from
-  // facebook_sidebar_controller.mm and put a call for creation here
+- (FacebookSidebarController*)friendsSidebar {
+  if (!facebookSidebarController_.get()) {
+    facebookSidebarController_.reset([[FacebookSidebarController alloc]
+      initWithDelegate:self]);
+    [[[self window] contentView] addSubview:[facebookSidebarController_ view]];
+    // TODO: [facebookSidebarController_ show] maybe
+  }
+  return facebookSidebarController_;
 }
 
 - (void)addFindBar:(FindBarCocoaController*)findBarCocoaController {

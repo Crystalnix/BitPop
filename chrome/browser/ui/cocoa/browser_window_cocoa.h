@@ -11,6 +11,7 @@
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "content/common/notification_registrar.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager.h"
 
 class Browser;
 @class BrowserWindowController;
@@ -80,6 +81,8 @@ class BrowserWindowCocoa : public BrowserWindow,
   virtual void ShowBookmarkBubble(const GURL& url, bool already_bookmarked);
   virtual bool IsDownloadShelfVisible() const;
   virtual DownloadShelf* GetDownloadShelf();
+  virtual bool IsChatbarVisible() const;
+  virtual FacebookChatbar* GetChatbar();
   virtual bool IsFriendsSidebarVisible() const;
   virtual void CreateFriendsSidebarIfNeeded();
   virtual void ShowRepostFormWarningDialog(TabContents* tab_contents);

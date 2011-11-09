@@ -10,8 +10,10 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "content/browser/tab_contents/tab_contents.h"
+#include "content/common/notification_service.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/facebook_chat/facebook_chat_create_info.h"
 
 namespace {
 // Errors.
@@ -73,3 +75,39 @@ bool GetFriendsSidebarVisibleFunction::RunImpl() {
         browser->window()->IsFriendsSidebarVisible()));
   return true;
 }
+
+bool AddChatFunction::RunImpl() {
+  if (!args_.get())
+    return false;
+  
+  std::string jid(""), username(""), status("");
+
+  if (IsArgumentListEmpty(args_.get()) || args_->GetSize() != 3) {
+    error_ = kInvalidArguments;
+    return false;
+  } else {
+    EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &jid));
+    EXTENSION_FUNCTION_VALIDATE(args_->GetString(1, &username));
+    EXTENSION_FUNCTION_VALIDATE(args_->GetString(2, &status));
+  }
+
+  // FacebookChatItem::Status statusValue = FacebookChatItem::AVAILABLE;
+  // if (status != "available")
+  //   statusValue = FacebookChatItem::OFFLINE;
+
+  Browser* browser = GetCurrentBrowser();
+  if (!browser) {
+    error_ = kNoCurrentWindowError;
+    return false;
+  }
+
+  NotificationService::current()->Notify(
+      NotificationType::FACEBOOK_CHATBAR_ADD_CHAT,
+      Source<Profile>(browser->profile()),
+      Details<FacebookChatCreateInfo>(
+        new FacebookChatCreateInfo(jid, username, status)));
+
+  return true;
+}
+  
+

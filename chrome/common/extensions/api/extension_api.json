@@ -3356,6 +3356,30 @@
             }
           ]
         }]
+      },
+      {
+        "name": "addChat",
+        "description": "Adds a new chat button and popup to the chatbar.",
+        "parameters": [
+          {
+            "name": "jid",
+            "type": "string",
+            "optional": false,
+            "description": "New chat JID"
+          },
+          {
+            "name": "username",
+            "type": "string",
+            "optional": false,
+            "description": "New chat username"
+          },
+          {
+            "name": "status",
+            "type": "string",
+            "optional": false,
+            "description": "New chat user status string"
+          }
+        ]
       }
     ]
   },

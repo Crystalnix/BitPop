@@ -72,6 +72,8 @@ class PanelBrowserWindowCocoa : public BrowserWindow {
                                   bool already_bookmarked) OVERRIDE;
   virtual bool IsDownloadShelfVisible() const OVERRIDE;
   virtual DownloadShelf* GetDownloadShelf() OVERRIDE;
+  virtual bool IsChatbarVisible() const OVERRIDE;
+  virtual FacebookChatbar* GetChatbar() OVERRIDE;  
   virtual bool IsFriendsSidebarVisible() const OVERRIDE;
   virtual void CreateFriendsSidebarIfNeeded() OVERRIDE;
   virtual void ShowRepostFormWarningDialog(TabContents* tab_contents) OVERRIDE;
