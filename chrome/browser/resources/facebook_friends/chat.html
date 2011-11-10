@@ -1,0 +1,31 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <style type="text/css">
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 183px;
+      height: 350px;
+      background-color: #c0c;
+    }
+    p {
+      margin: 5px;
+    }
+  </style>
+  <script type="text/javascript">
+  //<![CDATA[
+    window.addEventListener('load', function() {
+        if (window.location.hash) {
+          var p = document.createElement('p');
+          p.innerText = 'Chat for user ' + window.location.hash.slice(1);
+          document.body.appendChild(p);
+        }
+    }, false);
+  //]]>
+  </script>
+</head>
+<body>
+  <h1>Chat</h1>
+</body>
+</html>

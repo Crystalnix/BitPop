@@ -33,6 +33,7 @@
 
       <include name="IDR_FACEBOOK_FRIENDS_BACKGR" file="facebook_friends/background.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_FACEBOOK_FRIENDS_POPUP" file="facebook_friends/friends_sidebar.html" flattenhtml="true" type="BINDATA" />
+      <include name="IDR_FACEBOOK_FRIENDS_CHAT" file="facebook_friends/chat.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_FACEBOOK_FRIENDS_ACTIVE_IMG" file="facebook_friends/active.png" type="BINDATA" />
       <include name="IDR_FACEBOOK_FRIENDS_ERROR_IMG" file="facebook_friends/error.png" type="BINDATA" />
       <include name="IDR_FACEBOOK_FRIENDS_IDLE_IMG" file="facebook_friends/idle.png" type="BINDATA" />

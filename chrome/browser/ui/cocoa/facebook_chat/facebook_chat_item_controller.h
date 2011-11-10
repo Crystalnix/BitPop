@@ -15,6 +15,7 @@
 
 @class FacebookChatbarController;
 @class HoverButton;
+class GURL;
 
 @interface FacebookChatItemController : NSViewController {
 @private
@@ -33,6 +34,9 @@
 - (IBAction)remove:(id)sender;
 
 - (NSSize)preferredSize;
+
+- (NSPoint)popupPointForChatWindow;
+- (GURL)getPopupURL;
 @end
 
 #endif    // CHROME_BROWSER_UI_COCOA_FACEBOOK_CHAT_FACEBOOK_CHAT_ITEM_CONTROLLER_H_
