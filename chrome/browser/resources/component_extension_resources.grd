@@ -39,6 +39,11 @@
       <include name="IDR_FACEBOOK_FRIENDS_IDLE_IMG" file="facebook_friends/idle.png" type="BINDATA" />
       <include name="IDR_FACEBOOK_FRIENDS_OFFLINE_IMG" file="facebook_friends/offline.png" type="BINDATA" />
       <include name="IDR_FACEBOOK_FRIENDS_FB_ICON" file="facebook_friends/facebook_icon.png" type="BINDATA" />
+      <include name="IDR_FACEBOOK_FRIENDS_CHAT_ICON" file="facebook_friends/chat_icon.png" type="BINDATA" />
+      <include name="IDR_FACEBOOK_FRIENDS_CHAT_ICON_I" file="facebook_friends/chat_icon_i.png" type="BINDATA" />
+      <include name="IDR_FACEBOOK_FRIENDS_STROPHE_JS" file="facebook_friends/js/strophe.min.js" type="BINDATA" />
+      <include name="IDR_FACEBOOK_FRIENDS_FACEBOOK_JS" file="facebook_friends/js/facebook.js" type="BINDATA" />
+      <include name="IDR_FACEBOOK_FRIENDS_JQUERY_JS" file="facebook_friends/js/jquery.min.js" type="BINDATA" />
 
       <if expr="pp_ifdef('file_manager_extension')">
         <include name="IDR_FILE_MANAGER_MAIN" file="file_manager/main.html" flattenhtml="true" type="BINDATA" />

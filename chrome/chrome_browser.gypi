@@ -2389,6 +2389,8 @@
         'browser/ui/cocoa/facebook_chat/facebook_chatbar_mac.mm',
         'browser/ui/cocoa/facebook_chat/facebook_chatbar_view.h',
         'browser/ui/cocoa/facebook_chat/facebook_chatbar_view.mm',
+        'browser/ui/cocoa/facebook_chat/facebook_popup_controller.h',
+        'browser/ui/cocoa/facebook_chat/facebook_popup_controller.mm',
         'browser/ui/cocoa/fast_resize_view.h',
         'browser/ui/cocoa/fast_resize_view.mm',
         'browser/ui/cocoa/find_bar/find_bar_bridge.h',

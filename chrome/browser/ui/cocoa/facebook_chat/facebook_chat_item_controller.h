@@ -37,6 +37,8 @@ class GURL;
 
 - (NSPoint)popupPointForChatWindow;
 - (GURL)getPopupURL;
+
+- (FacebookChatItem*)chatItem;
 @end
 
 #endif    // CHROME_BROWSER_UI_COCOA_FACEBOOK_CHAT_FACEBOOK_CHAT_ITEM_CONTROLLER_H_

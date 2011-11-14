@@ -7,25 +7,196 @@
       padding: 0;
       width: 183px;
       height: 350px;
-      background-color: #c0c;
     }
     p {
       margin: 5px;
     }
+    #msgForm {
+      position: absolute;
+      bottom: 0;
+      left:0;
+      width: 183px;
+      margin: 0;
+      padding: 0;
+      height: 30px;
+    }
+    #msg {
+      border: 1px solid #ccc;
+      width: 100%;
+    }
+    #chat {
+      list-style: none;
+      margin: 0;
+      padding: 3px;
+      height: 300px;
+      overflow-y: auto;
+    }
+    #chat li {
+      min-height: 24px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      list-style-type: none;
+      word-wrap: break-word;
+      font-family: Tahoma,Verdana,Arial,sans-serif;
+      font-size: 10px;
+    }
+    #chat li.me {
+      background: url(chat_icon.png) top left no-repeat;
+      padding-left: 27px;
+      text-align: left;
+    }
+    #chat li.friend {
+      background: #eee url(chat_icon_i.png) top right no-repeat;
+      padding-right: 27px;
+      text-align: right;
+    }
+    #chat li.time {
+      text-align: center;
+      color: silver;
+      border-bottom: solid 1px silver;
+    }
+
   </style>
+  <script src='js/jquery.min.js'></script>
   <script type="text/javascript">
   //<![CDATA[
-    window.addEventListener('load', function() {
-        if (window.location.hash) {
-          var p = document.createElement('p');
-          p.innerText = 'Chat for user ' + window.location.hash.slice(1);
-          document.body.appendChild(p);
+  var friendUid = window.location.hash.slice(1);
+  var lastMessageTime = null;
+  var lastOutputTime = null;
+
+  Date.prototype.bitpopFormat = function (timeOnly) {
+    var months = [ 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug',
+        'Sep', 'Oct', 'Nov', 'Dec'];
+
+    var curr_date = this.getDate();
+    var curr_month = this.getMonth();
+    curr_month++;
+    var curr_year = this.getFullYear();
+
+    var curr_hour = this.getHours();
+
+    var a_p;
+    if (curr_hour < 12)
+       {
+       a_p = "AM";
+       }
+    else
+       {
+       a_p = "PM";
+       }
+    if (curr_hour == 0)
+       {
+       curr_hour = 12;
+       }
+    if (curr_hour > 12)
+       {
+       curr_hour = curr_hour - 12;
+       }
+
+    var curr_min = this.getMinutes();
+    if (curr_min.toString().length == 1)
+      curr_min = '0' + curr_min.toString();
+
+    return timeOnly ? curr_hour + ':' + curr_min + a_p :
+        months[curr_month - 1] + ' ' + curr_date + ', ' + curr_year + ' at ' +
+        curr_hour + ':' + curr_min + a_p; 
+  };
+
+  Date.prototype.isTodayDate = function() {
+    var now = new Date();
+    return (this.getDate() == now.getDate()) && 
+      (this.getMonth() == now.getMonth()) &&
+      (this.getFullYear() == now.getFullYear());
+  };
+
+  window.addEventListener('load', function() {
+      $('#msg').focus();
+
+      (function initChat() {
+        if (friendUid in localStorage) {
+          var msgs = JSON.parse(localStorage[friendUid]);
+          for (var i = 0; i < msgs.length; ++i) {
+            var msgDate = new Date(Date.parse(msgs[i].time));
+            appendMessage(msgs[i].msg, msgDate, msgs[i].me);
+          }
         }
+      })();
+
+      function appendMessage(msg, msgDate, me) {
+        if (!lastMessageTime || (msgDate - lastOutputTime >= 5 * 60 * 1000)) {
+          $('#chat').append('<li class="time">' + 
+            msgDate.bitpopFormat(msgDate.isTodayDate()) + '</li>');
+          lastOutputTime = msgDate;
+        }
+
+        var html = '';
+        if (me)
+          html += '<li class="me">';
+        else
+          html += '<li class="friend">';
+          html += msg;
+        html += '</li>';
+        $('#chat').append(html);
+
+        lastMessageTime = msgDate;
+      }
+
+      chrome.extension.onRequest.addListener(function (request, sender, sendResponse) {
+        if (request.requestType == 'newMessage') {
+          var from = request.from;
+          var matches = from.match(/\-?(\d+)@.*/);
+          if (matches.length == 2) {
+            var fromUid = matches[1];
+            if (friendUid == fromUid) {
+              var escMsg = request.body.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+              saveToLocalStorage(fromUid, escMsg, request.ts, false);
+              //escMsg = (new Date()).bitpopFormat() + '<br />' + escMsg;
+              appendMessage(escMsg, new Date(), false);
+              //$('#chat').append('<li class="friend">' + escMsg + '</li>');
+            }
+          }
+        }
+      });
+
+      $('#msgForm').submit(function () {
+        var meMsg = $('#msg').val();
+        var uidTo = friendUid;
+        var request = { message: meMsg,
+                        uidTo: uidTo,
+                        requestType: 'sendMessage'};
+        chrome.extension.sendRequest(request);
+        var escMsg = meMsg.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        saveToLocalStorage(uidTo, escMsg, new Date(), true);
+        //escMsg = (new Date()).bitpopFormat() + '<br />' + escMsg;
+        //$('#chat').append('<li class="me">' + escMsg + '</li>');
+        appendMessage(escMsg, new Date(), true);
+
+        $('#msg').val('');
+        $('#msg').focus();
+        return false;
+      });
     }, false);
+
+    function saveToLocalStorage(jid, msg, timestamp, me) {
+      if (!(jid in localStorage)) {
+        var newVal = JSON.stringify([{ msg: msg, time: timestamp, me: me }]);
+        localStorage[jid] = newVal;
+      } else {
+        var vals = JSON.parse(localStorage[jid]);
+        vals.push({ msg: msg, time: timestamp, me: me });
+        localStorage[jid] = JSON.stringify(vals);
+      }
+    }
+
   //]]>
   </script>
 </head>
 <body>
-  <h1>Chat</h1>
+  <ul id="chat"></ul>
+  <form id="msgForm">
+    <input type="text" id="msg" />
+    <input type="submit" style="visibility:hidden; height: 0" />
+  </form>
 </body>
 </html>

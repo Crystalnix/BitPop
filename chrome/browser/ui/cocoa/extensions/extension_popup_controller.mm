@@ -332,6 +332,10 @@ class DevtoolsNotificationBridge : public NotificationObserver {
     host_->view()->WindowFrameChanged();
 }
 
+- (BOOL)beingInspected {
+  return beingInspected_;
+}
+
 // Private (TestingAPI)
 - (NSView*)view {
   return extensionView_;

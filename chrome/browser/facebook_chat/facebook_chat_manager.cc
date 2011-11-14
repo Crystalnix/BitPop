@@ -55,6 +55,10 @@ bool FacebookChatManager::Init(Profile *profile) {
 
 FacebookChatItem* FacebookChatManager::CreateFacebookChat(
     const FacebookChatCreateInfo &info) {
+  ChatMap::iterator it = jid_chats_map_.find(info.jid);
+  if (it != jid_chats_map_.end())
+    return it->second;
+
   FacebookChatItem::Status status = FacebookChatItem::OFFLINE;
   if (info.status == kAvailableStatus)
     status = FacebookChatItem::AVAILABLE;

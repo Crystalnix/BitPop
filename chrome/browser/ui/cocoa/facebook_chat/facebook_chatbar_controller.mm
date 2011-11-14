@@ -17,7 +17,7 @@ namespace {
 // The size of the x button by default.
 const NSSize kHoverCloseButtonDefaultSize = { 16, 16 };
 
-const NSUInteger kMaxChatItemCount = 5;
+const NSUInteger kMaxChatItemCount = 10;
 
 const NSInteger kChatItemPadding = 10;
 
@@ -131,6 +131,11 @@ const NSInteger kChatbarHeight = 44;
 - (void)addChatItem:(FacebookChatItem*)item {
   DCHECK([NSThread isMainThread]);
 
+  // Do not place an item with existing jid to the chat item controllers
+  for (FacebookChatItemController *contr in chatItemControllers_.get()) 
+    if ([contr chatItem]->jid() == item->jid())
+      return;
+
   // Insert new item at the left.
   scoped_nsobject<FacebookChatItemController> controller(
       [[FacebookChatItemController alloc] initWithModel:item chatbar:self]);
@@ -154,6 +159,8 @@ const NSInteger kChatbarHeight = 44;
     // there's no point in animating the removal.
     [self remove:[chatItemControllers_ lastObject]];
   }
+
+  [controller openChatWindow:nil];
 
   // Finally, move the remaining items to the right. Skip the first item when
   // laying out the items, so that the longer animation duration we set up above

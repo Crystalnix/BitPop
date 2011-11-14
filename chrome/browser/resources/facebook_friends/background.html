@@ -1,21 +1,45 @@
 <html>
 <head>
   <title>Facebook Connect For Chrome Extension</title>
+  
   <script>
-      var appId = "190635611002798";
-      var successURL = 'http://www.facebook.com/connect/login_success.html';
+    // constants =========================================
+    var boshServerURL = "http://localhost:5280";
+    var appId = "190635611002798";
+    var successURL = 'http://www.facebook.com/connect/login_success.html';
+    var facebookAPIURL = 'https://graph.facebook.com';
+    // Facebook error codes
+    var FB = {
+      API_EC_PARAM_ACCESS_TOKEN: 190
+    };
+  </script>
+  <script src="js/jquery.min.js"></script>
+  <script src="js/strophe.min.js"></script>  
+  <script src="js/facebook.js"></script>
+  <script>
       var friendsCallback = null;
-      // Facebook error codes
-      var FB = {
-        API_EC_PARAM_ACCESS_TOKEN: 190
-      };
       var friendsCached = null;
       var friendsLastUpdateTime = 0;
+      var connection = null;
+      var myUid = null;
 
       chrome.browserAction.setIcon({ path: "facebook_icon.png" });
       chrome.browserAction.setTitle({ title: "Facebook chat" });
 
       chrome.tabs.onUpdated.addListener(onFacebookLogin);
+
+      connection = new Strophe.Connection(boshServerURL + '/http-bind/');
+
+      if (('invalidToken' in localStorage) && localStorage.invalidToken == 'false') {
+        connection.facebookConnect(
+                            localStorage.myUid + "@chat.facebook.com", 
+                            onConnect, 
+                            60,
+                            1,
+                            appId,
+                            localStorage.accessToken
+                            );
+      }
 
       function onFacebookLogin(tabId, changeInfo, tab) {
         if (!localStorage.accessToken || localStorage.invalidToken) {
@@ -27,7 +51,27 @@
                 var paramTuple = paramsArray[j].split('=');
                 if (paramTuple[0] == 'access_token') {
                   localStorage.invalidToken = false;
-                  localStorage.accessToken = paramTuple[1];
+                  localStorage.accessToken = paramTuple[1]; 
+
+                  $.get(facebookAPIURL + '/me',
+                      { 'access_token': localStorage.accessToken },
+                      function (data) {
+                        var pdata = JSON.parse(data);
+                        if (!('error' in pdata)) {
+                          localStorage.myUid = pdata.id;
+                          connection.facebookConnect(
+                              localStorage.myUid + "@chat.facebook.com", 
+                              onConnect, 
+                              60,
+                              1,
+                              appId,
+                              localStorage.accessToken
+                           );
+                         } else
+                           connection.disconnect();
+                       }
+                   );
+
                   chrome.extension.sendRequest(
                       { requestType: "serviceAvailable" });
                   break;
@@ -36,6 +80,7 @@
             }
             else {
               localStorage.clear();
+              connection.disconnect();
               chrome.extension.sendRequest({ requestType: 'loggedOut' });
             }
 
@@ -43,7 +88,63 @@
           }
         }
       }
+
+      function onConnect(status) {
+        if (status == Strophe.Status.CONNECTING) {
+          console.log('Strophe is connecting.');
+        } else if (status == Strophe.Status.CONNFAIL) {
+          console.log('Strophe failed to connect.');
+        } else if (status == Strophe.Status.DISCONNECTING) {
+          console.log('Strophe is disconnecting.');
+        } else if (status == Strophe.Status.DISCONNECTED) {
+          console.log('Strophe is disconnected.');
+        } else if (status == Strophe.Status.CONNECTED) {
+          console.log('Strophe is connected.');
+          console.log('Send a message to ' + connection.jid +
+          ' to talk to me.');
+
+          connection.addHandler(onMessage, null, 'message', null, null,  null);
+          connection.send($pres().tree());
+        }
+      }
       
+      function onMessage(msg) {
+        var to = msg.getAttribute('to');
+        var from = msg.getAttribute('from');
+        var type = msg.getAttribute('type');
+        var elems = msg.getElementsByTagName('body');
+
+        if (type == "chat" && elems.length > 0) {
+          var body = elems[0];
+          var msgText = Strophe.getText(body);
+
+          chrome.extension.sendRequest({ requestType: 'newMessage', body: msgText,
+              from: from, ts: new Date() });
+
+          console.log('I got a message from ' + from + ': ' +
+          msgText);
+        }
+
+        // we must return true to keep the handler alive.
+        // returning false would remove it after it finishes.
+        return true;
+      }
+
+      function sendMessage(message, uidTo) {
+        var to = '-' + uidTo + "@chat.facebook.com";
+        
+        if(message && to){
+          var reply = $msg({
+            to: to,
+            type: 'chat'
+          })
+          .cnode(Strophe.xmlElement('body', message));
+          connection.send(reply.tree());
+
+          console.log('I sent ' + to + ': ' + message);
+        }
+      }
+
       function openAuthWindow(appId, redirectUri) {
         var url = "https://www.facebook.com/dialog/oauth?client_id=" + appId +
             "&response_type=token&redirect_uri=" + redirectUri + 
@@ -77,6 +178,9 @@
         }
         else if (request.requestType == 'loggedOut') {
           
+        }
+        else if (request.requestType == "sendMessage") {
+          sendMessage(request.message, request.uidTo);
         }
       });
 

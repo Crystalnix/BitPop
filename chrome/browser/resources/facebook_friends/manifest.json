@@ -11,7 +11,9 @@
     "tabs",
     "chromePrivate",
     "*.facebook.com/*",
-    "https://api.facebook.com/*"
+    "https://api.facebook.com/*",
+    "https://graph.facebook.com/*",
+    "http://localhost:5280/*"
   ]
 }
 

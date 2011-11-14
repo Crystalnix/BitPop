@@ -85,6 +85,8 @@ class NotificationRegistrar;
 
 // Show the dev tools attached to the popup.
 - (void)showDevTools;
+
+- (BOOL)beingInspected;
 @end
 
 @interface ExtensionPopupController(TestingAPI)

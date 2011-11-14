@@ -11,7 +11,7 @@
 #include "googleurl/src/gurl.h"
 #include "chrome/browser/facebook_chat/facebook_chatbar.h"
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_chatbar_controller.h"
-#import "chrome/browser/ui/cocoa/extensions/extension_popup_controller.h"
+#import "chrome/browser/ui/cocoa/facebook_chat/facebook_popup_controller.h"
 #include "chrome/common/url_constants.h"
 
 namespace {
@@ -42,11 +42,11 @@ namespace {
 - (void)openChatWindow:(id)sender {
   GURL popupUrl = [self getPopupURL];
   NSPoint arrowPoint = [self popupPointForChatWindow];
-  [ExtensionPopupController showURL:popupUrl
-                          inBrowser:[chatbarController_ bridge]->browser()
-                         anchoredAt:arrowPoint
-                      arrowLocation:info_bubble::kBottomCenter
-                            devMode:NO];
+  [FacebookPopupController showURL:popupUrl
+                         inBrowser:[chatbarController_ bridge]->browser()
+                        anchoredAt:arrowPoint
+                     arrowLocation:info_bubble::kBottomCenter
+                           devMode:NO];
 }
 
 - (void)remove:(id)sender {
@@ -81,6 +81,10 @@ namespace {
   urlString += "#";
   urlString += bridge_->chat()->jid();
   return GURL(urlString);
+}
+
+- (FacebookChatItem*)chatItem {
+  return bridge_->chat();
 }
 
 @end
