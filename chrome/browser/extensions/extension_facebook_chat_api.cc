@@ -14,6 +14,9 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/facebook_chat/facebook_chat_create_info.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager.h"
+#include "chrome/browser/facebook_chat/facebook_chat_item.h"
+#include "chrome/browser/facebook_chat/received_message_info.h"
 
 namespace {
 // Errors.
@@ -110,4 +113,43 @@ bool AddChatFunction::RunImpl() {
   return true;
 }
 
+bool NewIncomingMessageFunction::RunImpl() {
+  if (!args_.get())
+    return false;
+
+  std::string jid(""), username(""), status(""), message("");
+
+  if (IsArgumentListEmpty(args_.get()) || args_->GetSize() != 4) {
+    error_ = kInvalidArguments;
+    return false;
+  } else {
+    EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &jid));
+    EXTENSION_FUNCTION_VALIDATE(args_->GetString(1, &username));
+    EXTENSION_FUNCTION_VALIDATE(args_->GetString(2, &status));
+    EXTENSION_FUNCTION_VALIDATE(args_->GetString(3, &message));
+  }
+
+  // FacebookChatItem::Status statusValue = FacebookChatItem::AVAILABLE;
+  // if (status != "available")
+  //   statusValue = FacebookChatItem::OFFLINE;
+
+  Browser* browser = GetCurrentBrowser();
+  if (!browser) {
+    error_ = kNoCurrentWindowError;
+    return false;
+  }
+
+  FacebookChatManager *mgr = browser->profile()->GetFacebookChatManager();
+  mgr->CreateFacebookChat(FacebookChatCreateInfo(jid, username, status));
+
+  mgr->AddNewUnreadMessage(jid, message);
+
+  NotificationService::current()->Notify(
+      NotificationType::FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE,
+      Source<Profile>(browser->profile()),
+      Details<ReceivedMessageInfo>(
+        new ReceivedMessageInfo(jid, username, status, message)));
+
+  return true;
+}
 

@@ -93,7 +93,7 @@ static FacebookPopupController* gPopup;
 
   // If the window isn't visible, it is already closed, and this notification
   // has been sent as part of the closing operation, so no need to close.
-  if ([[NSApplication sharedApplication] keyWindow] != nil && 
+  if ([[NSApplication sharedApplication] keyWindow] != nil &&
       [window isVisible] && ![self beingInspected]) {
     [self close];
   }

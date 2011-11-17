@@ -131,8 +131,11 @@ const NSInteger kChatbarHeight = 44;
 - (void)addChatItem:(FacebookChatItem*)item {
   DCHECK([NSThread isMainThread]);
 
+  if (![self isVisible])
+    [self show:nil];
+    
   // Do not place an item with existing jid to the chat item controllers
-  for (FacebookChatItemController *contr in chatItemControllers_.get()) 
+  for (FacebookChatItemController *contr in chatItemControllers_.get())
     if ([contr chatItem]->jid() == item->jid())
       return;
 
@@ -160,12 +163,23 @@ const NSInteger kChatbarHeight = 44;
     [self remove:[chatItemControllers_ lastObject]];
   }
 
-  [controller openChatWindow:nil];
-
   // Finally, move the remaining items to the right. Skip the first item when
   // laying out the items, so that the longer animation duration we set up above
   // is not overwritten.
   [self layoutItems:YES];
+
+  if ([controller active])
+    [controller openChatWindow];
+}
+
+- (void)activateItem:(FacebookChatItemController*)chatItem {
+  for (FacebookChatItemController *controller in chatItemControllers_.get()) {
+    if (controller == chatItem) {
+      [controller setActive:YES];
+    }
+    else
+      [controller setActive:NO];
+  }
 }
 
 - (void)remove:(FacebookChatItemController*)chatItem {

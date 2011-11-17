@@ -12,10 +12,10 @@ Strophe.Connection.prototype._sasl_challenge1_fb = function (elem)
         this.deleteHandler(this._sasl_failure_handler);
 
         var challenges = explode("&", challenge);
-        for(i=0; i<challenges.length; i++) 
+        for(i=0; i<challenges.length; i++)
         {
         	map = explode("=", challenges[i]);
-        	switch (map[0]) 
+        	switch (map[0])
         	{
         		case "nonce":
         			nonce = map[1];
@@ -30,14 +30,14 @@ Strophe.Connection.prototype._sasl_challenge1_fb = function (elem)
         }
 
         var responseText = "";
-        
+
         responseText += 'api_key=' + this.apiKey;
         responseText += '&call_id=' + (Math.floor(new Date().getTime()/1000));
         responseText += '&method=' + method;
         responseText += '&nonce=' + nonce;
         responseText += '&session_key=' + this.sessionKey;
         responseText += '&v=' + '1.0';
-        
+
         var this_ = this;
 		$.get(boshServerURL + '/sasl_challenge1_fb', {'data':responseText.replace(/&/g,"")}, function(data) {
 	        responseText += '&sig=' + data;

@@ -14,7 +14,7 @@
 }
 
 + (FacebookPopupController*)showURL:(GURL)url inBrowser:(Browser*)browser
-    anchoredAt:(NSPoint)anchoredAt 
+    anchoredAt:(NSPoint)anchoredAt
     arrowLocation:(info_bubble::BubbleArrowLocation)arrowLocation
     devMode:(BOOL)devMode;
 

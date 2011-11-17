@@ -362,6 +362,7 @@ void FactoryRegistry::ResetFunctions() {
   RegisterFunction<GetFriendsSidebarVisibleFunction>();
   RegisterFunction<SetFriendsSidebarVisibleFunction>();
   RegisterFunction<AddChatFunction>();
+  RegisterFunction<NewIncomingMessageFunction>();
 }
 
 void FactoryRegistry::GetAllNames(std::vector<std::string>* names) {

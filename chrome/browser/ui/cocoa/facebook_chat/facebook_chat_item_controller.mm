@@ -10,6 +10,8 @@
 #include "base/mac/mac_util.h"
 #include "googleurl/src/gurl.h"
 #include "chrome/browser/facebook_chat/facebook_chatbar.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager.h"
+#include "chrome/browser/profiles/profile.h"
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_chatbar_controller.h"
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_popup_controller.h"
 #include "chrome/common/url_constants.h"
@@ -19,6 +21,8 @@ namespace {
   const int kButtonHeight = 23;
 
   const CGFloat kChatWindowAnchorPointYOffset = 3.0;
+
+  const CGFloat kBadgeImageDim = 14;
 }
 
 @implementation FacebookChatItemController
@@ -30,6 +34,7 @@ namespace {
     bridge_.reset(new FacebookChatItemMac(downloadModel, self));
 
     chatbarController_ = chatbar;
+    active_ = downloadModel->needs_activation() ? YES : NO;
   }
   return self;
 }
@@ -37,20 +42,45 @@ namespace {
 - (void)awakeFromNib {
   [button_ setTitle:
         [NSString stringWithUTF8String:bridge_->chat()->username().c_str()]];
+  int nNotifications = [self chatItem]->num_notifications();
+  if (nNotifications > 0)
+    [self setUnreadMessagesNumber:nNotifications];
 }
 
-- (void)openChatWindow:(id)sender {
+- (void)dealloc {
+  [[NSNotificationCenter defaultCenter] removeObserver:self];
+  [super dealloc];
+}
+
+- (IBAction)activateItemAction:(id)sender {
+  [chatbarController_ activateItem:self];
+}
+
+- (IBAction)removeAction:(id)sender {
+  [self chatItem]->Remove();
+}
+
+- (void)openChatWindow {
   GURL popupUrl = [self getPopupURL];
   NSPoint arrowPoint = [self popupPointForChatWindow];
-  [FacebookPopupController showURL:popupUrl
-                         inBrowser:[chatbarController_ bridge]->browser()
-                        anchoredAt:arrowPoint
-                     arrowLocation:info_bubble::kBottomCenter
-                           devMode:NO];
+  FacebookPopupController *fbpc = 
+    [FacebookPopupController showURL:popupUrl
+                           inBrowser:[chatbarController_ bridge]->browser()
+                          anchoredAt:arrowPoint
+                       arrowLocation:info_bubble::kBottomCenter
+                             devMode:NO];
+  NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+  [center addObserver:self
+             selector:@selector(chatWindowWillClose:)
+                 name:NSWindowWillCloseNotification
+               object:[fbpc window]];
+
 }
 
-- (void)remove:(id)sender {
-  [chatbarController_ remove:self];
+- (void)chatWindowWillClose:(NSNotification*)notification {
+  [[NSNotificationCenter defaultCenter] removeObserver:self];
+
+  [self setActive:NO];
 }
 
 - (NSSize)preferredSize {
@@ -59,7 +89,6 @@ namespace {
   res.height = kButtonHeight;
   return res;
 }
-
 
 - (NSPoint)popupPointForChatWindow {
   if (!button_)
@@ -85,6 +114,97 @@ namespace {
 
 - (FacebookChatItem*)chatItem {
   return bridge_->chat();
+}
+
+- (void)remove {
+  if ([self active])
+    [[FacebookPopupController popup] close];
+
+  [chatbarController_ remove:self];
+}
+
++ (NSImage*)imageForNotificationBadgeWithNumber:(int)number {
+  NSImage *img = [[NSImage alloc] initWithSize:
+      NSMakeSize(kBadgeImageDim, kBadgeImageDim)];
+  [img lockFocus];
+  
+  NSRect badgeRect = NSMakeRect(0, 0, kBadgeImageDim, kBadgeImageDim);
+  CGFloat badgeRadius = kBadgeImageDim / 2;
+
+  NSBezierPath* badgeEdge = [NSBezierPath bezierPathWithOvalInRect:badgeRect];
+  [[NSColor redColor] set];
+  [badgeEdge fill];
+
+  // Download count
+  [[NSColor whiteColor] set];
+  scoped_nsobject<NSNumberFormatter> formatter(
+      [[NSNumberFormatter alloc] init]);
+  NSString* countString =
+      [formatter stringFromNumber:[NSNumber numberWithInt:number]];
+
+  scoped_nsobject<NSShadow> countShadow([[NSShadow alloc] init]);
+  [countShadow setShadowBlurRadius:3.0];
+  [countShadow.get() setShadowColor:[NSColor whiteColor]];
+  [countShadow.get() setShadowOffset:NSMakeSize(0.0, 0.0)];
+  NSMutableDictionary* countAttrsDict =
+      [NSMutableDictionary dictionaryWithObjectsAndKeys:
+          [NSColor blackColor], NSForegroundColorAttributeName,
+          countShadow.get(), NSShadowAttributeName,
+          nil];
+  CGFloat countFontSize = badgeRadius;
+  NSSize countSize = NSZeroSize;
+  scoped_nsobject<NSAttributedString> countAttrString;
+  while (1) {
+    NSFont* countFont = [NSFont fontWithName:@"Helvetica-Bold"
+                                        size:countFontSize];
+    [countAttrsDict setObject:countFont forKey:NSFontAttributeName];
+    countAttrString.reset(
+        [[NSAttributedString alloc] initWithString:countString
+                                        attributes:countAttrsDict]);
+    countSize = [countAttrString size];
+    if (countSize.width > badgeRadius * 3) {
+      countFontSize -= 1.0;
+    } else {
+      break;
+    }
+  }
+
+  NSPoint countOrigin = NSMakePoint(kBadgeImageDim / 2, kBadgeImageDim / 2);
+  countOrigin.x -= countSize.width / 2;
+  countOrigin.y -= countSize.height / 2.2;  // tweak; otherwise too low
+
+  [countAttrString.get() drawAtPoint:countOrigin];
+ 
+  [img unlockFocus];
+
+  return img;
+}
+
+- (void)setUnreadMessagesNumber:(int)number {
+  if (number != 0) {
+    NSImage *img = [FacebookChatItemController
+        imageForNotificationBadgeWithNumber:number];
+    [button_ setImagePosition:NSImageLeft];
+    [button_ setImage:img];
+    [img release];
+    //[button_ highlight:YES];
+  } else {
+    //[button_ highlight:NO];
+    [button_ setImage:nil];
+  }
+}
+
+- (BOOL)active {
+  return active_;
+}
+
+- (void)setActive:(BOOL)active {
+  if (active) {
+    [self chatItem]->ClearUnreadMessages();
+    [self openChatWindow];
+  }
+
+  active_ = active;
 }
 
 @end

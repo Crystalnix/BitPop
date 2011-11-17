@@ -1,10 +1,10 @@
 <html>
 <head>
   <title>Facebook Connect For Chrome Extension</title>
-  
+
   <script>
     // constants =========================================
-    var boshServerURL = "http://localhost:5280";
+    var boshServerURL = "http://tools.bitpop.com:5280";
     var appId = "190635611002798";
     var successURL = 'http://www.facebook.com/connect/login_success.html';
     var facebookAPIURL = 'https://graph.facebook.com';
@@ -14,8 +14,9 @@
     };
   </script>
   <script src="js/jquery.min.js"></script>
-  <script src="js/strophe.min.js"></script>  
+  <script src="js/strophe.min.js"></script>
   <script src="js/facebook.js"></script>
+  <script src="js/common.js"></script>
   <script>
       var friendsCallback = null;
       var friendsCached = null;
@@ -32,8 +33,8 @@
 
       if (('invalidToken' in localStorage) && localStorage.invalidToken == 'false') {
         connection.facebookConnect(
-                            localStorage.myUid + "@chat.facebook.com", 
-                            onConnect, 
+                            localStorage.myUid + "@chat.facebook.com",
+                            onConnect,
                             60,
                             1,
                             appId,
@@ -51,7 +52,7 @@
                 var paramTuple = paramsArray[j].split('=');
                 if (paramTuple[0] == 'access_token') {
                   localStorage.invalidToken = false;
-                  localStorage.accessToken = paramTuple[1]; 
+                  localStorage.accessToken = paramTuple[1];
 
                   $.get(facebookAPIURL + '/me',
                       { 'access_token': localStorage.accessToken },
@@ -60,8 +61,8 @@
                         if (!('error' in pdata)) {
                           localStorage.myUid = pdata.id;
                           connection.facebookConnect(
-                              localStorage.myUid + "@chat.facebook.com", 
-                              onConnect, 
+                              localStorage.myUid + "@chat.facebook.com",
+                              onConnect,
                               60,
                               1,
                               appId,
@@ -107,7 +108,7 @@
           connection.send($pres().tree());
         }
       }
-      
+
       function onMessage(msg) {
         var to = msg.getAttribute('to');
         var from = msg.getAttribute('from');
@@ -117,9 +118,43 @@
         if (type == "chat" && elems.length > 0) {
           var body = elems[0];
           var msgText = Strophe.getText(body);
+          var msgDate = new Date();
 
-          chrome.extension.sendRequest({ requestType: 'newMessage', body: msgText,
-              from: from, ts: new Date() });
+          var fromUid = null;
+          var matches = from.match(/\-?(\d+)@.*/);
+          if (matches.length == 2) {
+            fromUid = matches[1];
+          }
+
+          var found = false;
+          var vs = chrome.extension.getViews();
+          for (var i = 0; i < vs.length; ++i) {
+            if (vs[i].location.hash.slice(1) == fromUid) {
+              found = true;
+              break;
+            }
+          }
+
+          if (found) {
+            chrome.extension.sendRequest({ requestType: 'newMessage', body: msgText,
+              from: from, ts: msgDate });
+          } else {
+            saveToLocalStorage(fromUid, 
+              preprocessMessageText(msgText),
+              msgDate,
+              false);
+
+            for (var i = 0; i < friendsCached.length; ++i) {
+              if (friendsCached[i].uid == fromUid) {
+                chrome.chromePrivate.newIncomingMessage(
+                                   friendsCached[i].uid.toString(),
+                                   friendsCached[i].name,
+                                   friendsCached[i].online_presence,
+                                   msgText);
+                break;
+              }
+            }
+          }
 
           console.log('I got a message from ' + from + ': ' +
           msgText);
@@ -132,7 +167,7 @@
 
       function sendMessage(message, uidTo) {
         var to = '-' + uidTo + "@chat.facebook.com";
-        
+
         if(message && to){
           var reply = $msg({
             to: to,
@@ -147,11 +182,11 @@
 
       function openAuthWindow(appId, redirectUri) {
         var url = "https://www.facebook.com/dialog/oauth?client_id=" + appId +
-            "&response_type=token&redirect_uri=" + redirectUri + 
+            "&response_type=token&redirect_uri=" + redirectUri +
             '&display=popup' +
             '&scope=xmpp_login,offline_access,' +
               'user_online_presence,friends_online_presence';
-              
+
         window.open(url, 'facebookAuthWindow',
             'height=580,width=400,toolbar=no,directories=no,status=no,' +
             'menubar=no,scrollbars=no,resizable=no,modal=yes');
@@ -162,8 +197,8 @@
           return;
 
         if (request.requestType == 'getFriendList') {
-          if (Date.now() - friendsLastUpdateTime >= 1 * 60 * 1000 || 
-              !friendsCached) 
+          if (Date.now() - friendsLastUpdateTime >= 1 * 60 * 1000 ||
+              !friendsCached)
             getFriendList();
           else
             friendListSent(friendsCached);
@@ -177,7 +212,7 @@
           openAuthWindow(appId, successURL);
         }
         else if (request.requestType == 'loggedOut') {
-          
+
         }
         else if (request.requestType == "sendMessage") {
           sendMessage(request.message, request.uidTo);
@@ -192,7 +227,7 @@
       }
 
       function friendListSent(obj) {
-        chrome.extension.sendRequest({ requestType: 'sentFriendList', 
+        chrome.extension.sendRequest({ requestType: 'sentFriendList',
                                        data: obj });
       }
 
@@ -203,7 +238,7 @@
                                          ' Facebook services.' });
         }
 
-        var friendListQuery = 
+        var friendListQuery =
             'SELECT uid, name, pic_square, online_presence' +
             ' FROM user WHERE uid IN' +
             ' (SELECT uid2 FROM friend WHERE uid1=me())';

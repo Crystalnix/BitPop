@@ -50,6 +50,7 @@ class FacebookChatItem;
 - (BOOL)isVisible;
 
 - (void)addChatItem:(FacebookChatItem*)item;
+- (void)activateItem:(FacebookChatItemController*)chatItem;
 - (void)remove:(FacebookChatItemController*)chatItem;
 
 - (void)layoutItems;

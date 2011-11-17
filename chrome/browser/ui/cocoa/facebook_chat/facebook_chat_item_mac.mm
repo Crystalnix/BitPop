@@ -11,12 +11,29 @@ FacebookChatItemMac::FacebookChatItemMac(FacebookChatItem *model,
                                          FacebookChatItemController *controller)
                                          : model_(model),
                                            controller_(controller) {
+  model_->AddObserver(this);
 }
 
 FacebookChatItemMac::~FacebookChatItemMac() {
+  model_->RemoveObserver(this);
 }
 
 void FacebookChatItemMac::OnChatUpdated(FacebookChatItem *source) {
+  DCHECK(source == model_);
+  switch (source->state()) {
+  // case FacebookChatItem::ACTIVE_STATUS_CHANGED:
+  //   if (source->active())
+  //     [controller_ openChatWindow];
+  //   break;
+  case FacebookChatItem::REMOVING:
+    [controller_ remove];
+    break;
+  case FacebookChatItem::NUM_NOTIFICATIONS_CHANGED:
+    [controller_ setUnreadMessagesNumber:source->num_notifications()];
+    break;
+  default:
+    break;
+  }
 }
 
 FacebookChatItem* FacebookChatItemMac::chat() const {

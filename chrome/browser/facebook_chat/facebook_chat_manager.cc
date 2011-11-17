@@ -6,6 +6,10 @@
 #include "chrome/browser/facebook_chat/facebook_chat_manager.h"
 
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
+#include "chrome/browser/facebook_chat/facebook_chatbar.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/profiles/profile.h"
 #include "base/stl_util-inl.h"
 
 namespace {
@@ -44,13 +48,19 @@ void FacebookChatManager::Shutdown() {
 }
 
 bool FacebookChatManager::Init(Profile *profile) {
-  DCHECK(profile);
   DCHECK(!shutdown_needed_)  << "FacebookChatManager already initialized.";
   shutdown_needed_ = true;
 
   profile_ = profile;
 
   return true;
+}
+
+FacebookChatItem* FacebookChatManager::GetItem(const std::string &jid) {
+  ChatMap::iterator it = jid_chats_map_.find(jid);
+  if (it != jid_chats_map_.end())
+    return it->second;
+  return NULL;
 }
 
 FacebookChatItem* FacebookChatManager::CreateFacebookChat(
@@ -70,23 +80,36 @@ FacebookChatItem* FacebookChatManager::CreateFacebookChat(
   chats_.insert(item);
   jid_chats_map_[info.jid] = item;
 
+  NotifyModelChanged();
+
   return item;
 }
 
-void FacebookChatManager::StartChat(const std::string &jid) {
+void FacebookChatManager::RemoveItem(const std::string &jid) {
   ChatMap::iterator it = jid_chats_map_.find(jid);
-  if (it != jid_chats_map_.end()) {
-    FacebookChatItem *item = it->second;
-    ActivateItem(item);
-  }
+  if (it == jid_chats_map_.end())
+    return;
+
+  FacebookChatItem *item = it->second;
+
+  jid_chats_map_.erase(it);
+  chats_.erase(item);
+
+  NotifyModelChanged();
+
+  delete item;
 }
 
-void FacebookChatManager::ActivateItem(FacebookChatItem *item) {
-  for (ChatSet::iterator sit = chats_.begin(); sit != chats_.end(); sit++) {
-    if (*sit != item)
-      (*sit)->Deactivate();
-  }
-  item->Activate();
+void FacebookChatManager::AddNewUnreadMessage(
+    const std::string &jid,
+    const std::string &message) {
+  ChatMap::iterator it = jid_chats_map_.find(jid);
+  if (it == jid_chats_map_.end())
+    return; 
+
+  FacebookChatItem *item = it->second;
+
+  item->AddNewUnreadMessage(message);
 }
 
 void FacebookChatManager::AddObserver(Observer* observer) {

@@ -1,7 +1,7 @@
 /*
     @author: Ruben J Garcia <rubenjgarciab@gmail.com>
     @version: 1.0
-    
+
     This program is distributed under the terms of the MIT license.
     Please see the LICENSE file for details.
 
@@ -15,12 +15,12 @@
  * @param limit int[optional] If limit is set and positive, the returned array will contain
  * 		a maximum of limit elements with the last
  * 		element containing the rest of string.
- * 
+ *
  * 		If the limit parameter is negative, all components
  * 		except the last -limit are returned.
- * 
+ *
  * 		If the limit parameter is zero, then this is treated as 1.
- * 
+ *
  * @returns array If delimiter is an empty string (""),
  * 		explode will return false.
  * 		If delimiter contains a value that is not
@@ -31,37 +31,37 @@
  */
 function explode(delimiter, string, limit) {
          var emptyArray = { 0: '' };
-        
+
         // third argument is not required
         if ( arguments.length < 2 ||
             typeof arguments[0] == 'undefined' || typeof arguments[1] == 'undefined' ) {
             return null;
         }
-     
+
         if ( delimiter === '' || delimiter === false ||
             delimiter === null ) {
             return false;
         }
-        
+
         if ( typeof delimiter == 'function' || typeof delimiter == 'object' ||
             typeof string == 'function' || typeof string == 'object' ) {
-            	return emptyArray;    
+            	return emptyArray;
         }
-     
+
         if ( delimiter === true ) {
             delimiter = '1';
-        }  
-        
+        }
+
         if (!limit) {
             return string.toString().split(delimiter.toString());
         } else {
-            // support for limit argument        
+            // support for limit argument
         	var splitted = string.toString().split(delimiter.toString());
             var partA = splitted.splice(0, limit - 1);
             var partB = splitted.join(delimiter.toString());
             partA.push(partB);
-            return partA;   
-        }   
+            return partA;
+        }
 };
 
 /**
@@ -82,10 +82,10 @@ Strophe.Connection.prototype._sasl_challenge1_fb = function (elem)
         this.deleteHandler(this._sasl_failure_handler);
 
         var challenges = explode("&", challenge);
-        for(i=0; i<challenges.length; i++) 
+        for(i=0; i<challenges.length; i++)
         {
         	map = explode("=", challenges[i]);
-        	switch (map[0]) 
+        	switch (map[0])
         	{
         		case "nonce":
         			nonce = map[1];
@@ -100,14 +100,14 @@ Strophe.Connection.prototype._sasl_challenge1_fb = function (elem)
         }
 
         var responseText = "";
-        
+
         responseText += 'api_key=' + this.apiKey;
         responseText += '&access_token=' + this.accessToken;
         responseText += '&call_id=' + (Math.floor(new Date().getTime()/1000));
         responseText += '&method=' + method;
         responseText += '&nonce=' + nonce;
         responseText += '&v=' + '1.0';
-        
+
         this._sasl_challenge_handler = this._addSysHandler(
             this._sasl_challenge2_cb.bind(this), null,
             "challenge", null, null);
@@ -117,7 +117,7 @@ Strophe.Connection.prototype._sasl_challenge1_fb = function (elem)
         this._sasl_failure_handler = this._addSysHandler(
             this._sasl_failure_cb.bind(this), null,
             "failure", null, null);
-        
+
         this.send($build('response', {
             xmlns: Strophe.NS.SASL
         }).t(Base64.encode(responseText)).tree());
@@ -201,11 +201,11 @@ Strophe.Connection.prototype._connect_fb = function (req) {
                 }
             }
         }
-        
+
         if (!xfacebook)	{
         	return;
         }
-        
+
         this._changeConnectStatus(Strophe.Status.AUTHENTICATING, null);
         this._sasl_challenge_handler = this._addSysHandler(
             this._sasl_challenge1_fb.bind(this), null,

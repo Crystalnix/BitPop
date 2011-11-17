@@ -14,10 +14,14 @@ FacebookChatItem::FacebookChatItem(FacebookChatManager *manager,
   username_(username),
   status_(status),
   numNotifications_(0),
-  active_(false),
-  highlighted_(false),
+  needsActivation_(false),
   manager_(manager)
 {
+}
+
+FacebookChatItem::~FacebookChatItem() {
+  state_ = REMOVING;
+  UpdateObservers();
 }
 
 std::string FacebookChatItem::jid() const {
@@ -36,14 +40,17 @@ unsigned int FacebookChatItem::num_notifications() const {
   return numNotifications_;
 }
 
-bool FacebookChatItem::active() const {
-  return active_;
+FacebookChatItem::State FacebookChatItem::state() const {
+  return state_;
 }
 
-bool FacebookChatItem::highlighted() const {
-  return highlighted_;
+bool FacebookChatItem::needs_activation() const {
+  return needsActivation_;
 }
 
+void FacebookChatItem::set_needs_activation(bool value) {
+  needsActivation_ = value;
+}
 void FacebookChatItem::AddObserver(Observer* observer) {
   observers_.AddObserver(observer);
 }
@@ -56,32 +63,19 @@ void FacebookChatItem::UpdateObservers() {
   FOR_EACH_OBSERVER(Observer, observers_, OnChatUpdated(this));
 }
 
-void FacebookChatItem::Activate() {
-  if (!active_) {
-    active_ = true;
-    UpdateObservers();
-  }
+void FacebookChatItem::Remove() {
+  state_ = REMOVING;
+  manager_->RemoveItem(jid_);
 }
 
-void FacebookChatItem::Deactivate() {
-  if (active_) {
-    active_ = false;
-    UpdateObservers();
-  }
+void FacebookChatItem::AddNewUnreadMessage(const std::string &message) {
+  numNotifications_++;
+  state_ = NUM_NOTIFICATIONS_CHANGED;
+  UpdateObservers();
 }
 
-void FacebookChatItem::SetHighlight() {
-  if (!highlighted_) {
-    highlighted_ = true;
-    UpdateObservers();
-  }
+void FacebookChatItem::ClearUnreadMessages() {
+  numNotifications_ = 0;
+  state_ = NUM_NOTIFICATIONS_CHANGED;
+  UpdateObservers();
 }
-
-void FacebookChatItem::RemoveHighlight() {
-  if (highlighted_) {
-    highlighted_ = false;
-    UpdateObservers();
-  }
-}
-
-

@@ -1320,6 +1320,7 @@ class NotificationType {
     PROTOCOL_HANDLER_REGISTRY_CHANGED,
 
     FACEBOOK_CHATBAR_ADD_CHAT,
+    FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE,
 
     // Count (must be last) ----------------------------------------------------
     // Used to determine the number of notification types.  Not valid as

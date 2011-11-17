@@ -8,6 +8,7 @@
 #pragma once
 
 #include <string>
+#include <list>
 
 #include "base/observer_list.h"
 
@@ -20,11 +21,19 @@ class FacebookChatItem {
       OFFLINE
     };
 
+    enum State {
+      NORMAL = 0,
+      REMOVING,
+      ACTIVE_STATUS_CHANGED,
+      HIGHLIGHT_STATUS_CHANGED,
+      NUM_NOTIFICATIONS_CHANGED
+    };
+
     FacebookChatItem(FacebookChatManager *manager,
         const std::string &jid,
         const std::string &username,
         Status status);
-    virtual ~FacebookChatItem() {}
+    virtual ~FacebookChatItem();
 
     class Observer {
       public:
@@ -39,30 +48,31 @@ class FacebookChatItem {
     unsigned int num_notifications() const;
     bool active() const;
     bool highlighted() const;
+    State state() const;
+    bool needs_activation() const;
+    void set_needs_activation(bool value);
 
-    void UpdateUsernameChanged(const std::string &new_username);
-    void UpdateStatusChanged(Status new_status);
-    void UpdateNewMessage();
+    void Remove();
 
-    void Activate();
-    void Deactivate();
-
-    void SetHighlight();
-    void RemoveHighlight();
+    void AddNewUnreadMessage(const std::string &message);
+    void ClearUnreadMessages();
 
     void AddObserver(Observer* observer);
     void RemoveObserver(Observer* observer);
   private:
+    friend class FacebookChatManager;
+
     void UpdateObservers();
 
     std::string jid_;
     std::string username_;
     Status status_;
+    State state_;
 
     unsigned int numNotifications_;
-
-    bool active_;
-    bool highlighted_;
+    //std::list<FacebookUnreadMessage> unreadMessages_;
+    
+    bool needsActivation_;
 
     // Our owning chat manager
     FacebookChatManager *manager_;

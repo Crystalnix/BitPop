@@ -59,6 +59,7 @@
 
   </style>
   <script src='js/jquery.min.js'></script>
+  <script src="js/common.js"></script>
   <script type="text/javascript">
   //<![CDATA[
   var friendUid = window.location.hash.slice(1);
@@ -100,12 +101,12 @@
 
     return timeOnly ? curr_hour + ':' + curr_min + a_p :
         months[curr_month - 1] + ' ' + curr_date + ', ' + curr_year + ' at ' +
-        curr_hour + ':' + curr_min + a_p; 
+        curr_hour + ':' + curr_min + a_p;
   };
 
   Date.prototype.isTodayDate = function() {
     var now = new Date();
-    return (this.getDate() == now.getDate()) && 
+    return (this.getDate() == now.getDate()) &&
       (this.getMonth() == now.getMonth()) &&
       (this.getFullYear() == now.getFullYear());
   };
@@ -125,7 +126,7 @@
 
       function appendMessage(msg, msgDate, me) {
         if (!lastMessageTime || (msgDate - lastOutputTime >= 5 * 60 * 1000)) {
-          $('#chat').append('<li class="time">' + 
+          $('#chat').append('<li class="time">' +
             msgDate.bitpopFormat(msgDate.isTodayDate()) + '</li>');
           lastOutputTime = msgDate;
         }
@@ -139,6 +140,9 @@
         html += '</li>';
         $('#chat').append(html);
 
+        // scroll the chat div to bottom
+        $("#chat").attr({ scrollTop: $("#chat").attr("scrollHeight") });
+
         lastMessageTime = msgDate;
       }
 
@@ -149,7 +153,7 @@
           if (matches.length == 2) {
             var fromUid = matches[1];
             if (friendUid == fromUid) {
-              var escMsg = request.body.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+              var escMsg = preprocessMessageText(request.body);
               saveToLocalStorage(fromUid, escMsg, request.ts, false);
               //escMsg = (new Date()).bitpopFormat() + '<br />' + escMsg;
               appendMessage(escMsg, new Date(), false);
@@ -166,7 +170,7 @@
                         uidTo: uidTo,
                         requestType: 'sendMessage'};
         chrome.extension.sendRequest(request);
-        var escMsg = meMsg.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        var escMsg = preprocessMessageText(meMsg);
         saveToLocalStorage(uidTo, escMsg, new Date(), true);
         //escMsg = (new Date()).bitpopFormat() + '<br />' + escMsg;
         //$('#chat').append('<li class="me">' + escMsg + '</li>');
@@ -177,17 +181,6 @@
         return false;
       });
     }, false);
-
-    function saveToLocalStorage(jid, msg, timestamp, me) {
-      if (!(jid in localStorage)) {
-        var newVal = JSON.stringify([{ msg: msg, time: timestamp, me: me }]);
-        localStorage[jid] = newVal;
-      } else {
-        var vals = JSON.parse(localStorage[jid]);
-        vals.push({ msg: msg, time: timestamp, me: me });
-        localStorage[jid] = JSON.stringify(vals);
-      }
-    }
 
   //]]>
   </script>

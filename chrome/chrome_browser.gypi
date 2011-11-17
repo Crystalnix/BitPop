@@ -1113,6 +1113,8 @@
         'browser/facebook_chat/facebook_chat_item.h',
         'browser/facebook_chat/facebook_chat_create_info.cc',
         'browser/facebook_chat/facebook_chat_create_info.h',
+        'browser/facebook_chat/received_message_info.cc',
+        'browser/facebook_chat/received_message_info.h',
         'browser/favicon/favicon_handler.cc',
         'browser/favicon/favicon_handler.h',
         'browser/favicon/favicon_service.cc',

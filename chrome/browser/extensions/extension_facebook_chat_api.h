@@ -43,5 +43,12 @@ class AddChatFunction : public SyncExtensionFunction {
     DECLARE_EXTENSION_FUNCTION_NAME("chromePrivate.addChat");
 };
 
+class NewIncomingMessageFunction: public SyncExtensionFunction {
+  public:
+    virtual bool RunImpl();
+  private:
+    DECLARE_EXTENSION_FUNCTION_NAME("chromePrivate.newIncomingMessage");
+};
+
 #endif  // CHROME_BROWSER_EXTENSIONS_EXTENSION_FACEBOOK_CHAT_API_H_
 

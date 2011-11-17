@@ -14,6 +14,8 @@
 #include "chrome/browser/facebook_chat/facebook_chatbar.h"
 #include "chrome/browser/facebook_chat/facebook_chat_manager.h"
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
+#include "chrome/browser/facebook_chat/received_message_info.h"
+#include "chrome/browser/facebook_chat/facebook_chat_create_info.h"
 #include "chrome/browser/global_keyboard_shortcuts_mac.h"
 #include "chrome/browser/page_info_window.h"
 #include "chrome/browser/prefs/pref_service.h"
@@ -59,6 +61,8 @@ BrowserWindowCocoa::BrowserWindowCocoa(Browser* browser,
   registrar_.Add(this, NotificationType::SIDEBAR_CHANGED,
                  NotificationService::AllSources());
   registrar_.Add(this, NotificationType::FACEBOOK_CHATBAR_ADD_CHAT,
+                 Source<Profile>(browser_->profile()));
+  registrar_.Add(this, NotificationType::FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE,
                  Source<Profile>(browser_->profile()));
 }
 
@@ -613,11 +617,26 @@ void BrowserWindowCocoa::Observe(NotificationType type,
           Details<SidebarContainer>(details)->tab_contents());
       break;
     case NotificationType::FACEBOOK_CHATBAR_ADD_CHAT: {
-        Details<FacebookChatCreateInfo> chat_info(details);
-        FacebookChatManager *mgr = browser_->profile()->GetFacebookChatManager();
-        FacebookChatItem *newItem = mgr->CreateFacebookChat(*(chat_info.ptr()));
-        GetChatbar()->AddChatItem(newItem);
-        mgr->StartChat(newItem->jid());
+        if (browser_->is_type_tabbed()) {
+          Details<FacebookChatCreateInfo> chat_info(details);
+          FacebookChatManager *mgr = browser_->profile()->GetFacebookChatManager();
+          // the next call returns the found element if jid's equal
+          FacebookChatItem *newItem = mgr->CreateFacebookChat(*(chat_info.ptr()));
+          newItem->set_needs_activation(true);
+          GetChatbar()->AddChatItem(newItem);
+          //mgr->StartChat(newItem->jid());
+        }
+      }
+      break;
+    case NotificationType::FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE: {
+        if (browser_->is_type_tabbed()) {
+          Details<ReceivedMessageInfo> msg_info(details);
+          FacebookChatManager *mgr = 
+              browser_->profile()->GetFacebookChatManager();
+          FacebookChatItem *item = mgr->GetItem(msg_info->chatCreateInfo->jid);
+          item->set_needs_activation(false);
+          GetChatbar()->AddChatItem(item);
+        }
       }
       break;
     default:

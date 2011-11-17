@@ -18,7 +18,7 @@
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
 #include "chrome/browser/facebook_chat/facebook_chat_create_info.h"
 
-
+class Browser;
 class Profile;
 
 class FacebookChatManager : public base::RefCountedThreadSafe<FacebookChatManager,
@@ -29,16 +29,17 @@ class FacebookChatManager : public base::RefCountedThreadSafe<FacebookChatManage
 
     void Shutdown();
 
+    FacebookChatItem* GetItem(const std::string &jid);
+
     FacebookChatItem* CreateFacebookChat(const FacebookChatCreateInfo &info);
-    void StartChat(const std::string &jid);
+
+    void RemoveItem(const std::string &jid);
+
+    void AddNewUnreadMessage(const std::string &jid,
+        const std::string &message);
 
     class Observer {
       public:
-        virtual void ChatAdded(const std::string &jid) = 0;
-        virtual void ChatRemoved();
-        virtual void ChatWindowOpened(FacebookChatItem *windowChatItem) = 0;
-        virtual void ChatWindowHidden(FacebookChatItem *windowChatItem) = 0;
-
         virtual void ModelChanged() = 0;
 
         virtual void ManagerIsGoingDown() {}
@@ -53,18 +54,18 @@ class FacebookChatManager : public base::RefCountedThreadSafe<FacebookChatManage
     void RemoveObserver(Observer* observer);
 
     // Returns true if initialized properly.
-    bool Init(Profile* profile);
+    bool Init(Profile *profile);
 
   private:
     void NotifyModelChanged();
-    void ActivateItem(FacebookChatItem *item);
-
+    
     typedef std::set<FacebookChatItem*> ChatSet;
     typedef base::hash_map<std::string, FacebookChatItem*> ChatMap;
 
     ChatSet chats_;
     ChatMap jid_chats_map_;
 
+    Browser *browser_;
     Profile *profile_;
 
     bool shutdown_needed_;

@@ -24,14 +24,21 @@ class GURL;
 
   scoped_ptr<FacebookChatItemMac> bridge_;
   FacebookChatbarController *chatbarController_;
+
+  NSImage *numNotificationsImage_;
+
+  BOOL active_;
 }
 
 // Takes ownership of |downloadModel|.
 - (id)initWithModel:(FacebookChatItem*)downloadModel
             chatbar:(FacebookChatbarController*)chatbar;
 
-- (IBAction)openChatWindow:(id)sender;
-- (IBAction)remove:(id)sender;
+- (IBAction)activateItemAction:(id)sender;
+- (IBAction)removeAction:(id)sender;
+
+- (void)openChatWindow;
+- (void)chatWindowWillClose:(NSNotification*)notification;
 
 - (NSSize)preferredSize;
 
@@ -39,6 +46,15 @@ class GURL;
 - (GURL)getPopupURL;
 
 - (FacebookChatItem*)chatItem;
+
+//- (void)chatItemUpdated:(FacebookChatItem*)source;
+- (void)remove;
+- (void)setUnreadMessagesNumber:(int)number;
+
++ (NSImage*)imageForNotificationBadgeWithNumber:(int)number;
+
+- (BOOL)active;
+- (void)setActive:(BOOL)active;
 @end
 
 #endif    // CHROME_BROWSER_UI_COCOA_FACEBOOK_CHAT_FACEBOOK_CHAT_ITEM_CONTROLLER_H_

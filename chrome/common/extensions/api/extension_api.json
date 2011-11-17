@@ -3380,6 +3380,36 @@
             "description": "New chat user status string"
           }
         ]
+      },
+      {
+        "name": "newIncomingMessage",
+        "description": "Notifies BitPop internals new facebook chat message has arrived",
+        "parameters": [
+          {
+            "name": "jid",
+            "type": "string",
+            "optional": false,
+            "description": "Incoming message 'from' JID"
+          },
+          {
+            "name": "username",
+            "type": "string",
+            "optional": false,
+            "description": "Incoming message 'from' username"
+          },
+          {
+            "name": "status",
+            "type": "string",
+            "optional": false,
+            "description": "Incoming message user status string"
+          },
+          {
+            "name": "message",
+            "type": "string",
+            "optional": false,
+            "description": "Incoming message text"
+          }
+        ]
       }
     ]
   },
