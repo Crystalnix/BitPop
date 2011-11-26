@@ -18,7 +18,6 @@ const CGFloat kBubbleArrowXOffset = kBubbleArrowWidth + kBubbleCornerRadius;
 enum BubbleArrowLocation {
   kTopLeft,
   kTopRight,
-  kBottomCenter,
 };
 
 }  // namespace info_bubble

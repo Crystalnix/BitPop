@@ -7,7 +7,7 @@
 #define CHROME_BROWSER_UI_COCOA_FACEBOOK_CHATBAR_MAC_H_
 #pragma once
 
-#import <Foundation/Foundation.h>
+#import <Cocoa/Cocoa.h>
 
 #include "chrome/browser/facebook_chat/facebook_chatbar.h"
 #include "chrome/browser/facebook_chat/facebook_chat_manager.h"
@@ -26,6 +26,7 @@ class FacebookChatbarMac : public FacebookChatbar {
 
     virtual Browser *browser() const;
 
+    void SwitchParentWindow(NSWindow *window);
   private:
     Browser *browser_;
 

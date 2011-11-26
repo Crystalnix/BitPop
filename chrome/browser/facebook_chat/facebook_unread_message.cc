@@ -18,6 +18,6 @@ FacebookUnreadMessage::~FacebookUnreadMessage() {
 }
 
 void FacebookUnreadMessage::StartCountDown() {
-  timer_.Start(TimeDelta::FromSeconds(kSecondsToShow), this, 
+  timer_.Start(TimeDelta::FromSeconds(kSecondsToShow), this,
       &FacebookUnreadMessage::Hide);
 }

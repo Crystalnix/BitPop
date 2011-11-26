@@ -622,7 +622,10 @@ void BrowserWindowCocoa::Observe(NotificationType type,
           FacebookChatManager *mgr = browser_->profile()->GetFacebookChatManager();
           // the next call returns the found element if jid's equal
           FacebookChatItem *newItem = mgr->CreateFacebookChat(*(chat_info.ptr()));
-          newItem->set_needs_activation(true);
+          if (IsActive()) 
+            newItem->set_needs_activation(true);
+          else
+            newItem->set_needs_activation(false);
           GetChatbar()->AddChatItem(newItem);
           //mgr->StartChat(newItem->jid());
         }
@@ -631,7 +634,7 @@ void BrowserWindowCocoa::Observe(NotificationType type,
     case NotificationType::FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE: {
         if (browser_->is_type_tabbed()) {
           Details<ReceivedMessageInfo> msg_info(details);
-          FacebookChatManager *mgr = 
+          FacebookChatManager *mgr =
               browser_->profile()->GetFacebookChatManager();
           FacebookChatItem *item = mgr->GetItem(msg_info->chatCreateInfo->jid);
           item->set_needs_activation(false);

@@ -69,6 +69,10 @@ const NSInteger kChatbarHeight = 44;
   return self;
 }
 
+- (void)dealloc {
+  [super dealloc];
+}
+
 - (BOOL)isVisible {
   return barIsVisible_;
 }
@@ -133,11 +137,14 @@ const NSInteger kChatbarHeight = 44;
 
   if (![self isVisible])
     [self show:nil];
-    
+
   // Do not place an item with existing jid to the chat item controllers
   for (FacebookChatItemController *contr in chatItemControllers_.get())
-    if ([contr chatItem]->jid() == item->jid())
+    if ([contr chatItem]->jid() == item->jid()) {
+      if ([contr chatItem]->needs_activation())
+        [self activateItem:contr];
       return;
+    }
 
   // Insert new item at the left.
   scoped_nsobject<FacebookChatItemController> controller(
@@ -167,9 +174,7 @@ const NSInteger kChatbarHeight = 44;
   // laying out the items, so that the longer animation duration we set up above
   // is not overwritten.
   [self layoutItems:YES];
-
-  if ([controller active])
-    [controller openChatWindow];
+  [controller layedOutAfterAddingToChatbar];
 }
 
 - (void)activateItem:(FacebookChatItemController*)chatItem {
@@ -194,24 +199,76 @@ const NSInteger kChatbarHeight = 44;
     [self showChatbar:NO];
 }
 
+- (void)placeFirstInOrder:(FacebookChatItemController*)chatItem {
+  NSMutableArray *container = chatItemControllers_.get();
+
+  if([container containsObject:chatItem] == NO)
+    return;
+
+  // NSUInteger prevActiveIndex = NSNotFound;
+  // for (FacebookChatItemController *controller in container) {
+  //   if ([controller active]) {
+  //     prevActiveIndex = [container indexOfObject:controller];
+  //     break;
+  //   }
+  // }
+
+  [chatItem retain];
+  [container removeObjectIdenticalTo:chatItem];
+  [container insertObject:chatItem atIndex:0];
+  [chatItem release];
+
+   // if (prevActiveIndex != NSNotFound) {
+   //   NSUInteger currentActiveIndex = NSNotFound;
+   //   for (FacebookChatItemController *controller in container) {
+   //     if ([controller active]) {
+   //       currentActiveIndex = [container indexOfObject:controller];
+   //       break;
+   //     }
+   //   }
+
+   //   [container exchangeObjectAtIndex:prevActiveIndex
+   //                             withObjectAtIndex:currentActiveIndex];
+   // }
+  
+
+  [self layoutItems];
+}
+
 - (void)layoutItems:(BOOL)skipFirst {
   CGFloat currentX = 0;
+  NSUInteger index = 0;
+  NSUInteger lastVisibleIndex = -1;
   for (FacebookChatItemController* itemController
       in chatItemControllers_.get()) {
     NSRect frame = [[itemController view] frame];
     frame.origin.x = ([[self view] bounds].size.width - 30 -
         [itemController preferredSize].width) - currentX;
     if (frame.origin.x < 10) {
-      [[itemController view] setHidden:YES];
+      if ([itemController active] == YES) {
+        FacebookChatItemController *lastVisibleItem = [chatItemControllers_
+            objectAtIndex:lastVisibleIndex];
+        [[lastVisibleItem view] setHidden:YES];
+        [[itemController view] setFrame:[[lastVisibleItem view] frame]];
+        [[itemController view] setHidden:NO];
+      } else
+        [[itemController view] setHidden:YES];
     } else if ([[itemController view] isHidden] == YES) {
       [[itemController view] setHidden:NO];
+    }
+
+    if (frame.origin.x >= 10) {
+      lastVisibleIndex = index;
     }
 
     frame.size.width = [itemController preferredSize].width;
     //if (!skipFirst)
     [[itemController view] setFrame:frame];
+    [itemController layoutChildWindows];
+
     currentX += frame.size.width + kChatItemPadding;
     //skipFirst = NO;
+    ++index;
   }
 
 }
@@ -222,6 +279,11 @@ const NSInteger kChatbarHeight = 44;
 
 - (void)viewFrameDidChange:(NSNotification*)notification {
   [self layoutItems];
+}
+
+- (void)switchParentWindow:(NSWindow*)window {
+  for (FacebookChatItemController *controller in chatItemControllers_.get())
+    [controller switchParentWindow:window];
 }
 
 @end

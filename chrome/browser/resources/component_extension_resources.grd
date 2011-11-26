@@ -45,6 +45,7 @@
       <include name="IDR_FACEBOOK_FRIENDS_FACEBOOK_JS" file="facebook_friends/js/facebook.js" type="BINDATA" />
       <include name="IDR_FACEBOOK_FRIENDS_JQUERY_JS" file="facebook_friends/js/jquery.min.js" type="BINDATA" />
       <include name="IDR_FACEBOOK_FRIENDS_COMMON_JS" file="facebook_friends/js/common.js" type="BINDATA" />
+      <include name="IDR_FACEBOOK_FRIENDS_AUTOLINK_JS" file="facebook_friends/js/autolink-min.js" type="BINDATA" />
 
       <if expr="pp_ifdef('file_manager_extension')">
         <include name="IDR_FILE_MANAGER_MAIN" file="file_manager/main.html" flattenhtml="true" type="BINDATA" />

@@ -4,6 +4,8 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
+
+#include "base/logging.h"
 #include "chrome/browser/facebook_chat/facebook_chat_manager.h"
 
 FacebookChatItem::FacebookChatItem(FacebookChatManager *manager,
@@ -13,7 +15,6 @@ FacebookChatItem::FacebookChatItem(FacebookChatManager *manager,
 : jid_(jid),
   username_(username),
   status_(status),
-  numNotifications_(0),
   needsActivation_(false),
   manager_(manager)
 {
@@ -37,7 +38,7 @@ FacebookChatItem::Status FacebookChatItem::status() const {
 }
 
 unsigned int FacebookChatItem::num_notifications() const {
-  return numNotifications_;
+  return unreadMessages_.size();
 }
 
 FacebookChatItem::State FacebookChatItem::state() const {
@@ -69,13 +70,22 @@ void FacebookChatItem::Remove() {
 }
 
 void FacebookChatItem::AddNewUnreadMessage(const std::string &message) {
-  numNotifications_++;
+  //numNotifications_++;
+  unreadMessages_.push_back(message);
+
   state_ = NUM_NOTIFICATIONS_CHANGED;
   UpdateObservers();
 }
 
 void FacebookChatItem::ClearUnreadMessages() {
-  numNotifications_ = 0;
+  //numNotifications_ = 0;
+  unreadMessages_.clear();
+  
   state_ = NUM_NOTIFICATIONS_CHANGED;
   UpdateObservers();
+}
+
+std::string FacebookChatItem::GetMessageAtIndex(unsigned int index) {
+  DCHECK(index < unreadMessages_.size());
+  return unreadMessages_.at(index);
 }

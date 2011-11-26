@@ -19,7 +19,7 @@ class FacebookUnreadMessage {
 
     std::string message() const;
     bool isVisible() const;
-    
+
     void StartCountdown();
 
     virtual void Show() = 0;

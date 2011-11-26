@@ -56,6 +56,7 @@ class FacebookChatItem {
 
     void AddNewUnreadMessage(const std::string &message);
     void ClearUnreadMessages();
+    std::string GetMessageAtIndex(unsigned int index);
 
     void AddObserver(Observer* observer);
     void RemoveObserver(Observer* observer);
@@ -69,9 +70,9 @@ class FacebookChatItem {
     Status status_;
     State state_;
 
-    unsigned int numNotifications_;
-    //std::list<FacebookUnreadMessage> unreadMessages_;
-    
+    //unsigned int numNotifications_;
+    std::vector<std::string> unreadMessages_;
+
     bool needsActivation_;
 
     // Our owning chat manager

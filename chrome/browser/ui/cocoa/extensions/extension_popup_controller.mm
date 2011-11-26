@@ -242,9 +242,6 @@ class DevtoolsNotificationBridge : public NotificationObserver {
   if (NSEqualSizes([extensionView_ frame].size, extensionFrame_.size))
     return;
 
-  InfoBubbleView *bubbleView = reinterpret_cast<InfoBubbleView*>(
-      [[self window] contentView]);
-
   extensionFrame_ = [extensionView_ frame];
   // Constrain the size of the view.
   [extensionView_ setFrameSize:NSMakeSize(
@@ -258,11 +255,7 @@ class DevtoolsNotificationBridge : public NotificationObserver {
   // Pad the window by half of the rounded corner radius to prevent the
   // extension's view from bleeding out over the corners.
   CGFloat inset = info_bubble::kBubbleCornerRadius / 2.0;
-  if (bubbleView.arrowLocation == info_bubble::kBottomCenter)
-    [extensionView_ setFrameOrigin:NSMakePoint(inset,
-        inset + info_bubble::kBubbleArrowHeight)];
-  else
-    [extensionView_ setFrameOrigin:NSMakePoint(inset, inset)];
+  [extensionView_ setFrameOrigin:NSMakePoint(inset, inset)];
 
   NSRect frame = [extensionView_ frame];
   frame.size.height += info_bubble::kBubbleArrowHeight +
@@ -272,19 +265,12 @@ class DevtoolsNotificationBridge : public NotificationObserver {
   // Adjust the origin according to the height and width so that the arrow is
   // positioned correctly at the middle and slightly down from the button.
   NSPoint windowOrigin = anchor_;
-  NSSize offsets;
-  if (bubbleView.arrowLocation != info_bubble::kBottomCenter)
-    offsets = NSMakeSize(info_bubble::kBubbleArrowXOffset +
-                                    info_bubble::kBubbleArrowWidth / 2.0,
-                                info_bubble::kBubbleArrowHeight / 2.0);
-
+  NSSize offsets = NSMakeSize(info_bubble::kBubbleArrowXOffset +
+                                  info_bubble::kBubbleArrowWidth / 2.0,
+                              info_bubble::kBubbleArrowHeight / 2.0);
   offsets = [extensionView_ convertSize:offsets toView:nil];
-  if (bubbleView.arrowLocation == info_bubble::kBottomCenter) {
-    windowOrigin.x -= NSWidth(frame) / 2;
-  } else {
-    windowOrigin.x -= NSWidth(frame) - offsets.width;
-    windowOrigin.y -= NSHeight(frame) - offsets.height;
-  }
+  windowOrigin.x -= NSWidth(frame) - offsets.width;
+  windowOrigin.y -= NSHeight(frame) - offsets.height;
   frame.origin = windowOrigin;
 
   // Is the window still animating in? If so, then cancel that and create a new

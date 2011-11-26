@@ -2177,6 +2177,10 @@ willAnimateFromState:(bookmarks::VisualState)oldState
   if (statusBubble_)
     statusBubble_->SwitchParentWindow(destWindow);
 
+  if (facebookChatbarController_.get()) {
+    [facebookChatbarController_ switchParentWindow:destWindow];
+  }
+
   // Move the title over.
   [destWindow setTitle:[window title]];
 

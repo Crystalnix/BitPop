@@ -58,7 +58,7 @@ class FacebookChatManager : public base::RefCountedThreadSafe<FacebookChatManage
 
   private:
     void NotifyModelChanged();
-    
+
     typedef std::set<FacebookChatItem*> ChatSet;
     typedef base::hash_map<std::string, FacebookChatItem*> ChatMap;
 

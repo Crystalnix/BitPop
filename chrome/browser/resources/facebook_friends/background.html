@@ -16,6 +16,7 @@
   <script src="js/jquery.min.js"></script>
   <script src="js/strophe.min.js"></script>
   <script src="js/facebook.js"></script>
+  <script src="js/autolink-min.js"></script>
   <script src="js/common.js"></script>
   <script>
       var friendsCallback = null;
@@ -68,13 +69,13 @@
                               appId,
                               localStorage.accessToken
                            );
+                           chrome.extension.sendRequest(
+                               { requestType: "serviceAvailable" });
                          } else
                            connection.disconnect();
                        }
                    );
-
-                  chrome.extension.sendRequest(
-                      { requestType: "serviceAvailable" });
+                  
                   break;
                 }
               }
@@ -139,7 +140,7 @@
             chrome.extension.sendRequest({ requestType: 'newMessage', body: msgText,
               from: from, ts: msgDate });
           } else {
-            saveToLocalStorage(fromUid, 
+            saveToLocalStorage(fromUid,
               preprocessMessageText(msgText),
               msgDate,
               false);

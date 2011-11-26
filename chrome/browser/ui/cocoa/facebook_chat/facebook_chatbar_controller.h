@@ -52,10 +52,13 @@ class FacebookChatItem;
 - (void)addChatItem:(FacebookChatItem*)item;
 - (void)activateItem:(FacebookChatItemController*)chatItem;
 - (void)remove:(FacebookChatItemController*)chatItem;
+- (void)placeFirstInOrder:(FacebookChatItemController*)chatItem;
 
 - (void)layoutItems;
 
 - (void)viewFrameDidChange:(NSNotification*)notification;
+
+- (void)switchParentWindow:(NSWindow*)window;
 @end
 
 #endif  // CHROME_BROWSER_UI_COCOA_FACEBOOK_CHATBAR_CONTROLLER_H_

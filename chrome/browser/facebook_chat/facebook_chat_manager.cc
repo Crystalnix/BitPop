@@ -105,7 +105,7 @@ void FacebookChatManager::AddNewUnreadMessage(
     const std::string &message) {
   ChatMap::iterator it = jid_chats_map_.find(jid);
   if (it == jid_chats_map_.end())
-    return; 
+    return;
 
   FacebookChatItem *item = it->second;
 
