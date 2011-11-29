@@ -23,7 +23,7 @@
 
   scoped_nsobject<FacebookNotificationView> bubble_;
   scoped_nsobject<HoverButton> hoverCloseButton_;
-  
+
   NSRect notificationFrame_;
 }
 
@@ -35,7 +35,7 @@
 - (void)messageReceived:(NSString*)message;
 
 - (void)hideWindow;
-  
+
 - (BOOL)isClosing;
 
 - (void)parentControllerWillDie;

@@ -75,13 +75,14 @@
                            connection.disconnect();
                        }
                    );
-                  
+
                   break;
                 }
               }
             }
             else {
               localStorage.clear();
+              friendsCached = null;
               connection.disconnect();
               chrome.extension.sendRequest({ requestType: 'loggedOut' });
             }

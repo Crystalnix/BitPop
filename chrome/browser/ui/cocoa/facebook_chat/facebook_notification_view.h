@@ -14,7 +14,7 @@
 @interface FacebookNotificationView : FacebookBubbleView {
  @private
 //   CGFloat defaultWidth_;
-   
+
    scoped_nsobject<NSTextStorage> textStorage_;
    NSLayoutManager *layoutManager_;
    NSTextContainer *textContainer_;

@@ -622,7 +622,7 @@ void BrowserWindowCocoa::Observe(NotificationType type,
           FacebookChatManager *mgr = browser_->profile()->GetFacebookChatManager();
           // the next call returns the found element if jid's equal
           FacebookChatItem *newItem = mgr->CreateFacebookChat(*(chat_info.ptr()));
-          if (IsActive()) 
+          if (IsActive())
             newItem->set_needs_activation(true);
           else
             newItem->set_needs_activation(false);

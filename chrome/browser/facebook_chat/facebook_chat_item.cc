@@ -80,7 +80,7 @@ void FacebookChatItem::AddNewUnreadMessage(const std::string &message) {
 void FacebookChatItem::ClearUnreadMessages() {
   //numNotifications_ = 0;
   unreadMessages_.clear();
-  
+
   state_ = NUM_NOTIFICATIONS_CHANGED;
   UpdateObservers();
 }

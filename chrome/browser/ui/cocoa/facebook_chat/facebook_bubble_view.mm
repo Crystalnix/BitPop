@@ -31,14 +31,14 @@
       yRadius:fb_bubble::kBubbleCornerRadius];
 
   // drawing an arrow at bottom left
-  CGFloat dX = (arrowLocation_ == fb_bubble::kBottomLeft) ? 
+  CGFloat dX = (arrowLocation_ == fb_bubble::kBottomLeft) ?
       fb_bubble::kBubbleArrowXOffset :
       NSMidX(bounds) - NSMinX(bounds) - fb_bubble::kBubbleArrowWidth / 2;
 
   NSPoint arrowStart = NSMakePoint(NSMinX(bounds), NSMinY(bounds));
   arrowStart.x += dX;
   [bezier moveToPoint:arrowStart];
-  [bezier lineToPoint:NSMakePoint(arrowStart.x + 
+  [bezier lineToPoint:NSMakePoint(arrowStart.x +
       fb_bubble::kBubbleArrowWidth / 2,
       arrowStart.y - fb_bubble::kBubbleArrowHeight)];
   [bezier lineToPoint:NSMakePoint(arrowStart.x +
@@ -54,7 +54,7 @@
 - (NSPoint)arrowTip {
   NSRect bounds = [self bounds];
   NSPoint tip = NSMakePoint((arrowLocation_ == fb_bubble::kBottomLeft) ?
-      NSMinX(bounds) + fb_bubble::kBubbleArrowXOffset + 
+      NSMinX(bounds) + fb_bubble::kBubbleArrowXOffset +
         fb_bubble::kBubbleArrowWidth / 2 :
       NSMidX(bounds),
       NSMinY(bounds));

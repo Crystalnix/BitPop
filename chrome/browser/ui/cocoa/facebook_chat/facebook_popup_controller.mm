@@ -264,7 +264,7 @@ class DevtoolsNotificationBridge : public NotificationObserver {
   // Pad the window by half of the rounded corner radius to prevent the
   // extension's view from bleeding out over the corners.
   CGFloat inset = fb_bubble::kBubbleCornerRadius / 2.0;
-  [extensionView_ setFrameOrigin:NSMakePoint(inset, inset + 
+  [extensionView_ setFrameOrigin:NSMakePoint(inset, inset +
       fb_bubble::kBubbleArrowHeight)];
 
   NSRect frame = [extensionView_ frame];

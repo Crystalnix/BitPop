@@ -230,7 +230,7 @@ const NSInteger kChatbarHeight = 44;
    //   [container exchangeObjectAtIndex:prevActiveIndex
    //                             withObjectAtIndex:currentActiveIndex];
    // }
-  
+
 
   [self layoutItems];
 }

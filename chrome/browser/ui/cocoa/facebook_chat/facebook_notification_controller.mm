@@ -44,17 +44,17 @@ const CGFloat kCloseButtonTopYOffset = 0.0;
                 anchoredAt:(NSPoint)anchorPoint {
   parentWindow_ = parentWindow;
   anchor_ = [parentWindow convertBaseToScreen:anchorPoint];
-  
+
   NSView *view = [[NSView alloc] initWithFrame:NSZeroRect];
   //[view setBackgroundColor:[NSColor clearColor]];
   [view setAutoresizesSubviews:NO];
 
-  bubble_.reset([[FacebookNotificationView alloc] 
+  bubble_.reset([[FacebookNotificationView alloc]
                     initWithFrame:NSZeroRect]);
   if (!bubble_.get())
     return nil;
   //[bubble_ setArrowLocation:fb_bubble::kBottomLeft];
-  
+
   NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
   [center addObserver:self
              selector:@selector(bubbleViewFrameChanged)
@@ -90,7 +90,7 @@ const CGFloat kCloseButtonTopYOffset = 0.0;
 - (void)messageReceived:(NSString*)message {
   [bubble_ pushMessage:message];
   [self performSelector:@selector(bubbleMessageShowTimeout) withObject:nil
-      afterDelay:kBubbleMessageTimeoutSec]; 
+      afterDelay:kBubbleMessageTimeoutSec];
 }
 
 - (void)bubbleMessageShowTimeout {
@@ -98,7 +98,7 @@ const CGFloat kCloseButtonTopYOffset = 0.0;
     (void)[bubble_ popMessage];
   } else {
     [self hideWindow];
-    
+
     [self performSelector:@selector(bubbleMessageShowTimeout) withObject:nil
       afterDelay:kBubbleMessageTimeoutSec];
   }
@@ -123,15 +123,15 @@ const CGFloat kCloseButtonTopYOffset = 0.0;
 
 - (void)bubbleViewFrameChanged {
 // If there are no changes in the width or height of the frame, then ignore.
-  if (NSEqualSizes([bubble_ frame].size, notificationFrame_.size) && 
+  if (NSEqualSizes([bubble_ frame].size, notificationFrame_.size) &&
       NSEqualPoints(oldAnchor_, anchor_))
     return;
   notificationFrame_ = [bubble_ frame];
   oldAnchor_ = anchor_;
-  
+
   // position the close small button on top right of the bubble
   NSRect closeButtonFrame = [hoverCloseButton_ frame];
-  closeButtonFrame.origin.x = NSWidth(notificationFrame_) - kCloseButtonDim - 
+  closeButtonFrame.origin.x = NSWidth(notificationFrame_) - kCloseButtonDim -
       kCloseButtonRightXOffset;
   closeButtonFrame.origin.y = NSHeight(notificationFrame_) - kCloseButtonDim -
       kCloseButtonTopYOffset;
@@ -139,7 +139,7 @@ const CGFloat kCloseButtonTopYOffset = 0.0;
 
   NSRect frame = [bubble_ frame];
   NSPoint windowOrigin = anchor_;
-  windowOrigin.x -= fb_bubble::kBubbleArrowXOffset + 
+  windowOrigin.x -= fb_bubble::kBubbleArrowXOffset +
       fb_bubble::kBubbleArrowWidth / 2;
   frame.origin = windowOrigin;
 

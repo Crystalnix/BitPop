@@ -17,6 +17,6 @@ function preprocessMessageText(msgText) {
   return msgText.replace(/&/g, "&amp;")
                 .replace(/</g, "&lt;")
                 .replace(/>/g, "&gt;")
-                .autoLink({ 'onclick': 
+                .autoLink({ 'onclick':
                                'chrome.tabs.create({ \'url\': this.href })'});
 }

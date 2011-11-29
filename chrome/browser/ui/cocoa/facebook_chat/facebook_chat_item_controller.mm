@@ -41,7 +41,7 @@ namespace {
 
     chatbarController_ = chatbar;
     active_ = downloadModel->needs_activation() ? YES : NO;
-    
+
     showMouseEntered_ = NO;
 
     NSNotificationCenter* defaultCenter = [NSNotificationCenter defaultCenter];
@@ -229,7 +229,7 @@ if (!button_)
     [button_ setImagePosition:NSImageLeft];
     [button_ setImage:img];
     [img release];
-    
+
     [chatbarController_ placeFirstInOrder:self];
 
     if (!notificationController_.get()) {
@@ -275,7 +275,7 @@ if (!button_)
     if ([self active] && [FacebookPopupController popup]) {
     [[FacebookPopupController popup] setAnchor:[self popupPointForChatWindow]];
   }
-  
+
   if (notificationController_.get()) {
     [notificationController_ setAnchor:[self popupPointForNotificationWindow]];
   }
@@ -291,13 +291,13 @@ if (!button_)
 }
 
 - (void)mouseEntered:(NSEvent *)theEvent {
-  if (notificationController_.get() && 
+  if (notificationController_.get() &&
       [[notificationController_ window] isVisible] == NO) {
     [notificationController_ showWindow:self];
     showMouseEntered_ = YES;
   }
 }
- 
+
 - (void)mouseExited:(NSEvent *)theEvent {
   if (showMouseEntered_) {
     [notificationController_ hideWindow];
@@ -313,7 +313,7 @@ if (!button_)
   if ([self active] && [FacebookPopupController popup]) {
     [[FacebookPopupController popup] reparentWindowTo:window];
   }
-  
+
   [self layoutChildWindows];
 }
 

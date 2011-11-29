@@ -6,6 +6,8 @@
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_notification_view.h"
 
 #include "base/logging.h"
+#include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
+
 
 namespace {
   // Rockmelt-like blueish color used for notification window background
@@ -15,7 +17,7 @@ namespace {
   const CGFloat kBgColorAlpha  = 255 / 255.0;
 
   const NSUInteger kMaxNotifications = 20;
-  
+
   const CGFloat kDefaultWidth = 200;
   const CGFloat kContentWidth = kDefaultWidth - fb_bubble::kBubbleCornerRadius;
 }
@@ -53,14 +55,27 @@ namespace {
 }
 
 - (void)drawRect:(NSRect)rect {
+  NSRect bounds = [self bounds];
+
+  {
+  gfx::ScopedNSGraphicsContextSaveGState scopedGState;
+
+  NSAffineTransform* xform = [NSAffineTransform transform];
+  [xform translateXBy:0.0 yBy:bounds.size.height];
+  [xform scaleXBy:1.0 yBy:-1.0];
+  [xform concat];
+
   // Draw the bubble
   [super drawRect:rect];
+  }
 
-  NSRect bounds = [self bounds];
+  //CGContextRef ctx = (CGContextRef)[[NSGraphicsContext currentContext] graphicsPort];
+  //CGContextSetTextMatrix(ctx, CGAffineTransformMakeScale(1, -1));
+
   bounds.origin.x += fb_bubble::kBubbleCornerRadius / 2;
   // TODO: check if the coordinates choice was right for origin.y
   bounds.origin.y += fb_bubble::kBubbleCornerRadius / 2;
-  
+
   NSColor *textColor = [NSColor blackColor];
 
   // TODO: maybe add a text shadow attribute here too. display will be
@@ -81,7 +96,7 @@ namespace {
 // - (CGFloat)defaultWidth {
 //   return defaultWidth_;
 // }
-// 
+//
 // - (void)setDefaultWidth:(CGFloat)width {
 //   defaultWidth_ = width;
 // }
@@ -108,7 +123,7 @@ namespace {
 - (void)pushMessage:(NSString*)messageString {
   if ([contentMessages_ count] >= kMaxNotifications)
     [contentMessages_ removeObjectAtIndex:0];
-  
+
   [contentMessages_ addObject:messageString];
 
   [self setFrameToFit];
@@ -132,7 +147,7 @@ namespace {
 }
 
 - (NSString*)continuousContentString {
-  NSMutableString *res = [[[NSMutableString alloc] initWithString:@""] 
+  NSMutableString *res = [[[NSMutableString alloc] initWithString:@""]
                              autorelease];
   for (NSString *message in contentMessages_.get()) {
     [res appendString:message];
@@ -140,6 +155,10 @@ namespace {
       [res appendString:@"\n\n"];
   }
   return res;
+}
+
+- (BOOL)isFlipped {
+  return YES;
 }
 
 @end
