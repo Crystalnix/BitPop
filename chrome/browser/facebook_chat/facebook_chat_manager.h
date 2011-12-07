@@ -38,6 +38,9 @@ class FacebookChatManager : public base::RefCountedThreadSafe<FacebookChatManage
     void AddNewUnreadMessage(const std::string &jid,
         const std::string &message);
 
+    void ChangeItemStatus(const std::string &jid,
+        const std::string &status);
+
     class Observer {
       public:
         virtual void ModelChanged() = 0;

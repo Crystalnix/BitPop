@@ -52,6 +52,7 @@ class FacebookChatItem;
 - (void)addChatItem:(FacebookChatItem*)item;
 - (void)activateItem:(FacebookChatItemController*)chatItem;
 - (void)remove:(FacebookChatItemController*)chatItem;
+- (void)removeAll;
 - (void)placeFirstInOrder:(FacebookChatItemController*)chatItem;
 
 - (void)layoutItems;

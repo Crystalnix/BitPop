@@ -84,6 +84,7 @@
               localStorage.clear();
               friendsCached = null;
               connection.disconnect();
+              chrome.chromePrivate.loggedOutFacebookSession();
               chrome.extension.sendRequest({ requestType: 'loggedOut' });
             }
 

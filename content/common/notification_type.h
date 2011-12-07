@@ -1319,8 +1319,12 @@ class NotificationType {
     // Sent when a ProtocolHandlerRegistry is changed.
     PROTOCOL_HANDLER_REGISTRY_CHANGED,
 
+    FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED,
+
     FACEBOOK_CHATBAR_ADD_CHAT,
     FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE,
+
+    FACEBOOK_SESSION_LOGGED_OUT,
 
     // Count (must be last) ----------------------------------------------------
     // Used to determine the number of notification types.  Not valid as

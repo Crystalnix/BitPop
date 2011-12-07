@@ -31,6 +31,9 @@ void FacebookChatItemMac::OnChatUpdated(FacebookChatItem *source) {
   case FacebookChatItem::NUM_NOTIFICATIONS_CHANGED:
     [controller_ setUnreadMessagesNumber:source->num_notifications()];
     break;
+  case FacebookChatItem::STATUS_CHANGED:
+    [controller_ statusChanged];
+    break;
   default:
     break;
   }

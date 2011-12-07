@@ -58,8 +58,7 @@ class GURL;
 //- (void)chatItemUpdated:(FacebookChatItem*)source;
 - (void)remove;
 - (void)setUnreadMessagesNumber:(int)number;
-
-+ (NSImage*)imageForNotificationBadgeWithNumber:(int)number;
+- (void)statusChanged;
 
 - (BOOL)active;
 - (void)setActive:(BOOL)active;

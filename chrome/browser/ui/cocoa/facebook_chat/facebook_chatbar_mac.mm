@@ -34,3 +34,8 @@ Browser *FacebookChatbarMac::browser() const {
 void FacebookChatbarMac::SwitchParentWindow(NSWindow *window) {
   [controller_ switchParentWindow:window];
 }
+
+void FacebookChatbarMac::RemoveAll() {
+  [controller_ removeAll];
+  Hide();
+}

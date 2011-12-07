@@ -54,6 +54,8 @@ extern NSString* const kBrowserActionButtonDragEndNotification;
   // this is the only button moving if it ends up being dragged. This is set to
   // YES upon |mouseDown:|.
   BOOL dragCouldStart_;
+
+  BOOL shouldDrawAsPushed_;
 }
 
 - (id)initWithFrame:(NSRect)frame
@@ -78,6 +80,7 @@ extern NSString* const kBrowserActionButtonDragEndNotification;
 @property(readonly, nonatomic) BOOL isBeingDragged;
 @property(readonly, nonatomic) const Extension* extension;
 @property(readwrite, nonatomic) int tabId;
+@property(readwrite, nonatomic) BOOL shouldDrawAsPushed;
 
 @end
 

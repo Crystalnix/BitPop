@@ -175,3 +175,4 @@ v8.log
 /third_party/cacheinvalidation/cacheinvalidation_proto.xml
 /third_party/libphonenumber/phonenumber_proto.xml
 
+.clang_complete

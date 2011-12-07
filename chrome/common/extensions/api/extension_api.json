@@ -3410,6 +3410,12 @@
             "description": "Incoming message text"
           }
         ]
+      },
+      {
+        "name": "loggedOutFacebookSession",
+        "description": "Notifies BitPop user logged out of current chat session",
+        "type": "function",
+        "parameters": []
       }
     ]
   },

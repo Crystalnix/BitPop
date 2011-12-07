@@ -50,5 +50,12 @@ class NewIncomingMessageFunction: public SyncExtensionFunction {
     DECLARE_EXTENSION_FUNCTION_NAME("chromePrivate.newIncomingMessage");
 };
 
+class LoggedOutFacebookSessionFunction: public SyncExtensionFunction {
+  public:
+    virtual bool RunImpl();
+  private:
+    DECLARE_EXTENSION_FUNCTION_NAME("chromePrivate.loggedOutFacebookSession");
+};
+
 #endif  // CHROME_BROWSER_EXTENSIONS_EXTENSION_FACEBOOK_CHAT_API_H_
 

@@ -15,6 +15,7 @@ class FacebookChatbar {
     virtual ~FacebookChatbar() {}
 
     virtual void AddChatItem(FacebookChatItem *chat_item) = 0;
+    virtual void RemoveAll() = 0;
 
     virtual void Show() = 0;
     virtual void Hide() = 0;

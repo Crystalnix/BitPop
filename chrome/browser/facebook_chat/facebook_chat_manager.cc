@@ -15,6 +15,7 @@
 namespace {
   const char kOfflineStatus[] = "offline";
   const char kAvailableStatus[] = "available";
+
 }
 
 FacebookChatManager::FacebookChatManager() :
@@ -69,9 +70,15 @@ FacebookChatItem* FacebookChatManager::CreateFacebookChat(
   if (it != jid_chats_map_.end())
     return it->second;
 
-  FacebookChatItem::Status status = FacebookChatItem::OFFLINE;
-  if (info.status == kAvailableStatus)
+  FacebookChatItem::Status status;
+  if (info.status == "active")
     status = FacebookChatItem::AVAILABLE;
+  else if (info.status == "idle")
+    status = FacebookChatItem::IDLE;
+  else if (info.status == "error")
+    status = FacebookChatItem::ERROR_STATUS;
+  else
+    status = FacebookChatItem::OFFLINE;
 
   FacebookChatItem *item = new FacebookChatItem(this,
                                                 info.jid,
@@ -110,6 +117,17 @@ void FacebookChatManager::AddNewUnreadMessage(
   FacebookChatItem *item = it->second;
 
   item->AddNewUnreadMessage(message);
+}
+
+void FacebookChatManager::ChangeItemStatus(const std::string &jid,
+    const std::string &status) {
+  ChatMap::iterator it = jid_chats_map_.find(jid);
+  if (it == jid_chats_map_.end())
+    return;
+
+  FacebookChatItem *item = it->second;
+
+  item->ChangeStatus(status);
 }
 
 void FacebookChatManager::AddObserver(Observer* observer) {

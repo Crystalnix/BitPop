@@ -199,6 +199,13 @@ const NSInteger kChatbarHeight = 44;
     [self showChatbar:NO];
 }
 
+- (void)removeAll {
+  for (int i = [chatItemControllers_ count]; i > 0; --i) {
+    FacebookChatItemController *contr = [chatItemControllers_ objectAtIndex:0];
+    [contr remove];  // it will call [self remove:] afterwards
+  }
+}
+
 - (void)placeFirstInOrder:(FacebookChatItemController*)chatItem {
   NSMutableArray *container = chatItemControllers_.get();
 

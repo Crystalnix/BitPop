@@ -31,6 +31,7 @@
       <include name="IDR_UNCENSOR_OPTIONS_ICON_DELETE" file="uncensor/delete.png" type="BINDATA" />
       <include name="IDR_UNCENSOR_PARSEURI_JS" file="uncensor/parseuri.js" type="BINDATA" />
 
+      <!--
       <include name="IDR_FACEBOOK_FRIENDS_BACKGR" file="facebook_friends/background.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_FACEBOOK_FRIENDS_POPUP" file="facebook_friends/friends_sidebar.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_FACEBOOK_FRIENDS_CHAT" file="facebook_friends/chat.html" flattenhtml="true" type="BINDATA" />
@@ -46,6 +47,7 @@
       <include name="IDR_FACEBOOK_FRIENDS_JQUERY_JS" file="facebook_friends/js/jquery.min.js" type="BINDATA" />
       <include name="IDR_FACEBOOK_FRIENDS_COMMON_JS" file="facebook_friends/js/common.js" type="BINDATA" />
       <include name="IDR_FACEBOOK_FRIENDS_AUTOLINK_JS" file="facebook_friends/js/autolink-min.js" type="BINDATA" />
+      -->
 
       <if expr="pp_ifdef('file_manager_extension')">
         <include name="IDR_FILE_MANAGER_MAIN" file="file_manager/main.html" flattenhtml="true" type="BINDATA" />

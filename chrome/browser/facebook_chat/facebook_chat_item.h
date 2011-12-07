@@ -18,6 +18,8 @@ class FacebookChatItem {
   public:
     enum Status {
       AVAILABLE,
+      IDLE,
+      ERROR_STATUS,
       OFFLINE
     };
 
@@ -26,7 +28,8 @@ class FacebookChatItem {
       REMOVING,
       ACTIVE_STATUS_CHANGED,
       HIGHLIGHT_STATUS_CHANGED,
-      NUM_NOTIFICATIONS_CHANGED
+      NUM_NOTIFICATIONS_CHANGED,
+      STATUS_CHANGED
     };
 
     FacebookChatItem(FacebookChatManager *manager,
@@ -57,6 +60,8 @@ class FacebookChatItem {
     void AddNewUnreadMessage(const std::string &message);
     void ClearUnreadMessages();
     std::string GetMessageAtIndex(unsigned int index);
+
+    void ChangeStatus(const std::string &status);
 
     void AddObserver(Observer* observer);
     void RemoveObserver(Observer* observer);

@@ -363,6 +363,7 @@ void FactoryRegistry::ResetFunctions() {
   RegisterFunction<SetFriendsSidebarVisibleFunction>();
   RegisterFunction<AddChatFunction>();
   RegisterFunction<NewIncomingMessageFunction>();
+  RegisterFunction<LoggedOutFacebookSessionFunction>();
 }
 
 void FactoryRegistry::GetAllNames(std::vector<std::string>* names) {

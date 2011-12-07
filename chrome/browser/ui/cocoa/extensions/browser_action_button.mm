@@ -15,8 +15,10 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_action.h"
 #include "chrome/common/extensions/extension_resource.h"
+#include "content/common/notification_details.h"
 #include "content/common/notification_observer.h"
 #include "content/common/notification_registrar.h"
+#include "content/common/notification_service.h"
 #include "content/common/notification_source.h"
 #include "content/common/notification_type.h"
 #include "skia/ext/skia_utils_mac.h"
@@ -60,6 +62,8 @@ class ExtensionImageTrackerBridge : public NotificationObserver,
     }
     registrar_.Add(this, NotificationType::EXTENSION_BROWSER_ACTION_UPDATED,
                    Source<ExtensionAction>(extension->browser_action()));
+    registrar_.Add(this, NotificationType::FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED,
+                   NotificationService::AllSources());
   }
 
   ~ExtensionImageTrackerBridge() {}
@@ -78,7 +82,11 @@ class ExtensionImageTrackerBridge : public NotificationObserver,
                const NotificationDetails& details) {
     if (type == NotificationType::EXTENSION_BROWSER_ACTION_UPDATED)
       [owner_ updateState];
-    else
+    else if (type == NotificationType::FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED) {
+      Details<bool> detailsBool(details);
+
+      owner_.shouldDrawAsPushed = (*detailsBool.ptr()) ? YES : NO;
+    } else
       NOTREACHED();
   }
 
@@ -108,6 +116,7 @@ class ExtensionImageTrackerBridge : public NotificationObserver,
 @synthesize isBeingDragged = isBeingDragged_;
 @synthesize extension = extension_;
 @synthesize tabId = tabId_;
+@synthesize shouldDrawAsPushed = shouldDrawAsPushed_;
 
 + (Class)cellClass {
   return [BrowserActionCell class];
@@ -209,7 +218,8 @@ class ExtensionImageTrackerBridge : public NotificationObserver,
   [[NSNotificationCenter defaultCenter]
       postNotificationName:kBrowserActionButtonDragEndNotification
                     object:self];
-  [[self cell] setHighlighted:NO];
+  if (!shouldDrawAsPushed_)
+    [[self cell] setHighlighted:NO];
 }
 
 - (void)setFrame:(NSRect)frameRect animate:(BOOL)animate {
@@ -296,6 +306,11 @@ class ExtensionImageTrackerBridge : public NotificationObserver,
 
   [image unlockFocus];
   return image;
+}
+
+- (void)setShouldDrawAsPushed:(BOOL)pushed {
+  [[self cell] setHighlighted:pushed];
+  shouldDrawAsPushed_ = pushed;
 }
 
 @end

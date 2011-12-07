@@ -19,6 +19,10 @@
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_popup_controller.h"
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_notification_controller.h"
 #include "chrome/common/url_constants.h"
+#include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/image.h"
+#include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 
 namespace {
   const int kButtonWidth = 163;
@@ -29,7 +33,15 @@ namespace {
   const CGFloat kChatWindowAnchorPointYOffset = 3.0;
 
   const CGFloat kBadgeImageDim = 14;
+
+  NSImage *availableImage = nil;
+  NSImage *idleImage = nil;
 }
+
+@interface FacebookChatItemController(Private)
++ (NSImage*)imageForNotificationBadgeWithNumber:(int)number;
+@end
+
 
 @implementation FacebookChatItemController
 
@@ -50,14 +62,21 @@ namespace {
                       selector:@selector(viewFrameDidChange:)
                           name:NSViewFrameDidChangeNotification
                         object:[self view]];
-
   }
   return self;
 }
 
 - (void)awakeFromNib {
+  if (!availableImage || !idleImage) {
+    ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+    availableImage = rb.GetNativeImageNamed(IDR_FACEBOOK_ONLINE_ICON_14);
+    idleImage = rb.GetNativeImageNamed(IDR_FACEBOOK_IDLE_ICON_14);
+  }
+
   [button_ setTitle:
         [NSString stringWithUTF8String:bridge_->chat()->username().c_str()]];
+  [button_ setImagePosition:NSImageLeft];
+  [self statusChanged];
   // int nNotifications = [self chatItem]->num_notifications();
   // if (nNotifications > 0)
   //   [self setUnreadMessagesNumber:nNotifications];
@@ -226,7 +245,6 @@ if (!button_)
   if (number != 0) {
     NSImage *img = [FacebookChatItemController
         imageForNotificationBadgeWithNumber:number];
-    [button_ setImagePosition:NSImageLeft];
     [button_ setImage:img];
     [img release];
 
@@ -245,9 +263,20 @@ if (!button_)
     //[button_ highlight:YES];
   } else {
     //[button_ highlight:NO];
-    [button_ setImage:nil];
+    [self statusChanged];
     [notificationController_ close];
     notificationController_.reset(nil);
+  }
+}
+
+- (void)statusChanged {
+  if ([self chatItem]->num_notifications() == 0) {
+    if ([self chatItem]->status() == FacebookChatItem::AVAILABLE)
+      [button_ setImage:availableImage];
+    else if ([self chatItem]->status() == FacebookChatItem::IDLE)
+      [button_ setImage:idleImage];
+    else
+      [button_ setImage:nil];
   }
 }
 

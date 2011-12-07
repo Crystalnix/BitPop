@@ -61,6 +61,10 @@ bool SetFriendsSidebarVisibleFunction::RunImpl() {
   PrefService *prefService = browser->profile()->GetPrefs();
   prefService->SetBoolean(prefs::kFacebookShowFriendsList, is_visible);
 
+  NotificationService::current()->Notify(
+             NotificationType::FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED,
+             NotificationService::AllSources(),
+             Details<bool>(&is_visible));
   return true;
 }
 
@@ -140,16 +144,33 @@ bool NewIncomingMessageFunction::RunImpl() {
   }
 
   FacebookChatManager *mgr = browser->profile()->GetFacebookChatManager();
-  mgr->CreateFacebookChat(FacebookChatCreateInfo(jid, username, status));
+  if (!message.empty()) {
+    mgr->CreateFacebookChat(FacebookChatCreateInfo(jid, username, status));
 
-  mgr->AddNewUnreadMessage(jid, message);
+    mgr->AddNewUnreadMessage(jid, message);
 
-  NotificationService::current()->Notify(
+    NotificationService::current()->Notify(
       NotificationType::FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE,
       Source<Profile>(browser->profile()),
       Details<ReceivedMessageInfo>(
         new ReceivedMessageInfo(jid, username, status, message)));
+  } else
+    mgr->ChangeItemStatus(jid, status);
 
   return true;
 }
 
+bool LoggedOutFacebookSessionFunction::RunImpl() {
+  Browser* browser = GetCurrentBrowser();
+  if (!browser) {
+    error_ = kNoCurrentWindowError;
+    return false;
+  }
+
+  NotificationService::current()->Notify(
+      NotificationType::FACEBOOK_SESSION_LOGGED_OUT,
+      Source<Profile>(browser->profile()),
+      NotificationService::NoDetails());
+
+  return true;
+}

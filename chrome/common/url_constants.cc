@@ -270,7 +270,8 @@ void RegisterChromeSchemes() {
 }
 
 const char kFacebookChatExtensionPrefixURL[] =
-    "chrome-extension://gbldbegolgpdenofnibkpmffbpnmgppc/";
+    //"chrome-extension://gbldbegolgpdenofnibkpmffbpnmgppc/";
+    "chrome-extension://engefnlnhcgeegefndkhijjfdfbpbeah/";
 
 const char kFacebookChatExtensionSidebarPage[] = "friends_sidebar.html";
 

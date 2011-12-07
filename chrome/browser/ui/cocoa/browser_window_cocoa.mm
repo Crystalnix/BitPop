@@ -64,6 +64,8 @@ BrowserWindowCocoa::BrowserWindowCocoa(Browser* browser,
                  Source<Profile>(browser_->profile()));
   registrar_.Add(this, NotificationType::FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE,
                  Source<Profile>(browser_->profile()));
+  registrar_.Add(this, NotificationType::FACEBOOK_SESSION_LOGGED_OUT,
+                 Source<Profile>(browser_->profile()));
 }
 
 BrowserWindowCocoa::~BrowserWindowCocoa() {
@@ -640,6 +642,11 @@ void BrowserWindowCocoa::Observe(NotificationType type,
           item->set_needs_activation(false);
           GetChatbar()->AddChatItem(item);
         }
+      }
+      break;
+    case NotificationType::FACEBOOK_SESSION_LOGGED_OUT:
+      if (browser_->is_type_tabbed()) {
+        GetChatbar()->RemoveAll();
       }
       break;
     default:

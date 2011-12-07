@@ -89,3 +89,17 @@ std::string FacebookChatItem::GetMessageAtIndex(unsigned int index) {
   DCHECK(index < unreadMessages_.size());
   return unreadMessages_.at(index);
 }
+
+void FacebookChatItem::ChangeStatus(const std::string &status) {
+  if (status == "active")
+    status_ = AVAILABLE;
+  else if (status == "idle")
+    status_ = IDLE;
+  else if (status == "error")
+    status_ = ERROR_STATUS;
+  else
+    status_ = OFFLINE;
+
+  state_ = STATUS_CHANGED;
+  UpdateObservers();
+}

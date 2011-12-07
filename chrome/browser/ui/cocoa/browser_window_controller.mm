@@ -1511,7 +1511,10 @@
   if (!facebookSidebarController_.get()) {
     facebookSidebarController_.reset([[FacebookSidebarController alloc]
       initWithDelegate:self]);
-    [[[self window] contentView] addSubview:[facebookSidebarController_ view]];
+    [[[self window] contentView]
+        addSubview:[facebookSidebarController_ view]
+        positioned:NSWindowBelow
+        relativeTo:[bookmarkBarController_ view]];
     // TODO: [facebookSidebarController_ show] maybe
   }
   return facebookSidebarController_;

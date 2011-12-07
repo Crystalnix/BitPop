@@ -20,6 +20,7 @@ class FacebookChatbarMac : public FacebookChatbar {
     explicit FacebookChatbarMac(Browser *browser,
                                 FacebookChatbarController *controller);
     virtual void AddChatItem(FacebookChatItem *chat_item);
+    virtual void RemoveAll();
 
     virtual void Show();
     virtual void Hide();
