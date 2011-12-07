@@ -21,6 +21,7 @@
 #import "chrome/browser/ui/cocoa/extensions/extension_popup_controller.h"
 #import "chrome/browser/ui/cocoa/image_button_cell.h"
 #import "chrome/browser/ui/cocoa/menu_button.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/extensions/extension_action.h"
 #include "chrome/common/pref_names.h"
 #include "content/browser/tab_contents/tab_contents.h"
@@ -467,11 +468,18 @@ class ExtensionServiceObserverBridge : public NotificationObserver,
   NSRect buttonFrame = NSMakeRect(0.0, kBrowserActionOriginYOffset,
                                   kBrowserActionWidth, kBrowserActionHeight);
   BrowserActionButton* newButton =
+      (extension->id() != chrome::kFacebookChatExtensionId) ?
       [[[BrowserActionButton alloc]
          initWithFrame:buttonFrame
              extension:extension
                profile:profile_
+                 tabId:[self currentTabId]] autorelease] :
+      [[[CustomActionButton alloc]
+         initWithFrame:buttonFrame
+             extension:extension
+               profile:profile_
                  tabId:[self currentTabId]] autorelease];
+
   [newButton setTarget:self];
   [newButton setAction:@selector(browserActionClicked:)];
   NSString* buttonKey = base::SysUTF8ToNSString(extension->id());

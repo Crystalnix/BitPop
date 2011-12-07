@@ -135,6 +135,7 @@ const int kJavascriptMessageExpectedDelay = 1000;
 
 const bool kEnableTouchIcon = false;
 
+const char kFacebookChatExtensionId[] = "engefnlnhcgeegefndkhijjfdfbpbeah";
 }  // namespace chrome
 
 #undef FPL

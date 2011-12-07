@@ -97,6 +97,7 @@ extern const int kJavascriptMessageExpectedDelay;
 // Are touch icons enabled? False by default.
 extern const bool kEnableTouchIcon;
 
+extern const char kFacebookChatExtensionId[];
 }  // namespace chrome
 
 #endif  // CHROME_COMMON_CHROME_CONSTANTS_H_

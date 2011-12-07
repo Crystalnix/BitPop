@@ -894,91 +894,107 @@
   NSRect windowFrame = [window frame];
   NSRect workarea = [[window screen] visibleFrame];
 
-  // If the window is not already fully in the workarea, do not adjust its frame
-  // at all.
-  if (!NSContainsRect(workarea, windowFrame))
-    return;
+  // // If the window is not already fully in the workarea, do not adjust its frame
+  // // at all.
+  // if (!NSContainsRect(workarea, windowFrame))
+  //   return;
 
-  // Record the position of the top/bottom of the window, so we can easily check
-  // whether we grew the window upwards/downwards.
-  CGFloat oldWindowMaxX = NSMaxX(windowFrame);
-  CGFloat oldWindowMinX = NSMinX(windowFrame);
+  // // Record the position of the top/bottom of the window, so we can easily check
+  // // whether we grew the window upwards/downwards.
+  // CGFloat oldWindowMaxX = NSMaxX(windowFrame);
+  // CGFloat oldWindowMinX = NSMinX(windowFrame);
 
-  // We are "zoomed" if we occupy the full vertical space.
-  bool isZoomed = (windowFrame.origin.x == workarea.origin.x &&
-                   windowFrame.size.width == workarea.size.width);
+  // // We are "zoomed" if we occupy the full vertical space.
+  // bool isZoomed = (windowFrame.origin.x == workarea.origin.x &&
+  //                  windowFrame.size.width == workarea.size.width);
 
-  // If we're shrinking the window....
-  if (deltaW < 0) {
-    bool didChange = false;
-
-    // Don't reset if not currently zoomed since shrinking can take several
-    // steps!
-    if (isZoomed)
-      isShrinkingWFromZoomed_ = YES;
-
-    // If we previously grew at the top, shrink as much as allowed at the top
-    // first.
-    if (windowRightGrowth_ > 0) {
-      CGFloat shrinkAtTopBy = MIN(-deltaW, windowRightGrowth_);
-      windowFrame.size.width -= shrinkAtTopBy;  // Shrink the window.
-      deltaW += shrinkAtTopBy;            // Update the amount left to shrink.
-      windowLeftGrowth_ -= shrinkAtTopBy;  // Update the growth state.
-      didChange = true;
-    }
-
-    // Similarly for the bottom (not an "else if" since we may have to
-    // simultaneously shrink at both the top and at the bottom). Note that
-    // |deltaH| may no longer be nonzero due to the above.
-    if (deltaW < 0 && windowLeftGrowth_ > 0) {
-      CGFloat shrinkAtBottomBy = MIN(-deltaW, windowLeftGrowth_);
-      windowFrame.origin.x += shrinkAtBottomBy;     // Move the window up.
-      windowFrame.size.width -= shrinkAtBottomBy;  // Shrink the window.
-      deltaW += shrinkAtBottomBy;               // Update the amount left....
-      windowRightGrowth_ -= shrinkAtBottomBy;  // Update the growth state.
-      didChange = true;
-    }
-
-    // If we're shrinking from zoomed but we didn't change the top or bottom
-    // (since we've reached the limits imposed by |window...Growth_|), then stop
-    // here. Don't reset |isShrinkingFromZoomed_| since we might get called
-    // again for the same shrink.
-    if (isShrinkingWFromZoomed_ && !didChange)
-      return;
-  } else {
-    isShrinkingWFromZoomed_ = NO;
-
-    // Don't bother with anything else.
-    if (isZoomed)
-      return;
+  windowFrame.size.width += deltaW;
+  if (windowFrame.origin.x < workarea.origin.x) {
+    windowFrame.origin.x = workarea.origin.x;
   }
 
-  // Shrinking from zoomed is handled above (and is constrained by
-  // |window...Growth_|).
-  if (!isShrinkingWFromZoomed_) {
-    // Resize the window down until it hits the bottom of the workarea, then if
-    // needed continue resizing upwards.  Do not resize the window to be taller
-    // than the current workarea.
-    // Resize the window as requested, keeping the top left corner fixed.
-    windowFrame.origin.x -= deltaW;
-    windowFrame.size.width += deltaW;
+  windowFrame.size.width =
+        std::min(windowFrame.size.width, workarea.size.width);
 
-    // If the bottom left corner is now outside the visible frame, move the
-    // window up to make it fit, but make sure not to move the top left corner
-    // out of the visible frame.
-    if (windowFrame.origin.x < workarea.origin.x) {
-      windowFrame.origin.x = workarea.origin.x;
-      windowFrame.size.width =
-          std::min(windowFrame.size.width, workarea.size.width);
-    }
+  if ((windowFrame.origin.x + windowFrame.size.width) >
+      (workarea.origin.x + workarea.size.width))
+    windowFrame.origin.x = workarea.origin.x + workarea.size.width -
+      windowFrame.size.width;
 
-    // Record (if applicable) how much we grew the window in either direction.
-    // (N.B.: These only record growth, not shrinkage.)
-    if (NSMaxX(windowFrame) > oldWindowMaxX)
-      windowRightGrowth_ += NSMaxX(windowFrame) - oldWindowMaxX;
-    if (NSMinX(windowFrame) < oldWindowMinX)
-      windowLeftGrowth_ += oldWindowMinX - NSMinX(windowFrame);
-  }
+  // // If we're shrinking the window....
+  // if (deltaW < 0) {
+  //   bool didChange = false;
+
+  //   // Don't reset if not currently zoomed since shrinking can take several
+  //   // steps!
+  //   if (isZoomed)
+  //     isShrinkingWFromZoomed_ = YES;
+
+
+
+  //   // If we previously grew at the top, shrink as much as allowed at the top
+  //   // first.
+  //   if (windowRightGrowth_ > 0) {
+  //     CGFloat shrinkAtTopBy = MIN(-deltaW, windowRightGrowth_);
+  //     windowFrame.size.width -= shrinkAtTopBy;  // Shrink the window.
+  //     deltaW += shrinkAtTopBy;            // Update the amount left to shrink.
+  //     windowLeftGrowth_ -= shrinkAtTopBy;  // Update the growth state.
+  //     didChange = true;
+  //   }
+
+  //   // Similarly for the bottom (not an "else if" since we may have to
+  //   // simultaneously shrink at both the top and at the bottom). Note that
+  //   // |deltaH| may no longer be nonzero due to the above.
+  //   if (deltaW < 0 && windowLeftGrowth_ > 0) {
+  //     CGFloat shrinkAtBottomBy = MIN(-deltaW, windowLeftGrowth_);
+  //     windowFrame.origin.x += shrinkAtBottomBy;     // Move the window up.
+  //     windowFrame.size.width -= shrinkAtBottomBy;  // Shrink the window.
+  //     deltaW += shrinkAtBottomBy;               // Update the amount left....
+  //     windowRightGrowth_ -= shrinkAtBottomBy;  // Update the growth state.
+  //     didChange = true;
+  //   }
+
+  //   // If we're shrinking from zoomed but we didn't change the top or bottom
+  //   // (since we've reached the limits imposed by |window...Growth_|), then stop
+  //   // here. Don't reset |isShrinkingFromZoomed_| since we might get called
+  //   // again for the same shrink.
+  //   if (isShrinkingWFromZoomed_ && !didChange)
+  //     return;
+  // } else {
+  //   isShrinkingWFromZoomed_ = NO;
+
+  //   // Don't bother with anything else.
+  //   if (isZoomed)
+  //     return;
+  // }
+
+  // // Shrinking from zoomed is handled above (and is constrained by
+  // // |window...Growth_|).
+  // if (!isShrinkingWFromZoomed_) {
+  //   // Resize the window down until it hits the bottom of the workarea, then if
+  //   // needed continue resizing upwards.  Do not resize the window to be taller
+  //   // than the current workarea.
+  //   // Resize the window as requested, keeping the top left corner fixed.
+  //   //windowFrame.origin.x += deltaW;
+  //   windowFrame.size.width += deltaW;
+
+  //   // If the bottom left corner is now outside the visible frame, move the
+  //   // window up to make it fit, but make sure not to move the top left corner
+  //   // out of the visible frame.
+  //   if ((windowFrame.origin.x + windowFrame.size.width) >
+  //       (workarea.origin.x + workarea.size.width)) {
+  //     //windowFrame.origin.x = workarea.origin.x;
+  //     windowFrame.size.width =
+  //         std::min(windowFrame.size.width, workarea.size.width);
+  //   }
+
+  //   // Record (if applicable) how much we grew the window in either direction.
+  //   // (N.B.: These only record growth, not shrinkage.)
+  //   if (NSMaxX(windowFrame) > oldWindowMaxX)
+  //     windowRightGrowth_ += NSMaxX(windowFrame) - oldWindowMaxX;
+  //   if (NSMinX(windowFrame) < oldWindowMinX)
+  //     windowLeftGrowth_ += oldWindowMinX - NSMinX(windowFrame);
+  // }
 
   // Disable subview resizing while resizing the window, or else we will get
   // unwanted renderer resizes.  The calling code must call layoutSubviews to
