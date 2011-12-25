@@ -21,7 +21,13 @@ const NSUInteger kMaxChatItemCount = 10;
 
 const NSInteger kChatItemPadding = 10;
 
+const NSInteger kChatItemsPaddingRight = 30;
+
 const NSInteger kChatbarHeight = 44;
+
+const NSTimeInterval kAddAnimationDuration = 0.6;
+const NSTimeInterval kRemoveAnimationDuration = 0.6;
+const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
 }  // namespace
 
 @interface FacebookChatbarController(Private)
@@ -146,6 +152,24 @@ const NSInteger kChatbarHeight = 44;
       return;
     }
 
+  if (addAnimation_.get()) {
+    [addAnimation_ stopAnimation];
+
+    // if animation did not complete the animated frame may be in
+    // intermediate state. following loop fixes that.
+    for (FacebookChatItemController *itemController in chatItemControllers_.get()) {
+      NSRect rc = [[itemController view] frame];
+      rc.size = [itemController preferredSize];
+      [[itemController view] setFrame:rc];
+    }
+  }
+
+  addAnimation_.reset([[NSAnimation alloc] initWithDuration:kAddAnimationDuration
+      animationCurve:NSAnimationEaseIn]);
+  [addAnimation_ setAnimationBlockingMode:NSAnimationNonblocking];
+  [addAnimation_ setDelegate:self];
+  [addAnimation_ startAnimation];
+
   // Insert new item at the left.
   scoped_nsobject<FacebookChatItemController> controller(
       [[FacebookChatItemController alloc] initWithModel:item chatbar:self]);
@@ -156,8 +180,10 @@ const NSInteger kChatbarHeight = 44;
   [[self view] addSubview:[controller view]];
 
   NSRect rc = [[controller view] frame];
-  rc.size = [controller preferredSize];
+  rc.origin.x = [[self view] bounds].size.width - kChatItemsPaddingRight;
   rc.origin.y = kChatbarHeight / 2 - rc.size.height / 2;
+  rc.size = [controller preferredSize];
+  rc.size.width = 0;
   [[controller view] setFrame:rc];
 
   // Keep only a limited number of items in the shelf.
@@ -170,11 +196,10 @@ const NSInteger kChatbarHeight = 44;
     [self remove:[chatItemControllers_ lastObject]];
   }
 
-  // Finally, move the remaining items to the right. Skip the first item when
-  // laying out the items, so that the longer animation duration we set up above
-  // is not overwritten.
+  lastAddedItem_ = controller;
+
   [self layoutItems:YES];
-  [controller layedOutAfterAddingToChatbar];
+  //[controller layedOutAfterAddingToChatbar];
 }
 
 - (void)activateItem:(FacebookChatItemController*)chatItem {
@@ -192,6 +217,19 @@ const NSInteger kChatbarHeight = 44;
 
   [chatItemControllers_ removeObject:chatItem];
 
+  if (isRemovingAll_) {
+     if (removeAnimation_.get())
+       [removeAnimation_ stopAnimation];
+
+  }
+
+  removeAnimation_.reset([[NSAnimation alloc]
+      initWithDuration:kPlaceFirstAnimationDuration
+        animationCurve:NSAnimationEaseOut]);
+  [removeAnimation_ setAnimationBlockingMode:NSAnimationNonblocking];
+  [removeAnimation_ setDelegate:self];
+  [removeAnimation_ startAnimation];
+
   [self layoutItems];
 
   // Check to see if we have any downloads remaining and if not, hide the shelf.
@@ -200,10 +238,12 @@ const NSInteger kChatbarHeight = 44;
 }
 
 - (void)removeAll {
+  isRemovingAll_ = YES;
   for (int i = [chatItemControllers_ count]; i > 0; --i) {
     FacebookChatItemController *contr = [chatItemControllers_ objectAtIndex:0];
     [contr remove];  // it will call [self remove:] afterwards
   }
+  isRemovingAll_ = NO;
 }
 
 - (void)placeFirstInOrder:(FacebookChatItemController*)chatItem {
@@ -219,6 +259,15 @@ const NSInteger kChatbarHeight = 44;
   //     break;
   //   }
   // }
+  if (placeFirstAnimation_.get())
+    [placeFirstAnimation_ stopAnimation];
+
+  placeFirstAnimation_.reset([[NSAnimation alloc]
+      initWithDuration:kPlaceFirstAnimationDuration
+        animationCurve:NSAnimationEaseIn]);
+  [placeFirstAnimation_ setAnimationBlockingMode:NSAnimationNonblocking];
+  [placeFirstAnimation_ setDelegate:self];
+  [placeFirstAnimation_ startAnimation];
 
   [chatItem retain];
   [container removeObjectIdenticalTo:chatItem];
@@ -249,7 +298,7 @@ const NSInteger kChatbarHeight = 44;
   for (FacebookChatItemController* itemController
       in chatItemControllers_.get()) {
     NSRect frame = [[itemController view] frame];
-    frame.origin.x = ([[self view] bounds].size.width - 30 -
+    frame.origin.x = ([[self view] bounds].size.width - kChatItemsPaddingRight -
         [itemController preferredSize].width) - currentX;
     if (frame.origin.x < 10) {
       if ([itemController active] == YES) {
@@ -270,7 +319,7 @@ const NSInteger kChatbarHeight = 44;
 
     frame.size.width = [itemController preferredSize].width;
     //if (!skipFirst)
-    [[itemController view] setFrame:frame];
+    [[[itemController view] animator] setFrame:frame];
     [itemController layoutChildWindows];
 
     currentX += frame.size.width + kChatItemPadding;
@@ -291,6 +340,16 @@ const NSInteger kChatbarHeight = 44;
 - (void)switchParentWindow:(NSWindow*)window {
   for (FacebookChatItemController *controller in chatItemControllers_.get())
     [controller switchParentWindow:window];
+}
+
+- (void)animationDidEnd:(NSAnimation *)animation {
+  if (animation == addAnimation_) {
+    [lastAddedItem_ layedOutAfterAddingToChatbar];
+    addAnimation_.reset();
+  } else if (animation == removeAnimation_)
+    removeAnimation_.reset();
+  else if (animation == placeFirstAnimation_)
+    placeFirstAnimation_.reset();
 }
 
 @end

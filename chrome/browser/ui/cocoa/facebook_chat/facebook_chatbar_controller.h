@@ -9,6 +9,7 @@
 
 #import <Foundation/Foundation.h>
 
+#import "base/mac/cocoa_protocols.h"
 #include "base/memory/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #import "chrome/browser/ui/cocoa/view_resizer.h"
@@ -19,7 +20,7 @@ class Browser;
 class FacebookChatItem;
 @class FacebookChatItemController;
 
-@interface FacebookChatbarController : NSViewController {
+@interface FacebookChatbarController : NSViewController<NSAnimationDelegate> {
  @private
   IBOutlet HoverButton *hoverCloseButton_;
 
@@ -37,6 +38,14 @@ class FacebookChatItem;
 
   // Delegate that handles resizing our view.
   id<ViewResizer> resizeDelegate_;
+
+  scoped_nsobject<NSAnimation> addAnimation_;
+  scoped_nsobject<NSAnimation> removeAnimation_;
+  scoped_nsobject<NSAnimation> placeFirstAnimation_;
+
+  FacebookChatItemController *lastAddedItem_;
+
+  BOOL isRemovingAll_;
 }
 
 - (id)initWithBrowser:(Browser*)browser
