@@ -1,0 +1,74 @@
+<html>
+<head>
+  <title>Facebook Connect For Chrome Extension</title>
+
+  <script type="text/javascript" src="js/autolink-min.js"></script>
+  <script type="text/javascript" src="js/common.js"></script>
+  <script>
+    var friendList = null;
+    var myUid = null;
+
+    //chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
+    //  { type: 'observe',
+    //    extensionId: chrome.i18n.getMessage('@@extension_id')
+    //  });
+
+    chrome.browserAction.onClicked.addListener(function (tab) {
+      chrome.chromePrivate.getFriendsSidebarVisible(function(is_visible) {
+        chrome.chromePrivate.setFriendsSidebarVisible(!is_visible);
+      });
+    });
+
+    chrome.extension.onRequestExternal.addListener(function (request, sender, sendResponse) {
+      if (!request.type)
+        return;
+
+      if (request.type == 'myUidAvailable') {
+          myUid = request.myUid;
+      } else if (request.type == 'friendListReceived') {
+        friendList = request.data;
+      } else if (request.type == 'loggedOut') {
+        friendList = null;
+      } else if (request.type == 'userStatusChanged') {
+        // send change status message: empty message body signals to only check
+        // for status change
+        chrome.chromePrivate.newIncomingMessage(request.uid, "",
+          request.status, "");
+      } else if (request.type == 'newMessage') {
+        var msgDate = new Date();  // set 'now' as the message arrive time
+
+        console.assert(myUid != null);
+
+        bitpop.saveToLocalStorage(myUid, request.from,
+          bitpop.preprocessMessageText(request.body),
+          msgDate,
+          false);
+
+        var found = false;
+        var vs = chrome.extension.getViews();
+        for (var i = 0; i < vs.length; ++i) {
+          if (vs[i].location.hash.slice(1) == request.from) {
+            found = true;
+            break;
+          }
+        }
+
+        if (!found) {
+          for (var i = 0; i < friendList.length; ++i) {
+            if (friendList[i].uid == request.from) {
+              chrome.chromePrivate.newIncomingMessage(
+                                 friendList[i].uid.toString(),
+                                 friendList[i].name,
+                                 friendList[i].online_presence,
+                                 request.body);
+              break;
+            }
+          }
+        }
+      }
+    });
+  </script>
+</head>
+<body>
+</body>
+</html>

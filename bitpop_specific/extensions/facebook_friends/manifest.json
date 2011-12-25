@@ -1,0 +1,20 @@
+{
+  "key": "MIGdMA0GCSqGSIb3DQEBAQUAA4GLADCBhwKBgQDDLmGrQGIc4LDzqwAM34rwqaFGvWl8ZEAHRrCURfZVGsEv9QE9xbiSh1G1FsNNq8qhMscRfWYw2ZJpy3QKm8rVYOeeB4RWZPKDFWoTDu2ktOckAUBIqH3aQ98H5QRf+YFiHTqbxVpg+F4maQEVwrM9l/S5PQ530j2GW7XphCDJsQIBIw==",
+  "name": "Facebook Friends Sidebar",
+  "version": "1.0.6",
+  "description": "Shows a sidebar with a list of Facebook friends to the right of current web page.",
+  "background_page": "background.html",
+  "browser_action": {
+    "default_title": "Facebook chat",
+    "default_icon": "images/facebook_icon.png",
+    "default_popup": ""
+  },
+  "permissions": [
+    "tabs",
+    "chromePrivate",
+    "*.facebook.com/*",
+    "https://api.facebook.com/*",
+    "https://graph.facebook.com/*"
+  ]
+}
+

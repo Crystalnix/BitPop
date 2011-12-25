@@ -1,0 +1,24 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <link rel="stylesheet" href="css/chat_popup.css" type="text/css" media="screen" charset="utf-8">
+  <script src='js/jquery.min.js'></script>
+  <script src="js/autolink-min.js"></script>
+  <script src="js/common.js"></script>
+  <script src="js/chat_popup.js"></script>
+  <script type="text/javascript">
+    $(document).ready(bitpop.chat.init);
+  </script>
+</head>
+<body>
+  <div id="invite">
+    <a href="#" onclick="bitpop.chat.sendInvite()">Invite your friend to use BitPop</a>
+  </div>
+  <ul id="chat"></ul>
+  <form id="msgForm">
+    <input type="text" id="msg" />
+    <input id="pastePageLink" type="button" value="+" />
+    <input type="submit" style="visibility:hidden; height: 0" />
+  </form>
+</body>
+</html>

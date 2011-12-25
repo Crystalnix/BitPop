@@ -176,3 +176,7 @@ v8.log
 /third_party/libphonenumber/phonenumber_proto.xml
 
 .clang_complete
+bitpop_specific/extensions/facebook_controller.pem
+bitpop_specific/extensions/facebook_friends.pem
+bitpop_specific/extensions/facebook_messages.pem
+bitpop_specific/extensions/facebook_notifications.pem

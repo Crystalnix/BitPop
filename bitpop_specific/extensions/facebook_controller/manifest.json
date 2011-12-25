@@ -1,0 +1,13 @@
+{
+  "name": "Facebook Controller",
+  "version": "0.0.1",
+  "description": "Make calls to Facebook Graph API, FQL queries, XMPP chat service.",
+  "background_page": "background.html",
+  "permissions": [
+    "tabs",
+    "chromePrivate",
+    "*.facebook.com/*",
+    "https://api.facebook.com/*",
+    "https://graph.facebook.com/*"
+  ]
+}

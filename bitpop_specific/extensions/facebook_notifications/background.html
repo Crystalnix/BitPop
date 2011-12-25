@@ -1,0 +1,34 @@
+<html>
+<head>
+  <script src="js/options.js"></script>
+  <script src="js/desktop_notifications.js"></script>
+  <script type="text/javascript" charset="utf-8">
+    window.options.init();
+    var current = window.options.current;
+
+
+  </script>
+</head>
+<body>
+  <script type="text/javascript" charset="utf-8">
+    // chrome.extension.onRequestExternal.addListener(
+    //     function (request, sender, sendResponse) {
+    //       if (!request.type)
+    //         return;
+
+    //       if (request.type == 'accessTokenAvailable') {
+    //         DesktopNotifications.start(current.refreshTime);
+    //       }
+    //       else if (request.type == 'loggedOut') {
+    //         DesktopNotifications.stop();
+    //       }
+    //     }
+    // );
+
+    //DesktopNotifications.protocol = current.protocol;
+    //DesktopNotifications.domain = current.domain;
+    DesktopNotifications.controllerExtensionId = current.controllerExtensionId;
+    DesktopNotifications.start(current.refreshTime);
+  </script>
+</body>
+</html>

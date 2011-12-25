@@ -1,0 +1,250 @@
+<html>
+<head>
+  <link rel="stylesheet" href="css/jewel-style.css" type="text/css" media="screen" charset="utf-8">
+  <style type="text/css">
+    /*html, body {
+      width: 350px;
+      height: 300px;
+    }
+    */
+    .snippet img {
+      padding-right: 3px;
+      vertical-align: middle;
+    }
+    .loading {
+      position: relative;
+      width: 100%;
+      height: 200px;
+      background-image: url('/images/indicator_white_large.gif');
+      background-attachment:fixed;
+      background-repeat:no-repeat;
+      background-position: center center;
+    }
+  </style>
+  <script src="js/jquery.min.js"></script>
+  <script src="js/options.js"></script>
+  <script src="js/humane.js"></script>
+  <script type="text/javascript" charset="utf-8">
+    var NUM_MESSAGES_SHOW = 5;
+    var myUid = chrome.extension.getBackgroundPage().myUid;
+
+    window.options.init();
+    var current = window.options.current;
+
+    var DesktopNotifications =
+      window.chrome.extension.getBackgroundPage().DesktopNotifications;
+
+    function showError(errorMsg) {
+      // TODO: make it pretty!!!
+      var newDom =
+          //"<div class='empty-feed'>" +
+          "<span>" + errorMsg + "</span>";// +
+          //"</div>";
+      $('#feed').empty();
+      $('#feed').addClass('empty-feed');
+      $('#feed').removeClass('loading');
+      $('#feed').append(newDom);
+
+      appendFooter();
+    }
+
+    function appendFooter(numUnread) {
+      var footerGoToOnClick = "onclick='chrome.tabs.create({ url: \"http://www.facebook.com/messages\" })'";
+      $('#footer').empty();
+
+      if (!numUnread)
+        $('#footer').append("<div class='footer-item centered' " +
+            footerGoToOnClick + ">See All Messages</div>");
+      else
+        $('#footer').append("<div class='footer-item' " + footerGoToOnClick +
+            ">" +
+            "<div class='top'>" +
+              "See All Messages" +
+            "</div>" +
+            "<div class='bottom'>" +
+              numUnread.toString() + " unread" +
+            "</div>" +
+            "</div>");
+    }
+
+    function showMessages(data) {
+      if (!myUid) {
+        showError('Error. User facebook id was not retrieved.');
+        return;
+      }
+
+      $('#feed').removeClass('loading');
+      $('#feed').empty();
+
+      var newDom = '';
+
+      var footerGoToOnClick = "onclick='chrome.tabs.create({ url: \"http://www.facebook.com/messages\" })'";
+      if (data.data.length == 0) {
+        newDom =
+          "<div class='empty-feed'>" +
+          "  <span>No New Messages.</span>" +
+          "</div>";
+
+        appendFooter();
+      } else
+        appendFooter(data.summary.unread_count);
+
+
+      for (var i = 0; i < Math.min(data.data.length, NUM_MESSAGES_SHOW); i++) {
+        newDom += formatFeedItem(data.data[i]);
+      }
+
+      $('#feed').append(newDom);
+
+
+      /*
+      var notificationIds = '';
+      for (var i = 0; i < query1.length; i++) {
+        if (query1[i].is_unread)
+          notificationIds += query1[i].notification_id + ',';
+      }
+
+      if (notificationIds != '') {
+        notificationIds = notificationIds.substring(0, notificationIds.length - 1);
+        chrome.extension.sendRequest(current.controllerExtensionId,
+            { type: 'restApiCall',
+              method: 'notifications.markRead',
+              params: { notification_ids: notificationIds }
+            },
+            function (response) {
+              if (!response.error) {
+                DesktopNotifications.fetchServerInfo(
+                  DesktopNotifications.handleServerInfo,
+                  DesktopNotifications.showInactiveIcon,
+                  true // no_cache after clicking popup
+                );
+              }
+            }
+        );
+      }
+      */
+    }
+
+    function formatFeedItem(itemData) {
+      var lastUserId = null;
+      var lastMessage = null;
+      var notMeUserId = null;
+      var notMeUserName = null;
+
+      console.assert(myUid !== null);
+
+      function setValuesDefault() {
+        lastUserId = itemData.from.id;
+        lastMessage = itemData.message;
+        if (lastUserId != myUid) {
+          notMeUserId = lastUserId;
+          notMeUserName = itemData.from.name;
+        } else {
+          for (var i = 0; i < itemData.to.data.length; i++) {
+            if (itemData.to.data[i].id != myUid) {
+              notMeUserId = itemData.to.data[i].id;
+              notMeUserName = itemData.to.data[i].name;
+              break;
+            }
+          }
+        }
+      }
+
+      if (!itemData.comments || itemData.comments.data.length == 0) {
+        setValuesDefault();
+      } else {
+        var lastIndex = itemData.comments.data.length-1;
+        lastUserId = itemData.comments.data[lastIndex].from.id;
+        lastMessage = itemData.comments.data[lastIndex].message;
+
+        //if (lastUserId == myUid) {
+          for (var i = lastIndex; i >= 0; i--) {
+            if (itemData.comments.data[i].from.id != myUid) {
+              notMeUserId = itemData.comments.data[i].from.id;
+              notMeUserName = itemData.comments.data[i].from.name;
+              break;
+            }
+          }
+
+          if (notMeUserId === null) {
+            setValuesDefault();
+          }
+        //}
+      }
+
+      var template =
+        "<div class='message unread-{{hasUnread}}' onclick='chrome.tabs.create({ url: \"{{href}}\" })'>" +
+          "<div class='left'>" +
+            "<div class='user-photo'>" +
+              "<img src='{{photoUrl}}' />" +
+            "</div>" +
+          "</div>" +
+          "<div class='right'>" +
+            "<div class='top'>" +
+              "<div class='user-name'>" +
+                "{{getNameText}}" +
+              "</div>" +
+              "<div class='unread-count'>" +
+                "{{unreadText}}" +
+              "</div>" +
+              "<div class='time-since'>" +
+                "{{time-since}}" +
+              "</div>" +
+            "</div>" +
+            "<div class='bottom'>" +
+              "<div class='snippet'>" +
+                "{{from_me}}" +
+                "<b>{{subject}}</b>" +
+                "{{snippet}}" +
+              "</div>" +
+            "</div>" +
+          "</div>" +
+        "</div>";
+
+      template = template.replace('{{hasUnread}}',
+          itemData.unread ? 'true' : 'false');
+      template = template.replace('{{href}}',
+          "https://www.facebook.com/?sk=inbox&action=read&tid=id." +
+          itemData.id.toString());
+      template = template.replace('{{photoUrl}}',
+          'http://graph.facebook.com/' + notMeUserId.toString() + '/picture?type=square');
+      template = template.replace('{{getNameText}}', notMeUserName);
+      template = template.replace('{{unreadText}}',
+          itemData.unread ? (itemData.unread.toString() + ' unread') : '');
+      template = template.replace('{{time-since}}',
+        humane_date(itemData.updated_time));
+      template = template.replace('{{from_me}}',
+          (lastUserId == myUid) ? "<img src='/images/arrow-icon.png' />" : '');
+      template = template.replace('{{subject}}', '');
+      template = template.replace('{{snippet}}', lastMessage);
+
+      return template;
+    }
+  </script>
+</head>
+<body>
+  <div id="header">
+    <div class='title'>Messages</div>
+    <div class='action' onclick='chrome.windows.create({ url: "http://www.facebook.com/dialog/send?app_id=190635611002798&redirect_uri=http://www.facebook.com/connect/login_success.html", type: "popup", width: 998, height: 421 })'>Send a New Message</div>
+  </div>
+  <div id="feed" class="loading"></div>
+  <div id="footer"></div>
+  <script type="text/javascript" charset="utf-8">
+
+    chrome.extension.sendRequest(current.controllerExtensionId,
+        {
+          type: 'graphApiCall',
+          path: '/me/inbox/',
+          params: { fields: 'id,from,to,updated_time,unread,unseen,comments,message',
+                    limit: NUM_MESSAGES_SHOW }
+        },
+        function (response) {
+          if (response.error)
+            showError(response.error);
+          else
+            showMessages(response);
+        }
+    );
+  </script>
+</body>
+</html>

@@ -1,0 +1,73 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 183px;
+  height: 350px;
+  font-family: Tahoma,Verdana,Arial,sans-serif;
+}
+p {
+  margin: 5px;
+}
+#msgForm {
+  position: absolute;
+  bottom: 0;
+  left:0;
+  width: 183px;
+  margin: 0;
+  padding: 0;
+  height: 30px;
+}
+#msg {
+  border: 1px solid #ccc;
+  width: 150px;
+  outline: none;
+  float: left;
+  clear: left;
+}
+#chat {
+  list-style: none;
+  margin: 0;
+  padding: 3px;
+  height: 250px;
+  overflow-y: auto;
+}
+#chat li {
+  min-height: 24px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  list-style-type: none;
+  word-wrap: break-word;
+  font-size: 10px;
+}
+#chat li.me {
+  background: url(../images/chat_icon.png) top left no-repeat;
+  padding-left: 27px;
+  text-align: left;
+}
+#chat li.friend {
+  background: #eee url(../images/chat_icon_i.png) top right no-repeat;
+  padding-right: 27px;
+  text-align: right;
+}
+#chat li.time {
+  text-align: center;
+  color: silver;
+  border-bottom: solid 1px silver;
+}
+#invite {
+  font-size: 12px;
+  font-weight: bold;
+  position: relative;
+  height: 50px;
+  background-color: #ac3df0;
+  border-bottom: solid 1px #ccc;
+  padding: 3px 5px;
+}
+#pastePageLink {
+  width: 25px;
+  height: 30px;
+  float: right;
+  clear:right;
+}
+
