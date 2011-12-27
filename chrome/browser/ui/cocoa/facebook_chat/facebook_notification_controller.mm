@@ -84,6 +84,7 @@ const CGFloat kCloseButtonTopYOffset = 3.0;
   [window setContentView:view];
   self = [super initWithWindow:window];
 
+  [self setShouldCascadeWindows:NO];
   return self;
 }
 
@@ -154,10 +155,6 @@ const CGFloat kCloseButtonTopYOffset = 3.0;
     [[window animator] setFrame:frame display:YES];
     [NSAnimationContext endGrouping];
   } else {
-    NSRect windowFrameOld = [window frame];
-    if (NSEqualSizes(windowFrameOld.size, frame.size)) {
-      [[window animator] setFrameOrigin:frame.origin];
-    }
     [window setFrame:frame display:YES];
   }
 

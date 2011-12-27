@@ -172,7 +172,7 @@ DesktopNotifications = {
 
     chrome.extension.sendRequest(self.controllerExtensionId,
         { type: 'graphApiCall',
-          path: '/me/inbox/',
+          path: '/me/inbox',
           params: { fields: 'id,unseen,unread,from,message,updated_time' }
         },
         function (response) {

@@ -23,6 +23,10 @@ bitpop.FriendsSidebar = (function() {
         { type: 'logout' });
     });
 
+    $('#search').bind('keyup change', function () {
+      self.updateDOM();
+    });
+
     var bgPage = chrome.extension.getBackgroundPage();
     if (bgPage.friendList) {
       // 2nd param = true is for dontAnimate, we need an instant switch to friends
@@ -79,7 +83,7 @@ bitpop.FriendsSidebar = (function() {
 
     for (var i = 0; i < bitpop.FriendsSidebar.friendList.length; ++i) {
       if (self.friendList[i].uid == uid)
-        self.friendList[i].online_presence = st;
+        self.friendList[i].online_presence = status;
     }
 
     self.updateDOM();
@@ -116,28 +120,33 @@ bitpop.FriendsSidebar = (function() {
 
   self.generateFriendsDOM = function() {
     var wrap = $('<ul></ul>');
-    for (var i = 0; i < this.friendList.length; i++) {
-      var li = $('<li><span class="leftSide"><img alt="" />' +
-          self.friendList[i].name + '</span></li>');
-      li.attr('id', 'buddy_' + self.friendList[i].uid.toString());
-      li.prop('jid', self.friendList[i].uid.toString());
-      li.prop('username', self.friendList[i].name);
-      li.prop('online_status', self.friendList[i].online_presence);
+    for (var i = 0; i < self.friendList.length; i++) {
+      if (!self.friendList[i].excluded) {
+        var li = $('<li><span class="leftSide"><img alt="" />' +
+            self.friendList[i].name + '</span></li>');
+        li.attr('id', 'buddy_' + self.friendList[i].uid.toString());
+        li.prop('jid', self.friendList[i].uid.toString());
+        li.prop('username', self.friendList[i].name);
+        li.prop('online_status', self.friendList[i].online_presence);
 
-      $('img', li).attr('src', self.friendList[i].pic_square);
-      if (self.friendList[i].online_presence &&
-          self.friendList[i].online_presence != 'offline')
-        li.append('<img class="status" src="images/' +
-            self.friendList[i].online_presence + '.png" alt="" />');
-      wrap.append(li);
+        $('img', li).attr('src', self.friendList[i].pic_square);
+        if (self.friendList[i].online_presence &&
+            self.friendList[i].online_presence != 'offline')
+          li.append('<img class="status" src="images/' +
+              self.friendList[i].online_presence + '.png" alt="" />');
+        wrap.append(li);
+      }
     }
 
     return wrap;
   };
 
   self.updateDOM = function() {
+    self.applySearchFilter();
     self.sortFriendList();
     var newDom = self.generateFriendsDOM();
+    if (newDom.children().length == 0)
+      newDom.append('<li><span style="text-align:center">No friends found</span></li>');
 
     $('#friend_list').remove();
     $('#scrollable-area').append('<div id="friend_list" class="overview"></div>');
@@ -171,6 +180,17 @@ bitpop.FriendsSidebar = (function() {
     self.updateDOM();
   };
 
+  self.applySearchFilter = function() {
+    var s = $('#search').val();
+    for (var i = 0; i < self.friendList.length; i++) {
+      if (s && self.friendList[i].name.toLowerCase().indexOf(s.toLowerCase()) == -1) {
+        self.friendList[i].excluded = true;
+      } else {
+        self.friendList[i].excluded = false;
+      }
+    }
+  }
+
   /*- initialization -----------------*/
   self.friendList = null;
 
@@ -178,9 +198,6 @@ bitpop.FriendsSidebar = (function() {
     if (!request.type)
       return;
     switch (request.type) {
-    case 'chatAvailable':
-      onServiceAvailable();
-      break;
     case 'friendListReceived':
       if (!request.data)
         return;

@@ -84,6 +84,7 @@ extern NSString* const kBrowserActionButtonDragEndNotification;
 @property(readonly, nonatomic) const Extension* extension;
 @property(readwrite, nonatomic) int tabId;
 @property(readwrite, nonatomic) BOOL shouldDrawAsPushed;
+@property(readonly, nonatomic) BOOL isCustomExtension;
 
 @end
 

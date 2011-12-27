@@ -141,6 +141,7 @@ class DevtoolsNotificationBridge : public NotificationObserver {
                     NotificationType::EXTENSION_HOST_DID_STOP_LOADING,
                     Source<Profile>(host->profile()));
   }
+  [self setShouldCascadeWindows:NO];
   return self;
 }
 
@@ -295,11 +296,6 @@ class DevtoolsNotificationBridge : public NotificationObserver {
     [[window animator] setFrame:frame display:YES];
     [NSAnimationContext endGrouping];
   } else {
-    NSRect windowFrameOld = [window frame];
-    if (NSEqualSizes(windowFrameOld.size, frame.size)) {
-      [[window animator] setFrameOrigin:frame.origin];
-    }
-
     [window setFrame:frame display:YES];
   }
 
@@ -338,8 +334,11 @@ class DevtoolsNotificationBridge : public NotificationObserver {
 }
 
 - (void)setAnchor:(NSPoint)anchorPoint {
-  anchor_ = [parentWindow_ convertBaseToScreen:anchorPoint];
-  [self extensionViewFrameChanged];
+  NSWindow* window = [self window];
+  if ([[window animator] alphaValue] == 1.0) {
+    anchor_ = [parentWindow_ convertBaseToScreen:anchorPoint];
+    [self extensionViewFrameChanged];
+  }
 }
 
 - (void)reparentWindowTo:(NSWindow*)window {

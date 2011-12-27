@@ -301,11 +301,15 @@ if (!button_)
 }
 
 - (void)layoutChildWindows {
-    if ([self active] && [FacebookPopupController popup]) {
-    [[FacebookPopupController popup] setAnchor:[self popupPointForChatWindow]];
+  if ([self active] && [FacebookPopupController popup] &&
+      [[FacebookPopupController popup] window] &&
+      [[[FacebookPopupController popup] window] isVisible]) {
+    NSPoint p = [self popupPointForChatWindow];
+    [[FacebookPopupController popup] setAnchor:p];
   }
 
-  if (notificationController_.get()) {
+  if (notificationController_.get() && [notificationController_ window] &&
+      [[notificationController_ window] isVisible]) {
     [notificationController_ setAnchor:[self popupPointForNotificationWindow]];
   }
 }

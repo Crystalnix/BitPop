@@ -120,8 +120,7 @@
         <include name="IDR_HELP_MANIFEST" file="resources\help_app\manifest.json" type="BINDATA" />
       </if>
 
-      <!--<include name="IDR_UNCENSOR_MANIFEST" file="resources\uncensor\manifest.json" type="BINDATA" />
-      -->
+      <include name="IDR_UNCENSOR_MANIFEST" file="resources\uncensor\manifest.json" type="BINDATA" />
       <!--<include name="IDR_FACEBOOK_FRIENDS_MANIFEST" file="resources\facebook_friends\manifest.json" type="BINDATA" />
       -->
     </includes>

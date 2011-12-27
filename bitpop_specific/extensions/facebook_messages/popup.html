@@ -234,7 +234,7 @@
     chrome.extension.sendRequest(current.controllerExtensionId,
         {
           type: 'graphApiCall',
-          path: '/me/inbox/',
+          path: '/me/inbox',
           params: { fields: 'id,from,to,updated_time,unread,unseen,comments,message',
                     limit: NUM_MESSAGES_SHOW }
         },

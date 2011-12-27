@@ -10,8 +10,20 @@
     "external_crx": "docsviewer-extension.crx",
     "external_version": "3.5"
   },
+  "igddmhdmkpkonlbfabbkkdoploafopcn": {
+    "external_crx": "facebook_controller.crx",
+    "external_version": "0.0.1"
+  },
+  "dhcejgafhmkdfanoalflifpjimaaijda": {
+    "external_crx": "facebook_messages.crx",
+    "external_version": "1.1"
+  },
+  "omkphklbdjafhafacohmepaahbofnkcp": {
+    "external_crx": "facebook_notifications.crx",
+    "external_version": "1.26"
+  },
   "engefnlnhcgeegefndkhijjfdfbpbeah": {
     "external_crx": "facebook_friends.crx",
-    "external_version": "1.0.6"
+    "external_version": "1.0.7"
   }
 }

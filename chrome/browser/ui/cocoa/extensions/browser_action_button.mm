@@ -10,18 +10,22 @@
 #include "base/logging.h"
 #include "base/sys_string_conversions.h"
 #include "chrome/browser/extensions/image_loading_tracker.h"
+#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_action_context_menu.h"
 #import "chrome/browser/ui/cocoa/image_utils.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_action.h"
 #include "chrome/common/extensions/extension_resource.h"
+#include "chrome/common/pref_names.h"
 #include "content/common/notification_details.h"
 #include "content/common/notification_observer.h"
 #include "content/common/notification_registrar.h"
 #include "content/common/notification_service.h"
 #include "content/common/notification_source.h"
 #include "content/common/notification_type.h"
+
 #include "skia/ext/skia_utils_mac.h"
 #import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
 #include "ui/gfx/canvas_skia_paint.h"
@@ -86,9 +90,10 @@ class ExtensionImageTrackerBridge : public NotificationObserver,
     if (type == NotificationType::EXTENSION_BROWSER_ACTION_UPDATED)
       [owner_ updateState];
     else if (type == NotificationType::FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED) {
-      Details<bool> detailsBool(details);
-
-      owner_.shouldDrawAsPushed = (*detailsBool.ptr()) ? YES : NO;
+      if (owner_.isCustomExtension) {
+        Details<bool> detailsBool(details);
+        owner_.shouldDrawAsPushed = (*detailsBool.ptr()) ? YES : NO;
+      }
     } else
       NOTREACHED();
   }
@@ -124,6 +129,7 @@ class ExtensionImageTrackerBridge : public NotificationObserver,
 @synthesize extension = extension_;
 @synthesize tabId = tabId_;
 @synthesize shouldDrawAsPushed = shouldDrawAsPushed_;
+@synthesize isCustomExtension = isCustomExtension_;
 
 + (Class)cellClass {
   return [BrowserActionCell class];
@@ -150,6 +156,7 @@ class ExtensionImageTrackerBridge : public NotificationObserver,
           forAttribute:NSAccessibilityDescriptionAttribute];
     } else {
       isCustomExtension_ = YES;
+
       CustomActionCell* cell = [[[CustomActionCell alloc] init] autorelease];
       // [NSButton setCell:] warns to NOT use setCell: other than in the
       // initializer of a control.  However, we are using a basic
@@ -179,6 +186,12 @@ class ExtensionImageTrackerBridge : public NotificationObserver,
         initWithExtension:extension
                   profile:profile
           extensionAction:extension->browser_action()] autorelease]];
+
+    if (isCustomExtension_) {
+      PrefService *prefService = profile->GetPrefs();
+      [self setShouldDrawAsPushed:
+          prefService->GetBoolean(prefs::kFacebookShowFriendsList)];
+    }
 
     tabId_ = tabId;
     extension_ = extension;
@@ -234,6 +247,10 @@ class ExtensionImageTrackerBridge : public NotificationObserver,
   if (NSPointInRect(location, [self bounds]) && !isBeingDragged_) {
     // Only perform the click if we didn't drag the button.
     [self performClick:self];
+    if (isCustomExtension_) {
+      ImageButtonCell *imageCell = (ImageButtonCell*)[self cell];
+      [imageCell setIsMouseInside:NO];
+    }
   } else {
     // Make sure an ESC to end a drag doesn't trigger 2 endDrags.
     if (isBeingDragged_) {

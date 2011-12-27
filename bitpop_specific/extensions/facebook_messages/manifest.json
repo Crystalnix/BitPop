@@ -15,5 +15,5 @@
    "name": "Facebook Notify Messages",
    //"options_page": "options.html",
    "permissions": [ "notifications", "tabs", "chrome://favicon/" ],
-   "version": "1.0"
+   "version": "1.1"
 }

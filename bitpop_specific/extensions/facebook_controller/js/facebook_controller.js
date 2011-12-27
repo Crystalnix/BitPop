@@ -162,38 +162,6 @@ bitpop.FacebookController = (function() {
 
       notifyFriendsExtension({ type: 'newMessage', body: msgText, from: fromUid });
 
-      /*
-      var found = false;
-      var vs = chrome.extension.getViews();
-      for (var i = 0; i < vs.length; ++i) {
-        if (vs[i].location.hash.slice(1) == fromUid) {
-          found = true;
-          break;
-        }
-      }
-
-      if (found) {
-        chrome.extension.sendRequest({ requestType: 'newMessage', body: msgText,
-          from: from, ts: msgDate });
-      } else {
-        saveToLocalStorage(localStorage.myUid, fromUid,
-          preprocessMessageText(msgText),
-          msgDate,
-          false);
-
-        for (var i = 0; i < friendsCached.length; ++i) {
-          if (friendsCached[i].uid == fromUid) {
-            chrome.chromePrivate.newIncomingMessage(
-                               friendsCached[i].uid.toString(),
-                               friendsCached[i].name,
-                               friendsCached[i].online_presence,
-                               msgText);
-            break;
-          }
-        }
-      }
-      */
-
       console.log('I got a message from ' + from + ': ' +
       msgText);
     }
@@ -243,18 +211,6 @@ bitpop.FacebookController = (function() {
                                uid: fromUid,
                                status: st
                              });
-      // var statusMap = {
-      //   available: 'active',
-      //   idle: 'idle',
-      //   error: 'error',
-      //   unavailable: 'offline'
-      // };
-
-      // var st = statusMap[type];
-      // if (!st)
-      //   st = 'offline';
-
-      // chrome.chromePrivate.newIncomingMessage(fromUid, "", st, "");
     }
 
     // we must return true to keep the handler alive.

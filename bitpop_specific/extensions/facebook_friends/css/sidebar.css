@@ -67,11 +67,13 @@ span.leftSide {
   float: left;
   width: 185px;
   overflow:hidden;
+  height:100%;
 }
 
 #inner-wrap {
   float: left;
   margin-right: -30000px;
+  height: 100%;
 }
 .content-item {
   float:left;
@@ -124,4 +126,10 @@ span.leftSide {
 }
 .box, .box .antiscroll-inner {
   width: 100%;
+}
+#search-wrap, #search {
+  width: 100%;
+}
+#search-wrap {
+  margin-bottom: 5px;
 }
