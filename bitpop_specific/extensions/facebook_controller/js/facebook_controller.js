@@ -25,7 +25,8 @@ bitpop.FacebookController = (function() {
   var FRIEND_LIST_UPDATE_INTERVAL = 1000 * 60;
 
   var FB_PERMISSIONS = 'xmpp_login,offline_access,' +
-          'user_online_presence,friends_online_presence,manage_notifications';
+          'user_online_presence,friends_online_presence,manage_notifications,' +
+          'read_mailbox';
 
   // Facebook error codes
   var FQL_ERROR = {

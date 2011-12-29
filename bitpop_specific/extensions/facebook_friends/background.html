@@ -13,11 +13,16 @@
     //    extensionId: chrome.i18n.getMessage('@@extension_id')
     //  });
 
-    chrome.browserAction.onClicked.addListener(function (tab) {
-      chrome.chromePrivate.getFriendsSidebarVisible(function(is_visible) {
-        chrome.chromePrivate.setFriendsSidebarVisible(!is_visible);
-      });
-    });
+    (function () {
+      if (chrome.browserAction)
+        chrome.browserAction.onClicked.addListener(function (tab) {
+          chrome.chromePrivate.getFriendsSidebarVisible(function(is_visible) {
+            chrome.chromePrivate.setFriendsSidebarVisible(!is_visible);
+          });
+        });
+      else
+        setTimeout(arguments.callee, 1000);
+    })();
 
     chrome.extension.onRequestExternal.addListener(function (request, sender, sendResponse) {
       if (!request.type)

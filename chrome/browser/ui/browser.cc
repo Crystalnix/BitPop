@@ -451,16 +451,18 @@ void Browser::InitBrowserWindow() {
       NotificationService::NoDetails());
 
   if (is_type_tabbed()) {
-    friends_contents_->controller().LoadURL(
-        GURL(std::string(chrome::kFacebookChatExtensionPrefixURL) +
-          chrome::kFacebookChatExtensionSidebarPage),
-      GURL(),
-      PageTransition::START_PAGE);
-    //friends_contents_->tab_contents()->set_delegate(this);
+    if (profile()->GetExtensionService()->GetInstalledExtension(
+          "engefnlnhcgeegefndkhijjfdfbpbeah") != NULL) {
+      friends_contents_->controller().LoadURL(
+              GURL(std::string(chrome::kFacebookChatExtensionPrefixURL) +
+                chrome::kFacebookChatExtensionSidebarPage),
+              GURL(),
+              PageTransition::START_PAGE);
+    }
     window_->CreateFriendsSidebarIfNeeded();
     UpdateFriendsSidebarVisibility();
   }
-  
+
   if (use_compact_navigation_bar_.GetValue()) {
     // This enables the compact navigation bar host.
     UseCompactNavigationBarChanged();
@@ -2269,12 +2271,6 @@ void Browser::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterBooleanPref(prefs::kAutomaticUpdatesEnabled,
                              true,
                              PrefService::SYNCABLE_PREF);
-  prefs->RegisterStringPref(prefs::kUncensorPrefs,
-                            std::string(),
-                            PrefService::SYNCABLE_PREF);
-  prefs->RegisterBooleanPref(prefs::kFacebookShowFriendsList,
-                             false,
-                             PrefService::UNSYNCABLE_PREF);
 }
 
 // static
@@ -3276,7 +3272,7 @@ void Browser::UpdateDownloadShelfVisibility(bool visible) {
 void Browser::UpdateFriendsSidebarVisibility() {
     bool visible = profile()->GetPrefs()->GetBoolean(
         prefs::kFacebookShowFriendsList);
-    window_->UpdateFriendsSidebarForContents(visible ? 
+    window_->UpdateFriendsSidebarForContents(visible ?
         friends_contents_->tab_contents() : NULL);
 }
 
@@ -3419,7 +3415,7 @@ void Browser::ViewSourceForTab(TabContents* source, const GURL& page_url) {
 void Browser::ViewSourceForFrame(TabContents* source,
                                  const GURL& frame_url,
                                  const std::string& frame_content_state) {
-  
+
   if (source == friends_contents_->tab_contents())
     return;
 
@@ -3680,10 +3676,27 @@ void Browser::Observe(NotificationType type,
     }
 
     case NotificationType::EXTENSION_UNINSTALLED:
-    case NotificationType::EXTENSION_LOADED:
       if (window()->GetLocationBar())
         window()->GetLocationBar()->UpdatePageActions();
       break;
+
+    case NotificationType::EXTENSION_LOADED: {
+      if (window()->GetLocationBar())
+        window()->GetLocationBar()->UpdatePageActions();
+
+      const Extension* extension = Details<const Extension>(details).ptr();
+
+      if (is_type_tabbed() &&
+          extension->id() == "engefnlnhcgeegefndkhijjfdfbpbeah") {
+        friends_contents_->controller().LoadURL(
+          GURL(std::string(chrome::kFacebookChatExtensionPrefixURL) +
+            chrome::kFacebookChatExtensionSidebarPage),
+          GURL(),
+          PageTransition::START_PAGE);
+      }
+
+      break;
+    }
 
     case NotificationType::BROWSER_THEME_CHANGED:
       window()->UserChangedTheme();

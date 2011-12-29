@@ -270,6 +270,13 @@ void ProfileImpl::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterBooleanPref(prefs::kClearSiteDataOnExit,
                              false,
                              PrefService::SYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kUncensorPrefs,
+                            std::string(),
+                            PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kFacebookShowFriendsList,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
+
 }
 
 ProfileImpl::ProfileImpl(const FilePath& path,

@@ -1,7 +1,7 @@
 {
   "key": "MIGdMA0GCSqGSIb3DQEBAQUAA4GLADCBhwKBgQDDLmGrQGIc4LDzqwAM34rwqaFGvWl8ZEAHRrCURfZVGsEv9QE9xbiSh1G1FsNNq8qhMscRfWYw2ZJpy3QKm8rVYOeeB4RWZPKDFWoTDu2ktOckAUBIqH3aQ98H5QRf+YFiHTqbxVpg+F4maQEVwrM9l/S5PQ530j2GW7XphCDJsQIBIw==",
   "name": "Facebook Friends Sidebar",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Shows a sidebar with a list of Facebook friends to the right of current web page.",
   "background_page": "background.html",
   "browser_action": {

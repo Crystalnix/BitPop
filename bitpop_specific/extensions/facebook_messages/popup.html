@@ -210,7 +210,7 @@
           'http://graph.facebook.com/' + notMeUserId.toString() + '/picture?type=square');
       template = template.replace('{{getNameText}}', notMeUserName);
       template = template.replace('{{unreadText}}',
-          itemData.unread ? (itemData.unread.toString() + ' unread') : '');
+          (itemData.unread > 1) ? ("(" + itemData.unread.toString() + ")") : '');
       template = template.replace('{{time-since}}',
         humane_date(itemData.updated_time));
       template = template.replace('{{from_me}}',
