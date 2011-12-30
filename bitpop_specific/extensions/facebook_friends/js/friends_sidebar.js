@@ -64,7 +64,7 @@ bitpop.FriendsSidebar = (function() {
   // };
 
   var onLoggedOut = function() {
-    bitpop.FriendsSidebar.slideToLoginView();
+    self.slideToLoginView();
     $('#friend_list').remove();
   };
 
@@ -81,7 +81,7 @@ bitpop.FriendsSidebar = (function() {
     // if (!st)
     //   st = 'offline';
 
-    for (var i = 0; i < bitpop.FriendsSidebar.friendList.length; ++i) {
+    for (var i = 0; i < self.friendList.length; ++i) {
       if (self.friendList[i].uid == uid)
         self.friendList[i].online_presence = status;
     }
@@ -177,6 +177,11 @@ bitpop.FriendsSidebar = (function() {
     $('#logout').show();
 
     self.friendList = response;
+    for (var i = 0; i < self.friendList.length; i++) {
+      if (self.friendList[i].online_presence === null)
+        self.friendList[i].online_presence = 'offline';
+    }
+
     self.updateDOM();
   };
 

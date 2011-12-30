@@ -131,6 +131,8 @@ bitpop.FacebookController = (function() {
       console.log('Strophe is disconnecting.');
     } else if (status == Strophe.Status.DISCONNECTED) {
       console.log('Strophe is disconnected.');
+      if (localStorage.myUid && localStorage.accessToken)
+        connectToFacebookChat();
     } else if (status == Strophe.Status.CONNECTED) {
       console.log('Strophe is connected.');
       //console.log('Send a message to ' + connection.jid +
@@ -253,6 +255,7 @@ bitpop.FacebookController = (function() {
         localStorage.removeItem('accessToken');
         localStorage.removeItem('myUid');
         notifyObservingExtensions({ type: 'loggedOut' });
+        connection.disconnect();
         chrome.chromePrivate.loggedOutFacebookSession();
       } else if (!localStorage.accessToken) {
         var accessToken = accessTokenFromSuccessURL(changeInfo.url);
