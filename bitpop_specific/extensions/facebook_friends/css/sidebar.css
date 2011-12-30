@@ -53,7 +53,7 @@ ul li img.status {
 }
 span.leftSide {
   display: inline-block;
-  width: 160px;
+  width: 155px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
