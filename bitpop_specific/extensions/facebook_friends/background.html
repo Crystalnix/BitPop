@@ -64,7 +64,9 @@
               chrome.chromePrivate.newIncomingMessage(
                                  friendList[i].uid.toString(),
                                  friendList[i].name,
-                                 friendList[i].online_presence,
+                                 (friendList[i].online_presence !== null) ?
+                                     friendList[i].online_presence :
+                                     'offline',
                                  request.body);
               break;
             }
