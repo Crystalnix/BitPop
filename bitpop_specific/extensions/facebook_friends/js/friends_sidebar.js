@@ -177,9 +177,15 @@ bitpop.FriendsSidebar = (function() {
     $('#logout').show();
 
     self.friendList = response;
+    var statuses = chrome.extension.getBackgroundPage().statuses;
     for (var i = 0; i < self.friendList.length; i++) {
-      if (self.friendList[i].online_presence === null)
-        self.friendList[i].online_presence = 'offline';
+      if (self.friendList[i].online_presence === null) {
+        if (statuses[self.friendList[i].uid.toString()])
+          self.friendList[i].online_presence =
+            statuses[self.friendList[i].uid.toString()];
+        else
+          self.friendList[i].online_presence = 'offline';
+      }
     }
 
     self.updateDOM();

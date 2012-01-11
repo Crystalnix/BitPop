@@ -7,6 +7,7 @@
   <script>
     var friendList = null;
     var myUid = null;
+    var statuses = {};
 
     //chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
     //  { type: 'observe',
@@ -38,7 +39,11 @@
         // send change status message: empty message body signals to only check
         // for status change
         chrome.chromePrivate.newIncomingMessage(request.uid, "",
-          request.status, "");
+            request.status, "");
+
+        // set global variable storing each user status, reported by XMPP
+        statuses[request.uid.toString()] = request.status;
+
       } else if (request.type == 'newMessage') {
         var msgDate = new Date();  // set 'now' as the message arrive time
 
@@ -61,12 +66,21 @@
         if (!found) {
           for (var i = 0; i < friendList.length; ++i) {
             if (friendList[i].uid == request.from) {
+              // use status from fql result first,
+              // then from xmpp server status update,
+              // else set it to offline
+              var status = null;
+              if (friendList[i].online_presence !== null)
+                status = friendList[i].online_presence;
+              else if (statuses[friendList[i].uid.toString()])
+                status = statuses[friendList[i].uid.toString()];
+              else
+                status = 'offline';
+
               chrome.chromePrivate.newIncomingMessage(
                                  friendList[i].uid.toString(),
                                  friendList[i].name,
-                                 (friendList[i].online_presence !== null) ?
-                                     friendList[i].online_presence :
-                                     'offline',
+                                 status,
                                  request.body);
               break;
             }
