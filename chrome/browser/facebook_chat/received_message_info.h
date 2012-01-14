@@ -12,7 +12,7 @@
 
 #include "base/scoped_ptr.h"
 
-class FacebookChatCreateInfo;
+struct FacebookChatCreateInfo;
 
 struct ReceivedMessageInfo {
   ReceivedMessageInfo(const std::string &jid,

@@ -119,9 +119,9 @@ google_breakpad::CustomClientInfo* GetCustomInfo(const std::wstring& dll_path,
 
   // Common g_custom_entries.
   g_custom_entries->push_back(
-      google_breakpad::CustomInfoEntry(L"ver", version.c_str()));
+      google_breakpad::CustomInfoEntry(L"Version", version.c_str()));
   g_custom_entries->push_back(
-      google_breakpad::CustomInfoEntry(L"prod", product.c_str()));
+      google_breakpad::CustomInfoEntry(L"ProductName", product.c_str()));
   g_custom_entries->push_back(
       google_breakpad::CustomInfoEntry(L"plat", L"Win32"));
   g_custom_entries->push_back(

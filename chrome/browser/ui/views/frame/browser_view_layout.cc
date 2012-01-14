@@ -10,6 +10,7 @@
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
 #include "chrome/browser/ui/views/download/download_shelf_view.h"
+#include "chrome/browser/ui/views/facebook_chat/chatbar_view.h"
 #include "chrome/browser/ui/views/facebook_chat/friends_sidebar_view.h"
 #include "chrome/browser/ui/views/frame/browser_frame.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
@@ -77,6 +78,7 @@ BrowserViewLayout::BrowserViewLayout()
       download_shelf_(NULL),
       active_bookmark_bar_(NULL),
       friends_sidebar_(NULL),
+      facebook_chatbar_(NULL),
       browser_view_(NULL),
       find_bar_y_(0) {
 }
@@ -287,6 +289,9 @@ void BrowserViewLayout::ViewAdded(views::View* host, views::View* view) {
       break;
     case VIEW_ID_FACEBOOK_FRIENDS_SIDE_BAR_CONTAINER:
       friends_sidebar_ = static_cast<FriendsSidebarView*>(view);
+      break;
+    case VIEW_ID_FACEBOOK_CHATBAR:
+      facebook_chatbar_ = static_cast<ChatbarView*>(view);
       break;
   }
 }
@@ -646,6 +651,17 @@ int BrowserViewLayout::LayoutFriendsSidebar(int top) {
     int width = visible ? friends_sidebar_->GetPreferredSize().width() : 0;
     int height = vertical_layout_rect_.height() - top + vertical_layout_rect_.y();
     friends_sidebar_->SetVisible(visible);
+    
+    if (active_bookmark_bar_) {
+      if (active_bookmark_bar_->IsDetached()) {
+        gfx::Rect rc = active_bookmark_bar_->bounds();
+        rc.set_width(rc.width() - width);
+        active_bookmark_bar_->SetBoundsRect(rc);
+        top -= rc.height();
+        height += rc.height();
+      }
+    }
+
     friends_sidebar_->SetBounds(
         right - width,
         top,

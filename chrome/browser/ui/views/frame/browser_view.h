@@ -50,6 +50,7 @@ class CompactNavigationBar;
 class CompactOptionsBar;
 class DownloadShelfView;
 class EncodingMenuModel;
+class ChatbarView;
 class FriendsSidebarView;
 class FullscreenExitBubble;
 class HtmlDialogUIDelegate;
@@ -306,6 +307,10 @@ class BrowserView : public BrowserBubbleHost,
   void SetDownloadShelfVisible(bool visible);
   virtual bool IsDownloadShelfVisible() const OVERRIDE;
   virtual DownloadShelf* GetDownloadShelf() OVERRIDE;
+
+  void SetChatbarVisible(bool visible);
+  virtual bool IsChatbarVisible() const OVERRIDE;
+  virtual ChatbarView* GetChatbar() OVERRIDE;
   void SetFriendsSidebarVisible(bool visible);
   virtual bool IsFriendsSidebarVisible() const OVERRIDE;
   virtual void CreateFriendsSidebarIfNeeded() OVERRIDE;
@@ -670,6 +675,9 @@ class BrowserView : public BrowserBubbleHost,
   
   // The view that contains facebook friends list with names, photo and status
   scoped_ptr<FriendsSidebarView> fb_friend_list_sidebar_;
+
+  // The view containing different chat buddies' buttons, laid out on bottom of browser view
+  scoped_ptr<ChatbarView> fb_chatbar_;
 
   // Tracks and stores the last focused view which is not the
   // devtools_container_ or any of its children. Used to restore focus once

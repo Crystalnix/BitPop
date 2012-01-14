@@ -6,14 +6,8 @@
 #include "content/browser/tab_contents/tab_contents.h"
 #include "ui/gfx/canvas.h"
 
-// TODO: move this to chromium url constants header
-const char kFriendsSidebarExtensionPageUrl[] = "chrome-extension://gbldbegolgpdenofnibkpmffbpnmgppc/popup.html";
-
-// Border color.
-static const SkColor kBorderColor = SkColorSetRGB(214, 214, 214);
-
 // Sidebar width
-static const int kFriendsSidebarWidth = 186;
+static const int kFriendsSidebarWidth = 185;
 
 //scoped_ptr<TabContents> FriendsSidebarView::extension_page_contents_;
 
@@ -49,12 +43,12 @@ gfx::Size FriendsSidebarView::GetPreferredSize() {
 // TODO: remove this as it's currently just winds up to parent method
 void FriendsSidebarView::OnPaint(gfx::Canvas* canvas) {
   TabContentsContainer::OnPaint(canvas);
-  canvas->FillRectInt(kBorderColor, 0, 0, 1, height());
+  //canvas->FillRectInt(kBorderColor, 0, 0, 1, height());
 }
 
 void FriendsSidebarView::Layout() {
   if (has_children()) {
-    GetChildViewAt(0)->SetBounds(1, 0, width()-1, height());
+    GetChildViewAt(0)->SetBounds(0, 0, width(), height());
     GetChildViewAt(0)->Layout();
   }
 }

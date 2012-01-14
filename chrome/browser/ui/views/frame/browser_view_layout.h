@@ -14,6 +14,7 @@ class AbstractTabStripView;
 class BookmarkBarView;
 class Browser;
 class BrowserView;
+class ChatbarView;
 class ContentsContainer;
 class DownloadShelfView;
 class FriendsSidebarView;
@@ -98,6 +99,8 @@ class BrowserViewLayout : public views::LayoutManager {
   // control, for laying out the previous control.
   int LayoutDownloadShelf(int bottom, int right);
 
+  int LayoutChatbar(int bottom, int right);
+
   // Returns the coordinate of the new right boundary for contents_split_
   int LayoutFriendsSidebar(int top);
 
@@ -124,6 +127,7 @@ class BrowserViewLayout : public views::LayoutManager {
   DownloadShelfView* download_shelf_;
   BookmarkBarView* active_bookmark_bar_;
   FriendsSidebarView* friends_sidebar_;
+  ChatbarView* facebook_chatbar_;
 
   BrowserView* browser_view_;
 

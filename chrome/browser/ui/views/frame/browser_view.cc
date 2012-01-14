@@ -53,6 +53,7 @@
 #include "chrome/browser/ui/views/default_search_view.h"
 #include "chrome/browser/ui/views/download/download_in_progress_dialog_view.h"
 #include "chrome/browser/ui/views/download/download_shelf_view.h"
+#include "chrome/browser/ui/views/facebook_chat/chatbar_view.h"
 #include "chrome/browser/ui/views/facebook_chat/friends_sidebar_view.h"
 #include "chrome/browser/ui/views/frame/browser_view_layout.h"
 #include "chrome/browser/ui/views/frame/contents_container.h"
@@ -725,29 +726,6 @@ void BrowserView::UpdateDevTools() {
   Layout();
 }
 
-void BrowserView::UpdateFriendsSidebarForContents(TabContents *friends_contents) {
-  if (!fb_friend_list_sidebar_.get())
-    return;
-
-  bool should_show = friends_contents && !fb_friend_list_sidebar_->IsVisible();
-  bool should_hide = !friends_contents && fb_friend_list_sidebar_->IsVisible();
-
-  if (friends_contents)
-    friends_contents->set_delegate(fb_friend_list_sidebar_.get());
-
-  fb_friend_list_sidebar_->ChangeTabContents(friends_contents);
-
-  if (should_show) {
-    fb_friend_list_sidebar_->SetVisible(true);
-    contents_split_->InvalidateLayout();
-    Layout();
-  } else if (should_hide) {
-    fb_friend_list_sidebar_->SetVisible(false);
-    contents_split_->InvalidateLayout();
-    Layout();
-  }
-}
-
 void BrowserView::UpdateLoadingAnimations(bool should_animate) {
   if (should_animate) {
     if (!loading_animation_timer_.IsRunning()) {
@@ -1095,28 +1073,6 @@ DownloadShelf* BrowserView::GetDownloadShelf() {
     download_shelf_->set_parent_owned(false);
   }
   return download_shelf_.get();
-}
-
-void BrowserView::SetFriendsSidebarVisible(bool visible) {
-  if (browser_ == NULL)
-    return;
-
-  if (visible && IsFriendsSidebarVisible() != visible) {
-    CreateFriendsSidebarIfNeeded();
-  }
-  
-  ToolbarSizeChanged(false);
-}
-
-bool BrowserView::IsFriendsSidebarVisible() const {
-  return fb_friend_list_sidebar_.get() && fb_friend_list_sidebar_->IsVisible();
-}
-
-void BrowserView::CreateFriendsSidebarIfNeeded() {
-  if (!fb_friend_list_sidebar_.get()) {
-    fb_friend_list_sidebar_.reset(new FriendsSidebarView(browser_.get(), this));
-    fb_friend_list_sidebar_->set_parent_owned(false);
-  }
 }
 
 void BrowserView::ShowRepostFormWarningDialog(TabContents* tab_contents) {
@@ -2656,4 +2612,74 @@ BrowserWindow* BrowserWindow::CreateBrowserWindow(Browser* browser) {
 // static
 FindBar* BrowserWindow::CreateFindBar(Browser* browser) {
   return browser::CreateFindBar(static_cast<BrowserView*>(browser->window()));
+}
+
+// BitPop custom
+void BrowserView::UpdateFriendsSidebarForContents(TabContents *friends_contents) {
+  if (!fb_friend_list_sidebar_.get())
+    return;
+
+  bool should_show = friends_contents && !fb_friend_list_sidebar_->IsVisible();
+  bool should_hide = !friends_contents && fb_friend_list_sidebar_->IsVisible();
+
+  if (friends_contents)
+    friends_contents->set_delegate(fb_friend_list_sidebar_.get());
+
+  fb_friend_list_sidebar_->ChangeTabContents(friends_contents);
+
+  if (should_show) {
+    fb_friend_list_sidebar_->SetVisible(true);
+    contents_split_->InvalidateLayout();
+    Layout();
+  } else if (should_hide) {
+    fb_friend_list_sidebar_->SetVisible(false);
+    contents_split_->InvalidateLayout();
+    Layout();
+  }
+}
+
+void BrowserView::SetFriendsSidebarVisible(bool visible) {
+  if (browser_ == NULL)
+    return;
+
+  if (visible && IsFriendsSidebarVisible() != visible) {
+    CreateFriendsSidebarIfNeeded();
+  }
+  
+  ToolbarSizeChanged(false);
+}
+
+bool BrowserView::IsFriendsSidebarVisible() const {
+  return fb_friend_list_sidebar_.get() && fb_friend_list_sidebar_->IsVisible();
+}
+
+void BrowserView::CreateFriendsSidebarIfNeeded() {
+  if (!fb_friend_list_sidebar_.get()) {
+    fb_friend_list_sidebar_.reset(new FriendsSidebarView(browser_.get(), this));
+    fb_friend_list_sidebar_->set_parent_owned(false);
+  }
+}
+
+void BrowserView::SetChatbarVisible(bool visible) {
+  if (browser_ == NULL)
+    return;
+
+  if (visible && IsChatbarVisible() != visible) {
+    (void) GetChatbar();
+  }
+
+  ToolbarSizeChanged(false);
+}
+
+bool BrowserView::IsChatbarVisible() const {
+  return fb_chatbar_.get() && fb_chatbar_->IsVisible();
+}
+
+ChatbarView* BrowserView::GetChatbar() {
+  if (!fb_chatbar_.get()) {
+    fb_chatbar_.reset(new ChatbarView(browser_.get(), this));
+    fb_chatbar_->set_parent_owned(false);
+  }
+
+  return fb_chatbar_.get();
 }
