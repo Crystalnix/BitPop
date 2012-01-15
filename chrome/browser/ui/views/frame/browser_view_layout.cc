@@ -316,6 +316,7 @@ void BrowserViewLayout::Layout(views::View* host) {
   top = LayoutBookmarkAndInfoBars(top);
   int right = LayoutFriendsSidebar(top);
   int bottom = LayoutDownloadShelf(browser_view_->height(), right);
+  bottom = LayoutChatbar(bottom, right);
   int active_top_margin = GetTopMarginForActiveContent();
   top -= active_top_margin;
   contents_container_->SetActiveTopMargin(active_top_margin);
@@ -636,8 +637,21 @@ int BrowserViewLayout::LayoutDownloadShelf(int bottom, int right) {
     int height = visible ? download_shelf_->GetPreferredSize().height() : 0;
     download_shelf_->SetVisible(visible);
     download_shelf_->SetBounds(vertical_layout_rect_.x(), bottom - height,
-                               right, height);
+                               right - vertical_layout_rect_.x(), height);
     download_shelf_->Layout();
+    bottom -= height;
+  }
+  return bottom;
+}
+
+int BrowserViewLayout::LayoutChatbar(int bottom, int right) {
+  if (browser_view_->IsChatbarVisible() ||
+      (facebook_chatbar_ && facebook_chatbar_->IsClosing())) {
+    int height = facebook_chatbar_->GetPreferredSize().height();
+    //facebook_chatbar_->SetVisible(true);
+    facebook_chatbar_->SetBounds(vertical_layout_rect_.x(), bottom - height,
+                                 right - vertical_layout_rect_.x(), height);
+    facebook_chatbar_->Layout();
     bottom -= height;
   }
   return bottom;

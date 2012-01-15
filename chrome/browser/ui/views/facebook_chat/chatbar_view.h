@@ -10,6 +10,7 @@
 
 #include "chrome/browser/facebook_chat/facebook_chatbar.h"
 #include "ui/base/animation/animation_delegate.h"
+#include "views/controls/button/button.h"
 #include "views/view.h"
 
 class Browser;
@@ -20,9 +21,14 @@ namespace ui {
 class SlideAnimation;
 }
 
+namespace views {
+class ImageButton;
+}
+
 class ChatbarView : public views::View,
                     public ui::AnimationDelegate,
-                    public FacebookChatbar {
+                    public FacebookChatbar,
+                    public views::ButtonListener {
 public:
   ChatbarView(Browser* browser, BrowserView* parent);
   virtual ~ChatbarView();
@@ -43,6 +49,11 @@ public:
   virtual void AnimationProgressed(const ui::Animation* animation);
   virtual void AnimationEnded(const ui::Animation* animation);
 
+  // Implementation of ButtonListener.
+  // Invoked when the user clicks the close button. Asks the browser to
+  // hide the chatbar.
+  virtual void ButtonPressed(views::Button* button, const views::Event& event);
+
   bool IsShowing() const;
   bool IsClosing() const;
 
@@ -55,8 +66,15 @@ private:
   // called when the hide bar animation ends
   void Closed();
 
+  // TODO: should be called on theme change
+  void UpdateButtonColors();
+
   // The show/hide animation for the shelf itself.
   scoped_ptr<ui::SlideAnimation> bar_animation_;
+
+  // Button for closing the chats. This is contained as a child, and
+  // deleted by View.
+  views::ImageButton* close_button_;
 
   Browser* browser_;
   BrowserView* parent_;

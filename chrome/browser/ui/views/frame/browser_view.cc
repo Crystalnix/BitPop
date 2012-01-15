@@ -25,6 +25,11 @@
 #include "chrome/browser/download/download_manager.h"
 #include "chrome/browser/extensions/extension_tab_helper.h"
 #include "chrome/browser/extensions/extension_tts_api.h"
+#include "chrome/browser/facebook_chat/facebook_chatbar.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager.h"
+#include "chrome/browser/facebook_chat/facebook_chat_item.h"
+#include "chrome/browser/facebook_chat/received_message_info.h"
+#include "chrome/browser/facebook_chat/facebook_chat_create_info.h"
 #include "chrome/browser/instant/instant_controller.h"
 #include "chrome/browser/ntp_background_util.h"
 #include "chrome/browser/page_info_window.h"
@@ -338,6 +343,12 @@ BrowserView::BrowserView(Browser* browser)
   registrar_.Add(this,
                  NotificationType::SIDEBAR_CHANGED,
                  Source<SidebarManager>(SidebarManager::GetInstance()));
+  registrar_.Add(this, NotificationType::FACEBOOK_CHATBAR_ADD_CHAT,
+                 Source<Profile>(browser_->profile()));
+  registrar_.Add(this, NotificationType::FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE,
+                 Source<Profile>(browser_->profile()));
+  registrar_.Add(this, NotificationType::FACEBOOK_SESSION_LOGGED_OUT,
+                 Source<Profile>(browser_->profile())); 
 }
 
 BrowserView::~BrowserView() {
@@ -1379,6 +1390,41 @@ void BrowserView::Observe(NotificationType type,
         UpdateSidebar();
       }
       break;
+    
+    // TODO: remove code duplication (here and in cocoa/browser_window_cocoa.mm)
+    case NotificationType::FACEBOOK_CHATBAR_ADD_CHAT: {
+        if (browser_->is_type_tabbed()) {
+          Details<FacebookChatCreateInfo> chat_info(details);
+          FacebookChatManager *mgr = browser_->profile()->GetFacebookChatManager();
+          // the next call returns the found element if jid's equal
+          FacebookChatItem *newItem = mgr->CreateFacebookChat(*(chat_info.ptr()));
+          if (IsActive())
+            newItem->set_needs_activation(true);
+          else
+            newItem->set_needs_activation(false);
+          GetChatbar()->AddChatItem(newItem);
+          //mgr->StartChat(newItem->jid());
+        }
+      }
+      break;
+
+    case NotificationType::FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE: {
+        if (browser_->is_type_tabbed()) {
+          Details<ReceivedMessageInfo> msg_info(details);
+          FacebookChatManager *mgr =
+              browser_->profile()->GetFacebookChatManager();
+          FacebookChatItem *item = mgr->GetItem(msg_info->chatCreateInfo->jid);
+          item->set_needs_activation(false);
+          GetChatbar()->AddChatItem(item);
+        }
+      }
+      break;
+
+    case NotificationType::FACEBOOK_SESSION_LOGGED_OUT:
+      if (browser_->is_type_tabbed()) {
+        GetChatbar()->RemoveAll();
+      }
+      break; 
 
     default:
       NOTREACHED() << "Got a notification we didn't register for!";
@@ -2666,7 +2712,8 @@ void BrowserView::SetChatbarVisible(bool visible) {
 
   if (visible && IsChatbarVisible() != visible) {
     (void) GetChatbar();
-  }
+  } else if (!visible && IsChatbarVisible() != visible)
+    fb_chatbar_->SetVisible(false);
 
   ToolbarSizeChanged(false);
 }
@@ -2675,7 +2722,7 @@ bool BrowserView::IsChatbarVisible() const {
   return fb_chatbar_.get() && fb_chatbar_->IsVisible();
 }
 
-ChatbarView* BrowserView::GetChatbar() {
+FacebookChatbar* BrowserView::GetChatbar() {
   if (!fb_chatbar_.get()) {
     fb_chatbar_.reset(new ChatbarView(browser_.get(), this));
     fb_chatbar_->set_parent_owned(false);

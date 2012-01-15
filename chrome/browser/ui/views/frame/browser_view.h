@@ -44,13 +44,14 @@ class BookmarkBarView;
 class Browser;
 class BrowserBubble;
 class BrowserViewLayout;
+class ChatbarView;
 class ContentsContainer;
 class CompactLocationBar;
 class CompactNavigationBar;
 class CompactOptionsBar;
 class DownloadShelfView;
 class EncodingMenuModel;
-class ChatbarView;
+class FacebookChatbar;
 class FriendsSidebarView;
 class FullscreenExitBubble;
 class HtmlDialogUIDelegate;
@@ -310,7 +311,7 @@ class BrowserView : public BrowserBubbleHost,
 
   void SetChatbarVisible(bool visible);
   virtual bool IsChatbarVisible() const OVERRIDE;
-  virtual ChatbarView* GetChatbar() OVERRIDE;
+  virtual FacebookChatbar* GetChatbar() OVERRIDE;
   void SetFriendsSidebarVisible(bool visible);
   virtual bool IsFriendsSidebarVisible() const OVERRIDE;
   virtual void CreateFriendsSidebarIfNeeded() OVERRIDE;

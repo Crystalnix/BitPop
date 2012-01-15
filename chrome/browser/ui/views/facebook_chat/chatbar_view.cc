@@ -6,11 +6,18 @@
 #include "chrome/browser/ui/views/facebook_chat/chatbar_view.h"
 
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
+#include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
+#include "grit/generated_resources.h"
+#include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/animation/slide_animation.h"
+#include "ui/base/l10n/l10n_util.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
+#include "views/controls/button/image_button.h"
 
 namespace {
 
@@ -35,8 +42,20 @@ static const SkColor kBorderColor = SkColorSetRGB(214, 214, 214);
 // Bar show/hide speed.
 static const int kBarAnimationDurationMs = 120;
 
+// Sets size->width() to view's preferred width + size->width().s
+// Sets size->height() to the max of the view's preferred height and
+// size->height();
+void AdjustSize(views::View* view, gfx::Size* size) {
+  gfx::Size view_preferred = view->GetPreferredSize();
+  size->Enlarge(view_preferred.width(), 0);
+  size->set_height(std::max(view_preferred.height(), size->height()));
 }
 
+int CenterPosition(int size, int target_size) {
+  return std::max((target_size - size) / 2, kTopBottomPadding);
+}
+
+}  // namespace
 
 ChatbarView::ChatbarView(Browser* browser, BrowserView* parent)
   : browser_(browser),
@@ -44,6 +63,20 @@ ChatbarView::ChatbarView(Browser* browser, BrowserView* parent)
   SetID(VIEW_ID_FACEBOOK_CHATBAR);
   parent->AddChildView(this);
   
+  ResourceBundle &rb = ResourceBundle::GetSharedInstance();
+
+  close_button_ = new views::ImageButton(this);
+  close_button_->SetImage(views::CustomButton::BS_NORMAL,
+                          rb.GetBitmapNamed(IDR_CLOSE_BAR));
+  close_button_->SetImage(views::CustomButton::BS_HOT,
+                          rb.GetBitmapNamed(IDR_CLOSE_BAR_H));
+  close_button_->SetImage(views::CustomButton::BS_PUSHED,
+                          rb.GetBitmapNamed(IDR_CLOSE_BAR_P));
+  close_button_->SetAccessibleName(
+      l10n_util::GetStringUTF16(IDS_ACCNAME_CLOSE));
+  UpdateButtonColors();
+  AddChildView(close_button_);
+
   bar_animation_.reset(new ui::SlideAnimation(this));
   bar_animation_->SetSlideDuration(kBarAnimationDurationMs);
   Show();
@@ -54,7 +87,7 @@ ChatbarView::~ChatbarView() {
 }
 
 gfx::Size ChatbarView::GetPreferredSize() {
-  gfx::Size prefsize(kRightPadding + kLeftPadding + kClosePadding, 0);
+  gfx::Size prefsize(kRightPadding + kLeftPadding, 0);
   AdjustSize(close_button_, &prefsize);
  
   // TODO: switch to chat items
@@ -72,14 +105,39 @@ gfx::Size ChatbarView::GetPreferredSize() {
   return prefsize;
 }
 
+void ChatbarView::Layout() {
+  // Now that we know we have a parent, we can safely set our theme colors.
+  set_background(views::Background::CreateSolidBackground(
+      GetThemeProvider()->GetColor(ThemeService::COLOR_TOOLBAR)));
+
+  // Let our base class layout our child views
+  views::View::Layout();
+
+  gfx::Size close_button_size = close_button_->GetPreferredSize();
+  // If the window is maximized, we want to expand the hitbox of the close
+  // button to the right and bottom to make it easier to click.
+  bool is_maximized = browser_->window()->IsMaximized();
+  int next_x = width() - kRightPadding - close_button_size.width();
+  int y = CenterPosition(close_button_size.height(), height());
+  close_button_->SetBounds(next_x, y,
+      is_maximized ? width() - next_x : close_button_size.width(),
+      is_maximized ? height() - y : close_button_size.height());
+}
+
 void ChatbarView::OnPaintBorder(gfx::Canvas* canvas) {
   canvas->FillRectInt(kBorderColor, 0, 0, width(), 1);
 }
 
 void ChatbarView::AddChatItem(FacebookChatItem *chat_item) {
+  if (!this->IsVisible())
+    Show();
+}
+
+void ChatbarView::RemoveAll() {
 }
 
 void ChatbarView::Show() {
+  this->SetVisible(true);
   bar_animation_->Show();
 }
 
@@ -119,5 +177,21 @@ void ChatbarView::AnimationEnded(const ui::Animation *animation) {
   }
 }
 
+void ChatbarView::ButtonPressed(views::Button* button, const views::Event& event) {
+  Hide();
+}
+
 void ChatbarView::Closed() {
+  //parent_->RemoveChildView(this);
+  //this->SetVisible(false);
+}
+
+void ChatbarView::UpdateButtonColors() {
+  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+  if (GetThemeProvider()) {
+    close_button_->SetBackground(
+        GetThemeProvider()->GetColor(ThemeService::COLOR_TAB_TEXT),
+        rb.GetBitmapNamed(IDR_CLOSE_BAR),
+        rb.GetBitmapNamed(IDR_CLOSE_BAR_MASK));
+  }
 }
