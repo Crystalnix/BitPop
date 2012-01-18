@@ -1,14 +1,17 @@
-// Copyright (c) 2011 House of Life Property Ltd. All rights reserved.
-// Copyright (c) 2011 Crystalnix <vgachkaylo@crystalnix.com>
+// Copyright (c) 2012 House of Life Property Ltd. All rights reserved.
+// Copyright (c) 2012 Crystalnix <vgachkaylo@crystalnix.com>
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/views/facebook_chat/chatbar_view.h"
 
+#include <algorithm>
+
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/view_ids.h"
+#include "chrome/browser/ui/views/facebook_chat/chat_item_view.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -90,12 +93,11 @@ gfx::Size ChatbarView::GetPreferredSize() {
   gfx::Size prefsize(kRightPadding + kLeftPadding, 0);
   AdjustSize(close_button_, &prefsize);
  
-  // TODO: switch to chat items
-  //// Add one download view to the preferred size.
-  //if (!download_views_.empty()) {
-  //  AdjustSize(*download_views_.begin(), &prefsize);
-  //  prefsize.Enlarge(kDownloadPadding, 0);
-  //}
+  // Add one chat item to the preferred size.
+  if (!chat_items_.empty()) {
+    AdjustSize(*chat_items_.begin(), &prefsize);
+    prefsize.Enlarge(kChatItemPadding, 0);
+  }
   prefsize.Enlarge(0, kTopBottomPadding + kTopBottomPadding);
   if (bar_animation_->is_animating()) {
     prefsize.set_height(static_cast<int>(
@@ -122,6 +124,22 @@ void ChatbarView::Layout() {
   close_button_->SetBounds(next_x, y,
       is_maximized ? width() - next_x : close_button_size.width(),
       is_maximized ? height() - y : close_button_size.height());
+  
+  if (!chat_items_.empty()) {
+    for (std::vector<ChatItemView*>::iterator it = chat_items_.begin(); it != chat_items_.end(); it++) {
+      gfx::Size itemSize = (*it)->GetPreferredSize();
+      next_x -= kChatItemPadding + itemSize.width();
+      y = CenterPosition(itemSize.height(), height());
+      (*it)->SetBounds(next_x, y, itemSize.width(), itemSize.height());
+
+      if (next_x < 10)
+        (*it)->SetVisible(false);
+      else
+        (*it)->SetVisible(true);
+
+      (*it)->Layout();
+    }
+  }
 }
 
 void ChatbarView::OnPaintBorder(gfx::Canvas* canvas) {
@@ -131,9 +149,23 @@ void ChatbarView::OnPaintBorder(gfx::Canvas* canvas) {
 void ChatbarView::AddChatItem(FacebookChatItem *chat_item) {
   if (!this->IsVisible())
     Show();
+
+  // do not allow duplicate chat items
+  for (std::vector<ChatItemView*>::iterator it = chat_items_.begin(); it != chat_items_.end(); it++) {
+    if ((*it)->GetModel()->jid() == chat_item->jid())
+      return;
+  }
+
+  ChatItemView *item = new ChatItemView(chat_item, this);
+  chat_items_.push_back(item);
+  AddChildView(item);
+  Layout();
 }
 
 void ChatbarView::RemoveAll() {
+  while (chat_items_.size() > 0)
+    chat_items_.back()->Close();
+  Hide();
 }
 
 void ChatbarView::Show() {
@@ -155,6 +187,19 @@ bool ChatbarView::IsShowing() const {
 
 bool ChatbarView::IsClosing() const {
   return bar_animation_->IsClosing();
+}
+
+void ChatbarView::Remove(ChatItemView *item) {
+  std::vector<ChatItemView*>::iterator it = std::find(chat_items_.begin(), chat_items_.end(), item);
+  if (it != chat_items_.end()) {
+    RemoveChildView(item);
+    chat_items_.erase(it);
+    delete item;
+    Layout();
+    SchedulePaint();
+  }
+  if (chat_items_.empty())
+    Hide();
 }
 
 void ChatbarView::AnimationProgressed(const ui::Animation *animation) {

@@ -1,5 +1,5 @@
-// Copyright (c) 2011 House of Life Property Ltd. All rights reserved.
-// Copyright (c) 2011 Crystalnix <vgachkaylo@crystalnix.com>
+// Copyright (c) 2012 House of Life Property Ltd. All rights reserved.
+// Copyright (c) 2012 Crystalnix <vgachkaylo@crystalnix.com>
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <vector>
+
 #include "chrome/browser/facebook_chat/facebook_chatbar.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "views/controls/button/button.h"
@@ -15,6 +17,7 @@
 
 class Browser;
 class BrowserView;
+class ChatItemView;
 class FacebookChatItem;
 
 namespace ui {
@@ -57,6 +60,8 @@ public:
   bool IsShowing() const;
   bool IsClosing() const;
 
+  void Remove(ChatItemView *item);
+
   //void SwitchParentWindow(NSWindow *window);
 protected:
   //virtual void OnPaint(gfx::Canvas* canvas);
@@ -68,6 +73,8 @@ private:
 
   // TODO: should be called on theme change
   void UpdateButtonColors();
+
+  std::vector<ChatItemView*> chat_items_;
 
   // The show/hide animation for the shelf itself.
   scoped_ptr<ui::SlideAnimation> bar_animation_;

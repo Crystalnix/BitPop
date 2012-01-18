@@ -30,7 +30,8 @@ class BubbleBorder : public views::Border {
     LEFT_BOTTOM  = 6,
     RIGHT_BOTTOM = 7,
     NONE  = 8,  // No arrow. Positioned under the supplied rect.
-    FLOAT = 9   // No arrow. Centered over the supplied rect.
+    FLOAT = 9,   // No arrow. Centered over the supplied rect.
+    BOTTOM_CENTER = 10
   };
 
   explicit BubbleBorder(ArrowLocation arrow_location)
@@ -64,7 +65,7 @@ class BubbleBorder : public views::Border {
   }
 
   static bool has_arrow(ArrowLocation loc) {
-    return loc >= NONE ? false : true;
+    return (loc >= NONE && loc != BOTTOM_CENTER) ? false : true;
   }
 
   static bool is_arrow_on_left(ArrowLocation loc) {

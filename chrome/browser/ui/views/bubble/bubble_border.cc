@@ -76,6 +76,7 @@ gfx::Rect BubbleBorder::GetBounds(const gfx::Rect& position_relative_to,
 
     case NONE:
     case FLOAT:
+    case BOTTOM_CENTER:
       x += w / 2 - border_size.width() / 2;
       break;
   }
@@ -89,6 +90,7 @@ gfx::Rect BubbleBorder::GetBounds(const gfx::Rect& position_relative_to,
 
     case BOTTOM_LEFT:
     case BOTTOM_RIGHT:
+    case BOTTOM_CENTER:
       y += kArrowOverlap - border_size.height();
       break;
 
@@ -127,6 +129,7 @@ void BubbleBorder::GetInsets(gfx::Insets* insets) const {
 
     case BOTTOM_LEFT:
     case BOTTOM_RIGHT:
+    case BOTTOM_CENTER:
       bottom = std::max(bottom, bottom_arrow_->height());
       break;
 
@@ -232,6 +235,10 @@ void BubbleBorder::Paint(const views::View& view, gfx::Canvas* canvas) const {
     arrow_offset = view.height() - arrow_offset - 1;
   }
 
+  if (arrow_location_ == BOTTOM_CENTER) {
+    arrow_offset = view.width() / 2;
+  }
+
   // Left edge.
   if (arrow_location_ == LEFT_TOP || arrow_location_ == LEFT_BOTTOM) {
     int start_y = top + tl_height;
@@ -320,7 +327,7 @@ void BubbleBorder::Paint(const views::View& view, gfx::Canvas* canvas) const {
   canvas->DrawBitmapInt(*bottom_right_, right - br_width, bottom - br_height);
 
   // Bottom edge.
-  if (arrow_location_ == BOTTOM_LEFT || arrow_location_ == BOTTOM_RIGHT) {
+  if (arrow_location_ == BOTTOM_LEFT || arrow_location_ == BOTTOM_RIGHT || arrow_location_ == BOTTOM_CENTER) {
     int start_x = left + bl_width;
     int before_arrow = arrow_offset - start_x - bottom_arrow_->width() / 2;
     int after_arrow =
@@ -344,7 +351,7 @@ void BubbleBorder::Paint(const views::View& view, gfx::Canvas* canvas) const {
     canvas->TileImageInt(*bottom_, left + bl_width, bottom - b_height,
                          width - bl_width - br_width, b_height);
   }
-
+  
   // Bottom left corner.
   canvas->DrawBitmapInt(*bottom_left_, left, bottom - bl_height);
 }
