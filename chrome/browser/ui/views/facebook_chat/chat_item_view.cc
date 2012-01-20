@@ -7,8 +7,13 @@
 
 #include <string>
 
+#include "base/string_util.h"
 #include "chrome/browser/themes/theme_service.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/views/facebook_chat/chatbar_view.h"
+#include "chrome/browser/ui/views/facebook_chat/chat_notification_popup.h"
+#include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/infobars/infobar_button_border.h"
 #include "chrome/common/url_constants.h"
 #include "googleurl/src/gurl.h"
@@ -158,6 +163,10 @@ void ChatItemView::Layout() {
                            bounds.height() / 2 - closeButtonSize.height() / 2,
                            closeButtonSize.width(),
                            closeButtonSize.height());
+
+  if (notification_popup_) {
+    notification_popup_->SetPositionRelativeTo(RectForNotificationPopup());
+  }
 }
 
 gfx::Size ChatItemView::GetPreferredSize() {
@@ -195,6 +204,8 @@ void ChatItemView::StatusChanged() {
 }
 
 void ChatItemView::Close() {
+  if (notification_popup_)
+    notification_popup_->Close();
   chatbar_->Remove(this);
 }
 
@@ -213,10 +224,10 @@ void ChatItemView::OnPaint(gfx::Canvas* canvas) {
 }
 
 void ChatItemView::ActivateChat() {
-  if (notificationBubble_.get())
-      notificationBubble_->Close();
+  if (notification_popup_)
+      notification_popup_->Close();
 
-  model_->ClearUnreadMessages(); 
+  model_->ClearUnreadMessages();
 
   // open popup
   std::string urlString(chrome::kFacebookChatExtensionPrefixURL);
@@ -224,13 +235,7 @@ void ChatItemView::ActivateChat() {
   urlString += "#";
   urlString += model_->jid();
   
-  View* reference_view = openChatButton_;
-  gfx::Point origin;
-  View::ConvertPointToScreen(reference_view, &origin);
-  gfx::Rect rect = reference_view->bounds();
-  rect.set_origin(origin);
-
-  chat_popup_ = ChatPopup::Show(GURL(urlString), chatbar_->browser(), rect, BubbleBorder::BOTTOM_CENTER, this);
+  chat_popup_ = ChatPopup::Show(GURL(urlString), chatbar_->browser(), RectForChatPopup(), BubbleBorder::BOTTOM_CENTER, this);
 }
 
 const FacebookChatItem* ChatItemView::GetModel() const {
@@ -242,6 +247,41 @@ void ChatItemView::ChatPopupIsClosing(ChatPopup* popup) {
     chat_popup_ = NULL;
 }
 
-void ChatItemView::NotifyUnread() {
+void ChatItemView::BubbleClosing(Bubble* bubble, bool closed_by_escape) {
+  DCHECK(bubble == notification_popup_);
+  notification_popup_ = NULL;
+}
 
+void ChatItemView::NotifyUnread() {
+  if (model_->num_notifications() > 0) {
+    views::Widget* frame = BrowserView::GetBrowserViewForNativeWindow(
+      chatbar_->browser()->window()->GetNativeHandle())->GetWidget();
+    
+    if (!notification_popup_)
+      //notification_popup_->Close();
+      notification_popup_ = ChatNotificationPopup::Show(frame, RectForNotificationPopup(), BubbleBorder::BOTTOM_LEFT, this);
+
+    notification_popup_->PushMessage(model_->GetMessageAtIndex(model_->num_notifications() - 1));
+  }
+}
+
+gfx::Rect ChatItemView::RectForChatPopup() {
+  View* reference_view = openChatButton_;
+  gfx::Point origin;
+  View::ConvertPointToScreen(reference_view, &origin);
+  gfx::Rect rect = reference_view->bounds();
+  rect.set_origin(origin);
+
+  return rect;
+}
+
+gfx::Rect ChatItemView::RectForNotificationPopup() {
+  View* reference_view = openChatButton_;
+  gfx::Point origin;
+  View::ConvertPointToScreen(reference_view, &origin);
+  gfx::Rect rect = reference_view->bounds();
+  rect.set_origin(origin);
+  rect.set_width(20);
+
+  return rect; 
 }

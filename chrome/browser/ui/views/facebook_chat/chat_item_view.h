@@ -9,12 +9,14 @@
 #pragma once
 
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
+#include "chrome/browser/ui/views/bubble/bubble.h"
 #include "chrome/browser/ui/views/facebook_chat/chat_popup.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "views/controls/button/button.h"
 #include "views/view.h"
 
 class ChatbarView;
+class ChatNotificationPopup;
 
 namespace gfx {
 class Image;
@@ -33,7 +35,8 @@ class ChatItemView : public views::ButtonListener,
                      public views::View,
                      public FacebookChatItem::Observer,
                      public ui::AnimationDelegate,
-                     public ChatPopup::Observer {
+                     public ChatPopup::Observer,
+                     public BubbleDelegate {
 public:
   ChatItemView(FacebookChatItem *model, ChatbarView *chatbar);
   virtual ~ChatItemView();
@@ -54,10 +57,18 @@ public:
   // ChatPopup::Observer implementation
   virtual void ChatPopupIsClosing(ChatPopup* popup) OVERRIDE;
 
+  // BubbleDelegate implementation
+  virtual void BubbleClosing(Bubble* bubble, bool closed_by_escape) OVERRIDE;
+  virtual bool CloseOnEscape() OVERRIDE { return false; }
+  virtual bool FadeInOnShow() OVERRIDE { return true; }
+
   void Close();
 
   void ActivateChat();
   void NotifyUnread();
+
+  gfx::Rect RectForChatPopup();
+  gfx::Rect RectForNotificationPopup();
 
   const FacebookChatItem* GetModel() const;
 protected:
@@ -78,6 +89,7 @@ private:
   SkColor close_button_bg_color_;
 
   ChatPopup *chat_popup_;
+  ChatNotificationPopup* notification_popup_;
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_FACEBOOK_CHAT_CHAT_ITEM_VIEW_H_

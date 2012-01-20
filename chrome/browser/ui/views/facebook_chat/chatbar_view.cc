@@ -152,14 +152,22 @@ void ChatbarView::AddChatItem(FacebookChatItem *chat_item) {
 
   // do not allow duplicate chat items
   for (std::vector<ChatItemView*>::iterator it = chat_items_.begin(); it != chat_items_.end(); it++) {
-    if ((*it)->GetModel()->jid() == chat_item->jid())
+    if ((*it)->GetModel()->jid() == chat_item->jid()) {
+      if (chat_item->needs_activation())
+        (*it)->ActivateChat();
       return;
+    }
   }
 
   ChatItemView *item = new ChatItemView(chat_item, this);
   chat_items_.push_back(item);
   AddChildView(item);
   Layout();
+
+  if (chat_item->needs_activation())
+    item->ActivateChat();
+  else if (chat_item->num_notifications() > 0)
+    item->NotifyUnread();
 }
 
 void ChatbarView::RemoveAll() {
@@ -210,6 +218,7 @@ void ChatbarView::AnimationProgressed(const ui::Animation *animation) {
     // otherwise leave blank white areas where the shelf was and where the
     // user's eye is. Thankfully bottom-resizing is a lot faster than
     // top-resizing.
+    Layout();
     parent_->ToolbarSizeChanged(bar_animation_->IsShowing());
   }
 }

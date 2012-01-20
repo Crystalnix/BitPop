@@ -136,6 +136,8 @@ class Bubble
 
   static const SkColor kBackgroundColor;
 
+  void SetPositionRelativeTo(const gfx::Rect& position);
+
  protected:
   Bubble();
 #if defined(OS_CHROMEOS)

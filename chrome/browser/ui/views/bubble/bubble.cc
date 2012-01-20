@@ -387,3 +387,8 @@ bool Bubble::AcceleratorPressed(const views::Accelerator& accelerator) {
   }
   return false;
 }
+
+void Bubble::SetPositionRelativeTo(const gfx::Rect& position) {
+  position_relative_to_ = position;
+  SizeToContents();
+}
