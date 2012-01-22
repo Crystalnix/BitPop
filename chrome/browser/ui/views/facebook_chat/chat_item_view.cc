@@ -92,7 +92,8 @@ ChatItemView::ChatItemView(FacebookChatItem *model, ChatbarView *chatbar)
   : model_(model),
     chatbar_(chatbar),
     close_button_bg_color_(0),
-    chat_popup_(NULL) {
+    chat_popup_(NULL),
+    notification_popup_(NULL) {
   
   model->AddObserver(this);
 
@@ -120,7 +121,6 @@ ChatItemView::ChatItemView(FacebookChatItem *model, ChatbarView *chatbar)
                           rb.GetBitmapNamed(IDR_TAB_CLOSE_H));
   close_button_->SetImage(views::CustomButton::BS_PUSHED,
                           rb.GetBitmapNamed(IDR_TAB_CLOSE_P));
-  
   //close_button_->SetTooltipText(
   //    UTF16ToWide(l10n_util::GetStringUTF16(IDS_TOOLTIP_CLOSE_TAB)));
   //close_button_->SetAccessibleName(
@@ -166,6 +166,10 @@ void ChatItemView::Layout() {
 
   if (notification_popup_) {
     notification_popup_->SetPositionRelativeTo(RectForNotificationPopup());
+  }
+
+  if (chat_popup_) {
+    chat_popup_->SetPositionRelativeTo(RectForChatPopup());
   }
 }
 
@@ -257,9 +261,10 @@ void ChatItemView::NotifyUnread() {
     views::Widget* frame = BrowserView::GetBrowserViewForNativeWindow(
       chatbar_->browser()->window()->GetNativeHandle())->GetWidget();
     
-    if (!notification_popup_)
+    if (!notification_popup_) {
       //notification_popup_->Close();
       notification_popup_ = ChatNotificationPopup::Show(frame, RectForNotificationPopup(), BubbleBorder::BOTTOM_LEFT, this);
+    }
 
     notification_popup_->PushMessage(model_->GetMessageAtIndex(model_->num_notifications() - 1));
   }

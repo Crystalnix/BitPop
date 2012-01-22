@@ -1713,6 +1713,9 @@ void BrowserView::OnWidgetMove() {
 
   BrowserBubbleHost::WindowMoved();
 
+  if (fb_chatbar_.get())
+    fb_chatbar_->Layout();
+
   browser::HideBookmarkBubbleView();
 
   // Close the omnibox popup, if any.

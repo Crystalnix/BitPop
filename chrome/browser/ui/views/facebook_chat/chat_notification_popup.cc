@@ -30,8 +30,7 @@ namespace {
 class NotificationPopupContent : public views::Label {
 public:
   NotificationPopupContent(ChatNotificationPopup *owner)
-    : views::Label(),
-      owner_(owner) {
+    : owner_(owner) {
     SetMultiLine(true);
     SetAllowCharacterBreak(true);
     SetHorizontalAlignment(views::Label::ALIGN_LEFT);
@@ -70,8 +69,7 @@ private:
 class NotificationContainerView : public View {
 public:
   NotificationContainerView(ChatNotificationPopup *owner) 
-    : View(),
-      owner_(owner),
+    : owner_(owner),
       label_(new NotificationPopupContent(owner)),
       close_button_(new views::ImageButton(owner)),
       close_button_bg_color_(0) {
@@ -82,16 +80,15 @@ public:
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
 
     close_button_->SetImage(views::CustomButton::BS_NORMAL,
-                            rb.GetBitmapNamed(IDR_TAB_CLOSE));
+                            rb.GetBitmapNamed(IDR_CLOSE_BAR));
     close_button_->SetImage(views::CustomButton::BS_HOT,
-                            rb.GetBitmapNamed(IDR_TAB_CLOSE_H));
+                            rb.GetBitmapNamed(IDR_CLOSE_BAR_H));
     close_button_->SetImage(views::CustomButton::BS_PUSHED,
-                            rb.GetBitmapNamed(IDR_TAB_CLOSE_P));
+                            rb.GetBitmapNamed(IDR_CLOSE_BAR_P));
   
     // Disable animation so that the red danger sign shows up immediately
     // to help avoid mis-clicks.
-    close_button_->SetAnimationDuration(0);
-  
+    //close_button_->SetAnimationDuration(0);
     AddChildView(close_button_);
   }
 
@@ -107,21 +104,21 @@ public:
     label_->SetBounds(ourBounds.x(), ourBounds.y(), ourBounds.width(), ourBounds.height());
 
     gfx::Size prefsize = close_button_->GetPreferredSize();
-    close_button_->SetBounds(ourBounds.width() - 16, 0, prefsize.width(), prefsize.height());
+    close_button_->SetBounds(ourBounds.width() - prefsize.width(), 0, prefsize.width(), prefsize.height());
   }
 
   virtual void OnPaint(gfx::Canvas* canvas) {
     views::View::OnPaint(canvas);
 
-    ResourceBundle &rb = ResourceBundle::GetSharedInstance();
-    SkColor bgColor = kNotificationPopupBackgroundColor;
+    //ResourceBundle &rb = ResourceBundle::GetSharedInstance();
+    //SkColor bgColor = kNotificationPopupBackgroundColor;
 
-    if (bgColor != close_button_bg_color_) {
-      close_button_bg_color_ = bgColor;
-      close_button_->SetBackground(SkColorSetRGB(0,0,0),
-          rb.GetBitmapNamed(IDR_TAB_CLOSE),
-          rb.GetBitmapNamed(IDR_TAB_CLOSE_MASK));
-    }
+    //if (bgColor != close_button_bg_color_) {
+    //  close_button_bg_color_ = bgColor;
+    //  close_button_->SetBackground(SkColorSetRGB(0,0,0),
+    //      rb.GetBitmapNamed(IDR_TAB_CLOSE),
+    //      rb.GetBitmapNamed(IDR_TAB_CLOSE_MASK));
+    //}
   }
 
   NotificationPopupContent* GetLabelView() { return label_; }

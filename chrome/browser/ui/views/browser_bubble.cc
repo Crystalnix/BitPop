@@ -147,4 +147,11 @@ void BrowserBubble::MovePopup(int x, int y, int w, int h) {
   popup_->SetBounds(gfx::Rect(x, y, w, h));
 }
 
-
+void BrowserBubble::SetPositionRelativeTo(const gfx::Rect& position) {
+  relative_to_ = position;
+  gfx::Point origin = relative_to_.origin();
+  views::View::ConvertPointToView(NULL, frame_->GetRootView(), &origin);
+  relative_to_.set_origin(origin);
+  ResizeToView();
+  Reposition();
+}

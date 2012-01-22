@@ -94,6 +94,7 @@ class BrowserBubble {
   // Returns the NativeView containing that popup.
   gfx::NativeView native_view() const { return popup_->GetNativeView(); }
 
+  void SetPositionRelativeTo(const gfx::Rect& position);
  protected:
   // Create the popup widget.
   virtual void InitPopup(const gfx::Insets& content_margins);
