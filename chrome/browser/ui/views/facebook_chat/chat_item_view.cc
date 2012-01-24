@@ -22,6 +22,7 @@
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
 #include "third_party/skia/include/core/SkPaint.h"
+#include "third_party/skia/include/core/SkTypeface.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/canvas_skia.h"
@@ -41,65 +42,44 @@ const gfx::Size kChatButtonSize = gfx::Size(158, 25);
 
 const int kCloseButtonRightPadding = 3;
 
-//class ChatButtonBackground : public views::Background {
-//  public:
-//    ChatButtonBackground() {
-//    }
-//
-//    virtual void Paint(gfx::Canvas* canvas, View* view) const {
-//      CustomButton::ButtonState state =
-//        (view->GetClassName() == views::Label::kViewClassName) ?
-//        CustomButton::BS_NORMAL : static_cast<CustomButton*>(view)->state();
-//      int w = view->width();
-//      int h = view->height();
-//
-//      canvas->FillRectInt(background_color(state), 1, 1, w - 2, h - 2);
-//      canvas->FillRectInt(border_color(state), 2, 0, w - 4, 1);
-//      canvas->FillRectInt(border_color(state), 1, 1, 1, 1);
-//      canvas->FillRectInt(border_color(state), 0, 2, 1, h - 4);
-//      canvas->FillRectInt(border_color(state), 1, h - 2, 1, 1);
-//      canvas->FillRectInt(border_color(state), 2, h - 1, w - 4, 1);
-//      canvas->FillRectInt(border_color(state), w - 2, 1, 1, 1);
-//      canvas->FillRectInt(border_color(state), w - 1, 2, 1, h - 4);
-//      canvas->FillRectInt(border_color(state), w - 2, h - 2, 1, 1);
-//      canvas->
-//
-//    }
-//
-//  private:
-//    static SkColor border_color(CustomButton::ButtonState state) {
-//      switch (state) {
-//        case CustomButton::BS_HOT:    return kHotBorderColor;
-//        case CustomButton::BS_PUSHED: return kPushedBorderColor;
-//        default:                      return kBorderColor;
-//      }
-//    }
-//
-//    static SkColor background_color(CustomButton::ButtonState state) {
-//      switch (state) {
-//        case CustomButton::BS_HOT:    return kHotBackgroundColor;
-//        case CustomButton::BS_PUSHED: return kPushedBackgroundColor;
-//        default:                      return kBackgroundColor;
-//      }
-//    }
-//
-//    DISALLOW_COPY_AND_ASSIGN(ChatButtonBackground);
-//};
+const int kNotificationMessageDelaySec = 10;
+
+const int kNotifyIconDim = 16;
 
 }
+
+class OverOutTextButton : public views::TextButton {
+public:
+  OverOutTextButton(ChatItemView* owner, const std::wstring& text)
+    : views::TextButton(owner, text),
+      owner_(owner) {
+  }
+
+  virtual void OnMouseEntered(const views::MouseEvent& event) OVERRIDE {
+    owner_->OnMouseEntered(event);
+  }
+
+  virtual void OnMouseExited(const views::MouseEvent& event) OVERRIDE {
+    owner_->OnMouseExited(event);
+  }
+private:
+  ChatItemView *owner_;
+};
 
 ChatItemView::ChatItemView(FacebookChatItem *model, ChatbarView *chatbar)
   : model_(model),
     chatbar_(chatbar),
     close_button_bg_color_(0),
     chat_popup_(NULL),
-    notification_popup_(NULL) {
+    notification_popup_(NULL),
+    isMouseOverNotification_(false),
+    notification_icon_(NULL) {
   
   model->AddObserver(this);
 
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
 
-  openChatButton_ = new views::TextButton(this, UTF8ToWide(model->username()));
+  openChatButton_ = new OverOutTextButton(this, UTF8ToWide(model->username()));
   //openChatButton_->SetNormalHasBorder(true);
   openChatButton_->set_icon_placement(views::TextButton::ICON_ON_LEFT);
   openChatButton_->set_border(new InfoBarButtonBorder);
@@ -140,6 +120,15 @@ ChatItemView::~ChatItemView() {
     delete openChatButton_;
   if (chat_popup_) {
     chat_popup_->Close();
+  }
+  if (notification_icon_)
+    delete notification_icon_;
+
+  for (TimerList::iterator it = timers_.begin(); it != timers_.end(); it++) {
+    if (*it && (*it)->IsRunning())
+      (*it)->Stop();
+    delete *it;
+    *it = NULL;
   }
 }
 
@@ -254,20 +243,45 @@ void ChatItemView::ChatPopupIsClosing(ChatPopup* popup) {
 void ChatItemView::BubbleClosing(Bubble* bubble, bool closed_by_escape) {
   DCHECK(bubble == notification_popup_);
   notification_popup_ = NULL;
+  
+  for (TimerList::iterator it = timers_.begin(); it != timers_.end(); it++) {
+    if (*it && (*it)->IsRunning())
+      (*it)->Stop();
+  }
 }
 
 void ChatItemView::NotifyUnread() {
   if (model_->num_notifications() > 0) {
-    views::Widget* frame = BrowserView::GetBrowserViewForNativeWindow(
-      chatbar_->browser()->window()->GetNativeHandle())->GetWidget();
-    
     if (!notification_popup_) {
       //notification_popup_->Close();
+      views::Widget* frame = BrowserView::GetBrowserViewForNativeWindow(
+      chatbar_->browser()->window()->GetNativeHandle())->GetWidget();
       notification_popup_ = ChatNotificationPopup::Show(frame, RectForNotificationPopup(), BubbleBorder::BOTTOM_LEFT, this);
     }
 
     notification_popup_->PushMessage(model_->GetMessageAtIndex(model_->num_notifications() - 1));
+
+    ChatTimer *timer = NULL;
+    for (TimerList::iterator it = timers_.begin(); it != timers_.end(); it++) {
+      if (!(*it)->IsRunning()) {
+        timer = *it;
+        break;
+      }
+    }
+    if (timer == NULL) {
+      timer = new ChatTimer();
+      timers_.push_back(timer);
+    }
+    timer->Start(base::TimeDelta::FromSeconds(kNotificationMessageDelaySec), this, &ChatItemView::TimerFired);
+
+    UpdateNotificationIcon();
+    openChatButton_->SchedulePaint();
   }
+}
+
+void ChatItemView::TimerFired() {
+  if (notification_popup_)
+    (void)notification_popup_->PopMessage();
 }
 
 gfx::Rect ChatItemView::RectForChatPopup() {
@@ -289,4 +303,95 @@ gfx::Rect ChatItemView::RectForNotificationPopup() {
   rect.set_width(20);
 
   return rect; 
+}
+
+void ChatItemView::OnMouseEntered(const views::MouseEvent& event) {
+  if (!notification_popup_ && model_->num_notifications() > 0) {
+    views::Widget* frame = BrowserView::GetBrowserViewForNativeWindow(
+      chatbar_->browser()->window()->GetNativeHandle())->GetWidget();
+    
+    notification_popup_ = ChatNotificationPopup::Show(frame, RectForNotificationPopup(), BubbleBorder::BOTTOM_LEFT, this);
+    notification_popup_->PushMessage(model_->GetMessageAtIndex(model_->num_notifications() - 1));
+    isMouseOverNotification_ = true;
+  }
+}
+
+void ChatItemView::OnMouseExited(const views::MouseEvent& event) {
+  if (isMouseOverNotification_ && notification_popup_) {
+    notification_popup_->set_fade_away_on_close(false);
+    notification_popup_->Close();
+  }
+}
+
+void ChatItemView::UpdateNotificationIcon() {
+  if (notification_icon_) {
+    delete notification_icon_;
+    notification_icon_ = NULL;
+  }
+
+  if (model_->num_notifications() > 0) {
+    notification_icon_ = new SkBitmap();
+    notification_icon_->setConfig(SkBitmap::kARGB_8888_Config, kNotifyIconDim, kNotifyIconDim);
+    notification_icon_->allocPixels();
+
+    SkCanvas canvas(*notification_icon_);
+    canvas.clear(SkColorSetARGB(0, 0, 0, 0));
+
+    SkPaint pt;
+    pt.setColor(SkColorSetARGB(160, 255, 0, 0));
+    pt.setAntiAlias(true);
+    canvas.drawCircle(kNotifyIconDim / 2, kNotifyIconDim / 2, kNotifyIconDim / 2, pt);
+
+    char text[4] = { '\0', '\0', '\0', '\0' };
+    char *p = text;
+    int num = model_->num_notifications();
+    if (num > 99)
+      num = 99;
+    if (num > 9)
+      *p++ = num / 10 + '0';
+    *p = num % 10 + '0';
+
+    pt.setColor(SK_ColorBLACK);
+    pt.setTextAlign(SkPaint::kLeft_Align);
+
+    const char kPreferredTypeface[] = "Arial";
+    SkTypeface* typeface = SkTypeface::CreateFromName(
+        kPreferredTypeface, SkTypeface::kNormal);
+    // Skia doesn't do any font fallback---if the user is missing the font then
+    // typeface will be NULL. If we don't do manual fallback then we'll crash.
+    if (typeface) {
+      //pt.setFakeBoldText(true);
+      ; // do nothing
+    } else {
+      // Fall back to the system font. We don't bold it because we aren't sure
+      // how it will look.
+      // For the most part this code path will only be hit on Linux systems
+      // that don't have Arial.
+      ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+      const gfx::Font& base_font = rb.GetFont(ResourceBundle::BaseFont);
+      typeface = SkTypeface::CreateFromName(
+          UTF16ToUTF8(base_font.GetFontName()).c_str(), SkTypeface::kNormal);
+      DCHECK(typeface);
+    }
+    pt.setTypeface(typeface);
+    typeface->unref();
+
+    // make the text fit into our icon
+    SkScalar textSize = 8;
+    SkRect textBounds;
+    while (1) {
+      (void)pt.measureText(text, strlen(text), &textBounds);
+      if (textBounds.width() > kNotifyIconDim || textBounds.height() > kNotifyIconDim) {
+        textSize -= 1;
+        pt.setTextSize(textSize);
+      } else
+        break;
+    }
+
+    SkScalar x = kNotifyIconDim/2.0 - textBounds.width()/2.0;
+    SkScalar y = kNotifyIconDim/2.0 + textBounds.height()/2.0;
+    canvas.drawText(text, strlen(text), x - 1, y - 1, pt); // SKIA expects us to give the lower-left coord of text start
+ 
+    openChatButton_->SetIcon(*notification_icon_);
+  }
 }

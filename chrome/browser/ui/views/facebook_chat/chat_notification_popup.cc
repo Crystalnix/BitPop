@@ -20,7 +20,7 @@ using views::View;
 namespace {
   static const int kMaxNotifications = 20;
 
-  static const int kNotificationLabelWidth = 200;
+  static const int kNotificationLabelWidth = 180;
 
   static const int kNotificationLabelMaxHeight = 600;
 
@@ -30,7 +30,8 @@ namespace {
 class NotificationPopupContent : public views::Label {
 public:
   NotificationPopupContent(ChatNotificationPopup *owner)
-    : owner_(owner) {
+    : views::Label(),
+      owner_(owner) {
     SetMultiLine(true);
     SetAllowCharacterBreak(true);
     SetHorizontalAlignment(views::Label::ALIGN_LEFT);
@@ -50,13 +51,16 @@ public:
   }
 
   void UpdateOwnText() {
-    const std::vector<std::string>& msgs = owner_->GetMessages();
-    std::string concat("");
-    for (int i = 0; i < (int)msgs.size(); ++i) {
-      concat += msgs.at(i);
+    const ChatNotificationPopup::MessageContainer& msgs = owner_->GetMessages();
+    std::string concat = "";
+    int i = 0;
+    for (ChatNotificationPopup::MessageContainer::const_iterator it = msgs.begin(); it != msgs.end(); it++, i++) {
+      concat += *it;
       if (i != (int)msgs.size() - 1)
         concat += "\n\n";
     }
+    SetText(L"");
+    owner_->SizeToContents();  // dirty hack to force the window redraw
     SetText(UTF8ToWide(concat));
     owner_->SizeToContents();
   }
@@ -107,20 +111,6 @@ public:
     close_button_->SetBounds(ourBounds.width() - prefsize.width(), 0, prefsize.width(), prefsize.height());
   }
 
-  virtual void OnPaint(gfx::Canvas* canvas) {
-    views::View::OnPaint(canvas);
-
-    //ResourceBundle &rb = ResourceBundle::GetSharedInstance();
-    //SkColor bgColor = kNotificationPopupBackgroundColor;
-
-    //if (bgColor != close_button_bg_color_) {
-    //  close_button_bg_color_ = bgColor;
-    //  close_button_->SetBackground(SkColorSetRGB(0,0,0),
-    //      rb.GetBitmapNamed(IDR_TAB_CLOSE),
-    //      rb.GetBitmapNamed(IDR_TAB_CLOSE_MASK));
-    //}
-  }
-
   NotificationPopupContent* GetLabelView() { return label_; }
 
 private:
@@ -149,7 +139,7 @@ ChatNotificationPopup::ChatNotificationPopup()
 
 void ChatNotificationPopup::PushMessage(const std::string& message) {
   if (messages_.size() >= kMaxNotifications)
-    messages_.erase(messages_.begin());
+    messages_.pop_front();
   
   messages_.push_back(message);
   static_cast<NotificationContainerView*>(container_view_)->GetLabelView()->UpdateOwnText();
@@ -157,12 +147,15 @@ void ChatNotificationPopup::PushMessage(const std::string& message) {
 
 std::string ChatNotificationPopup::PopMessage() {
   std::string res = messages_.front();
-  messages_.erase(messages_.begin());
-  static_cast<NotificationContainerView*>(container_view_)->GetLabelView()->UpdateOwnText();
+  messages_.pop_front();
+  if (messages_.size() == 0)
+    Close();
+  else 
+    static_cast<NotificationContainerView*>(container_view_)->GetLabelView()->UpdateOwnText();
   return res;
 }
 
-const std::vector<std::string>& ChatNotificationPopup::GetMessages() const {
+const ChatNotificationPopup::MessageContainer& ChatNotificationPopup::GetMessages() {
   return this->messages_;
 }
 

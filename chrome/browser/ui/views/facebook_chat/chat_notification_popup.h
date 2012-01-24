@@ -7,7 +7,7 @@
 #define CHROME_BROWSER_UI_VIEWS_FACEBOOK_CHAT_CHAT_NOTIFICATION_POPUP_H_
 #pragma once
 
-#include <vector>
+#include <deque>
 #include <string>
 
 #include "chrome/browser/ui/views/bubble/bubble.h"
@@ -30,7 +30,8 @@ public:
   std::string PopMessage();
   int num_messages_remaining() const { return messages_.size(); }
 
-  const std::vector<std::string>& GetMessages() const;
+  typedef std::deque<std::string> MessageContainer;
+  const MessageContainer& GetMessages();
 
   // views::ButtonListener protocol
   virtual void ButtonPressed(views::Button* sender, const views::Event& event) OVERRIDE;
@@ -43,7 +44,7 @@ private:
 
   ChatNotificationPopup();
 
-  std::vector<std::string> messages_;
+  MessageContainer messages_;
   views::View* container_view_;
 };
 

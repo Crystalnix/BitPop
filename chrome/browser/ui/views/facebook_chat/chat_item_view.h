@@ -8,6 +8,9 @@
 
 #pragma once
 
+#include <list>
+
+#include "base/timer.h"
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
 #include "chrome/browser/ui/views/bubble/bubble.h"
 #include "chrome/browser/ui/views/facebook_chat/chat_popup.h"
@@ -19,6 +22,7 @@ class ChatbarView;
 class ChatNotificationPopup;
 
 namespace gfx {
+class Bitmap;
 class Image;
 }
 
@@ -47,6 +51,8 @@ public:
   // Overridden from views::View:
   virtual void Layout() OVERRIDE;
   virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual void OnMouseEntered(const views::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseExited(const views::MouseEvent& event) OVERRIDE;
 
   // FacebookChatItem::Observer protocol
   virtual void OnChatUpdated(FacebookChatItem *source) OVERRIDE;
@@ -61,7 +67,7 @@ public:
   virtual void BubbleClosing(Bubble* bubble, bool closed_by_escape) OVERRIDE;
   virtual bool CloseOnEscape() OVERRIDE { return false; }
   virtual bool FadeInOnShow() OVERRIDE { return true; }
-
+  
   void Close();
 
   void ActivateChat();
@@ -74,9 +80,13 @@ public:
 protected:
   // Overridden from views::View:
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+
+  virtual void UpdateNotificationIcon();
+
 private:
 
   void StatusChanged();
+  void TimerFired();
 
   FacebookChatItem *model_;
   
@@ -90,6 +100,14 @@ private:
 
   ChatPopup *chat_popup_;
   ChatNotificationPopup* notification_popup_;
+
+  typedef base::OneShotTimer<ChatItemView> ChatTimer;
+  typedef std::list<ChatTimer*> TimerList;
+  TimerList timers_;
+
+  bool isMouseOverNotification_;
+
+  SkBitmap *notification_icon_;
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_FACEBOOK_CHAT_CHAT_ITEM_VIEW_H_
