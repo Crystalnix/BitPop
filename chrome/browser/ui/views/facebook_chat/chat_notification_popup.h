@@ -36,6 +36,10 @@ public:
   // views::ButtonListener protocol
   virtual void ButtonPressed(views::Button* sender, const views::Event& event) OVERRIDE;
   
+  // Overridden from ui::AnimationDelegate:
+  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
+  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
+
   views::View* container_view() { return container_view_; }
 protected:
   // OVERRIDE Bubble functionality

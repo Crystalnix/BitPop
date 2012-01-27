@@ -134,24 +134,26 @@ ChatItemView::~ChatItemView() {
 
 void ChatItemView::ButtonPressed(views::Button* sender, const views::Event& event) {
   if (sender == close_button_) {
-    Close();
+    Close(true);
   } else if (sender == openChatButton_) {
     ActivateChat();
   }
 }
 
 void ChatItemView::Layout() {
-  gfx::Rect bounds = this->bounds();
+  gfx::Rect bounds;
   bounds.set_x(0);
   bounds.set_y(0);
+  gfx::Size sz = GetPreferredSize();
+  bounds.set_size(sz);
 
   openChatButton_->SetBoundsRect(bounds);
 
   gfx::Size closeButtonSize = close_button_->GetPreferredSize();
   close_button_->SetBounds(bounds.width() - closeButtonSize.width() - kCloseButtonRightPadding,
-                           bounds.height() / 2 - closeButtonSize.height() / 2,
-                           closeButtonSize.width(),
-                           closeButtonSize.height());
+                            bounds.height() / 2 - closeButtonSize.height() / 2,
+                            closeButtonSize.width(),
+                            closeButtonSize.height());
 
   if (notification_popup_) {
     notification_popup_->SetPositionRelativeTo(RectForNotificationPopup());
@@ -170,7 +172,7 @@ void ChatItemView::OnChatUpdated(FacebookChatItem *source) {
   DCHECK(source == model_);
   switch (source->state()) {
   case FacebookChatItem::REMOVING:
-    Close();
+    Close(false);
     break;
   case FacebookChatItem::NUM_NOTIFICATIONS_CHANGED:
     NotifyUnread();
@@ -196,10 +198,10 @@ void ChatItemView::StatusChanged() {
   }
 }
 
-void ChatItemView::Close() {
+void ChatItemView::Close(bool should_animate) {
   if (notification_popup_)
     notification_popup_->Close();
-  chatbar_->Remove(this);
+  chatbar_->Remove(this, should_animate);
 }
 
 void ChatItemView::OnPaint(gfx::Canvas* canvas) {
@@ -274,6 +276,9 @@ void ChatItemView::NotifyUnread() {
     }
     timer->Start(base::TimeDelta::FromSeconds(kNotificationMessageDelaySec), this, &ChatItemView::TimerFired);
 
+    if (!IsVisible())
+      chatbar_->PlaceFirstInOrder(this);
+
     UpdateNotificationIcon();
     openChatButton_->SchedulePaint();
   }
@@ -336,6 +341,98 @@ void ChatItemView::UpdateNotificationIcon() {
 
     SkCanvas canvas(*notification_icon_);
     canvas.clear(SkColorSetARGB(0, 0, 0, 0));
+
+    // ----------------------------------------------------------------------
+    //std::string text;
+    //int num = model_->num_notifications();
+    //    
+    //if (text.empty())
+    //  return;
+
+    //SkColor text_color = GetBadgeTextColor(tab_id);
+    //SkColor background_color = GetBadgeBackgroundColor(tab_id);
+
+    //if (SkColorGetA(text_color) == 0x00)
+    //  text_color = SK_ColorWHITE;
+
+    //if (SkColorGetA(background_color) == 0x00)
+    //  background_color = SkColorSetARGB(255, 218, 0, 24);  // Default badge color.
+
+    //canvas->Save();
+
+    //SkPaint* text_paint = badge_util::GetBadgeTextPaintSingleton();
+    //text_paint->setTextSize(SkFloatToScalar(kTextSize));
+    //text_paint->setColor(text_color);
+
+    //// Calculate text width. We clamp it to a max size.
+    //SkScalar text_width = text_paint->measureText(text.c_str(), text.size());
+    //text_width = SkIntToScalar(
+    //    std::min(kMaxTextWidth, SkScalarFloor(text_width)));
+
+    //// Calculate badge size. It is clamped to a min width just because it looks
+    //// silly if it is too skinny.
+    //int badge_width = SkScalarFloor(text_width) + kPadding * 2;
+    //int icon_width = GetIcon(tab_id).width();
+    //// Force the pixel width of badge to be either odd (if the icon width is odd)
+    //// or even otherwise. If there is a mismatch you get http://crbug.com/26400.
+    //if (icon_width != 0 && (badge_width % 2 != GetIcon(tab_id).width() % 2))
+    //  badge_width += 1;
+    //badge_width = std::max(kBadgeHeight, badge_width);
+
+    //// Paint the badge background color in the right location. It is usually
+    //// right-aligned, but it can also be center-aligned if it is large.
+    //SkRect rect;
+    //rect.fBottom = SkIntToScalar(bounds.bottom() - kBottomMargin);
+    //rect.fTop = rect.fBottom - SkIntToScalar(kBadgeHeight);
+    //if (badge_width >= kCenterAlignThreshold) {
+    //  rect.fLeft = SkIntToScalar(
+    //                   SkScalarFloor(SkIntToScalar(bounds.x()) +
+    //                                 SkIntToScalar(bounds.width()) / 2 -
+    //                                 SkIntToScalar(badge_width) / 2));
+    //  rect.fRight = rect.fLeft + SkIntToScalar(badge_width);
+    //} else {
+    //  rect.fRight = SkIntToScalar(bounds.right());
+    //  rect.fLeft = rect.fRight - badge_width;
+    //}
+
+    //SkPaint rect_paint;
+    //rect_paint.setStyle(SkPaint::kFill_Style);
+    //rect_paint.setAntiAlias(true);
+    //rect_paint.setColor(background_color);
+    //canvas->AsCanvasSkia()->drawRoundRect(rect, SkIntToScalar(2),
+    //                                      SkIntToScalar(2), rect_paint);
+
+    //// Overlay the gradient. It is stretchy, so we do this in three parts.
+    //ResourceBundle& resource_bundle = ResourceBundle::GetSharedInstance();
+    //SkBitmap* gradient_left = resource_bundle.GetBitmapNamed(
+    //    IDR_BROWSER_ACTION_BADGE_LEFT);
+    //SkBitmap* gradient_right = resource_bundle.GetBitmapNamed(
+    //    IDR_BROWSER_ACTION_BADGE_RIGHT);
+    //SkBitmap* gradient_center = resource_bundle.GetBitmapNamed(
+    //    IDR_BROWSER_ACTION_BADGE_CENTER);
+
+    //canvas->AsCanvasSkia()->drawBitmap(*gradient_left, rect.fLeft, rect.fTop);
+    //canvas->TileImageInt(*gradient_center,
+    //    SkScalarFloor(rect.fLeft) + gradient_left->width(),
+    //    SkScalarFloor(rect.fTop),
+    //    SkScalarFloor(rect.width()) - gradient_left->width() -
+    //                  gradient_right->width(),
+    //    SkScalarFloor(rect.height()));
+    //canvas->AsCanvasSkia()->drawBitmap(*gradient_right,
+    //    rect.fRight - SkIntToScalar(gradient_right->width()), rect.fTop);
+
+    //// Finally, draw the text centered within the badge. We set a clip in case the
+    //// text was too large.
+    //rect.fLeft += kPadding;
+    //rect.fRight -= kPadding;
+    //canvas->AsCanvasSkia()->clipRect(rect);
+    //canvas->AsCanvasSkia()->drawText(text.c_str(), text.size(),
+    //                                 rect.fLeft + (rect.width() - text_width) / 2,
+    //                                 rect.fTop + kTextSize + kTopTextPadding,
+    //                                 *text_paint);
+    //canvas->Restore();
+
+    // ----------------------------------------------------------------------
 
     SkPaint pt;
     pt.setColor(SkColorSetARGB(160, 255, 0, 0));

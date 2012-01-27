@@ -222,6 +222,8 @@ class Bubble
 
   views::View* contents_;
 
+  friend class ChatNotificationPopup;
+
   DISALLOW_COPY_AND_ASSIGN(Bubble);
 };
 

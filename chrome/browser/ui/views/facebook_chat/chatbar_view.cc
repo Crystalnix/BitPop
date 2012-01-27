@@ -45,6 +45,10 @@ static const SkColor kBorderColor = SkColorSetRGB(214, 214, 214);
 // Bar show/hide speed.
 static const int kBarAnimationDurationMs = 120;
 
+static const int kAddAnimationDuration = 600;
+static const int kRemoveAnimationDuration = 600;
+static const int kPlaceFirstAnimationDuration = 600;
+
 // Sets size->width() to view's preferred width + size->width().s
 // Sets size->height() to the max of the view's preferred height and
 // size->height();
@@ -62,7 +66,10 @@ int CenterPosition(int size, int target_size) {
 
 ChatbarView::ChatbarView(Browser* browser, BrowserView* parent)
   : browser_(browser),
-    parent_(parent) {
+    parent_(parent),
+    item_to_add_(NULL),
+    item_to_remove_(NULL),
+    item_to_place_first_(NULL) {
   SetID(VIEW_ID_FACEBOOK_CHATBAR);
   parent->AddChildView(this);
   
@@ -82,6 +89,16 @@ ChatbarView::ChatbarView(Browser* browser, BrowserView* parent)
 
   bar_animation_.reset(new ui::SlideAnimation(this));
   bar_animation_->SetSlideDuration(kBarAnimationDurationMs);
+
+  new_item_animation_.reset(new ui::SlideAnimation(this));
+  new_item_animation_->SetSlideDuration(kAddAnimationDuration);
+
+  remove_item_animation_.reset(new ui::SlideAnimation(this));
+  remove_item_animation_->SetSlideDuration(kRemoveAnimationDuration);
+
+  place_first_animation_.reset(new ui::SlideAnimation(this));
+  place_first_animation_->SetSlideDuration(kPlaceFirstAnimationDuration);
+
   Show();
 }
 
@@ -119,18 +136,56 @@ void ChatbarView::Layout() {
   // If the window is maximized, we want to expand the hitbox of the close
   // button to the right and bottom to make it easier to click.
   bool is_maximized = browser_->window()->IsMaximized();
-  int next_x = width() - kRightPadding - close_button_size.width();
+  const int rightSideX = width() - kRightPadding - close_button_size.width();
+  int next_x = rightSideX;
   int y = CenterPosition(close_button_size.height(), height());
   close_button_->SetBounds(next_x, y,
       is_maximized ? width() - next_x : close_button_size.width(),
       is_maximized ? height() - y : close_button_size.height());
   
   if (!chat_items_.empty()) {
-    for (std::vector<ChatItemView*>::iterator it = chat_items_.begin(); it != chat_items_.end(); it++) {
+    bool isBeforeCertainItem = true;
+    for (std::list<ChatItemView*>::iterator it = chat_items_.begin(); it != chat_items_.end(); it++) {
       gfx::Size itemSize = (*it)->GetPreferredSize();
       next_x -= kChatItemPadding + itemSize.width();
+
+      // handle adding a chat item
+      if (new_item_animation_.get() && new_item_animation_->is_animating()) {
+        if (*it == item_to_add_) {
+          next_x += (1.0 - new_item_animation_->GetCurrentValue()) * (kChatItemPadding + itemSize.width());
+          itemSize.set_width(new_item_animation_->GetCurrentValue() * itemSize.width());
+        }
+      }
+
+      // handle removing a chat item
+      if (remove_item_animation_.get() && remove_item_animation_->is_animating()) {
+        double newWidth = (1.0 - remove_item_animation_->GetCurrentValue()) * itemSize.width();
+        double oldWidth = itemSize.width();
+        if (*it == item_to_remove_) {
+          //isBeforeCertainItem = false;
+          next_x += oldWidth - newWidth;
+          itemSize.set_width(newWidth);
+        }
+        //if (!isBeforeCertainItem)
+      }
+
+      int x = -10000;
+
+      // handle placing chat item first in order
+      if (place_first_animation_.get() && place_first_animation_->is_animating()) {
+        if (*it == item_to_place_first_) {
+          isBeforeCertainItem = false;
+          next_x += place_first_animation_->GetCurrentValue() * (kChatItemPadding + itemSize.width());
+          x = next_x + place_first_animation_->GetCurrentValue() * (rightSideX - (kChatItemPadding + itemSize.width()) - next_x);
+        }
+        if (isBeforeCertainItem) {
+          isBeforeCertainItem = false;
+          next_x -= place_first_animation_->GetCurrentValue() * (kChatItemPadding + itemSize.width());
+        }
+      }
+
       y = CenterPosition(itemSize.height(), height());
-      (*it)->SetBounds(next_x, y, itemSize.width(), itemSize.height());
+      (*it)->SetBounds((x != -10000) ? x : next_x, y, itemSize.width(), itemSize.height());
 
       if (next_x < 10)
         (*it)->SetVisible(false);
@@ -151,17 +206,25 @@ void ChatbarView::AddChatItem(FacebookChatItem *chat_item) {
     Show();
 
   // do not allow duplicate chat items
-  for (std::vector<ChatItemView*>::iterator it = chat_items_.begin(); it != chat_items_.end(); it++) {
+  for (std::list<ChatItemView*>::iterator it = chat_items_.begin(); it != chat_items_.end(); it++) {
     if ((*it)->GetModel()->jid() == chat_item->jid()) {
-      if (chat_item->needs_activation())
+      if (chat_item->needs_activation()) {
+        if (!(*it)->IsVisible())
+          PlaceFirstInOrder(*it);
         (*it)->ActivateChat();
+      }
       return;
     }
   }
 
   ChatItemView *item = new ChatItemView(chat_item, this);
-  chat_items_.push_back(item);
+  chat_items_.push_front(item);
   AddChildView(item);
+
+  StopPendingAnimations();
+  item_to_add_ = item;
+  new_item_animation_->Show();
+  
   Layout();
 
   if (chat_item->needs_activation())
@@ -172,7 +235,7 @@ void ChatbarView::AddChatItem(FacebookChatItem *chat_item) {
 
 void ChatbarView::RemoveAll() {
   while (chat_items_.size() > 0)
-    chat_items_.back()->Close();
+    chat_items_.back()->Close(false);
   Hide();
 }
 
@@ -197,17 +260,16 @@ bool ChatbarView::IsClosing() const {
   return bar_animation_->IsClosing();
 }
 
-void ChatbarView::Remove(ChatItemView *item) {
-  std::vector<ChatItemView*>::iterator it = std::find(chat_items_.begin(), chat_items_.end(), item);
-  if (it != chat_items_.end()) {
-    RemoveChildView(item);
-    chat_items_.erase(it);
-    delete item;
-    Layout();
-    SchedulePaint();
-  }
-  if (chat_items_.empty())
-    Hide();
+void ChatbarView::Remove(ChatItemView *item, bool should_animate) {
+  if (should_animate) {
+    std::list<ChatItemView*>::iterator it = std::find(chat_items_.begin(), chat_items_.end(), item);
+    if (it != chat_items_.end()) {
+      StopPendingAnimations();
+      item_to_remove_ = item;
+      remove_item_animation_->Show();
+    }
+  } else
+    RemoveItem(item);
 }
 
 void ChatbarView::AnimationProgressed(const ui::Animation *animation) {
@@ -220,6 +282,10 @@ void ChatbarView::AnimationProgressed(const ui::Animation *animation) {
     // top-resizing.
     Layout();
     parent_->ToolbarSizeChanged(bar_animation_->IsShowing());
+  } else if (animation == new_item_animation_.get() || animation == remove_item_animation_.get() ||
+             animation == place_first_animation_.get()) {
+    Layout();
+    SchedulePaint();
   }
 }
 
@@ -228,6 +294,25 @@ void ChatbarView::AnimationEnded(const ui::Animation *animation) {
     parent_->SetChatbarVisible(bar_animation_->IsShowing());
     if (!bar_animation_->IsShowing())
       Closed();
+  } else if (animation == new_item_animation_.get()) {
+    item_to_add_ = NULL;
+    new_item_animation_->Reset();
+  } else if (animation == remove_item_animation_.get()) {
+    DCHECK(item_to_remove_);
+    RemoveItem(item_to_remove_);
+    item_to_remove_ = NULL;
+    remove_item_animation_->Reset();
+  } else if (animation == place_first_animation_.get()) {
+    DCHECK(item_to_place_first_);
+    std::list<ChatItemView*>::iterator it = std::find(chat_items_.begin(), chat_items_.end(), item_to_place_first_);
+    if (it != chat_items_.end()) {
+      chat_items_.erase(it);
+      chat_items_.push_front(item_to_place_first_);
+      item_to_place_first_ = NULL;
+      Layout();
+      SchedulePaint();
+    }
+    place_first_animation_->Reset();
   }
 }
 
@@ -247,5 +332,38 @@ void ChatbarView::UpdateButtonColors() {
         GetThemeProvider()->GetColor(ThemeService::COLOR_TAB_TEXT),
         rb.GetBitmapNamed(IDR_CLOSE_BAR),
         rb.GetBitmapNamed(IDR_CLOSE_BAR_MASK));
+  }
+}
+
+void ChatbarView::StopPendingAnimations() {
+  if (remove_item_animation_.get() && remove_item_animation_->IsShowing())
+    remove_item_animation_->Reset();
+
+  if (place_first_animation_.get() && place_first_animation_->IsShowing())
+    place_first_animation_->Reset();
+
+  if (new_item_animation_.get() && new_item_animation_->IsShowing())
+    new_item_animation_->Reset();
+}
+
+void ChatbarView::RemoveItem(ChatItemView* item) {
+  std::list<ChatItemView*>::iterator it = std::find(chat_items_.begin(), chat_items_.end(), item);
+  if (it != chat_items_.end()) {
+    RemoveChildView(item);
+    chat_items_.erase(it);
+    delete item;
+    Layout();
+    SchedulePaint();
+  }
+  if (chat_items_.empty())
+    Hide();
+}
+
+void ChatbarView::PlaceFirstInOrder(ChatItemView* item) {
+  gfx::Rect itemBounds = item->bounds();
+  if (!item->IsVisible()) {  // chat item is invisible - move it to first position
+    StopPendingAnimations();
+    item_to_place_first_ = item;
+    place_first_animation_->Show();
   }
 }

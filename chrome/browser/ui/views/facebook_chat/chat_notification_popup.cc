@@ -12,6 +12,7 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
+#include "ui/base/animation/slide_animation.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "views/controls/button/image_button.h"
 
@@ -25,6 +26,8 @@ namespace {
   static const int kNotificationLabelMaxHeight = 600;
 
   static const SkColor kNotificationPopupBackgroundColor = SkColorSetRGB(176, 246, 255);
+
+  static const int kNotificationBubbleAlpha = 200;
 }
 
 class NotificationPopupContent : public views::Label {
@@ -35,7 +38,8 @@ public:
     SetMultiLine(true);
     SetAllowCharacterBreak(true);
     SetHorizontalAlignment(views::Label::ALIGN_LEFT);
-    set_background(views::Background::CreateSolidBackground(kNotificationPopupBackgroundColor));
+    SkColor labelBgr = SkColorSetA(kNotificationPopupBackgroundColor, 0);
+    set_background(views::Background::CreateSolidBackground(0, 0, 0, 0));
 
   }
   
@@ -94,6 +98,8 @@ public:
     // to help avoid mis-clicks.
     //close_button_->SetAnimationDuration(0);
     AddChildView(close_button_);
+
+    set_background(views::Background::CreateSolidBackground(kNotificationPopupBackgroundColor));
   }
 
   virtual gfx::Size GetPreferredSize() {
@@ -127,6 +133,7 @@ ChatNotificationPopup* ChatNotificationPopup::Show(views::Widget* parent,
                      BubbleDelegate* delegate) {
   ChatNotificationPopup* popup = new ChatNotificationPopup();
   popup->InitBubble(parent, position_relative_to, arrow_location, popup->container_view(), delegate);
+  popup->container_view()->parent()->set_background(views::Background::CreateSolidBackground(176, 246, 255, 0));
   popup->border_->border_contents()->SetBackgroundColor(kNotificationPopupBackgroundColor);
 
   return popup;
@@ -170,4 +177,27 @@ void ChatNotificationPopup::OnActivate(UINT action, BOOL minimized, HWND window)
     DCHECK(GetWidget()->GetRootView()->has_children());
     GetWidget()->GetRootView()->GetChildViewAt(0)->RequestFocus();
   }
+}
+
+// Overridden from ui::AnimationDelegate:
+void ChatNotificationPopup::AnimationEnded(const ui::Animation* animation) {
+  Bubble::AnimationEnded(animation);
+}
+
+void ChatNotificationPopup::AnimationProgressed(const ui::Animation* animation) {
+  Bubble::AnimationProgressed(animation);
+//  #if defined(OS_WIN)
+//  // Set the opacity for the main contents window.
+//  unsigned char opacity = static_cast<unsigned char>(
+//      animation_->GetCurrentValue() * 255);
+//  SetLayeredWindowAttributes(GetNativeView(), 0,
+//      static_cast<byte>(opacity), LWA_ALPHA);
+//  contents_->SchedulePaint();
+//
+//  // Also fade in/out the bubble border window.
+//  border_->SetOpacity(opacity);
+//  border_->border_contents()->SchedulePaint();
+//#else
+//  NOTIMPLEMENTED();
+//#endif
 }

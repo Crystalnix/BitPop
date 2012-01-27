@@ -19,12 +19,14 @@
 #include "chrome/browser/ui/views/extensions/browser_action_drag_data.h"
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
 #include "chrome/browser/ui/views/toolbar_view.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/extensions/extension_action.h"
 #include "chrome/common/extensions/extension_resource.h"
 #include "chrome/common/pref_names.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/renderer_host/render_widget_host_view.h"
 #include "content/browser/tab_contents/tab_contents.h"
+#include "content/common/notification_service.h"
 #include "content/common/notification_source.h"
 #include "content/common/notification_type.h"
 #include "grit/app_resources.h"
@@ -67,15 +69,26 @@ BrowserActionButton::BrowserActionButton(const Extension* extension,
       extension_(extension),
       ALLOW_THIS_IN_INITIALIZER_LIST(tracker_(this)),
       showing_context_menu_(false),
-      panel_(panel) {
+      panel_(panel),
+      should_draw_as_pushed_(false),
+      is_custom_extension_(false) {
   set_border(NULL);
   set_alignment(TextButton::ALIGN_CENTER);
+
+  if (extension->id() == chrome::kFacebookChatExtensionId) {
+    is_custom_extension_ = true;
+    
+    PrefService *prefService = panel->profile()->GetPrefs();
+    set_should_draw_as_pushed(prefService->GetBoolean(prefs::kFacebookShowFriendsList));
+  }
 
   // No UpdateState() here because View hierarchy not setup yet. Our parent
   // should call UpdateState() after creation.
 
   registrar_.Add(this, NotificationType::EXTENSION_BROWSER_ACTION_UPDATED,
                  Source<ExtensionAction>(browser_action_));
+  registrar_.Add(this, NotificationType::FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED,
+                   NotificationService::AllSources());
 }
 
 void BrowserActionButton::Destroy() {
@@ -186,11 +199,18 @@ GURL BrowserActionButton::GetPopupUrl() {
 void BrowserActionButton::Observe(NotificationType type,
                                   const NotificationSource& source,
                                   const NotificationDetails& details) {
-  DCHECK(type == NotificationType::EXTENSION_BROWSER_ACTION_UPDATED);
-  UpdateState();
-  // The browser action may have become visible/hidden so we need to make
-  // sure the state gets updated.
-  panel_->OnBrowserActionVisibilityChanged();
+  if (type == NotificationType::EXTENSION_BROWSER_ACTION_UPDATED) {
+    UpdateState();
+    // The browser action may have become visible/hidden so we need to make
+    // sure the state gets updated.
+    panel_->OnBrowserActionVisibilityChanged();
+  } else if (type == NotificationType::FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED) {
+    if (is_custom_extension_) {
+      Details<bool> detailsBool(details);
+      set_should_draw_as_pushed(*detailsBool.ptr());
+    }
+  } else
+    NOTREACHED();
 }
 
 bool BrowserActionButton::Activate() {
@@ -234,13 +254,40 @@ void BrowserActionButton::OnMouseReleased(const views::MouseEvent& event) {
   } else {
     TextButton::OnMouseReleased(event);
   }
+
+  if (should_draw_as_pushed_)
+    SetState(views::CustomButton::BS_PUSHED);
 }
 
 void BrowserActionButton::OnMouseExited(const views::MouseEvent& event) {
+  if (should_draw_as_pushed_)
+    return;
+
   if (IsPopup() || showing_context_menu_)
     MenuButton::OnMouseExited(event);
   else
     TextButton::OnMouseExited(event);
+}
+
+void BrowserActionButton::OnMouseEntered(const views::MouseEvent& event) {
+  if (should_draw_as_pushed_)
+    return;
+  else
+    MenuButton::OnMouseEntered(event);
+}
+
+void BrowserActionButton::OnMouseMoved(const views::MouseEvent& event) {
+  if (should_draw_as_pushed_)
+    return;
+  else
+    MenuButton::OnMouseMoved(event);
+}
+
+void BrowserActionButton::OnMouseCaptureLost() {
+  if (should_draw_as_pushed_)
+    return;
+  else
+    MenuButton::OnMouseCaptureLost();
 }
 
 bool BrowserActionButton::OnKeyReleased(const views::KeyEvent& event) {
@@ -279,6 +326,13 @@ void BrowserActionButton::SetButtonNotPushed() {
 BrowserActionButton::~BrowserActionButton() {
 }
 
+void BrowserActionButton::set_should_draw_as_pushed(bool flag) {
+  should_draw_as_pushed_ = flag;
+  if (flag)
+    SetState(views::CustomButton::BS_PUSHED);
+  else
+    SetState(views::CustomButton::BS_NORMAL);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // BrowserActionView

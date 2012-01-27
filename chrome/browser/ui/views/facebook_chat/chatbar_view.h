@@ -60,7 +60,9 @@ public:
   bool IsShowing() const;
   bool IsClosing() const;
 
-  void Remove(ChatItemView *item);
+  void Remove(ChatItemView *item, bool should_animate);
+
+  void PlaceFirstInOrder(ChatItemView* item);
 
   //void SwitchParentWindow(NSWindow *window);
 protected:
@@ -74,10 +76,22 @@ private:
   // TODO: should be called on theme change
   void UpdateButtonColors();
 
-  std::vector<ChatItemView*> chat_items_;
+  void StopPendingAnimations();
+
+  void RemoveItem(ChatItemView* item);
+
+  std::list<ChatItemView*> chat_items_;
 
   // The show/hide animation for the shelf itself.
   scoped_ptr<ui::SlideAnimation> bar_animation_;
+
+  // Items animation
+  scoped_ptr<ui::SlideAnimation> new_item_animation_;
+  scoped_ptr<ui::SlideAnimation> remove_item_animation_;
+  scoped_ptr<ui::SlideAnimation> place_first_animation_;
+  ChatItemView *item_to_add_;
+  ChatItemView *item_to_remove_;
+  ChatItemView *item_to_place_first_;
 
   // Button for closing the chats. This is contained as a child, and
   // deleted by View.

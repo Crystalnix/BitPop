@@ -68,7 +68,7 @@ public:
   virtual bool CloseOnEscape() OVERRIDE { return false; }
   virtual bool FadeInOnShow() OVERRIDE { return true; }
   
-  void Close();
+  void Close(bool should_animate);
 
   void ActivateChat();
   void NotifyUnread();
