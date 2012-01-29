@@ -15,14 +15,17 @@
 #include "chrome/browser/ui/views/facebook_chat/chat_notification_popup.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/infobars/infobar_button_border.h"
+#include "chrome/common/badge_util.h"
 #include "chrome/common/url_constants.h"
 #include "googleurl/src/gurl.h"
 #include "grit/app_resources.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkTypeface.h"
+#include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/canvas_skia.h"
@@ -44,7 +47,62 @@ const int kCloseButtonRightPadding = 3;
 
 const int kNotificationMessageDelaySec = 10;
 
-const int kNotifyIconDim = 16;
+const int kNotifyIconDimX = 16;
+const int kNotifyIconDimY = 11;
+
+const float kTextSize = 10;
+const int kBottomMargin = 0;
+const int kPadding = 2;
+// The padding between the top of the badge and the top of the text.
+const int kTopTextPadding = -1;
+const int kBadgeHeight = 11;
+const int kMaxTextWidth = 23;
+// The minimum width for center-aligning the badge.
+const int kCenterAlignThreshold = 20;
+
+// duplicate methods (ui/gfx/canvas_skia.cc)
+bool IntersectsClipRectInt(const SkCanvas& canvas, int x, int y, int w, int h) {
+  SkRect clip;
+  return canvas.getClipBounds(&clip) &&
+      clip.intersect(SkIntToScalar(x), SkIntToScalar(y), SkIntToScalar(x + w),
+                     SkIntToScalar(y + h));
+}
+
+bool ClipRectInt(SkCanvas& canvas, int x, int y, int w, int h) {
+  SkRect new_clip;
+  new_clip.set(SkIntToScalar(x), SkIntToScalar(y),
+               SkIntToScalar(x + w), SkIntToScalar(y + h));
+  return canvas.clipRect(new_clip);
+}
+
+void TileImageInt(SkCanvas& canvas, const SkBitmap& bitmap,
+                  int src_x, int src_y,
+                  int dest_x, int dest_y, int w, int h) {
+  if (!IntersectsClipRectInt(canvas, dest_x, dest_y, w, h))
+    return;
+
+  SkPaint paint;
+
+  SkShader* shader = SkShader::CreateBitmapShader(bitmap,
+                                                  SkShader::kRepeat_TileMode,
+                                                  SkShader::kRepeat_TileMode);
+  paint.setShader(shader);
+  paint.setXfermodeMode(SkXfermode::kSrcOver_Mode);
+
+  // CreateBitmapShader returns a Shader with a reference count of one, we
+  // need to unref after paint takes ownership of the shader.
+  shader->unref();
+  canvas.save();
+  canvas.translate(SkIntToScalar(dest_x - src_x), SkIntToScalar(dest_y - src_y));
+  ClipRectInt(canvas, src_x, src_y, w, h);
+  canvas.drawPaint(paint);
+  canvas.restore();
+}
+
+void TileImageInt(SkCanvas& canvas, const SkBitmap& bitmap,
+                  int x, int y, int w, int h) {
+  TileImageInt(canvas, bitmap, 0, 0, x, y, w, h);
+}
 
 }
 
@@ -223,6 +281,8 @@ void ChatItemView::ActivateChat() {
       notification_popup_->Close();
 
   model_->ClearUnreadMessages();
+  StatusChanged();  // restore status icon
+  SchedulePaint();
 
   // open popup
   std::string urlString(chrome::kFacebookChatExtensionPrefixURL);
@@ -336,111 +396,17 @@ void ChatItemView::UpdateNotificationIcon() {
 
   if (model_->num_notifications() > 0) {
     notification_icon_ = new SkBitmap();
-    notification_icon_->setConfig(SkBitmap::kARGB_8888_Config, kNotifyIconDim, kNotifyIconDim);
+    notification_icon_->setConfig(SkBitmap::kARGB_8888_Config, kNotifyIconDimX, kNotifyIconDimY);
     notification_icon_->allocPixels();
 
     SkCanvas canvas(*notification_icon_);
     canvas.clear(SkColorSetARGB(0, 0, 0, 0));
 
     // ----------------------------------------------------------------------
-    //std::string text;
-    //int num = model_->num_notifications();
-    //    
-    //if (text.empty())
-    //  return;
+    gfx::Rect bounds(0, 0, kNotifyIconDimX, kNotifyIconDimY);
 
-    //SkColor text_color = GetBadgeTextColor(tab_id);
-    //SkColor background_color = GetBadgeBackgroundColor(tab_id);
-
-    //if (SkColorGetA(text_color) == 0x00)
-    //  text_color = SK_ColorWHITE;
-
-    //if (SkColorGetA(background_color) == 0x00)
-    //  background_color = SkColorSetARGB(255, 218, 0, 24);  // Default badge color.
-
-    //canvas->Save();
-
-    //SkPaint* text_paint = badge_util::GetBadgeTextPaintSingleton();
-    //text_paint->setTextSize(SkFloatToScalar(kTextSize));
-    //text_paint->setColor(text_color);
-
-    //// Calculate text width. We clamp it to a max size.
-    //SkScalar text_width = text_paint->measureText(text.c_str(), text.size());
-    //text_width = SkIntToScalar(
-    //    std::min(kMaxTextWidth, SkScalarFloor(text_width)));
-
-    //// Calculate badge size. It is clamped to a min width just because it looks
-    //// silly if it is too skinny.
-    //int badge_width = SkScalarFloor(text_width) + kPadding * 2;
-    //int icon_width = GetIcon(tab_id).width();
-    //// Force the pixel width of badge to be either odd (if the icon width is odd)
-    //// or even otherwise. If there is a mismatch you get http://crbug.com/26400.
-    //if (icon_width != 0 && (badge_width % 2 != GetIcon(tab_id).width() % 2))
-    //  badge_width += 1;
-    //badge_width = std::max(kBadgeHeight, badge_width);
-
-    //// Paint the badge background color in the right location. It is usually
-    //// right-aligned, but it can also be center-aligned if it is large.
-    //SkRect rect;
-    //rect.fBottom = SkIntToScalar(bounds.bottom() - kBottomMargin);
-    //rect.fTop = rect.fBottom - SkIntToScalar(kBadgeHeight);
-    //if (badge_width >= kCenterAlignThreshold) {
-    //  rect.fLeft = SkIntToScalar(
-    //                   SkScalarFloor(SkIntToScalar(bounds.x()) +
-    //                                 SkIntToScalar(bounds.width()) / 2 -
-    //                                 SkIntToScalar(badge_width) / 2));
-    //  rect.fRight = rect.fLeft + SkIntToScalar(badge_width);
-    //} else {
-    //  rect.fRight = SkIntToScalar(bounds.right());
-    //  rect.fLeft = rect.fRight - badge_width;
-    //}
-
-    //SkPaint rect_paint;
-    //rect_paint.setStyle(SkPaint::kFill_Style);
-    //rect_paint.setAntiAlias(true);
-    //rect_paint.setColor(background_color);
-    //canvas->AsCanvasSkia()->drawRoundRect(rect, SkIntToScalar(2),
-    //                                      SkIntToScalar(2), rect_paint);
-
-    //// Overlay the gradient. It is stretchy, so we do this in three parts.
-    //ResourceBundle& resource_bundle = ResourceBundle::GetSharedInstance();
-    //SkBitmap* gradient_left = resource_bundle.GetBitmapNamed(
-    //    IDR_BROWSER_ACTION_BADGE_LEFT);
-    //SkBitmap* gradient_right = resource_bundle.GetBitmapNamed(
-    //    IDR_BROWSER_ACTION_BADGE_RIGHT);
-    //SkBitmap* gradient_center = resource_bundle.GetBitmapNamed(
-    //    IDR_BROWSER_ACTION_BADGE_CENTER);
-
-    //canvas->AsCanvasSkia()->drawBitmap(*gradient_left, rect.fLeft, rect.fTop);
-    //canvas->TileImageInt(*gradient_center,
-    //    SkScalarFloor(rect.fLeft) + gradient_left->width(),
-    //    SkScalarFloor(rect.fTop),
-    //    SkScalarFloor(rect.width()) - gradient_left->width() -
-    //                  gradient_right->width(),
-    //    SkScalarFloor(rect.height()));
-    //canvas->AsCanvasSkia()->drawBitmap(*gradient_right,
-    //    rect.fRight - SkIntToScalar(gradient_right->width()), rect.fTop);
-
-    //// Finally, draw the text centered within the badge. We set a clip in case the
-    //// text was too large.
-    //rect.fLeft += kPadding;
-    //rect.fRight -= kPadding;
-    //canvas->AsCanvasSkia()->clipRect(rect);
-    //canvas->AsCanvasSkia()->drawText(text.c_str(), text.size(),
-    //                                 rect.fLeft + (rect.width() - text_width) / 2,
-    //                                 rect.fTop + kTextSize + kTopTextPadding,
-    //                                 *text_paint);
-    //canvas->Restore();
-
-    // ----------------------------------------------------------------------
-
-    SkPaint pt;
-    pt.setColor(SkColorSetARGB(160, 255, 0, 0));
-    pt.setAntiAlias(true);
-    canvas.drawCircle(kNotifyIconDim / 2, kNotifyIconDim / 2, kNotifyIconDim / 2, pt);
-
-    char text[4] = { '\0', '\0', '\0', '\0' };
-    char *p = text;
+    char text_s[4] = { '\0', '\0', '\0', '\0' };
+    char *p = text_s;
     int num = model_->num_notifications();
     if (num > 99)
       num = 99;
@@ -448,47 +414,88 @@ void ChatItemView::UpdateNotificationIcon() {
       *p++ = num / 10 + '0';
     *p = num % 10 + '0';
 
-    pt.setColor(SK_ColorBLACK);
-    pt.setTextAlign(SkPaint::kLeft_Align);
+    std::string text(text_s);        
+    if (text.empty())
+      return;
 
-    const char kPreferredTypeface[] = "Arial";
-    SkTypeface* typeface = SkTypeface::CreateFromName(
-        kPreferredTypeface, SkTypeface::kNormal);
-    // Skia doesn't do any font fallback---if the user is missing the font then
-    // typeface will be NULL. If we don't do manual fallback then we'll crash.
-    if (typeface) {
-      //pt.setFakeBoldText(true);
-      ; // do nothing
+    SkColor text_color = SK_ColorWHITE;
+    SkColor background_color = SkColorSetARGB(255, 218, 0, 24);
+
+    //canvas->Save();
+
+    SkPaint* text_paint = badge_util::GetBadgeTextPaintSingleton();
+    text_paint->setTextSize(SkFloatToScalar(kTextSize));
+    text_paint->setColor(text_color);
+
+    // Calculate text width. We clamp it to a max size.
+    SkScalar text_width = text_paint->measureText(text.c_str(), text.size());
+    text_width = SkIntToScalar(
+        std::min(kMaxTextWidth, SkScalarFloor(text_width)));
+
+    // Calculate badge size. It is clamped to a min width just because it looks
+    // silly if it is too skinny.
+    int badge_width = SkScalarFloor(text_width) + kPadding * 2;
+    int icon_width = kNotifyIconDimX;
+    // Force the pixel width of badge to be either odd (if the icon width is odd)
+    // or even otherwise. If there is a mismatch you get http://crbug.com/26400.
+    if (icon_width != 0 && (badge_width % 2 != kNotifyIconDimX % 2))
+      badge_width += 1;
+    badge_width = std::max(kBadgeHeight, badge_width);
+
+    // Paint the badge background color in the right location. It is usually
+    // right-aligned, but it can also be center-aligned if it is large.
+    SkRect rect;
+    rect.fBottom = SkIntToScalar(bounds.bottom() - kBottomMargin);
+    rect.fTop = rect.fBottom - SkIntToScalar(kBadgeHeight);
+    if (badge_width >= kCenterAlignThreshold) {
+      rect.fLeft = SkIntToScalar(
+                       SkScalarFloor(SkIntToScalar(bounds.x()) +
+                                     SkIntToScalar(bounds.width()) / 2 -
+                                     SkIntToScalar(badge_width) / 2));
+      rect.fRight = rect.fLeft + SkIntToScalar(badge_width);
     } else {
-      // Fall back to the system font. We don't bold it because we aren't sure
-      // how it will look.
-      // For the most part this code path will only be hit on Linux systems
-      // that don't have Arial.
-      ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-      const gfx::Font& base_font = rb.GetFont(ResourceBundle::BaseFont);
-      typeface = SkTypeface::CreateFromName(
-          UTF16ToUTF8(base_font.GetFontName()).c_str(), SkTypeface::kNormal);
-      DCHECK(typeface);
-    }
-    pt.setTypeface(typeface);
-    typeface->unref();
-
-    // make the text fit into our icon
-    SkScalar textSize = 8;
-    SkRect textBounds;
-    while (1) {
-      (void)pt.measureText(text, strlen(text), &textBounds);
-      if (textBounds.width() > kNotifyIconDim || textBounds.height() > kNotifyIconDim) {
-        textSize -= 1;
-        pt.setTextSize(textSize);
-      } else
-        break;
+      rect.fRight = SkIntToScalar(bounds.right());
+      rect.fLeft = rect.fRight - badge_width;
     }
 
-    SkScalar x = kNotifyIconDim/2.0 - textBounds.width()/2.0;
-    SkScalar y = kNotifyIconDim/2.0 + textBounds.height()/2.0;
-    canvas.drawText(text, strlen(text), x - 1, y - 1, pt); // SKIA expects us to give the lower-left coord of text start
- 
+    SkPaint rect_paint;
+    rect_paint.setStyle(SkPaint::kFill_Style);
+    rect_paint.setAntiAlias(true);
+    rect_paint.setColor(background_color);
+    canvas.drawRoundRect(rect, SkIntToScalar(2),
+                                          SkIntToScalar(2), rect_paint);
+
+    // Overlay the gradient. It is stretchy, so we do this in three parts.
+    ResourceBundle& resource_bundle = ResourceBundle::GetSharedInstance();
+    SkBitmap* gradient_left = resource_bundle.GetBitmapNamed(
+        IDR_BROWSER_ACTION_BADGE_LEFT);
+    SkBitmap* gradient_right = resource_bundle.GetBitmapNamed(
+        IDR_BROWSER_ACTION_BADGE_RIGHT);
+    SkBitmap* gradient_center = resource_bundle.GetBitmapNamed(
+        IDR_BROWSER_ACTION_BADGE_CENTER);
+
+    canvas.drawBitmap(*gradient_left, rect.fLeft, rect.fTop);
+  
+    TileImageInt(canvas,
+        *gradient_center,
+        SkScalarFloor(rect.fLeft) + gradient_left->width(),
+        SkScalarFloor(rect.fTop),
+        SkScalarFloor(rect.width()) - gradient_left->width() -
+                      gradient_right->width(),
+        SkScalarFloor(rect.height()));
+    canvas.drawBitmap(*gradient_right,
+        rect.fRight - SkIntToScalar(gradient_right->width()), rect.fTop);
+
+    // Finally, draw the text centered within the badge. We set a clip in case the
+    // text was too large.
+    rect.fLeft += kPadding;
+    rect.fRight -= kPadding;
+    canvas.clipRect(rect);
+    canvas.drawText(text.c_str(), text.size(),
+                                     rect.fLeft + (rect.width() - text_width) / 2,
+                                     rect.fTop + kTextSize + kTopTextPadding,
+                                     *text_paint);
+     
     openChatButton_->SetIcon(*notification_icon_);
   }
 }
