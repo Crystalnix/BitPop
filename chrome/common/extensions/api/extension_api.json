@@ -3416,6 +3416,12 @@
         "description": "Notifies BitPop user logged out of current chat session",
         "type": "function",
         "parameters": []
+      },
+      {
+        "name": "loggedInFacebookSession",
+        "description": "Notifies BitPop user logged in to chat session",
+        "type": "function",
+        "parameters": []
       }
     ]
   },

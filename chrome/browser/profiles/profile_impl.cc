@@ -276,8 +276,7 @@ void ProfileImpl::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterBooleanPref(prefs::kFacebookShowFriendsList,
                              false,
                              PrefService::UNSYNCABLE_PREF);
-
-}
+ }
 
 ProfileImpl::ProfileImpl(const FilePath& path,
                          Profile::Delegate* delegate)

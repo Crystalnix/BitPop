@@ -364,6 +364,7 @@ void FactoryRegistry::ResetFunctions() {
   RegisterFunction<AddChatFunction>();
   RegisterFunction<NewIncomingMessageFunction>();
   RegisterFunction<LoggedOutFacebookSessionFunction>();
+  RegisterFunction<LoggedInFacebookSessionFunction>();
 }
 
 void FactoryRegistry::GetAllNames(std::vector<std::string>* names) {

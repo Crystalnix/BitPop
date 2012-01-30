@@ -147,6 +147,7 @@ bitpop.FacebookController = (function() {
   }
 
   function onMessage(msg) {
+    //console.log(msg);
     var to = msg.getAttribute('to');
     var from = msg.getAttribute('from');
     var type = msg.getAttribute('type');
@@ -483,6 +484,8 @@ bitpop.FacebookController = (function() {
       FRIEND_LIST_UPDATE_INTERVAL);
 
     connectToFacebookChat();
+    
+    chrome.chromePrivate.loggedInFacebookSession();
   }
 
   function onSendInvite(request, sendResponse) {

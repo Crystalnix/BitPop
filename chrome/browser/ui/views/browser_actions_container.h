@@ -179,7 +179,7 @@ class BrowserActionView : public views::View {
   // Overridden from views::View:
   virtual void Layout() OVERRIDE;
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
-
+ 
  protected:
   // Overridden from views::View to paint the badge on top of children.
   virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
@@ -394,6 +394,10 @@ class BrowserActionsContainer
   // animates to open/closed status.
   static bool disable_animations_during_testing_;
 
+  // Toggling the extensions depending on online/offline status of our facebook connection
+  void ShowFacebookExtensions();
+  void HideFacebookExtensions();
+
  protected:
   // Overridden from views::View:
   virtual void ViewHierarchyChanged(bool is_add,
@@ -526,6 +530,8 @@ class BrowserActionsContainer
 
   // Handles delayed showing of the overflow menu when hovering.
   ScopedRunnableMethodFactory<BrowserActionsContainer> show_menu_task_factory_;
+
+  bool should_show_additional_extensions_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserActionsContainer);
 };

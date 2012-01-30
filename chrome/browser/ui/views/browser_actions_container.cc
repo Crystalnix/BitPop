@@ -414,7 +414,8 @@ BrowserActionsContainer::BrowserActionsContainer(Browser* browser,
       animation_target_size_(0),
       drop_indicator_position_(-1),
       ALLOW_THIS_IN_INITIALIZER_LIST(task_factory_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(show_menu_task_factory_(this)) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(show_menu_task_factory_(this)),
+      should_show_additional_extensions_(false) {
   SetID(VIEW_ID_BROWSER_ACTION_TOOLBAR);
 
   if (profile_->GetExtensionService()) {
@@ -1152,7 +1153,30 @@ void BrowserActionsContainer::SaveDesiredSizeAndAnimate(
 bool BrowserActionsContainer::ShouldDisplayBrowserAction(
     const Extension* extension) {
   // Only display incognito-enabled extensions while in incognito mode.
-  return
-      (!profile_->IsOffTheRecord() ||
+  bool res = (!profile_->IsOffTheRecord() ||
        profile_->GetExtensionService()->IsIncognitoEnabled(extension->id()));
+  if (((extension->id() == "omkphklbdjafhafacohmepaahbofnkcp") ||
+       (extension->id() == "dhcejgafhmkdfanoalflifpjimaaijda")) &&
+       !should_show_additional_extensions_)
+      res = false;
+  return res;
+}
+
+void BrowserActionsContainer::ShowFacebookExtensions() {
+  should_show_additional_extensions_ = true;
+  StopShowFolderDropMenuTimer();
+  HidePopup();
+  DeleteBrowserActionViews();
+  CreateBrowserActionViews();
+  OnBrowserActionVisibilityChanged();
+}
+
+void BrowserActionsContainer::HideFacebookExtensions() {
+  should_show_additional_extensions_ = false;
+
+  StopShowFolderDropMenuTimer();
+  HidePopup();
+  DeleteBrowserActionViews();
+  CreateBrowserActionViews();
+  OnBrowserActionVisibilityChanged();
 }

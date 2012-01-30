@@ -50,6 +50,7 @@
 #include "chrome/browser/ui/toolbar/wrench_menu_model.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
+#include "chrome/browser/ui/views/browser_actions_container.h"
 #include "chrome/browser/ui/views/browser_dialogs.h"
 #include "chrome/browser/ui/views/compact_nav/compact_location_bar_view.h"
 #include "chrome/browser/ui/views/compact_nav/compact_location_bar_view_host.h"
@@ -348,6 +349,8 @@ BrowserView::BrowserView(Browser* browser)
   registrar_.Add(this, NotificationType::FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE,
                  Source<Profile>(browser_->profile()));
   registrar_.Add(this, NotificationType::FACEBOOK_SESSION_LOGGED_OUT,
+                 Source<Profile>(browser_->profile()));
+  registrar_.Add(this, NotificationType::FACEBOOK_SESSION_LOGGED_IN,
                  Source<Profile>(browser_->profile())); 
 }
 
@@ -1424,7 +1427,16 @@ void BrowserView::Observe(NotificationType type,
       if (browser_->is_type_tabbed()) {
         GetChatbar()->RemoveAll();
       }
+      if (toolbar_ && toolbar_->browser_actions()) {
+        toolbar_->browser_actions()->HideFacebookExtensions();
+      }
       break; 
+
+    case NotificationType::FACEBOOK_SESSION_LOGGED_IN:
+      if (toolbar_ && toolbar_->browser_actions()) {
+        toolbar_->browser_actions()->ShowFacebookExtensions();
+      }
+      break;
 
     default:
       NOTREACHED() << "Got a notification we didn't register for!";

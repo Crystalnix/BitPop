@@ -1325,6 +1325,7 @@ class NotificationType {
     FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE,
 
     FACEBOOK_SESSION_LOGGED_OUT,
+    FACEBOOK_SESSION_LOGGED_IN,
 
     // Count (must be last) ----------------------------------------------------
     // Used to determine the number of notification types.  Not valid as

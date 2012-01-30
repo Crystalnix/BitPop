@@ -12,6 +12,9 @@ bitpop.chat = (function() {
   var public = {
     init: function() {
       friendUid = window.location.hash.slice(1);
+      
+      isLastMessageFromFriend = false;
+      isLastMessageFromMe = false;
 
       $('#msg').focus();
 
@@ -71,18 +74,38 @@ bitpop.chat = (function() {
   };
 
   function appendMessage(msg, msgDate, me) {
-    if (!lastMessageTime || (msgDate - lastOutputTime >= 5 * 60 * 1000)) {
-      $('#chat').append('<li class="time">' +
-        msgDate.bitpopFormat(msgDate.isTodayDate()) + '</li>');
-      lastOutputTime = msgDate;
-    }
+    // if (!lastMessageTime || (msgDate - lastOutputTime >= 5 * 60 * 1000)) {
+    //   $('#chat').append('<li class="time">' +
+    //     msgDate.bitpopFormat(msgDate.isTodayDate()) + '</li>');
+    //   lastOutputTime = msgDate;
+    // }
 
     var html = '';
-    if (me)
-      html += '<li class="me">';
-    else
-      html += '<li class="friend">';
-      html += msg;
+    if (me) {
+      html += '<li class="me' + 
+        (isLastMessageFromMe ? ' same' : ' diff') + '">';
+      if (!isLastMessageFromMe)
+        html += '<img src="' +
+          'http://graph.facebook.com/' + 
+          chrome.extension.getBackgroundPage().myUid.toString() +
+          '/picture' +
+          '" alt="" />';
+      isLastMessageFromMe = true;
+      isLastMessageFromFriend = false;
+    } else {
+      html += '<li class="friend' + 
+        (isLastMessageFromFriend ? ' same' : ' diff') + '">';
+      if (!isLastMessageFromFriend)
+        html += '<img src="' +
+          'http://graph.facebook.com/' + 
+          friendUid.toString() +
+          '/picture' +
+          '" alt="" />';
+      isLastMessageFromFriend = true;
+      isLastMessageFromMe = false;
+    }
+
+    html += msg;
     html += '</li>';
     $('#chat').append(html);
 

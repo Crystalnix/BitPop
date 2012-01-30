@@ -174,3 +174,18 @@ bool LoggedOutFacebookSessionFunction::RunImpl() {
 
   return true;
 }
+
+bool LoggedInFacebookSessionFunction::RunImpl() {
+  Browser* browser = GetCurrentBrowser();
+  if (!browser) {
+    error_ = kNoCurrentWindowError;
+    return false;
+  }
+
+  NotificationService::current()->Notify(
+      NotificationType::FACEBOOK_SESSION_LOGGED_IN,
+      Source<Profile>(browser->profile()),
+      NotificationService::NoDetails());
+
+  return true;
+}

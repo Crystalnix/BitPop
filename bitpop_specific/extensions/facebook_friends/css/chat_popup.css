@@ -32,23 +32,30 @@ p {
   overflow-y: auto;
 }
 #chat li {
-  min-height: 24px;
   margin: 0;
-  padding: 0;
+  padding: 5px 0;
   list-style: none;
   list-style-type: none;
   word-wrap: break-word;
   font-size: 10px;
 }
 #chat li.me {
-  background: url(../images/chat_icon.png) top left no-repeat;
-  padding-left: 27px;
+  padding-left: 32px;
   text-align: left;
 }
 #chat li.friend {
-  background: #eee url(../images/chat_icon_i.png) top right no-repeat;
-  padding-right: 27px;
-  text-align: right;
+  background-color: #eee;
+  padding-left: 32px;
+  text-align: left;
+}
+#chat li.diff {
+  border-top: solid 1px #ccc;
+}
+#chat li img {
+  margin-left: -32px;
+  width: 27px;
+  height: 27px;
+  float: left;
 }
 #chat li.time {
   text-align: center;
