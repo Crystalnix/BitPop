@@ -38,6 +38,7 @@ p {
   list-style-type: none;
   word-wrap: break-word;
   font-size: 10px;
+  min-height: 27px;
 }
 #chat li.me {
   padding-left: 32px;

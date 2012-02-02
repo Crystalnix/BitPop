@@ -25,6 +25,16 @@
   <script src="js/options.js"></script>
   <script src="js/humane.js"></script>
   <script type="text/javascript" charset="utf-8">
+    Array.prototype.contains = function(obj) {
+      var i = this.length;
+      while (i--) {
+        if (this[i] === obj) {
+          return true;
+        }
+      }
+      return false;
+    };
+    
     var NUM_MESSAGES_SHOW = 5;
     var myUid = chrome.extension.getBackgroundPage().myUid;
 
@@ -96,33 +106,9 @@
 
       $('#feed').append(newDom);
 
-
-      /*
-      var notificationIds = '';
-      for (var i = 0; i < query1.length; i++) {
-        if (query1[i].is_unread)
-          notificationIds += query1[i].notification_id + ',';
-      }
-
-      if (notificationIds != '') {
-        notificationIds = notificationIds.substring(0, notificationIds.length - 1);
-        chrome.extension.sendRequest(current.controllerExtensionId,
-            { type: 'restApiCall',
-              method: 'notifications.markRead',
-              params: { notification_ids: notificationIds }
-            },
-            function (response) {
-              if (!response.error) {
-                DesktopNotifications.fetchServerInfo(
-                  DesktopNotifications.handleServerInfo,
-                  DesktopNotifications.showInactiveIcon,
-                  true // no_cache after clicking popup
-                );
-              }
-            }
-        );
-      }
-      */
+      var dn = chrome.extension.getBackgroundPage().DesktopNotifications;
+      dn.threads_unseen_before = [];
+      dn.start(30000);
     }
 
     function formatFeedItem(itemData) {
@@ -225,7 +211,7 @@
 <body>
   <div id="header">
     <div class='title'>Messages</div>
-    <div class='action' onclick='chrome.windows.create({ url: "http://www.facebook.com/dialog/send?app_id=190635611002798&redirect_uri=http://www.facebook.com/connect/login_success.html", type: "popup", width: 998, height: 421 })'>Send a New Message</div>
+    <div class='action' onclick='chrome.windows.create({ url: "http://www.facebook.com/dialog/send?app_id=190635611002798&redirect_uri=https://www.facebook.com/connect/login_success.html", type: "popup", width: 998, height: 421 })'>Send a New Message</div>
   </div>
   <div id="feed" class="loading"></div>
   <div id="footer"></div>

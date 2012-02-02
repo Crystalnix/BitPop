@@ -2,6 +2,16 @@
 // server for updates. Bitter experience has taught us that we can't depend on
 // the server resource loading correctly.
 
+Array.prototype.contains = function(obj) {
+  var i = this.length;
+  while (i--) {
+    if (this[i] === obj) {
+      return true;
+    }
+  }
+  return false;
+};
+
 /**
  * Copyright 2004-present Facebook. All Rights Reserved.
  *
@@ -67,6 +77,11 @@ DesktopNotifications = {
   // We may obtain a CSRF token from the server to suppress click-jacking
   // protection on requests to HTML pages.
   fb_dtsg: '',
+
+  received_cache: [],
+
+  threads_unseen_before: [],
+  just_connected: false,
 
   /**
    * Start polling for notifications. New notifications are displayed
@@ -212,27 +227,77 @@ DesktopNotifications = {
 
     //self._handleNotifInfo(serverInfo);
     if (serverInfo.summary.unseen_count != 0) {
+      var first_unseen_thread_index = null;
+      var local_unseen_count = 0;
       for (var i = 0; i < serverInfo.data.length; i++) {
-        if (serverInfo.data[i].unseen == 1) {
-          chrome.extension.sendRequest(self.controllerExtensionId,
-            {
-              type: 'graphApiCall',
-              path: '/' + serverInfo.data[i].id + '/comments',
-              params: { limit: 1 },
-            },
-            function (response) {
-              if (response.error)
-                self.showInactiveIcon();
-              else
-                self._handleInboxInfo(serverInfo, i, response);
-            }
-          );
-          break;
+        if (serverInfo.data[i].unseen > 0) {
+          if (self.just_connected ||
+              self.threads_unseen_before.contains(serverInfo.data[i].id)) {
+            local_unseen_count++;
+
+            if (first_unseen_thread_index === null)
+              first_unseen_thread_index = i;
+          }
+          if (self.just_connected) {
+            self.threads_unseen_before.push(serverInfo.data[i].id);
+          }
         }
       }
+
+      self.just_connected = false;
+      serverInfo.summary.unseen_count = local_unseen_count;
+
+      // get message for last unseen thread
+      if (first_unseen_thread_index !== null) {
+        chrome.extension.sendRequest(self.controllerExtensionId,
+          {
+            type: 'graphApiCall',
+            path: '/' + serverInfo.data[first_unseen_thread_index].id + '/comments',
+            params: { limit: 1 },
+          },
+          function (response) {
+            if (response.error)
+              self.showInactiveIcon();
+            else
+              self._handleInboxInfo(serverInfo, i, response);
+          }
+        );
+      }
+
+      if (serverInfo.summary.unseen_count == 0) {
+        self._num_unseen_inbox = 0;
+        self.updateUnreadCounter();
+      }
+
     } else if (serverInfo.summary.unseen_count !== self._num_unseen_inbox) {
       self._num_unseen_inbox = serverInfo.summary.unseen_count; // actually 0
       self.updateUnreadCounter();
+    }
+
+    for (var i = 0; i < serverInfo.data.length; i++) {
+      if (serverInfo.data[i].unseen == 0 && 
+          self.threads_unseen_before.contains(serverInfo.data[i].id)) {
+        // if a previously marked as unseen thread became seen,
+        // remove this from threads_unseen_before
+        var index = -1;
+        for (var j = 0; j < self.threads_unseen_before.length; j++) {
+          if (self.threads_unseen_before[j] == serverInfo.data[i].id) {
+            index = j;
+            break;
+          }
+        }
+
+        // remove element from array logic
+        if (index == 0)
+          self.threads_unseen_before.shift();
+        else if (index == self.threads_unseen_before.length - 1)
+          self.threads_unseen_before.pop();
+        else
+          self.threads_unseen_before = self.threads_unseen_before.slice(0, index)
+            .concat(
+              self.threads_unseen_before.slice(index + 1, 
+                self.threads_unseen_before.length));
+      }
     }
   },
 
@@ -266,7 +331,7 @@ DesktopNotifications = {
           comments: comments
         };
 
-        self.addNotificationByType('inbox');
+        // self.addNotificationByType('inbox');
       }
       self._num_unseen_inbox = threads.summary.unseen_count;
       self.updateUnreadCounter();

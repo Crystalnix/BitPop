@@ -25,7 +25,7 @@ namespace {
 
   static const int kNotificationLabelMaxHeight = 600;
 
-  static const SkColor kNotificationPopupBackgroundColor = SkColorSetRGB(176, 246, 255);
+  static const SkColor kNotificationPopupBackgroundColor = SkColorSetRGB(0xc2, 0xec, 0xfc);
 
   static const int kNotificationBubbleAlpha = 200;
 }

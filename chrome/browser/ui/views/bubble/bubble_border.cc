@@ -448,4 +448,14 @@ void BubbleBackground::Paint(gfx::Canvas* canvas, views::View* view) const {
   SkScalar radius = SkIntToScalar(BubbleBorder::GetCornerRadius());
   path.addRoundRect(rect, radius, radius);
   canvas->AsCanvasSkia()->drawPath(path, paint);
+
+  // hack to draw a white highlight on chat notification windows
+  if (border_->arrow_location() == BubbleBorder::BOTTOM_LEFT) {
+    paint.setStyle(SkPaint::kStroke_Style);
+    paint.setColor(SK_ColorWHITE);
+    paint.setStrokeWidth(1);
+    canvas->AsCanvasSkia()->drawLine(bounds.x() + radius, bounds.y() + 0.5,
+                                   bounds.right() - radius, bounds.y() + 0.5,
+                                   paint);
+  }
 }
