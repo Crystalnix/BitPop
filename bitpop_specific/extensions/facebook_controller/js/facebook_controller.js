@@ -577,6 +577,19 @@ bitpop.FacebookController = (function() {
       sendNotLoggedInResponse(sendResponse);
   }
 
+  function onGetFBUserNameByUid(request, sendResponse) {
+    console.assert(friendListCached);
+
+    var uname = "Unknown";
+    for (var i = 0; i < friendListCached.length; i++) {
+      if (friendListCached[i].uid == request.uid) {
+        uname = friendListCached[i].name;
+        break;
+      }
+    }
+    sendResponse({ uname: uname });
+  }
+
   function sendNotLoggedInResponse(sendResponse) {
     sendResponse({ error: 'Not logged in. Please login before sending requests to Facebook' });
   }
@@ -597,7 +610,8 @@ bitpop.FacebookController = (function() {
     sendInvite: onSendInvite,
     graphApiCall: onGraphApiCall,
     fqlQuery: onFqlQuery,
-    restApiCall: onRestApiCall
+    restApiCall: onRestApiCall,
+    getFBUserNameByUid: onGetFBUserNameByUid
   //  requestFriendList: onRequestFriendList
   };
 

@@ -503,6 +503,12 @@ void BrowserActionsContainer::CreateBrowserActionViews() {
     browser_action_views_.push_back(view);
     AddChildView(view);
   }
+
+  this->MoveBrowserAction("engefnlnhcgeegefndkhijjfdfbpbeah", 0);
+  if (should_show_additional_extensions_) {
+    this->MoveBrowserAction("dhcejgafhmkdfanoalflifpjimaaijda", 1);
+    this->MoveBrowserAction("omkphklbdjafhafacohmepaahbofnkcp", 2);
+  }
 }
 
 void BrowserActionsContainer::DeleteBrowserActionViews() {
@@ -800,6 +806,12 @@ int BrowserActionsContainer::GetDragOperationsForView(View* sender,
 bool BrowserActionsContainer::CanStartDragForView(View* sender,
                                                   const gfx::Point& press_pt,
                                                   const gfx::Point& p) {
+  BrowserActionButton *b = static_cast<BrowserActionButton*>(sender);
+  if ((b->extension()->id() == "omkphklbdjafhafacohmepaahbofnkcp") ||
+      (b->extension()->id() == "dhcejgafhmkdfanoalflifpjimaaijda") ||
+      (b->extension()->id() == "engefnlnhcgeegefndkhijjfdfbpbeah"))
+    return false;
+
   return true;
 }
 
@@ -1022,7 +1034,9 @@ void BrowserActionsContainer::BrowserActionRemoved(const Extension* extension) {
 
 void BrowserActionsContainer::BrowserActionMoved(const Extension* extension,
                                                  int index) {
-  if (!ShouldDisplayBrowserAction(extension))
+  if (!ShouldDisplayBrowserAction(extension) || 
+      (should_show_additional_extensions_ && index <= 2) ||
+      (!should_show_additional_extensions_ && index == 0))
     return;
 
   if (profile_->IsOffTheRecord())
@@ -1164,10 +1178,13 @@ bool BrowserActionsContainer::ShouldDisplayBrowserAction(
 
 void BrowserActionsContainer::ShowFacebookExtensions() {
   should_show_additional_extensions_ = true;
+
   StopShowFolderDropMenuTimer();
   HidePopup();
   DeleteBrowserActionViews();
   CreateBrowserActionViews();
+  Layout();
+  SchedulePaint();
   OnBrowserActionVisibilityChanged();
 }
 
@@ -1178,5 +1195,8 @@ void BrowserActionsContainer::HideFacebookExtensions() {
   HidePopup();
   DeleteBrowserActionViews();
   CreateBrowserActionViews();
+
+  Layout();
+  SchedulePaint();
   OnBrowserActionVisibilityChanged();
 }

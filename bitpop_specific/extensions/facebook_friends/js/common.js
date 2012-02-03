@@ -60,7 +60,7 @@ Date.prototype.isTodayDate = function() {
 bitpop.saveToLocalStorage = function(jidSelf, jid, msg, timestamp, me) {
   var maxHistorySize = 100;
 
-  jid = jidSelf + ':' + jid;
+  var jid = jidSelf + ':' + jid;
   if (!(jid in localStorage)) {
     var newVal = JSON.stringify([{ msg: msg, time: timestamp, me: me }]);
     localStorage[jid] = newVal;

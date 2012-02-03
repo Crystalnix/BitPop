@@ -12,10 +12,8 @@ bitpop.chat = (function() {
   var public = {
     init: function() {
       friendUid = window.location.hash.slice(1);
+      lastMessageUid = null;
       
-      isLastMessageFromFriend = false;
-      isLastMessageFromMe = false;
-
       $('#msg').focus();
 
       (function initChat() {
@@ -80,34 +78,30 @@ bitpop.chat = (function() {
     //   lastOutputTime = msgDate;
     // }
 
-    var html = '';
-    if (me) {
-      html += '<li class="me' + 
-        (isLastMessageFromMe ? ' same' : ' diff') + '">';
-      if (!isLastMessageFromMe)
-        html += '<img src="' +
-          'http://graph.facebook.com/' + 
-          chrome.extension.getBackgroundPage().myUid.toString() +
-          '/picture' +
-          '" alt="" />';
-      isLastMessageFromMe = true;
-      isLastMessageFromFriend = false;
-    } else {
-      html += '<li class="friend' + 
-        (isLastMessageFromFriend ? ' same' : ' diff') + '">';
-      if (!isLastMessageFromFriend)
-        html += '<img src="' +
-          'http://graph.facebook.com/' + 
-          friendUid.toString() +
-          '/picture' +
-          '" alt="" />';
-      isLastMessageFromFriend = true;
-      isLastMessageFromMe = false;
-    }
+    var uid = me ? chrome.extension.getBackgroundPage().myUid : friendUid;
+    var createMessageGroup = (lastMessageUid != uid);
 
-    html += msg;
-    html += '</li>';
-    $('#chat').append(html);
+    if (createMessageGroup) {
+      var profileUrl = 'http://www.facebook.com/profile.php?id=' + uid.toString(); 
+      $('#chat').append(
+          '<div class="message-group clearfix">' +
+            '<a class="profile-link" href="' + profileUrl + '">' +
+            '<img class="profile-photo" src="http://graph.facebook.com/' +
+              uid.toString() + '/picture" alt="">' +
+            '</a>' +
+            '<div class="messages"></div>' +
+          '</div>'
+        );
+      $('#chat div.message-group:last-child a.profile-link').click(function() {
+        chrome.tabs.create({ url: profileUrl });
+        return false;
+      });
+    }
+    
+    $('#chat div.message-group:last-child .messages').append(
+        '<div class="chat-message">' + msg + '</div>');
+
+    lastMessageUid = uid;
 
     // scroll the chat div to bottom
     $('#chat').scrollTop($('#chat')[0].scrollHeight);

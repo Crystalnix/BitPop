@@ -7,14 +7,28 @@
   <script src="js/common.js"></script>
   <script src="js/chat_popup.js"></script>
   <script type="text/javascript">
-    $(document).ready(bitpop.chat.init);
+    $(document).ready(function() {
+        bitpop.chat.init();
+
+        function setHeadTextCallback(uname) {
+          $('#head').text(uname);
+        }
+
+        chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
+          { type: 'getFBUserNameByUid',
+            uid: window.location.hash.substr(1) },
+          function (response) {
+            setHeadTextCallback(response.uname);
+          }
+        );
+    });
   </script>
 </head>
 <body>
-  <div id="invite">
-    <a href="#" onclick="bitpop.chat.sendInvite()">Invite your friend to use BitPop</a>
+  <div id="head">
   </div>
-  <ul id="chat"></ul>
+  <div id="chat">
+  </div>
   <form id="msgForm">
     <input type="text" id="msg" />
     <input id="pastePageLink" type="button" value="+" />

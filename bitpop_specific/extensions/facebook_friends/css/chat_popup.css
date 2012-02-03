@@ -1,76 +1,98 @@
 html, body {
   margin: 0;
   padding: 0;
-  width: 183px;
+  width: 203px;
   height: 350px;
-  font-family: Tahoma,Verdana,Arial,sans-serif;
+  font-family: "lucida grande",tahoma,verdana,arial,sans-serif;
+  color: #333;
+  line-height: 1.28;
+  font-size: 11px;
 }
 p {
   margin: 5px;
+}
+#head {
+  background-color: #6D84B4;
+  border: 1px solig rgba(0, 39, 121, .76);
+  border-bottom: none;
+  border-top-left-radius: 1px;
+  border-top-right-radius: 1px;
+  color: white;
+  font-weight: bold;
+  line-height: 18px;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 3px 7px 4px;
 }
 #msgForm {
   position: absolute;
   bottom: 0;
   left:0;
-  width: 183px;
+  width: 193px;
   margin: 0;
   padding: 0;
   height: 30px;
 }
 #msg {
   border: 1px solid #ccc;
-  width: 150px;
+  width: 160px;
   outline: none;
   float: left;
   clear: left;
 }
+
+.clearfix::after {
+  clear: both;
+  content: ".";
+  display: block;
+  font-size: 0;
+  height: 0;
+  line-height: 0;
+  visibility: hidden;
+}
+
 #chat {
-  list-style: none;
   margin: 0;
-  padding: 3px;
-  height: 250px;
+  padding: 0;
+  height: 282px;
   overflow-y: auto;
+  overflow-x: hidden;
 }
-#chat li {
+
+#chat .message-group {
   margin: 0;
-  padding: 5px 0;
-  list-style: none;
-  list-style-type: none;
-  word-wrap: break-word;
-  font-size: 10px;
-  min-height: 27px;
+  padding: 0;
+  border-top: 1px solid #eee;
+  margin-left: 5px;
+  margin-right: 5px;
+  margin-bottom: 5px;
+  padding-top: 5px;
 }
-#chat li.me {
-  padding-left: 32px;
-  text-align: left;
-}
-#chat li.friend {
-  background-color: #eee;
-  padding-left: 32px;
-  text-align: left;
-}
-#chat li.diff {
-  border-top: solid 1px #ccc;
-}
-#chat li img {
-  margin-left: -32px;
-  width: 27px;
-  height: 27px;
-  float: left;
-}
+  #chat .message-group .profile-link {
+    float: left;
+  }
+    #chat .message-group .profile-link .profile-photo {
+      width: 32px;
+      height: 32px;
+      display: block;
+      border: 0;
+    }
+  #chat .message-group .messages {
+    margin-left: 40px;
+  }
+    #chat .message-group .messages .chat-message {
+      font-size: 11px;
+      word-wrap: break-word;
+      max-width: 193px;
+      margin-bottom: 3px;
+      white-space: pre-wrap;
+    }
 #chat li.time {
   text-align: center;
   color: silver;
   border-bottom: solid 1px silver;
-}
-#invite {
-  font-size: 12px;
-  font-weight: bold;
-  position: relative;
-  height: 50px;
-  background-color: #ac3df0;
-  border-bottom: solid 1px #ccc;
-  padding: 3px 5px;
 }
 #pastePageLink {
   width: 25px;

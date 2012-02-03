@@ -8,6 +8,7 @@
     var friendList = null;
     var myUid = null;
     var statuses = {};
+    var inboxData = null;
 
     //chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
     //  { type: 'observe',
@@ -31,6 +32,7 @@
 
       if (request.type == 'myUidAvailable') {
           myUid = request.myUid;
+          sendInboxRequest();
       } else if (request.type == 'friendListReceived') {
         friendList = request.data;
       } else if (request.type == 'loggedOut') {
@@ -88,6 +90,48 @@
         }
       }
     });
+    
+    function sendInboxRequest() {
+      chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
+        { type: 'graphApiCall',
+          path: '/me/inbox',
+          params: {}
+        },
+        function (response) {
+          inboxData = response.data;
+          replaceLocalHistory(inboxData);
+        }
+      );
+    }
+
+    function replaceLocalHistory(data) {
+      console.assert(myUid != null);
+      console.assert(data != null);
+
+      for (var i = 0; i < data.length; i++) {
+        var from_id = data[i].from.id;
+        var to_ids = [];
+        for (var j = 0; j < data[i].to.data.length; j++) {
+          to_ids.push(data[i].to.data[j].id);
+          if (to_ids[j] == myUid) // exclude my uid from to_ids list
+            to_ids.pop();
+        }
+
+        if (to_ids.length > 1)
+          return;
+        var jid = myUid + ':' + to_ids[0].toString();
+        localStorage.removeItem(jid);
+
+        for (var j = 0; j < data[i].comments.data.length; j++) {
+          bitpop.saveToLocalStorage(myUid, to_ids[0], 
+              bitpop.preprocessMessageText(data[i].comments.data[j].message),
+              j, // TODO: set timestamp as required
+              data[i].comments.data[j].from.id == myUid
+          );
+        }
+      }
+    }
+
   </script>
 </head>
 <body>
