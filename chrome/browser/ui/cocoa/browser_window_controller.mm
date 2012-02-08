@@ -519,17 +519,17 @@
 }
 
 - (void)updateFriendsForContents:(TabContents*)contents {
-  bool initialized = facebookSidebarController_.get() != NULL;
+  //bool initialized = facebookSidebarController_.get() != NULL;
   FacebookSidebarController *fsController = [self friendsSidebar];
-  BOOL hadTabContents = (fsController.tabContents != NULL);
+  //BOOL hadTabContents = (fsController.tabContents != NULL);
   [fsController updateFriendsForTabContents:contents];
-  if (((contents && !hadTabContents) || (!contents && hadTabContents)) &&
-      initialized) {
-    [self adjustWindowWidthBy: (hadTabContents ? -1 : 1) *
-        // + 1 is needed to change size of tabContentsArea_ slightly so that
-        // the resize corner is taken into account
-        ([fsController maxWidth] + 1)];
-  }
+//  if (((contents && !hadTabContents) || (!contents && hadTabContents)) &&
+//      initialized) {
+//    [self adjustWindowWidthBy: (hadTabContents ? -1 : 1) *
+//        // + 1 is needed to change size of tabContentsArea_ slightly so that
+//        // the resize corner is taken into account
+//        ([fsController maxWidth] + 1)];
+//  }
 
   [fsController ensureContentsVisible];
   [self layoutSubviews];

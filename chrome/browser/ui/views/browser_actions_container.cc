@@ -414,8 +414,7 @@ BrowserActionsContainer::BrowserActionsContainer(Browser* browser,
       animation_target_size_(0),
       drop_indicator_position_(-1),
       ALLOW_THIS_IN_INITIALIZER_LIST(task_factory_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(show_menu_task_factory_(this)),
-      should_show_additional_extensions_(false) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(show_menu_task_factory_(this)) {
   SetID(VIEW_ID_BROWSER_ACTION_TOOLBAR);
 
   if (profile_->GetExtensionService()) {
@@ -494,6 +493,12 @@ void BrowserActionsContainer::CreateBrowserActionViews() {
   if (!model_)
     return;
 
+  this->MoveBrowserAction(chrome::kFacebookChatExtensionId, 0);
+  if (profile_->should_show_additional_extensions()) {
+    this->MoveBrowserAction(chrome::kFacebookMessagesExtensionId, 1);
+    this->MoveBrowserAction(chrome::kFacebookNotificationsExtensionId, 2);
+  }
+
   for (ExtensionList::iterator iter = model_->begin(); iter != model_->end();
        ++iter) {
     if (!ShouldDisplayBrowserAction(*iter))
@@ -502,12 +507,6 @@ void BrowserActionsContainer::CreateBrowserActionViews() {
     BrowserActionView* view = new BrowserActionView(*iter, this);
     browser_action_views_.push_back(view);
     AddChildView(view);
-  }
-
-  this->MoveBrowserAction("engefnlnhcgeegefndkhijjfdfbpbeah", 0);
-  if (should_show_additional_extensions_) {
-    this->MoveBrowserAction("dhcejgafhmkdfanoalflifpjimaaijda", 1);
-    this->MoveBrowserAction("omkphklbdjafhafacohmepaahbofnkcp", 2);
   }
 }
 
@@ -807,9 +806,9 @@ bool BrowserActionsContainer::CanStartDragForView(View* sender,
                                                   const gfx::Point& press_pt,
                                                   const gfx::Point& p) {
   BrowserActionButton *b = static_cast<BrowserActionButton*>(sender);
-  if ((b->extension()->id() == "omkphklbdjafhafacohmepaahbofnkcp") ||
-      (b->extension()->id() == "dhcejgafhmkdfanoalflifpjimaaijda") ||
-      (b->extension()->id() == "engefnlnhcgeegefndkhijjfdfbpbeah"))
+  if ((b->extension()->id() == chrome::kFacebookChatExtensionId) ||
+      (b->extension()->id() == chrome::kFacebookMessagesExtensionId) ||
+      (b->extension()->id() == chrome::kFacebookNotificationsExtensionId))
     return false;
 
   return true;
@@ -1035,8 +1034,8 @@ void BrowserActionsContainer::BrowserActionRemoved(const Extension* extension) {
 void BrowserActionsContainer::BrowserActionMoved(const Extension* extension,
                                                  int index) {
   if (!ShouldDisplayBrowserAction(extension) || 
-      (should_show_additional_extensions_ && index <= 2) ||
-      (!should_show_additional_extensions_ && index == 0))
+      (profile_->should_show_additional_extensions() && index <= 2) ||
+      (!profile_->should_show_additional_extensions() && index == 0))
     return;
 
   if (profile_->IsOffTheRecord())
@@ -1169,15 +1168,15 @@ bool BrowserActionsContainer::ShouldDisplayBrowserAction(
   // Only display incognito-enabled extensions while in incognito mode.
   bool res = (!profile_->IsOffTheRecord() ||
        profile_->GetExtensionService()->IsIncognitoEnabled(extension->id()));
-  if (((extension->id() == "omkphklbdjafhafacohmepaahbofnkcp") ||
-       (extension->id() == "dhcejgafhmkdfanoalflifpjimaaijda")) &&
-       !should_show_additional_extensions_)
+  if (((extension->id() == chrome::kFacebookMessagesExtensionId) ||
+       (extension->id() == chrome::kFacebookNotificationsExtensionId)) &&
+       !profile_->should_show_additional_extensions())
       res = false;
   return res;
 }
 
 void BrowserActionsContainer::ShowFacebookExtensions() {
-  should_show_additional_extensions_ = true;
+  profile_->set_should_show_additional_extensions(true);
 
   StopShowFolderDropMenuTimer();
   HidePopup();
@@ -1189,7 +1188,7 @@ void BrowserActionsContainer::ShowFacebookExtensions() {
 }
 
 void BrowserActionsContainer::HideFacebookExtensions() {
-  should_show_additional_extensions_ = false;
+  profile_->set_should_show_additional_extensions(false);
 
   StopShowFolderDropMenuTimer();
   HidePopup();

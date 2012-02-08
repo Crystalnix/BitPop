@@ -131,8 +131,12 @@ span.leftSide {
 #search-wrap {
   width: 100%;
   padding-left:3px;
-  margin-bottom: 5px;
+  margin-bottom: 1em;
+  margin-top: 1em;
 }
 #search {
-  width: 75%;
+  width: 70%;
+}
+#logout a {
+  color: gray;
 }

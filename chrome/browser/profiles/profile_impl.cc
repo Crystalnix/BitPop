@@ -297,7 +297,8 @@ ProfileImpl::ProfileImpl(const FilePath& path,
 #if defined(OS_WIN)
       checked_instant_promo_(false),
 #endif
-      delegate_(delegate) {
+      delegate_(delegate),
+      should_show_additional_extensions_(false) {
   DCHECK(!path.empty()) << "Using an empty path will attempt to write " <<
                             "profile files to the root directory!";
 
@@ -1685,4 +1686,12 @@ prerender::PrerenderManager* ProfileImpl::GetPrerenderManager() {
             this, g_browser_process->prerender_tracker()));
   }
   return prerender_manager_.get();
+}
+
+bool ProfileImpl::should_show_additional_extensions() const {
+  return should_show_additional_extensions_;
+}
+
+void ProfileImpl::set_should_show_additional_extensions(bool flag) {
+  should_show_additional_extensions_ = flag;
 }

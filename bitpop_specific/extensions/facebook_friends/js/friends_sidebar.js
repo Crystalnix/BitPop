@@ -1,4 +1,5 @@
 var bitpop;
+//var already_created = false;
 if (!bitpop) bitpop = {};
 bitpop.FriendsSidebar = (function() {
   var localConst = {
@@ -142,26 +143,30 @@ bitpop.FriendsSidebar = (function() {
   };
 
   self.updateDOM = function() {
-    self.applySearchFilter();
-    self.sortFriendList();
-    var newDom = self.generateFriendsDOM();
-    if (newDom.children().length == 0)
-      newDom.append('<li><span style="text-align:center">No friends found</span></li>');
+    //if (!already_created) {
+      self.applySearchFilter();
+      self.sortFriendList();
+      var newDom = self.generateFriendsDOM();
+      if (newDom.children().length == 0)
+        newDom.append('<li><span style="text-align:center">No friends found</span></li>');
 
-    $('#friend_list').remove();
-    $('#scrollable-area').append('<div id="friend_list" class="overview"></div>');
-    $('#friend_list').append(newDom);
+      $('#friend_list').remove();
+      $('#scrollable-area').append('<div id="friend_list" class="overview"></div>');
+      $('#friend_list').append(newDom);
 
-    $('#friend_list li span').click(function() {
-      var parent = $(this).parent();
-      chrome.chromePrivate.addChat(
-        parent.prop('jid'),
-        parent.prop('username'),
-        parent.prop('online_status')
-      );
-    });
+      $('#friend_list li span').click(function() {
+        var parent = $(this).parent();
+        chrome.chromePrivate.addChat(
+          parent.prop('jid'),
+          parent.prop('username'),
+          parent.prop('online_status')
+        );
+      });
+    //  already_created = true;
+    //}
 
-    $('.box-wrap').antiscroll();
+    $('.box-wrap').data('antiscroll').rebuild();
+    //setTimeout(self.updateDOM, 10000);
   };
 
   self.updateFriendList = function(response, dontAnimate) {
@@ -171,6 +176,9 @@ bitpop.FriendsSidebar = (function() {
     //   $('#unavail').show();
     //   return;
     // }
+
+    //if (already_created)
+    //  return;
 
     self.slideToFriendsView(dontAnimate);
     $('#unavail').hide();

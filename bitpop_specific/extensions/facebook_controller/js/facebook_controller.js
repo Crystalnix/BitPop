@@ -52,6 +52,8 @@ bitpop.FacebookController = (function() {
       onObserve({ extensionId: 'engefnlnhcgeegefndkhijjfdfbpbeah' });
       // messages extension
       onObserve({ extensionId: 'dhcejgafhmkdfanoalflifpjimaaijda' });
+      // notifications extensions
+      onObserve({ extensionId: 'omkphklbdjafhafacohmepaahbofnkcp' });
 
       if (localStorage.accessToken) {
         checkForPermissions(function() {

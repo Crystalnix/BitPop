@@ -29,6 +29,7 @@
 #import "chrome/browser/ui/cocoa/chrome_event_processing_window.h"
 #import "chrome/browser/ui/cocoa/content_settings/collected_cookies_mac.h"
 #import "chrome/browser/ui/cocoa/download/download_shelf_controller.h"
+#import "chrome/browser/ui/cocoa/extensions/browser_actions_controller.h"
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_chatbar_controller.h"
 #import "chrome/browser/ui/cocoa/html_dialog_window_controller.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
@@ -65,6 +66,8 @@ BrowserWindowCocoa::BrowserWindowCocoa(Browser* browser,
   registrar_.Add(this, NotificationType::FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE,
                  Source<Profile>(browser_->profile()));
   registrar_.Add(this, NotificationType::FACEBOOK_SESSION_LOGGED_OUT,
+                 Source<Profile>(browser_->profile()));
+  registrar_.Add(this, NotificationType::FACEBOOK_SESSION_LOGGED_IN,
                  Source<Profile>(browser_->profile()));
 }
 
@@ -647,6 +650,12 @@ void BrowserWindowCocoa::Observe(NotificationType type,
     case NotificationType::FACEBOOK_SESSION_LOGGED_OUT:
       if (browser_->is_type_tabbed()) {
         GetChatbar()->RemoveAll();
+        [[[controller_ toolbarController] browserActionsController] hideFacebookExtensions];
+      }
+      break;
+    case NotificationType::FACEBOOK_SESSION_LOGGED_IN:
+      if (browser_->is_type_tabbed()) {
+        [[[controller_ toolbarController] browserActionsController] showFacebookExtensions];
       }
       break;
     default:

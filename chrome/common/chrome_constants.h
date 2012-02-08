@@ -98,6 +98,10 @@ extern const int kJavascriptMessageExpectedDelay;
 extern const bool kEnableTouchIcon;
 
 extern const char kFacebookChatExtensionId[];
+extern const char kFacebookControllerExtensionId[];
+extern const char kFacebookMessagesExtensionId[];
+extern const char kFacebookNotificationsExtensionId[];
+
 }  // namespace chrome
 
 #endif  // CHROME_COMMON_CHROME_CONSTANTS_H_

@@ -74,7 +74,7 @@
 
   Antiscroll.prototype.rebuild = function () {
     this.destroy();
-    this.inner.attr('style', '');
+    this.inner.style = '';
     Antiscroll.call(this, this.el, this.options);
     return this;
   };
@@ -122,6 +122,9 @@
    */
 
   Scrollbar.prototype.destroy = function () {
+    this.pane.el.unbind();
+    this.el.unbind();
+    this.pane.inner.unbind();
     this.el.remove();
     return this;
   };

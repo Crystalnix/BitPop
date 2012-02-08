@@ -189,3 +189,4 @@ bool LoggedInFacebookSessionFunction::RunImpl() {
 
   return true;
 }
+

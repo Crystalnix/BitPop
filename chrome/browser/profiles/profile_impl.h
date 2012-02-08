@@ -149,6 +149,9 @@ class ProfileImpl : public Profile,
   // SpellCheckHostObserver implementation.
   virtual void SpellCheckHostInitialized();
 
+  virtual bool should_show_additional_extensions() const;
+  virtual void set_should_show_additional_extensions(bool flag);
+                      
  private:
   friend class Profile;
 
@@ -303,6 +306,8 @@ class ProfileImpl : public Profile,
 
   Profile::Delegate* delegate_;
 
+  bool should_show_additional_extensions_;
+                      
   DISALLOW_COPY_AND_ASSIGN(ProfileImpl);
 };
 

@@ -15,5 +15,5 @@
    "name": "Facebook Notifications",
    "options_page": "options.html",
    "permissions": [ "notifications", "chrome://favicon/" ],
-   "version": "1.27"
+   "version": "1.28"
 }

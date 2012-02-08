@@ -23,7 +23,7 @@
     });
     $(window).resize(function() {
       setAntiscrollHeight();
-      $('.box-wrap').antiscroll();
+      $('.box-wrap').data('antiscroll').rebuild();
     });
   </script>
 </head>
@@ -31,10 +31,9 @@
   <div id="slide-wrap">
     <div id="inner-wrap">
       <div class="content-item" id="chat-content">
-        <p id="unavail" style="display:none">Service unavailable</p>
+        <p id="unavail" style="display:none"></p>
         <p id="logout"><a href="#">Logout</a></p>
-        <div class="clr"></div>
-
+        
         <div id="search-wrap">
           <input id="search" type="search" placeholder="Search..." name="s" />
         </div>

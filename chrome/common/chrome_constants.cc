@@ -136,6 +136,9 @@ const int kJavascriptMessageExpectedDelay = 1000;
 const bool kEnableTouchIcon = false;
 
 const char kFacebookChatExtensionId[] = "engefnlnhcgeegefndkhijjfdfbpbeah";
+const char kFacebookControllerExtensionId[] = "igddmhdmkpkonlbfabbkkdoploafopcn";
+const char kFacebookMessagesExtensionId[] = "dhcejgafhmkdfanoalflifpjimaaijda";
+const char kFacebookNotificationsExtensionId[] = "omkphklbdjafhafacohmepaahbofnkcp";
 }  // namespace chrome
 
 #undef FPL

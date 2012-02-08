@@ -118,9 +118,12 @@
         }
 
         if (to_ids.length > 1)
-          return;
+          continue;
         var jid = myUid + ':' + to_ids[0].toString();
         localStorage.removeItem(jid);
+
+        if (!data[i].comments || !data[i].comments.data)
+          continue;
 
         for (var j = 0; j < data[i].comments.data.length; j++) {
           bitpop.saveToLocalStorage(myUid, to_ids[0], 

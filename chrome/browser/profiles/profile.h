@@ -567,6 +567,9 @@ class Profile {
 
   // Creates an OffTheRecordProfile which points to this Profile.
   Profile* CreateOffTheRecordProfile();
+  
+  virtual bool should_show_additional_extensions() const { return false; }
+  virtual void set_should_show_additional_extensions(bool flag) {}
 
  protected:
   friend class OffTheRecordProfileImpl;

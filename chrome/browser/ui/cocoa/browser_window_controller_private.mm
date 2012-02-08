@@ -244,12 +244,19 @@ willPositionSheet:(NSWindow*)sheet
   // fullscreen mode in which case it's at the top of the visual content area.
   maxY = [self layoutInfoBarAtMinX:minX maxY:maxY width:width];
 
+  CGFloat friendsSidebarMaxY = maxY;
   // If the bookmark bar is detached, place it next in the visual content area.
-  if (placeBookmarkBarBelowInfoBar)
-    maxY = [self layoutBookmarkBarAtMinX:minX maxY:maxY width:width];
+  if (placeBookmarkBarBelowInfoBar) {
+    CGFloat bookmarkBarWidth = width;
+    if (facebookSidebarController_.get()) {
+      bookmarkBarWidth -= [[facebookSidebarController_ view] frame].size.width;
+    }
+    
+    maxY = [self layoutBookmarkBarAtMinX:minX maxY:maxY width:bookmarkBarWidth];
+  }
 
   CGFloat maxX = minX + width;
-  maxX = [self layoutFriendsSidebarAtMaxX:maxX minY:minY maxY:maxY];
+  maxX = [self layoutFriendsSidebarAtMaxX:maxX minY:minY maxY:friendsSidebarMaxY];
   width = maxX - minX;
 
   // Place the download shelf, if any, at the bottom of the view.
