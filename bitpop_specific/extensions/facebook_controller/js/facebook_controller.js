@@ -458,15 +458,37 @@ bitpop.FacebookController = (function() {
   }
 
   function login(permissions) {
-    var url = "https://www.facebook.com/dialog/oauth?client_id=" +
-        FB_APPLICATION_ID +
+    var urlStart = "https://www.facebook.com/dialog/oauth?client_id=" +
+        FB_APPLICATION_ID;
+    var url = urlStart +
         "&response_type=token" +
         "&redirect_uri=" + SUCCESS_URL +
         '&display=popup' +
         '&scope=' + permissions.join(',');
+    var loginUrlStart = 'https://www.facebook.com/login.php?api_key=' + 
+        FB_APPLICATION_ID;
 
-    //chrome.windows.create({ url: url, type: "popup", width: 400, height: 580 });
-    window.open(url, "newwin", "height=580,width=400,toolbar=no,scrollbars=no,menubar=no,location=no");
+    // https://www.facebook.com/dialog/oauth?client_id=190635611002798&response_type=token&redirect_uri=https://www.facebook.com/connect/login_success.html&display=popup&scope=
+    chrome.windows.getAll({ populate: true }, function (windows) {
+      var found = false;
+      for (var i = 0; i < windows.length; i++) {
+        for (var j = 0; j < windows[i].tabs.length; j++) {
+          if (windows[i].tabs[j].url.indexOf(urlStart) == 0 ||
+              windows[i].tabs[j].url.indexOf(loginUrlStart) == 0) {
+            chrome.tabs.update(windows[i].tabs[j].id, { selected: true });
+            chrome.windows.update(windows[i].id, { focused: true });
+            found = true;
+            break;
+          }
+        }
+        if (found)
+          break;
+      }
+      if (!found)
+        window.open(url, "newwin", "height=580,width=400,toolbar=no,scrollbars=no,menubar=no,location=no");
+    });
+
+    //chrome.windows.create({ url: url, type: "popup", width: 400, height: 580 });  
     // popupWindow = window.open(url, 'Login to Facebook',
     //     'height=580,width=400,toolbar=no,directories=no,status=no,' +
     //     'menubar=no,scrollbars=no,resizable=no,modal=yes');

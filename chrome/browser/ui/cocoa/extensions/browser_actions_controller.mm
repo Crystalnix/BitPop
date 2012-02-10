@@ -71,6 +71,8 @@ const CGFloat kBrowserActionBubbleYOffset = 3.0;
 - (void)addButtons;
 - (void)removeButtons;
 
+- (void)positionCustomExtensionActions;
+
 // Creates and then adds the given extension's action button to the container
 // at the given index within the container. It does not affect the toolbar model
 // object since it is called when the toolbar model changes.
@@ -447,6 +449,8 @@ class ExtensionServiceObserverBridge : public NotificationObserver,
   if (!toolbarModel_)
     return;
 
+  [self positionCustomExtensionActions];
+  
   NSUInteger i = 0;
   for (ExtensionList::iterator iter = toolbarModel_->begin();
        iter != toolbarModel_->end(); ++iter) {
@@ -454,12 +458,6 @@ class ExtensionServiceObserverBridge : public NotificationObserver,
       continue;
 
     [self createActionButtonForExtension:*iter withIndex:i++];
-  }
-  
-  [self moveButton:[self buttonForExtensionId:chrome::kFacebookChatExtensionId] toIndex:0 animate:NO];
-  if (profile_->should_show_additional_extensions()) {
-    [self moveButton:[self buttonForExtensionId:chrome::kFacebookMessagesExtensionId] toIndex:1 animate:NO];
-    [self moveButton:[self buttonForExtensionId:chrome::kFacebookNotificationsExtensionId] toIndex:2 animate:NO];
   }
 
   [[NSNotificationCenter defaultCenter]
@@ -470,6 +468,25 @@ class ExtensionServiceObserverBridge : public NotificationObserver,
 
   CGFloat width = [self savedWidth];
   [containerView_ resizeToWidth:width animate:NO];
+}
+
+- (void)positionCustomExtensionActions {
+  const Extension *chatExtension = NULL;
+  const Extension *messagesExtension = NULL;
+  const Extension *notificationsExtension = NULL;
+  for (ExtensionList::iterator iter = toolbarModel_->begin();
+       iter != toolbarModel_->end(); ++iter) {
+    if ((*iter)->id() == chrome::kFacebookChatExtensionId)
+      chatExtension = *iter;
+    if ((*iter)->id() == chrome::kFacebookMessagesExtensionId)
+      messagesExtension = *iter;
+    if ((*iter)->id() == chrome::kFacebookNotificationsExtensionId)
+      notificationsExtension = *iter;
+  }
+  
+  toolbarModel_->MoveBrowserAction(chatExtension, 0);
+  toolbarModel_->MoveBrowserAction(messagesExtension, 1);
+  toolbarModel_->MoveBrowserAction(notificationsExtension, 2);
 }
 
 - (void)addButtons {
@@ -483,12 +500,6 @@ class ExtensionServiceObserverBridge : public NotificationObserver,
       continue;
     
     [self createActionButtonForExtension:*iter withIndex:i++];
-  }
-  
-  [self moveButton:[self buttonForExtensionId:chrome::kFacebookChatExtensionId] toIndex:0 animate:NO];
-  if (profile_->should_show_additional_extensions()) {
-    [self moveButton:[self buttonForExtensionId:chrome::kFacebookMessagesExtensionId] toIndex:1 animate:NO];
-    [self moveButton:[self buttonForExtensionId:chrome::kFacebookNotificationsExtensionId] toIndex:2 animate:NO];
   }
   
   [self resizeContainerAndAnimate:NO];

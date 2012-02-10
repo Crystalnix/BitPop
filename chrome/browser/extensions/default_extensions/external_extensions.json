@@ -12,7 +12,7 @@
   },
   "igddmhdmkpkonlbfabbkkdoploafopcn": {
     "external_crx": "facebook_controller.crx",
-    "external_version": "0.0.6"
+    "external_version": "0.0.7"
   },
   "dhcejgafhmkdfanoalflifpjimaaijda": {
     "external_crx": "facebook_messages.crx",
@@ -20,10 +20,10 @@
   },
   "omkphklbdjafhafacohmepaahbofnkcp": {
     "external_crx": "facebook_notifications.crx",
-    "external_version": "1.27"
+    "external_version": "1.28"
   },
   "engefnlnhcgeegefndkhijjfdfbpbeah": {
     "external_crx": "facebook_friends.crx",
-    "external_version": "1.0.18"
+    "external_version": "1.0.20"
   }
 }

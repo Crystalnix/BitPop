@@ -220,8 +220,8 @@ class ExtensionImageTrackerBridge : public NotificationObserver,
     dragCouldStart_ = YES;
   }
   
-  if (extension_=>id() == chrome::kFacebookChatExtensionId)
-    [[self cell] setHighlighted:YES;
+  if (extension_->id() == chrome::kFacebookChatExtensionId)
+    [[self cell] setHighlighted:YES];
 }
 
 - (void)mouseDragged:(NSEvent*)theEvent {

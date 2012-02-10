@@ -25,6 +25,12 @@ bitpop.chat = (function() {
             appendMessage(msgs[i].msg, msgDate, msgs[i].me);
           }
         }
+
+        var myUid = chrome.extension.getBackgroundPage().myUid;
+        var msgText = localStorage.getItem('msg:' + myUid + ':' + friendUid);
+        if (msgText) {
+          $('#msg').val(msgText);
+        }
       })();
 
       chrome.extension.onRequestExternal.addListener(function (request, sender, sendResponse) {
@@ -66,6 +72,11 @@ bitpop.chat = (function() {
           // Set the cursor at the end of input:
           $('#msg').focus().val($('#msg').val());
         });
+      });
+
+      $(window).unload(function () {
+        var myUid = chrome.extension.getBackgroundPage().myUid;
+        localStorage.setItem('msg:' + myUid + ':' + friendUid, $('#msg').val());
       });
     }, // end of public function init
     sendInvite: sendInvite

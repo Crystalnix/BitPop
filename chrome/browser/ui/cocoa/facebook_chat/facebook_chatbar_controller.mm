@@ -23,7 +23,7 @@ const NSInteger kChatItemPadding = 10;
 
 const NSInteger kChatItemsPaddingRight = 30;
 
-const NSInteger kChatbarHeight = 44;
+const NSInteger kChatbarHeight = 30;
 
 const NSTimeInterval kAddAnimationDuration = 0.6;
 const NSTimeInterval kRemoveAnimationDuration = 0.6;
