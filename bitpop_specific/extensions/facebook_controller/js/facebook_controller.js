@@ -39,6 +39,7 @@ bitpop.FacebookController = (function() {
 
   var need_more_permissions = false;
   var seen_message_timeout = null;
+  var doing_permissions_request = false;
 
   // -------------------------------------------------------------------------------
   // Public methods
@@ -89,7 +90,10 @@ bitpop.FacebookController = (function() {
         } else if (x.status == 400) {
           var response = JSON.parse(x.responseText);
           if (response.error && response.error.type == 'OAuthException') {
-            login(FB_PERMISSIONS);
+            if (doing_permissions_request)
+              setTimeout(checkForPermissions, 15000);
+            else
+              checkForPermissions();
           }
           errorMsg = 'Not authorized.';
         } else if (x.status==404){
@@ -117,6 +121,9 @@ bitpop.FacebookController = (function() {
             }
           );
         }
+
+        if (doing_permissions_request)
+          doing_permissions_request = false;
       }
     });
   }
@@ -304,6 +311,7 @@ bitpop.FacebookController = (function() {
   }
 
   function checkForPermissions(callbackAfter) {
+    doing_permissions_request = true;
     graphApiRequest('/me/permissions', {}, function(response) {
         var permsArray = response.data[0];
 
@@ -322,6 +330,7 @@ bitpop.FacebookController = (function() {
           need_more_permissions = false;
           callbackAfter();  // execute the 'after' callback on success
         }
+        doing_permissions_request = false;
       },
       null);
   }
