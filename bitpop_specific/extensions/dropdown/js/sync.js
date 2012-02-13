@@ -18,30 +18,12 @@ var saveSyncDataWasCalled = false;
 var syncName = 'dropdown_most_visited';
 var syncBookmarkName = syncName + '_data';
 var syncURL = 'http://' + syncName + '/?data=';
-//var onSync = saveStyles;
-//var onMerge = mergeStyles;
+
 // data source is cache.styles.get() here
 // cache.options.sync is used to check if sync is enabled / disabled
 
-var cache = { options: { sync: true } };
-
-function onSync(data) {
-  for (var key in data)
-    localStorage.setItem(key, data[key]);
-}
-
+var onSync = saveHistory;
 var onMerge = mergeHistory;
-
-function getData() {
-  var res = {};
-  var key, val;
-  for (var i = 0; i < localStorage.length; i++) {
-    key = localStorage.key(i);
-    val = localStorage.getItem(key);
-    res[key] = val;
-  }
-  return res;
-}
 
 // loads data from bookmark (if it exists).
 // If no data is returned, saves local data in the bookmark
@@ -50,12 +32,12 @@ function sync() {
     loadSyncData(function(data) {
         if (data) {
             // Overwrite the old styles
-            if (data != getData()) {
+            if (data != cache.history.get()) {
                 onSync(data);
             }
         }
         else {
-            saveSyncData(getData());
+            saveSyncData(cache.history.get());
         }
     });
 }
@@ -66,7 +48,7 @@ function syncWithMerge() {
     loadSyncData(function(data) {
         if (data) {
             // If we can merge and the new style differes from the current one
-            if (data != getData()) {
+            if (data != cache.history.get()) {
                 if (onMerge) {
                     onMerge(data);
                 }
@@ -76,7 +58,7 @@ function syncWithMerge() {
             }
         }
         else {
-            saveSyncData(getData());
+            saveSyncData(cache.history.get());
         }
     });
 }
@@ -161,7 +143,7 @@ function saveSyncData(data) {
                 // reset syncId and create a new bookmark
                 syncId = null;
                 syncFolderId = null;
-                saveSyncData(getData());
+                saveSyncData(cache.history.get());
             }
         });
     }

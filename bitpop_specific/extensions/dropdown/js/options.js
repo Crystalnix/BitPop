@@ -38,6 +38,22 @@ $(document).ready(function(){
 			$(this).css("background-color", bg_color);
 		});
 	});
+
+  $("#should_sync").click(function(event) {
+    // Turn syncing on/off
+    var bg_window = chrome.extension.getBackgroundPage();
+
+    var oldSync = localStorage['sync'];
+    bg_window.saveOption('sync', !(oldSync == 'yes'));
+    localStorage['sync'] = (oldSync == 'yes') ? 'no' : 'yes';
+
+    if (localStorage['sync'] == 'no')
+      bg_window.disableSync();
+    else {
+      bg_window.enableSync(true);
+    }
+  });
+
 });
 
 function saveOptions() {
@@ -97,6 +113,9 @@ function saveOptions() {
 		}
 		localStorage["ignore"] = JSON.stringify(ignoreListNew);
 	}
+
+  //save sync flag
+  localStorage['sync'] = $('#should_sync').is(":checked") ? 'yes' : 'no';
 
 
 	$("#form_status").show();
@@ -162,6 +181,10 @@ function loadOptions() {
 		localStorage["ignore"] = JSON.stringify(new Array());
 	}
 
+  if (!localStorage['sync']) {
+    localStorage['sync'] = 'no';
+  }
+
 	//load
 	$("#list_style_"+localStorage["list_style"]).attr("checked", true);
 
@@ -200,6 +223,7 @@ function loadOptions() {
 
 	$("#reset_ignore_label").text("Reset All (" + ignoreList.length + " items)");
 
+  $('#should_sync').attr('checked', localStorage['sync'] == 'yes');
 
 	//colors
 	resetColors();

@@ -35,7 +35,7 @@ function loadBookmark(id, title, callback) {
   }
 
   if (title) {
-    chrome.bookmarks.search('stylebot', function(bookmarks) {
+    chrome.bookmarks.search('dropdown_most_visited', function(bookmarks) {
       callback(bookmarks);
     });
   }

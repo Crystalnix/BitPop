@@ -19,9 +19,9 @@
 			td {margin:0;padding:0;}
 			.color {border:1px solid #A9A9A9;}
 		</style>
-		<script type="text/javascript" src="jquery.js"></script>
-		<script type="text/javascript" src="options.js"></script>
-		<script type="text/javascript" src="jscolor/jscolor.js"></script>
+		<script type="text/javascript" src="js/jquery.js"></script>
+		<script type="text/javascript" src="js/options.js"></script>
+		<script type="text/javascript" src="js/jscolor/jscolor.js"></script>
 	</head>
 	<body>
 		<div id="form_container">
@@ -200,6 +200,13 @@
 					<label for="reset_ignore" id="reset_ignore_label">Reset All (0 items)</label><br>
 
 				</fieldset>
+
+        <fieldset>
+          <legend>Miscellaneous:</legend>
+
+          <input type="checkbox" name="should_sync" value="0" id="should_sync">
+          <label for="should_sync" id="should_sync_label">Synchronize URL list (Bookmarks Sync should be enabled in BitPop options)</label><br>
+        </fieldset>
 				<br/>
 
 				<input type="button" value="Save" id="save_button" onclick="saveOptions()"/>

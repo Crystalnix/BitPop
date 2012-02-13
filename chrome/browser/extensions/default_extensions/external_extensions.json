@@ -2,9 +2,9 @@
 // in the installer.
 
 {
-  "npifdfbbacjcpcbcebmdconiedfhnplj": {
+  "jcpicigjjhpmobmnaoegfajemdcjkjdm": {
     "external_crx": "dropdown_most_visited.crx",
-    "external_version": "0.5"
+    "external_version": "0.6"
   },
   "nnbmlagghjjcbdhgmkedmbmedengocbn": {
     "external_crx": "docsviewer-extension.crx",
@@ -12,7 +12,7 @@
   },
   "igddmhdmkpkonlbfabbkkdoploafopcn": {
     "external_crx": "facebook_controller.crx",
-    "external_version": "0.0.7"
+    "external_version": "0.0.8"
   },
   "dhcejgafhmkdfanoalflifpjimaaijda": {
     "external_crx": "facebook_messages.crx",
