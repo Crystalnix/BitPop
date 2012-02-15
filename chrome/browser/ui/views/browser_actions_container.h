@@ -398,6 +398,8 @@ class BrowserActionsContainer
   void ShowFacebookExtensions();
   void HideFacebookExtensions();
 
+  void SetFacebookExtensionsVisibility(bool visible);
+
  protected:
   // Overridden from views::View:
   virtual void ViewHierarchyChanged(bool is_add,
@@ -530,8 +532,6 @@ class BrowserActionsContainer
 
   // Handles delayed showing of the overflow menu when hovering.
   ScopedRunnableMethodFactory<BrowserActionsContainer> show_menu_task_factory_;
-
-  bool should_show_additional_extensions_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserActionsContainer);
 };

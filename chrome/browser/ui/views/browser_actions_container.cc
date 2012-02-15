@@ -492,11 +492,20 @@ void BrowserActionsContainer::CreateBrowserActionViews() {
   DCHECK(browser_action_views_.empty());
   if (!model_)
     return;
+  
+  if (model_->size() != 0) {
+    ExtensionService* service = profile_->GetExtensionService();
+    if (service) {
+      const Extension* extension = service->GetExtensionById(chrome::kFacebookChatExtensionId, false);
+      model_->MoveBrowserAction(extension, 0);
 
-  this->MoveBrowserAction(chrome::kFacebookChatExtensionId, 0);
-  if (profile_->should_show_additional_extensions()) {
-    this->MoveBrowserAction(chrome::kFacebookMessagesExtensionId, 1);
-    this->MoveBrowserAction(chrome::kFacebookNotificationsExtensionId, 2);
+      if (profile_->should_show_additional_extensions()) {
+        extension = service->GetExtensionById(chrome::kFacebookMessagesExtensionId, false);
+        model_->MoveBrowserAction(extension, 1);
+        extension = service->GetExtensionById(chrome::kFacebookNotificationsExtensionId, false);
+        model_->MoveBrowserAction(extension, 2);
+      }
+    }
   }
 
   for (ExtensionList::iterator iter = model_->begin(); iter != model_->end();
@@ -992,6 +1001,15 @@ void BrowserActionsContainer::BrowserActionAdded(const Extension* extension,
     // Just redraw the (possibly modified) visible icon set.
     OnBrowserActionVisibilityChanged();
   }
+
+  if (!profile_->should_show_additional_extensions() && 
+      (extension->id() == chrome::kFacebookMessagesExtensionId ||
+       extension->id() == chrome::kFacebookNotificationsExtensionId)) {
+    
+    ExtensionService* service = profile_->GetExtensionService();
+    if (service)
+      service->SetBrowserActionVisibility(extension, false);
+  }
 }
 
 void BrowserActionsContainer::BrowserActionRemoved(const Extension* extension) {
@@ -1033,9 +1051,7 @@ void BrowserActionsContainer::BrowserActionRemoved(const Extension* extension) {
 
 void BrowserActionsContainer::BrowserActionMoved(const Extension* extension,
                                                  int index) {
-  if (!ShouldDisplayBrowserAction(extension) || 
-      (profile_->should_show_additional_extensions() && index <= 2) ||
-      (!profile_->should_show_additional_extensions() && index == 0))
+  if (!ShouldDisplayBrowserAction(extension) || browser_action_views_.size() == 0)
     return;
 
   if (profile_->IsOffTheRecord())
@@ -1062,8 +1078,9 @@ void BrowserActionsContainer::LoadImages() {
 
 void BrowserActionsContainer::SetContainerWidth() {
   int visible_actions = model_->GetVisibleIconCount();
-  if (visible_actions < 0)  // All icons should be visible.
+  if (visible_actions < 0) { // All icons should be visible.
     visible_actions = model_->size();
+  }
   chevron_->SetVisible(static_cast<size_t>(visible_actions) < model_->size());
   container_width_ = IconCountToWidth(visible_actions, chevron_->IsVisible());
 }
@@ -1145,9 +1162,10 @@ void BrowserActionsContainer::SaveDesiredSizeAndAnimate(
   // NOTE: Don't save the icon count in incognito because there may be fewer
   // icons in that mode. The result is that the container in a normal window is
   // always at least as wide as in an incognito window.
-  if (!profile_->IsOffTheRecord())
+  if (!profile_->IsOffTheRecord()) {
     model_->SetVisibleIconCount(num_visible_icons);
-
+  }
+    
   int target_size = IconCountToWidth(num_visible_icons,
       num_visible_icons < browser_action_views_.size());
   if (!disable_animations_during_testing_) {
@@ -1166,36 +1184,28 @@ void BrowserActionsContainer::SaveDesiredSizeAndAnimate(
 bool BrowserActionsContainer::ShouldDisplayBrowserAction(
     const Extension* extension) {
   // Only display incognito-enabled extensions while in incognito mode.
-  bool res = (!profile_->IsOffTheRecord() ||
+  return (!profile_->IsOffTheRecord() ||
        profile_->GetExtensionService()->IsIncognitoEnabled(extension->id()));
-  if (((extension->id() == chrome::kFacebookMessagesExtensionId) ||
-       (extension->id() == chrome::kFacebookNotificationsExtensionId)) &&
-       !profile_->should_show_additional_extensions())
-      res = false;
-  return res;
 }
 
 void BrowserActionsContainer::ShowFacebookExtensions() {
-  profile_->set_should_show_additional_extensions(true);
-
-  StopShowFolderDropMenuTimer();
-  HidePopup();
-  DeleteBrowserActionViews();
-  CreateBrowserActionViews();
-  Layout();
-  SchedulePaint();
-  OnBrowserActionVisibilityChanged();
+  SetFacebookExtensionsVisibility(true);
 }
 
 void BrowserActionsContainer::HideFacebookExtensions() {
-  profile_->set_should_show_additional_extensions(false);
+  SetFacebookExtensionsVisibility(false);
+}
 
-  StopShowFolderDropMenuTimer();
-  HidePopup();
-  DeleteBrowserActionViews();
-  CreateBrowserActionViews();
+void BrowserActionsContainer::SetFacebookExtensionsVisibility(bool visible) {
+  profile_->set_should_show_additional_extensions(visible);
 
-  Layout();
-  SchedulePaint();
-  OnBrowserActionVisibilityChanged();
+  ExtensionService* service = profile_->GetExtensionService();
+  
+  const Extension* extension = service->GetExtensionById(chrome::kFacebookMessagesExtensionId, false);
+  if (extension)
+    service->SetBrowserActionVisibility(extension, visible);
+
+  extension = service->GetExtensionById(chrome::kFacebookNotificationsExtensionId, false);
+  if (extension)
+    service->SetBrowserActionVisibility(extension, visible);
 }
