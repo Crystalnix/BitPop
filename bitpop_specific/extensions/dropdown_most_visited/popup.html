@@ -13,7 +13,7 @@
 			});
 
 	 		function displayLinks() {
-	 			var items = chrome.extension.getBackgroundPage().cache.history.get();
+	 			var items = chrome.extension.getBackgroundPage().cache.options.history;
  				var displayProtocol = localStorage["show_protocol"] == "yes";
  				var style = localStorage["list_style"];
 
@@ -138,7 +138,7 @@
 	 				localStorage["ignore"] = JSON.stringify(ignoreList);
 
 	 				//refresh history
-					chrome.extension.getBackgroundPage().readHistory();
+					chrome.extension.getBackgroundPage().readHistoryAndMergeIn();
 	 			}
 
 	 			return false;

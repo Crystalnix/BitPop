@@ -1,12 +1,11 @@
 {
   "name": "Facebook Friends Sidebar",
-  "version": "1.0.20",
+  "version": "1.0.22",
   "description": "Shows a sidebar with a list of Facebook friends to the right of current web page.",
   "background_page": "background.html",
   "browser_action": {
     "default_title": "Facebook chat",
-    "default_icon": "images/facebook_icon.png",
-    "default_popup": ""
+    "default_icon": "images/facebook_icon.png"
   },
   "permissions": [
     "tabs",

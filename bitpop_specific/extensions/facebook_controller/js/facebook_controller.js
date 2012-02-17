@@ -57,14 +57,7 @@ bitpop.FacebookController = (function() {
       onObserve({ extensionId: 'omkphklbdjafhafacohmepaahbofnkcp' });
 
       if (localStorage.accessToken) {
-        checkForPermissions(function() {
-          notifyObservingExtensions({ type: 'accessTokenAvailable',
-                                        accessToken: localStorage.accessToken });
-          if (localStorage.myUid)
-            onGotUid();
-          else
-            getMyUid();
-        });
+        checkForPermissions(hadAccessTokenCallback);
       }
     }
   };
@@ -80,6 +73,15 @@ bitpop.FacebookController = (function() {
     chrome.extension.sendRequest(IDS.friends, notificationObject);
   }
 
+  function hadAccessTokenCallback() {
+    notifyObservingExtensions({ type: 'accessTokenAvailable',
+                         accessToken: localStorage.accessToken });
+    if (localStorage.myUid)
+      onGotUid();
+    else
+      getMyUid();
+  }
+
   function setupAjaxErrorHandler() {
     $.ajaxSetup({
       error:function(x,e){
@@ -87,6 +89,11 @@ bitpop.FacebookController = (function() {
 
         if (x.status==0){
           errorMsg = 'You are offline!!\n Please Check Your Network.';
+          if (localStorage.accessToken) {
+            setTimeout(function() {
+              checkForPermissions(hadAccessTokenCallback);
+            }, 15000);
+          }
         } else if (x.status == 400) {
           var response = JSON.parse(x.responseText);
           if (response.error && response.error.type == 'OAuthException') {
@@ -484,7 +491,7 @@ bitpop.FacebookController = (function() {
         for (var j = 0; j < windows[i].tabs.length; j++) {
           if (windows[i].tabs[j].url.indexOf(urlStart) == 0 ||
               windows[i].tabs[j].url.indexOf(loginUrlStart) == 0) {
-            chrome.tabs.update(windows[i].tabs[j].id, { selected: true });
+            chrome.tabs.update(windows[i].tabs[j].id, { selected: true, url: url });
             chrome.windows.update(windows[i].id, { focused: true });
             found = true;
             break;
@@ -544,9 +551,14 @@ bitpop.FacebookController = (function() {
     }
   }
 
-  function onLogin(request) {
-    if (!localStorage.accessToken) // do not allow to login twice
+  function onLogin(request, callback) {
+    if (!localStorage.accessToken) {// do not allow to login twice
       login(FB_PERMISSIONS);
+      if (callback) 
+        callback({ canLogin: true });
+    }
+    else if (callback)
+      callback({ canLogin: false });
   }
 
   function onSendChatMessage(request) {

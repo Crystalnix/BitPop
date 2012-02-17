@@ -11,19 +11,27 @@
   <script type="text/javascript" src="js/friends_sidebar.js"></script>
   <script type="text/javascript">
     function setAntiscrollHeight() {
+      console.log('setAntiscrollHeight() START');
       $('.box, .box .antiscroll-inner').height(
         $('body').height() - $('.box-wrap').offset().top
       );
       $('.antiscroll-inner').width($('body').width());
+      console.log('setAntiscrollHeight() END');
     }
 
-    $(function() {
+    $(document).ready(function() {
+      //console.log('onReady 1 START');
       setAntiscrollHeight();
       $('.box-wrap').antiscroll();
+      //console.log('onReady 1 END');
     });
     $(window).resize(function() {
+      //console.log('onResize START');
       setAntiscrollHeight();
-      $('.box-wrap').data('antiscroll').rebuild();
+      if ($('.box-wrap').data('antiscroll')) {
+        $('.box-wrap').data('antiscroll').rebuild();
+        }
+      //console.log('onResize END');
     });
   </script>
 </head>
@@ -52,6 +60,10 @@
           <img src="images/facebook_login_bitpop.png" alt="Facebook chat login" />
           <p>Chat with your friends<br />while surfing</p>
           <button class="btn">Login</button>
+          <p class="error" style="display:none">
+            The login data is already present. Check your internet connection. You will be connected
+            as soon as possible.
+          </p>
         </div>
       </div>
     </div>

@@ -498,12 +498,15 @@ void BrowserActionsContainer::CreateBrowserActionViews() {
     if (service) {
       const Extension* extension = service->GetExtensionById(chrome::kFacebookChatExtensionId, false);
       model_->MoveBrowserAction(extension, 0);
-
-      if (profile_->should_show_additional_extensions()) {
+      
+      if (!profile_->should_show_additional_extensions()) {
         extension = service->GetExtensionById(chrome::kFacebookMessagesExtensionId, false);
-        model_->MoveBrowserAction(extension, 1);
+        if (extension)
+          service->SetBrowserActionVisibility(extension, false);
+
         extension = service->GetExtensionById(chrome::kFacebookNotificationsExtensionId, false);
-        model_->MoveBrowserAction(extension, 2);
+        if (extension)
+          service->SetBrowserActionVisibility(extension, false);
       }
     }
   }
@@ -1208,4 +1211,9 @@ void BrowserActionsContainer::SetFacebookExtensionsVisibility(bool visible) {
   extension = service->GetExtensionById(chrome::kFacebookNotificationsExtensionId, false);
   if (extension)
     service->SetBrowserActionVisibility(extension, visible);
+
+  if (visible) {
+    MoveBrowserAction(chrome::kFacebookMessagesExtensionId, 1);
+    MoveBrowserAction(chrome::kFacebookNotificationsExtensionId, 2);
+  }
 }

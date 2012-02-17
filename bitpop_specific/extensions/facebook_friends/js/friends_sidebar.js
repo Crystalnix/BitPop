@@ -13,10 +13,20 @@ bitpop.FriendsSidebar = (function() {
   var self = arguments.callee;  // for use in private functions to ref the enclosing function
 
   $(document).ready(function() {
+    //console.log('onReady 2 START');
+    var bgPage = chrome.extension.getBackgroundPage();
+    //console.log(bgPage);
+
     // TODO: specify narrower element selector
     $('button').click(function () {
       chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
-        { type: 'login' });
+        { type: 'login' },
+        function (params) {
+          if (params.canLogin && $('p.error').is(':visible'))
+            $('p.error').fadeOut();
+          else if (!params.canLogin)
+            $('p.error').fadeIn();
+        });
     });
 
     $('#logout a').click(function() {
@@ -28,8 +38,7 @@ bitpop.FriendsSidebar = (function() {
       self.updateDOM();
     });
 
-    var bgPage = chrome.extension.getBackgroundPage();
-    if (bgPage.friendList) {
+    if (bgPage && bgPage.friendList) {
       // 2nd param = true is for dontAnimate, we need an instant switch to friends
       // view:
       self.updateFriendList(bgPage.friendList, true);
@@ -37,6 +46,8 @@ bitpop.FriendsSidebar = (function() {
     else
       // instant move to login screen, dontAnimate = true
       self.slideToLoginView(true);
+
+    //console.log('onReady 2 END');
   });
 
   /*- private ------------------------*/
@@ -100,6 +111,9 @@ bitpop.FriendsSidebar = (function() {
   };
 
   self.slideToFriendsView = function(dontAnimate) {
+    if ($('p.error').is(':visible'))
+      $('p.error').fadeOut();
+
     if (!dontAnimate)
       $('#slide-wrap').stop().animate({ scrollLeft: 0 },
           localConst.SLIDE_ANIMATION_DURATION);

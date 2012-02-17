@@ -351,7 +351,7 @@ BrowserView::BrowserView(Browser* browser)
   registrar_.Add(this, NotificationType::FACEBOOK_SESSION_LOGGED_OUT,
                  Source<Profile>(browser_->profile()));
   registrar_.Add(this, NotificationType::FACEBOOK_SESSION_LOGGED_IN,
-                 Source<Profile>(browser_->profile())); 
+                 Source<Profile>(browser_->profile()));
 }
 
 BrowserView::~BrowserView() {

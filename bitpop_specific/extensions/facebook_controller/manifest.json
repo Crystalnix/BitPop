@@ -1,6 +1,6 @@
 {
   "name": "Facebook Controller",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "Make calls to Facebook Graph API, FQL queries, XMPP chat service.",
   "background_page": "background.html",
   "permissions": [

@@ -38,7 +38,7 @@ static const int kRightPadding = 10;
 static const int kChatItemPadding = 10;
 
 // Padding between the top/bottom and the content.
-static const int kTopBottomPadding = 2;
+static const int kTopBottomPadding = 4;
 
 static const SkColor kBorderColor = SkColorSetRGB(214, 214, 214);
 

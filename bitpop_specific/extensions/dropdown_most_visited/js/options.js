@@ -1,60 +1,76 @@
+var bg_window;
+
 $(document).ready(function(){
-	loadOptions();
+  bg_window = chrome.extension.getBackgroundPage();
 
-	$("#show_protocol").change(function(event) {
-		$(".url").text($(this).is(":checked") ? "http://www.google.com/chrome" : "www.google.com/chrome");
-	});
+  loadOptions();
 
-	$("#primary_color").change(function(event) {
-		$(".title").css("color", $(this).val());
-	});
-
-	$("#secondary_color").change(function(event) {
-		$(".subtitle").css("color", $(this).val());
-	});
-
-	$("#border_color").change(function(event) {
-		$(".spacer").css("border-bottom", "1px solid "+ $(this).val());
-	});
-
-	$("#background_color").change(function(event) {
-		$(".links").css("background-color", $(this).val());
-		$(".links_inline").css("background-color", $(this).val());
-		var hover_color = $("#hover_color").val();
-		var bg_color = $("#background_color").val();
-		$(".details").hover(function () {
-			$(this).css("background-color", hover_color);
-		}, function () {
-			$(this).css("background-color", bg_color);
-		});
-	});
-
-	$("#hover_color").change(function(event) {
-		var hover_color = $(this).val();
-		var bg_color = $("#background_color").val();
-		$(".details").hover(function () {
-			$(this).css("background-color", hover_color);
-		}, function () {
-			$(this).css("background-color", bg_color);
-		});
-	});
-
-  $("#should_sync").click(function(event) {
-    // Turn syncing on/off
-    var bg_window = chrome.extension.getBackgroundPage();
-
-    var oldSync = localStorage['sync'];
-    bg_window.saveOption('sync', !(oldSync == 'yes'));
-    localStorage['sync'] = (oldSync == 'yes') ? 'no' : 'yes';
-
-    if (localStorage['sync'] == 'no')
-      bg_window.disableSync();
-    else {
-      bg_window.enableSync(true);
-    }
+  $("#show_protocol").change(function(event) {
+          $(".url").text($(this).is(":checked") ? "http://www.google.com/chrome" : "www.google.com/chrome");
   });
 
+  $("#primary_color").change(function(event) {
+          $(".title").css("color", $(this).val());
+  });
+
+  $("#secondary_color").change(function(event) {
+          $(".subtitle").css("color", $(this).val());
+  });
+
+  $("#border_color").change(function(event) {
+          $(".spacer").css("border-bottom", "1px solid "+ $(this).val());
+  });
+
+  $("#background_color").change(function(event) {
+          $(".links").css("background-color", $(this).val());
+          $(".links_inline").css("background-color", $(this).val());
+          var hover_color = $("#hover_color").val();
+          var bg_color = $("#background_color").val();
+          $(".details").hover(function () {
+                  $(this).css("background-color", hover_color);
+          }, function () {
+                  $(this).css("background-color", bg_color);
+          });
+  });
+
+  $("#hover_color").change(function(event) {
+          var hover_color = $(this).val();
+          var bg_color = $("#background_color").val();
+          $(".details").hover(function () {
+                  $(this).css("background-color", hover_color);
+          }, function () {
+                  $(this).css("background-color", bg_color);
+          });
+  });
+
+  $("#should_sync").click(function(event) {
+    prevSync = localStorage['bitpop_dropdown_sync'];
+  });
+
+  prevSync = localStorage['bitpop_dropdown_sync'];
 });
+
+function setSyncUI() {
+  if (localStorage['bitpop_dropdown_sync'] == 1)
+    $('#should_sync').attr('checked', true);
+  else
+    $('#should_sync').attr('checked', false);
+}
+
+function applySyncing() {
+  if (prevSync == ($('#should_sync').is(':checked') ? 1 : 0))
+    return;
+
+  if (localStorage['bitpop_dropdown_sync'] == 1) {
+    bg_window.disableSync();
+  }
+  else {
+    bg_window.enableSync(true);
+    // TODO: save options to cache and data store
+    // TODO: save data in bookmark
+  }
+  setSyncUI();
+}
 
 function saveOptions() {
 
@@ -114,9 +130,7 @@ function saveOptions() {
 		localStorage["ignore"] = JSON.stringify(ignoreListNew);
 	}
 
-  //save sync flag
-  localStorage['sync'] = $('#should_sync').is(":checked") ? 'yes' : 'no';
-
+        applySyncing();
 
 	$("#form_status").show();
 	setTimeout(function() {
@@ -124,7 +138,7 @@ function saveOptions() {
 	}, 1000);
 
 	//refresh history
-	chrome.extension.getBackgroundPage().readHistory();
+	//chrome.extension.getBackgroundPage().readHistory();
 
 	loadOptions();
 
@@ -181,9 +195,8 @@ function loadOptions() {
 		localStorage["ignore"] = JSON.stringify(new Array());
 	}
 
-  if (!localStorage['sync']) {
-    localStorage['sync'] = 'no';
-  }
+        if (!('bitpop_dropdown_sync' in localStorage))
+          localStorage['bitpop_dropdown_sync'] = 0;
 
 	//load
 	$("#list_style_"+localStorage["list_style"]).attr("checked", true);
@@ -223,11 +236,10 @@ function loadOptions() {
 
 	$("#reset_ignore_label").text("Reset All (" + ignoreList.length + " items)");
 
-  $('#should_sync').attr('checked', localStorage['sync'] == 'yes');
-
-	//colors
+  	//colors
 	resetColors();
-
+        
+        setSyncUI();
 }
 
 function resetOptions() {

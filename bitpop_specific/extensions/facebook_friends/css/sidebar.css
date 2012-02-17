@@ -138,5 +138,12 @@ span.leftSide {
   width: 70%;
 }
 #logout a {
-  color: gray;
+  color: #360000;
+}
+.error {
+  color: red;
+  font-size: small;
+  margin-left: 5px;
+  margin-right: 5px;
+  text-align: left;
 }
