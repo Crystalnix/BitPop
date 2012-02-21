@@ -1,6 +1,6 @@
 {
   "name": "Facebook Friends Sidebar",
-  "version": "1.0.22",
+  "version": "1.0.23",
   "description": "Shows a sidebar with a list of Facebook friends to the right of current web page.",
   "background_page": "background.html",
   "browser_action": {

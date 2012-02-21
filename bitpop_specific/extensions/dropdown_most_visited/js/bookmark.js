@@ -1,9 +1,9 @@
 /**
 * Bookmark handling code for chrome extensions
 *
-* Copyright (c) 2011 Ankit Ahuja
+* Copyright (c) 2012 Ankit Ahuja
 * Dual licensed under GPL and MIT licenses.
-**/
+*/
 
 function createBookmark(name, url, parentId, callback) {
   function makeCreateBookmarkRequest(id) {
@@ -11,14 +11,11 @@ function createBookmark(name, url, parentId, callback) {
       parentId: id,
       title: name
     };
-
     if (url) {
       properties.url = url;
     }
-
     chrome.bookmarks.create(properties, callback);
   }
-
   if (!parentId) {
     getRootBookmark(function(bookmark) {
       makeCreateBookmarkRequest(bookmark.id);
@@ -33,9 +30,8 @@ function loadBookmark(id, title, callback) {
     chrome.bookmarks.get(id, callback);
     return;
   }
-
   if (title) {
-    chrome.bookmarks.search('dropdown_most_visited', function(bookmarks) {
+    chrome.bookmarks.search(title, function(bookmarks) {
       callback(bookmarks);
     });
   }
@@ -58,3 +54,4 @@ function getRootBookmark(callback) {
     callback(bookmarks[0].children[1]);
   });
 }
+

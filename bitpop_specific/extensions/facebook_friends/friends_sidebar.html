@@ -11,12 +11,10 @@
   <script type="text/javascript" src="js/friends_sidebar.js"></script>
   <script type="text/javascript">
     function setAntiscrollHeight() {
-      console.log('setAntiscrollHeight() START');
       $('.box, .box .antiscroll-inner').height(
         $('body').height() - $('.box-wrap').offset().top
       );
       $('.antiscroll-inner').width($('body').width());
-      console.log('setAntiscrollHeight() END');
     }
 
     $(document).ready(function() {

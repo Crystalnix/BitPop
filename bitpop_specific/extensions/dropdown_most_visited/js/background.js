@@ -87,6 +87,7 @@ function saveOptionsToCache(options) {
 }
 
 function saveOptionsToDataStore() {
+  cache.options.timestamp = Date.now();
   for (option in cache.options) {
     if (option === 'history') {
       try {

@@ -179,7 +179,8 @@ bitpop.FriendsSidebar = (function() {
     //  already_created = true;
     //}
 
-    $('.box-wrap').data('antiscroll').rebuild();
+    if ($('.box-wrap').data('antiscroll'))
+      $('.box-wrap').data('antiscroll').rebuild();
     //setTimeout(self.updateDOM, 10000);
   };
 
@@ -199,14 +200,15 @@ bitpop.FriendsSidebar = (function() {
     $('#logout').show();
 
     self.friendList = response;
-    var statuses = chrome.extension.getBackgroundPage().statuses;
+    var statuses = chrome.extension.getBackgroundPage() ? 
+        chrome.extension.getBackgroundPage().statuses : null;
     for (var i = 0; i < self.friendList.length; i++) {
-      if (self.friendList[i].online_presence === null) {
-        if (statuses[self.friendList[i].uid.toString()])
-          self.friendList[i].online_presence =
-            statuses[self.friendList[i].uid.toString()];
-        else
-          self.friendList[i].online_presence = 'offline';
+      if (statuses && statuses[self.friendList[i].uid.toString()]) {
+        self.friendList[i].online_presence =
+          statuses[self.friendList[i].uid.toString()];
+      }
+      else if (self.friendList[i].online_presence === null) {
+        self.friendList[i].online_presence = 'offline';
       }
     }
 

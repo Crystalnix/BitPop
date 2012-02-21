@@ -277,6 +277,7 @@ if (!button_)
       [button_ setImage:idleImage];
     else
       [button_ setImage:nil];
+    [button_ setNeedsDisplay:YES];
   }
 }
 
