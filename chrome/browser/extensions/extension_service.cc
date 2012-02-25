@@ -2235,7 +2235,7 @@ void ExtensionService::Observe(NotificationType type,
     }
 #if defined(OS_MACOSX)
     case NotificationType::APP_ACTIVATED: {
-      profile->GetFacebookBitpopNotification()->ClearNotification();
+      profile_->GetFacebookBitpopNotification()->ClearNotification();
       break;
     }
 #endif
