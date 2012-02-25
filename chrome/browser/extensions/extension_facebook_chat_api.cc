@@ -13,10 +13,12 @@
 #include "content/common/notification_service.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
 #include "chrome/browser/facebook_chat/facebook_chat_create_info.h"
 #include "chrome/browser/facebook_chat/facebook_chat_manager.h"
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
 #include "chrome/browser/facebook_chat/received_message_info.h"
+
 
 namespace {
 // Errors.
@@ -148,6 +150,9 @@ bool NewIncomingMessageFunction::RunImpl() {
     mgr->CreateFacebookChat(FacebookChatCreateInfo(jid, username, status));
 
     mgr->AddNewUnreadMessage(jid, message);
+
+    browser->profile()->GetFacebookBitpopNotification()->
+        NotifyUnreadMessagesWithLastUser(mgr->total_unread(), jid);
 
     NotificationService::current()->Notify(
       NotificationType::FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE,

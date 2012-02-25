@@ -59,6 +59,7 @@ class FacebookChatManager : public base::RefCountedThreadSafe<FacebookChatManage
     // Returns true if initialized properly.
     bool Init(Profile *profile);
 
+    int total_unread() const;
   private:
     void NotifyModelChanged();
 

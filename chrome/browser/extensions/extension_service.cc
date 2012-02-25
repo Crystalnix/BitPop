@@ -95,6 +95,10 @@
 #include "chrome/browser/extensions/extension_input_ui_api.h"
 #endif
 
+#if defined(OS_MACOSX)
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
+#endif
+
 using base::Time;
 
 namespace errors = extension_manifest_errors;
@@ -519,6 +523,13 @@ ExtensionService::ExtensionService(Profile* profile,
                  NotificationService::AllSources());
   registrar_.Add(this, NotificationType::RENDERER_PROCESS_TERMINATED,
                  NotificationService::AllSources());
+#if defined(OS_MACOSX)
+  // We need to know when the browser comes forward so we can bring modal plugin
+  // windows forward too.
+  registrar_.Add(this, NotificationType::APP_ACTIVATED,
+                 NotificationService::AllSources());
+#endif
+
   pref_change_registrar_.Init(profile->GetPrefs());
   pref_change_registrar_.Add(prefs::kExtensionInstallAllowList, this);
   pref_change_registrar_.Add(prefs::kExtensionInstallDenyList, this);
@@ -2222,7 +2233,12 @@ void ExtensionService::Observe(NotificationType type,
       }
       break;
     }
-
+#if defined(OS_MACOSX)
+    case NotificationType::APP_ACTIVATED: {
+      profile->GetFacebookBitpopNotification()->ClearNotification();
+      break;
+    }
+#endif
     default:
       NOTREACHED() << "Unexpected notification type.";
   }

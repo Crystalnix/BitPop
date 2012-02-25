@@ -142,3 +142,11 @@ void FacebookChatManager::RemoveObserver(Observer* observer) {
 void FacebookChatManager::NotifyModelChanged() {
   FOR_EACH_OBSERVER(Observer, observers_, ModelChanged());
 }
+
+int FacebookChatManager::total_unread() const {
+  int total = 0;
+  for (ChatSet::iterator it = chats_.begin(); it != chats_.end(); it++) {
+    total += (*it)->num_notifications();
+  }
+  return total;
+}

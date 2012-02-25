@@ -23,6 +23,7 @@
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
 #include "chrome/browser/facebook_chat/facebook_chat_manager.h"
 #include "chrome/browser/net/pref_proxy_config_service.h"
 #include "chrome/browser/prefs/pref_service.h"
@@ -206,6 +207,8 @@ class OffTheRecordProfileImpl : public Profile,
 #endif
 
     extension_process_manager_.reset(ExtensionProcessManager::Create(this));
+
+    facebook_bitpop_notification_.reset(new FacebookBitpopNotification());
 
     BrowserList::AddObserver(this);
 
@@ -705,6 +708,10 @@ class OffTheRecordProfileImpl : public Profile,
     return NULL;
   }
 
+  virtual FacebookBitpopNotification* GetFacebookBitpopNotification() const {
+    return facebook_bitpop_notification_.get();
+  }
+
  private:
   void CreateQuotaManagerAndClients() {
     if (quota_manager_.get()) {
@@ -810,6 +817,8 @@ class OffTheRecordProfileImpl : public Profile,
 
   // Used read-only.
   scoped_refptr<TransportSecurityPersister> transport_security_loader_;
+
+  scoped_ptr<FacebookBitpopNotification> facebook_bitpop_notification_;
 
   DISALLOW_COPY_AND_ASSIGN(OffTheRecordProfileImpl);
 };

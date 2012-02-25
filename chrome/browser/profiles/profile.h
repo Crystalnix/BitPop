@@ -64,6 +64,7 @@ class ExtensionPrefValueMap;
 class ExtensionProcessManager;
 class ExtensionService;
 class ExtensionSpecialStoragePolicy;
+class FacebookBitpopNotification;
 class FacebookChatManager;
 class FaviconService;
 class FilePath;
@@ -570,6 +571,8 @@ class Profile {
   
   virtual bool should_show_additional_extensions() const { return false; }
   virtual void set_should_show_additional_extensions(bool flag) {}
+
+  virtual FacebookBitpopNotification* GetFacebookBitpopNotification() const = 0;
 
  protected:
   friend class OffTheRecordProfileImpl;

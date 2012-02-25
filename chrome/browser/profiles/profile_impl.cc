@@ -103,12 +103,14 @@
 #include "webkit/quota/quota_manager.h"
 
 #if defined(OS_WIN)
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
 #include "chrome/browser/instant/promo_counter.h"
 #include "chrome/browser/password_manager/password_store_win.h"
 #include "chrome/installer/util/install_util.h"
 #elif defined(OS_MACOSX)
 #include "chrome/browser/keychain_mac.h"
 #include "chrome/browser/password_manager/password_store_mac.h"
+#include "chrome/browser/ui/cocoa/facebook_chat/facebook_bitpop_notification_mac.h"
 #elif defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/enterprise_extension_observer.h"
 #elif defined(OS_POSIX) && !defined(OS_CHROMEOS)
@@ -298,7 +300,16 @@ ProfileImpl::ProfileImpl(const FilePath& path,
       checked_instant_promo_(false),
 #endif
       delegate_(delegate),
-      should_show_additional_extensions_(false) {
+      should_show_additional_extensions_(false),
+#if defined(OS_WIN)
+      facebook_bitpop_notification_(new FacebookBitpopNotification())
+#elif defined(OS_MACOSX)
+      ALLOW_THIS_IN_INITIALIZER_LIST(facebook_bitpop_notification_(
+            new FacebookBitpopNotificationMac(this)))
+#else
+      facebook_bitpop_notification_(NULL)
+#endif
+  {
   DCHECK(!path.empty()) << "Using an empty path will attempt to write " <<
                             "profile files to the root directory!";
 
@@ -1694,4 +1705,8 @@ bool ProfileImpl::should_show_additional_extensions() const {
 
 void ProfileImpl::set_should_show_additional_extensions(bool flag) {
   should_show_additional_extensions_ = flag;
+}
+
+FacebookBitpopNotification* ProfileImpl::GetFacebookBitpopNotification() const {
+  return facebook_bitpop_notification_.get();
 }

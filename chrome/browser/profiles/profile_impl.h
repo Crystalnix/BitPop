@@ -152,6 +152,7 @@ class ProfileImpl : public Profile,
   virtual bool should_show_additional_extensions() const;
   virtual void set_should_show_additional_extensions(bool flag);
                       
+  virtual FacebookBitpopNotification* GetFacebookBitpopNotification() const;
  private:
   friend class Profile;
 
@@ -307,6 +308,8 @@ class ProfileImpl : public Profile,
   Profile::Delegate* delegate_;
 
   bool should_show_additional_extensions_;
+
+  scoped_ptr<FacebookBitpopNotification> facebook_bitpop_notification_;
                       
   DISALLOW_COPY_AND_ASSIGN(ProfileImpl);
 };
