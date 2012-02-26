@@ -1,6 +1,6 @@
 BitPop browser project.
 Copyright (C) 2006-2011 The Chromium Authors. All Rights Reserved.
-Copyright (C) 2011 House of Life Property ltd.
+Copyright (C) 2012 House of Life Property ltd.
 
 A browser based on Chromium open-source project.
 
@@ -17,7 +17,7 @@ Build instructions:
 - install the depot_tools using
   http://dev.chromium.org/developers/how-tos/install-depot-tools
   as a reference
-- $ gclient config http://src.chromium.org/svn/releases/12.0.742.100
+- $ gclient config http://src.chromium.org/svn/releases/13.0.782.107
 - Optionally: edit .gclient file replacing "custom_deps" entry with
   "custom_deps": {
     "src/third_party/WebKit/LayoutTests": None,
