@@ -15,7 +15,7 @@ static const float kBadgeFraction = 0.4f;
 // The indentation of the badge.
 static const float kBadgeIndent = 5.0f;
 
-static const float kProfileImageFrameFraction = 0.45f;
+static const float kProfileImageFrameFraction = 0.6f;
 
 // A view that draws our dock tile.
 @interface DockTileView : NSView {
@@ -68,7 +68,7 @@ static const float kProfileImageFrameFraction = 0.45f;
             operation:NSCompositeSourceOver
              fraction:1.0];
 
-  NSRect badgeRect;
+  NSRect badgeRect = NSZeroRect;
 
   if (downloads_ != 0) {
     badgeRect = [self bounds];
@@ -370,6 +370,7 @@ static const float kProfileImageFrameFraction = 0.45f;
     [[NSApp dockTile] setShowsApplicationBadge:YES];
   }
   else {
+    [[NSApp dockTile] setBadgeLabel:nil];
     [[NSApp dockTile] setShowsApplicationBadge:NO];
   }
 }
