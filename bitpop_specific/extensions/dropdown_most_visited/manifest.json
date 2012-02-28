@@ -11,5 +11,5 @@
       "default_popup": "popup.html"
    },
    "permissions": [ "tabs", "history", "bookmarks", "chrome://favicon/" ],
-   "version": "0.10"
+   "version": "0.11"
 }

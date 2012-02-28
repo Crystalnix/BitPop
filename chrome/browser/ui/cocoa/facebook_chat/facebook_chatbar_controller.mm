@@ -30,6 +30,27 @@ const NSTimeInterval kRemoveAnimationDuration = 0.6;
 const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
 }  // namespace
 
+@interface LayoutChildWindowsAnimation : NSAnimation {
+  NSMutableArray* chatItemControllers_;
+}
+
+@property (nonatomic, assign) NSMutableArray* chatItemControllers;
+
+@end
+
+@implementation LayoutChildWindowsAnimation
+
+@synthesize chatItemControllers=chatItemControllers_;
+
+- (void)setCurrentProgress:(NSAnimationProgress)progress {
+  [super setCurrentProgress:progress];
+
+  for (FacebookChatItemController* controller in chatItemControllers_)
+    [controller layoutChildWindows];
+}
+
+@end
+
 @interface FacebookChatbarController(Private)
 
 - (void)layoutItems:(BOOL)skipFirst;
@@ -164,10 +185,12 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
     }
   }
 
-  addAnimation_.reset([[NSAnimation alloc] initWithDuration:kAddAnimationDuration
-      animationCurve:NSAnimationEaseIn]);
+  addAnimation_.reset([[LayoutChildWindowsAnimation alloc]
+      initWithDuration:kAddAnimationDuration
+        animationCurve:NSAnimationEaseIn]);
   [addAnimation_ setAnimationBlockingMode:NSAnimationNonblocking];
   [addAnimation_ setDelegate:self];
+  [addAnimation_ setChatItemControllers:chatItemControllers_];
   [addAnimation_ startAnimation];
 
   // Insert new item at the left.
@@ -223,11 +246,12 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
 
   }
 
-  removeAnimation_.reset([[NSAnimation alloc]
+  removeAnimation_.reset([[LayoutChildWindowsAnimation alloc]
       initWithDuration:kPlaceFirstAnimationDuration
         animationCurve:NSAnimationEaseOut]);
   [removeAnimation_ setAnimationBlockingMode:NSAnimationNonblocking];
   [removeAnimation_ setDelegate:self];
+  [removeAnimation_ setChatItemControllers:chatItemControllers_];
   [removeAnimation_ startAnimation];
 
   [self layoutItems];
@@ -249,7 +273,8 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
 - (void)placeFirstInOrder:(FacebookChatItemController*)chatItem {
   NSMutableArray *container = chatItemControllers_.get();
 
-  if([container containsObject:chatItem] == NO)
+  if([container containsObject:chatItem] == NO ||
+      [[chatItem view] isHidden] == NO) // if chat item is visible - no need to reorder items
     return;
 
   // NSUInteger prevActiveIndex = NSNotFound;
@@ -262,31 +287,48 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
   if (placeFirstAnimation_.get())
     [placeFirstAnimation_ stopAnimation];
 
-  placeFirstAnimation_.reset([[NSAnimation alloc]
+  placeFirstAnimation_.reset([[LayoutChildWindowsAnimation alloc]
       initWithDuration:kPlaceFirstAnimationDuration
         animationCurve:NSAnimationEaseIn]);
   [placeFirstAnimation_ setAnimationBlockingMode:NSAnimationNonblocking];
   [placeFirstAnimation_ setDelegate:self];
+  [placeFirstAnimation_ setChatItemControllers:chatItemControllers_];
   [placeFirstAnimation_ startAnimation];
+
+  // find active item
+  int activeItemIndex = -1;
+  int i = 0;
+  for (FacebookChatItemController* itemController
+      in chatItemControllers_.get()) {
+    if (![[itemController view] isHidden]) {
+      if ([itemController active]) {
+        activeItemIndex = i;
+        break;
+      }
+    }
+    else
+      break;
+    i++;
+  }
+
+  FacebookChatItemController* activeItem = nil;
+  if (activeItemIndex != -1) {
+    activeItem = [chatItemControllers_ objectAtIndex:activeItemIndex];
+  }
 
   [chatItem retain];
   [container removeObjectIdenticalTo:chatItem];
   [container insertObject:chatItem atIndex:0];
   [chatItem release];
 
-   // if (prevActiveIndex != NSNotFound) {
-   //   NSUInteger currentActiveIndex = NSNotFound;
-   //   for (FacebookChatItemController *controller in container) {
-   //     if ([controller active]) {
-   //       currentActiveIndex = [container indexOfObject:controller];
-   //       break;
-   //     }
-   //   }
+  if (activeItemIndex != -1) {
+    DCHECK(activeItem != nil);
 
-   //   [container exchangeObjectAtIndex:prevActiveIndex
-   //                             withObjectAtIndex:currentActiveIndex];
-   // }
-
+    [activeItem retain];
+    [container removeObjectIdenticalTo:activeItem];
+    [container insertObject:activeItem atIndex:activeItemIndex];
+    [activeItem release];
+  }
 
   [self layoutItems];
 }
@@ -348,8 +390,9 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
     addAnimation_.reset();
   } else if (animation == removeAnimation_)
     removeAnimation_.reset();
-  else if (animation == placeFirstAnimation_)
+  else if (animation == placeFirstAnimation_) {
     placeFirstAnimation_.reset();
+  }
 }
 
 @end

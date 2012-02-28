@@ -84,7 +84,7 @@ void FacebookProfileImageFetcherDelegate::OnURLFetchComplete(const URLFetcher* s
                                 withProfileImage:image];
       [[DockIcon sharedDockIcon] updateIcon];
 
-      [NSApp requestUserAttention:NSCriticalRequest];
+      [NSApp requestUserAttention:NSInformationalRequest];
     }
   }
 

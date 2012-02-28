@@ -37,6 +37,7 @@
  									.data("url", items[i].url)
  									.click(function(event) {
  										removeUrl($(this));
+                    event.preventDefault();
  									});
 
  					$details.append($icon);
@@ -57,7 +58,8 @@
  										} else {
  											//middle click
  											chrome.tabs.create({url:clickedUrl, selected: localStorage["middle"] == "foreground"});
- 										}
+                    }
+                    event.preventDefault();
  										return false;
  									});
 
