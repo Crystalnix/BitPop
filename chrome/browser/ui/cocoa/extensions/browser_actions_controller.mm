@@ -484,9 +484,12 @@ class ExtensionServiceObserverBridge : public NotificationObserver,
       notificationsExtension = *iter;
   }
   
-  toolbarModel_->MoveBrowserAction(chatExtension, 0);
-  toolbarModel_->MoveBrowserAction(messagesExtension, 1);
-  toolbarModel_->MoveBrowserAction(notificationsExtension, 2);
+  if (chatExtension)
+    toolbarModel_->MoveBrowserAction(chatExtension, 0);
+  if (messagesExtension)
+    toolbarModel_->MoveBrowserAction(messagesExtension, 1);
+  if (notificationsExtension)
+    toolbarModel_->MoveBrowserAction(notificationsExtension, 2);
 }
 
 - (void)addButtons {

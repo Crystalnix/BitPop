@@ -173,7 +173,8 @@ const CGFloat kCloseButtonTopYOffset = 3.0;
 // addChildWindow: and a subsequent showWindow:. Thus, we have our own version.
 - (void)showWindow:(id)sender {
   [parentWindow_ addChildWindow:[self window] ordered:NSWindowAbove];
-  [[self window] makeKeyAndOrderFront:self];
+  if ([parentWindow_ isVisible])
+    [[self window] makeKeyAndOrderFront:self];
 }
 
 - (void)close {
