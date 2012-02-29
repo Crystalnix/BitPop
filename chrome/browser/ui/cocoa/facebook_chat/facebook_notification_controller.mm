@@ -6,17 +6,25 @@
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_notification_controller.h"
 
 #include "base/logging.h"
+#include "base/mac/mac_util.h"
 #include "base/timer.h"
+#include "grit/app_resources.h"
+#include "grit/generated_resources.h"
+#include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_notification_view.h"
-#import "chrome/browser/ui/cocoa/hover_close_button.h"
+#import "chrome/browser/ui/cocoa/hover_image_button.h"
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
+#include "skia/ext/skia_utils_mac.h"
+#include "ui/base/resource/resource_bundle.h"
+
 
 namespace {
 const NSTimeInterval kBubbleMessageTimeoutSec = 10.0;
 const NSTimeInterval kAnimationDuration = 0.2;
 
 const CGFloat kCloseButtonDim = 16.0;
-const CGFloat kCloseButtonRightXOffset = 8.0;
+const CGFloat kCloseButtonRightXOffset = 4.0;
 const CGFloat kCloseButtonTopYOffset = 3.0;
 
 }
@@ -62,12 +70,29 @@ const CGFloat kCloseButtonTopYOffset = 3.0;
                  name:NSViewFrameDidChangeNotification
                object:bubble_];
 
-  hoverCloseButton_.reset([[HoverCloseButton alloc] initWithFrame:
+  hoverCloseButton_.reset([[HoverImageButton alloc] initWithFrame:
       NSMakeRect(0, 0, kCloseButtonDim, kCloseButtonDim)]);
   [hoverCloseButton_ setAutoresizingMask:NSViewMinXMargin | NSViewMinYMargin];
   [hoverCloseButton_ setTarget:self];
   [hoverCloseButton_ setAction:@selector(close)];
 
+  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+
+  CGColorSpaceRef color_space = base::mac::GetSystemColorSpace();
+  NSImage* defaultImage = gfx::SkBitmapToNSImageWithColorSpace(
+      *(rb.GetBitmapNamed(IDR_CLOSE_BAR)), 
+      color_space);
+  NSImage* hoverImage = gfx::SkBitmapToNSImageWithColorSpace(
+      *(rb.GetBitmapNamed(IDR_CLOSE_BAR_H)),
+      color_space);
+  NSImage* pressedImage = gfx::SkBitmapToNSImageWithColorSpace(
+      *(rb.GetBitmapNamed(IDR_CLOSE_BAR_P)), 
+      color_space);
+  
+  [hoverCloseButton_ setDefaultImage:defaultImage];
+  [hoverCloseButton_ setHoverImage:hoverImage];
+  [hoverCloseButton_ setPressedImage:pressedImage];
+  
   [bubble_ addSubview:hoverCloseButton_];
 
   [view addSubview:bubble_];

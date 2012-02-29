@@ -49,6 +49,13 @@
   // fill the path with bg color
   [backgroundColor_ set];
   [bezier fill];
+
+  NSColor* strokeColor = [NSColor colorWithCalibratedRed:(182.0 / 255.0)
+                                                   green:(182.0 / 255.0)
+                                                    blue:(182.0 / 255.0)];
+  [strokeColor set];
+  [bezier setLineWidth:1.5];
+  [bezier stroke];
 }
 
 - (NSPoint)arrowTip {
