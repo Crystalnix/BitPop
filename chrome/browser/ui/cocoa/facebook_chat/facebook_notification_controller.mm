@@ -18,6 +18,7 @@ const NSTimeInterval kAnimationDuration = 0.2;
 const CGFloat kCloseButtonDim = 16.0;
 const CGFloat kCloseButtonRightXOffset = 8.0;
 const CGFloat kCloseButtonTopYOffset = 3.0;
+
 }
 
 @interface DenyingKeyStatusInfoBubbleWindow : InfoBubbleWindow

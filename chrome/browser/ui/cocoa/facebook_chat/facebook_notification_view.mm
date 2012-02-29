@@ -11,15 +11,19 @@
 
 namespace {
   // Rockmelt-like blueish color used for notification window background
-  const CGFloat kBgColorRed    = 176 / 255.0;
-  const CGFloat kBgColorGreen  = 246 / 255.0;
-  const CGFloat kBgColorBlue   = 255 / 255.0;
+  const CGFloat kBgColorRed    = 0xc2 / 255.0;
+  const CGFloat kBgColorGreen  = 0xec / 255.0;
+  const CGFloat kBgColorBlue   = 0xfc / 255.0;
   const CGFloat kBgColorAlpha  = 255 / 255.0;
 
   const NSUInteger kMaxNotifications = 20;
 
+  const int kPaddingTopBottom = 7;
+  const int kPaddingLeftRight = 5;
+
   const CGFloat kDefaultWidth = 200;
-  const CGFloat kContentWidth = kDefaultWidth - fb_bubble::kBubbleCornerRadius;
+  const CGFloat kContentWidth = kDefaultWidth - fb_bubble::kBubbleCornerRadius -
+    2 * kPaddingLeftRight;
 }
 
 @interface FacebookNotificationView(Private)
@@ -72,9 +76,9 @@ namespace {
   //CGContextRef ctx = (CGContextRef)[[NSGraphicsContext currentContext] graphicsPort];
   //CGContextSetTextMatrix(ctx, CGAffineTransformMakeScale(1, -1));
 
-  bounds.origin.x += fb_bubble::kBubbleCornerRadius / 2;
+  bounds.origin.x += fb_bubble::kBubbleCornerRadius / 2 + kPaddingLeftRight;
   // TODO: check if the coordinates choice was right for origin.y
-  bounds.origin.y += fb_bubble::kBubbleCornerRadius / 2;
+  bounds.origin.y += fb_bubble::kBubbleCornerRadius / 2 + kPaddingTopBottom;
 
   NSColor *textColor = [NSColor blackColor];
 
@@ -116,7 +120,8 @@ namespace {
   NSRect frame = [self frame];
   frame.size.width = kDefaultWidth;
   frame.size.height = [self heightForWidth:kContentWidth] +
-      fb_bubble::kBubbleCornerRadius + fb_bubble::kBubbleArrowHeight;
+      2 * kPaddingTopBottom + fb_bubble::kBubbleCornerRadius + 
+      fb_bubble::kBubbleArrowHeight;
   [self setFrame:frame];
 }
 

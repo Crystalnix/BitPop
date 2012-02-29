@@ -393,6 +393,9 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
   else if (animation == placeFirstAnimation_) {
     placeFirstAnimation_.reset();
   }
+
+  for (FacebookChatItemController* controller in chatItemControllers_.get())
+    [controller layoutChildWindows];
 }
 
 @end
