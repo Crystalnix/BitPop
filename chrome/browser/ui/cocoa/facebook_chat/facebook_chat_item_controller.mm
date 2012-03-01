@@ -434,8 +434,9 @@ if (!button_)
     [[FacebookPopupController popup] setAnchor:p];
   }
 
-  if (notificationController_.get() && [notificationController_ window] &&
-      [[notificationController_ window] isVisible]) {
+  if (notificationController_.get() && [notificationController_ window] //&&
+      //[[notificationController_ window] isVisible]
+      ) {
     [notificationController_ setAnchor:[self popupPointForNotificationWindow]];
   }
 }

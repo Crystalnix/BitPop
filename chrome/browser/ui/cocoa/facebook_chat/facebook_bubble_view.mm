@@ -46,16 +46,20 @@
       arrowStart.y)];
   [bezier closePath];
 
-  // fill the path with bg color
-  [backgroundColor_ set];
+  // draw border showing up from bottom layer
+  NSColor* borderColor = [NSColor colorWithCalibratedWhite:(100.0/255.0)
+                                                     alpha:1.0];
+  [borderColor set];
   [bezier fill];
 
-  NSColor* strokeColor = [NSColor colorWithCalibratedRed:(182.0 / 255.0)
-                                                   green:(182.0 / 255.0)
-                                                    blue:(182.0 / 255.0)];
-  [strokeColor set];
-  [bezier setLineWidth:1.5];
-  [bezier stroke];
+  // fill the path with bg color
+  NSAffineTransform* transform = [NSAffineTransform transform];
+  [transform scaleXBy:(bounds.size.width - 2.0)/bounds.size.width
+                  yBy:(bounds.size.height - 2.0)/bounds.size.height];
+  [transform translateXBy:1.0 yBy:1.0];
+  [bezier transformUsingAffineTransform:transform];
+  [backgroundColor_ set];
+  [bezier fill];
 }
 
 - (NSPoint)arrowTip {
