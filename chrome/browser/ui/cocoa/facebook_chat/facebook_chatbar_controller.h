@@ -69,6 +69,8 @@ class FacebookChatItem;
 - (void)viewFrameDidChange:(NSNotification*)notification;
 
 - (void)switchParentWindow:(NSWindow*)window;
+
+- (void)layoutItemsChildWindows;
 @end
 
 #endif  // CHROME_BROWSER_UI_COCOA_FACEBOOK_CHATBAR_CONTROLLER_H_

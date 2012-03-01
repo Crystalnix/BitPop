@@ -17,7 +17,7 @@
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "ui/base/resource/resource_bundle.h"
-
+#include "ui/gfx/image.h"
 
 namespace {
 const NSTimeInterval kBubbleMessageTimeoutSec = 10.0;
@@ -25,7 +25,7 @@ const NSTimeInterval kAnimationDuration = 0.2;
 
 const CGFloat kCloseButtonDim = 16.0;
 const CGFloat kCloseButtonRightXOffset = 4.0;
-const CGFloat kCloseButtonTopYOffset = 3.0;
+const CGFloat kCloseButtonTopYOffset = 7.0;
 
 }
 
@@ -78,21 +78,20 @@ const CGFloat kCloseButtonTopYOffset = 3.0;
 
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
 
-  CGColorSpaceRef color_space = base::mac::GetSystemColorSpace();
-  NSImage* defaultImage = gfx::SkBitmapToNSImageWithColorSpace(
-      *(rb.GetBitmapNamed(IDR_CLOSE_BAR)), 
-      color_space);
-  NSImage* hoverImage = gfx::SkBitmapToNSImageWithColorSpace(
-      *(rb.GetBitmapNamed(IDR_CLOSE_BAR_H)),
-      color_space);
-  NSImage* pressedImage = gfx::SkBitmapToNSImageWithColorSpace(
-      *(rb.GetBitmapNamed(IDR_CLOSE_BAR_P)), 
-      color_space);
+  NSImage* defaultImage = rb.GetNativeImageNamed(IDR_CLOSE_BAR);
+  NSImage* hoverImage = rb.GetNativeImageNamed(IDR_CLOSE_BAR_H);
+  NSImage* pressedImage = rb.GetNativeImageNamed(IDR_CLOSE_BAR_P);
   
   [hoverCloseButton_ setDefaultImage:defaultImage];
   [hoverCloseButton_ setHoverImage:hoverImage];
   [hoverCloseButton_ setPressedImage:pressedImage];
   
+  [hoverCloseButton_ setDefaultOpacity:1.0];
+  [hoverCloseButton_ setHoverOpacity:1.0];
+  [hoverCloseButton_ setPressedOpacity:1.0];
+
+  [hoverCloseButton_ setBordered:NO];
+
   [bubble_ addSubview:hoverCloseButton_];
 
   [view addSubview:bubble_];

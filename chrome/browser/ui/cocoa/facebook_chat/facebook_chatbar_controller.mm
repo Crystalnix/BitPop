@@ -31,22 +31,21 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
 }  // namespace
 
 @interface LayoutChildWindowsAnimation : NSAnimation {
-  NSMutableArray* chatItemControllers_;
+  FacebookChatbarController* chatbarController_;
 }
 
-@property (nonatomic, assign) NSMutableArray* chatItemControllers;
+@property (nonatomic, assign) FacebookChatbarController* chatbarController;
 
 @end
 
 @implementation LayoutChildWindowsAnimation
 
-@synthesize chatItemControllers=chatItemControllers_;
+@synthesize chatbarController=chatbarController_;
 
 - (void)setCurrentProgress:(NSAnimationProgress)progress {
   [super setCurrentProgress:progress];
 
-  for (FacebookChatItemController* controller in chatItemControllers_)
-    [controller layoutChildWindows];
+  [chatbarController_ layoutItemsChildWindows];
 }
 
 @end
@@ -190,7 +189,7 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
         animationCurve:NSAnimationEaseIn]);
   [addAnimation_ setAnimationBlockingMode:NSAnimationNonblocking];
   [addAnimation_ setDelegate:self];
-  [addAnimation_ setChatItemControllers:chatItemControllers_];
+  [addAnimation_ setChatbarController:self];
   [addAnimation_ startAnimation];
 
   // Insert new item at the left.
@@ -251,7 +250,7 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
         animationCurve:NSAnimationEaseOut]);
   [removeAnimation_ setAnimationBlockingMode:NSAnimationNonblocking];
   [removeAnimation_ setDelegate:self];
-  [removeAnimation_ setChatItemControllers:chatItemControllers_];
+  [removeAnimation_ setChatbarController:self];
   [removeAnimation_ startAnimation];
 
   [self layoutItems];
@@ -292,7 +291,7 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
         animationCurve:NSAnimationEaseIn]);
   [placeFirstAnimation_ setAnimationBlockingMode:NSAnimationNonblocking];
   [placeFirstAnimation_ setDelegate:self];
-  [placeFirstAnimation_ setChatItemControllers:chatItemControllers_];
+  [placeFirstAnimation_ setChatbarController:self];
   [placeFirstAnimation_ startAnimation];
 
   // find active item
@@ -394,6 +393,10 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
     placeFirstAnimation_.reset();
   }
 
+  [self layoutItemsChildWindows];
+}
+
+- (void)layoutItemsChildWindows {
   for (FacebookChatItemController* controller in chatItemControllers_.get())
     [controller layoutChildWindows];
 }

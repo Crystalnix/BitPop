@@ -1894,6 +1894,9 @@
   // do this.
   if ([findBarCocoaController_ isFindBarVisible])
     [self layoutSubviews];
+
+  if (facebookChatbarController_.get())
+    [facebookChatbarController_ layoutItemsChildWindows];
 }
 
 // Handle the openLearnMoreAboutCrashLink: action from SadTabController when
@@ -1936,6 +1939,10 @@
   if (TabContents* contents = browser_->GetSelectedTabContents()) {
     if (RenderWidgetHostView* rwhv = contents->GetRenderWidgetHostView())
       rwhv->WindowFrameChanged();
+  }
+  
+  if (facebookChatbarController_.get()) {
+    [facebookChatbarController_ layoutItemsChildWindows];
   }
 }
 
