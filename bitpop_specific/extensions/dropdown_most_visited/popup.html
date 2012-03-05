@@ -48,20 +48,22 @@
  									.mousedown(function(event) {
  										var clickedUrl = $(this).data("url");
 
- 										//left click
- 										if(event.button == 0) {
- 											chrome.tabs.getSelected(null, function(tab){
- 												chrome.tabs.update(tab.id, {url:clickedUrl});
- 												window.close();
- 											});
-
- 										} else {
- 											//middle click
- 											chrome.tabs.create({url:clickedUrl, selected: localStorage["middle"] == "foreground"});
+ 										//middle click
+ 										if(event.button != 0) {
+                      chrome.tabs.create({url:clickedUrl, selected: localStorage["middle"] == "foreground"});
                     }
                     event.preventDefault();
  										return false;
- 									});
+                  })
+                  .click(function(event) {
+                    var clickedUrl = $(this).data("url");
+ 
+                    chrome.tabs.getSelected(null, function(tab){
+                      chrome.tabs.update(tab.id, {url:clickedUrl});
+                      window.close();
+                    });
+                    return false;
+                  });
 
  					if(style == "double_title_url") {
 	 					var $title = $("<div/>", {class:"title", text: title});
