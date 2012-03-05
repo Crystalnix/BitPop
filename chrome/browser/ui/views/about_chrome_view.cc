@@ -158,13 +158,13 @@ void AboutChromeView::Init() {
     version_details_ += " " + version_modifier;
 
 #if !defined(GOOGLE_CHROME_BUILD)
-  version_details_ += " (";
-  version_details_ += l10n_util::GetStringUTF8(
-      version_info.IsOfficialBuild() ?
-      IDS_ABOUT_VERSION_OFFICIAL : IDS_ABOUT_VERSION_UNOFFICIAL);
-  version_details_ += " ";
-  version_details_ += version_info.LastChange();
-  version_details_ += ")";
+  //version_details_ += " (";
+  //version_details_ += l10n_util::GetStringUTF8(
+  //    version_info.IsOfficialBuild() ?
+  //    IDS_ABOUT_VERSION_OFFICIAL : IDS_ABOUT_VERSION_UNOFFICIAL);
+  //version_details_ += " ";
+  //version_details_ += version_info.LastChange();
+  //version_details_ += ")";
 #endif
 
   // Views we will add to the *parent* of this dialog, since it will display

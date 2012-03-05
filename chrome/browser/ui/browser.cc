@@ -226,7 +226,8 @@ Browser::Browser(Type type, Profile* profile)
       pending_web_app_action_(NONE),
       ALLOW_THIS_IN_INITIALIZER_LIST(
           tab_restore_service_delegate_(
-              new BrowserTabRestoreServiceDelegate(this))) {
+              new BrowserTabRestoreServiceDelegate(this))),
+      friends_contents_(NULL) {
   registrar_.Add(this, NotificationType::SSL_VISIBLE_STATE_CHANGED,
                  NotificationService::AllSources());
   registrar_.Add(this, NotificationType::EXTENSION_UPDATE_DISABLED,
@@ -365,6 +366,9 @@ Browser::~Browser() {
     select_file_dialog_->ListenerDestroyed();
 
   TabRestoreServiceDestroyed(tab_restore_service_);
+
+  if (friends_contents_)
+    delete friends_contents_;
 }
 
 // static

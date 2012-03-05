@@ -15,6 +15,7 @@
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "views/controls/button/image_button.h"
+#include "views/window/window.h"
 
 using views::View;
 
@@ -136,6 +137,8 @@ ChatNotificationPopup* ChatNotificationPopup::Show(views::Widget* parent,
   popup->container_view()->parent()->set_background(views::Background::CreateSolidBackground(176, 246, 255, 0));
   popup->border_->border_contents()->SetBackgroundColor(kNotificationPopupBackgroundColor);
 
+  parent->Activate();
+
   return popup;
 }
 
@@ -175,7 +178,8 @@ void ChatNotificationPopup::OnActivate(UINT action, BOOL minimized, HWND window)
   // The popup should close when it is deactivated.
   if (action == WA_ACTIVE) {
     DCHECK(GetWidget()->GetRootView()->has_children());
-    GetWidget()->GetRootView()->GetChildViewAt(0)->RequestFocus();
+    //GetContainingWindow()->Deactivate();
+    //GetWidget()->GetRootView()->GetChildViewAt(0)->RequestFocus();
   }
 }
 
