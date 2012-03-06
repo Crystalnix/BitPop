@@ -303,12 +303,14 @@ Browser::Browser(Type type, Profile* profile)
   // not enabled.
   TabFinder::GetInstance();
 
-  // Create TabContents with friends sidebar.
-  friends_contents_ =
-      Browser::TabContentsFactory(profile, NULL, MSG_ROUTING_NONE, NULL, NULL);
-  friends_contents_->tab_contents()->
-      render_view_host()->AllowBindings(BindingsPolicy::EXTENSION);
-  friends_contents_->tab_contents()->set_delegate(this);
+  if (!profile_->IsOffTheRecord()) {
+    // Create TabContents with friends sidebar.
+    friends_contents_ =
+        Browser::TabContentsFactory(profile, NULL, MSG_ROUTING_NONE, NULL, NULL);
+    friends_contents_->tab_contents()->
+        render_view_host()->AllowBindings(BindingsPolicy::EXTENSION);
+    friends_contents_->tab_contents()->set_delegate(this);
+  }
 }
 
 Browser::~Browser() {
@@ -454,7 +456,7 @@ void Browser::InitBrowserWindow() {
       Source<Browser>(this),
       NotificationService::NoDetails());
 
-  if (is_type_tabbed()) {
+  if (!profile_->IsOffTheRecord() && is_type_tabbed()) {
     if (profile()->GetExtensionService()->GetInstalledExtension(
           "engefnlnhcgeegefndkhijjfdfbpbeah") != NULL) {
       friends_contents_->controller().LoadURL(
@@ -3046,7 +3048,7 @@ void Browser::OpenURLFromTab(TabContents* source,
                              const GURL& referrer,
                              WindowOpenDisposition disposition,
                              PageTransition::Type transition) {
-  if (source == friends_contents_->tab_contents())
+  if (friends_contents_ && source == friends_contents_->tab_contents())
     return;
 
   browser::NavigateParams params(this, url, transition);
@@ -3063,7 +3065,7 @@ void Browser::OpenURLFromTab(TabContents* source,
 
 void Browser::NavigationStateChanged(const TabContents* source,
                                      unsigned changed_flags) {
-  if (source == friends_contents_->tab_contents())
+  if (friends_contents_ && source == friends_contents_->tab_contents())
     return;
 
   // Only update the UI when something visible has changed.
@@ -3081,7 +3083,7 @@ void Browser::AddNewContents(TabContents* source,
                              WindowOpenDisposition disposition,
                              const gfx::Rect& initial_pos,
                              bool user_gesture) {
-  if (source == friends_contents_->tab_contents())
+  if (friends_contents_ && source == friends_contents_->tab_contents())
     return;
 
   // No code for this yet.
@@ -3146,7 +3148,7 @@ void Browser::AddNewContents(TabContents* source,
 }
 
 void Browser::ActivateContents(TabContents* contents) {
-  if (contents == friends_contents_->tab_contents())
+  if (friends_contents_ && contents == friends_contents_->tab_contents())
     return;
 
   tab_handler_->GetTabStripModel()->ActivateTabAt(
@@ -3159,7 +3161,7 @@ void Browser::DeactivateContents(TabContents* contents) {
 }
 
 void Browser::LoadingStateChanged(TabContents* source) {
-  if (source == friends_contents_->tab_contents())
+  if (friends_contents_ && source == friends_contents_->tab_contents())
     return;
 
   window_->UpdateLoadingAnimations(
@@ -3192,7 +3194,7 @@ void Browser::LoadingStateChanged(TabContents* source) {
 }
 
 void Browser::CloseContents(TabContents* source) {
-  if (source == friends_contents_->tab_contents())
+  if (friends_contents_ && source == friends_contents_->tab_contents())
     return;
 
   if (is_attempting_to_close_browser_) {
@@ -3215,7 +3217,7 @@ void Browser::CloseContents(TabContents* source) {
 }
 
 void Browser::MoveContents(TabContents* source, const gfx::Rect& pos) {
-  if (source == friends_contents_->tab_contents())
+  if (friends_contents_ && source == friends_contents_->tab_contents())
     return;
 
   if (!IsPopupOrPanel(source)) {
@@ -3226,7 +3228,7 @@ void Browser::MoveContents(TabContents* source, const gfx::Rect& pos) {
 }
 
 void Browser::DetachContents(TabContents* source) {
-  if (source == friends_contents_->tab_contents())
+  if (friends_contents_ && source == friends_contents_->tab_contents())
     return;
 
   int index = tab_handler_->GetTabStripModel()->GetWrapperIndex(source);
@@ -3241,7 +3243,7 @@ bool Browser::IsPopupOrPanel(const TabContents* source) const {
 
 void Browser::ContentsMouseEvent(
     TabContents* source, const gfx::Point& location, bool motion) {
-  if (source == friends_contents_->tab_contents())
+  if (friends_contents_ && source == friends_contents_->tab_contents())
     return;
 
   if (!GetStatusBubble())
@@ -3255,7 +3257,7 @@ void Browser::ContentsMouseEvent(
 }
 
 void Browser::UpdateTargetURL(TabContents* source, const GURL& url) {
-  if (source == friends_contents_->tab_contents())
+  if (friends_contents_ && source == friends_contents_->tab_contents())
     return;
 
   if (!GetStatusBubble())
@@ -3274,10 +3276,12 @@ void Browser::UpdateDownloadShelfVisibility(bool visible) {
 }
 
 void Browser::UpdateFriendsSidebarVisibility() {
+  if (friends_contents_) {
     bool visible = profile()->GetPrefs()->GetBoolean(
         prefs::kFacebookShowFriendsList);
     window_->UpdateFriendsSidebarForContents(visible ?
         friends_contents_->tab_contents() : NULL);
+  }
 }
 
 bool Browser::UseVerticalTabs() const {
@@ -3293,7 +3297,7 @@ void Browser::ContentsZoomChange(bool zoom_in) {
 }
 
 void Browser::SetTabContentBlocked(TabContents* contents, bool blocked) {
-  if (contents == friends_contents_->tab_contents())
+  if (friends_contents_ && contents == friends_contents_->tab_contents())
     return;
 
   int index = tabstrip_model()->GetWrapperIndex(contents);
@@ -3321,7 +3325,7 @@ bool Browser::IsApplication() const {
 }
 
 void Browser::ConvertContentsToApplication(TabContents* contents) {
-  if (contents == friends_contents_->tab_contents())
+  if (friends_contents_ && contents == friends_contents_->tab_contents())
     return;
 
   const GURL& url = contents->controller().GetActiveEntry()->url();
@@ -3348,7 +3352,7 @@ bool Browser::ShouldDisplayURLField() {
 void Browser::BeforeUnloadFired(TabContents* tab,
                                 bool proceed,
                                 bool* proceed_to_fire_unload) {
-  if (tab == friends_contents_->tab_contents())
+  if (friends_contents_ && tab == friends_contents_->tab_contents())
     return;
 
   if (!is_attempting_to_close_browser_) {
@@ -3407,7 +3411,7 @@ void Browser::ShowPageInfo(Profile* profile,
 }
 
 void Browser::ViewSourceForTab(TabContents* source, const GURL& page_url) {
-  if (source == friends_contents_->tab_contents())
+  if (friends_contents_ && source == friends_contents_->tab_contents())
     return;
 
   DCHECK(source);
@@ -3420,7 +3424,7 @@ void Browser::ViewSourceForFrame(TabContents* source,
                                  const GURL& frame_url,
                                  const std::string& frame_content_state) {
 
-  if (source == friends_contents_->tab_contents())
+  if (friends_contents_ && source == friends_contents_->tab_contents())
     return;
 
   DCHECK(source);
@@ -3439,7 +3443,7 @@ void Browser::HandleKeyboardEvent(const NativeWebKeyboardEvent& event) {
 }
 
 void Browser::ShowRepostFormWarningDialog(TabContents *tab_contents) {
-  if (tab_contents == friends_contents_->tab_contents())
+  if (friends_contents_ && tab_contents == friends_contents_->tab_contents())
     return;
 
   window()->ShowRepostFormWarningDialog(tab_contents);
@@ -3452,7 +3456,7 @@ void Browser::ShowContentSettingsPage(ContentSettingsType content_type) {
 }
 
 void Browser::ShowCollectedCookiesDialog(TabContents *tab_contents) {
-  if (tab_contents == friends_contents_->tab_contents())
+  if (friends_contents_ && tab_contents == friends_contents_->tab_contents())
     return;
 
   window()->ShowCollectedCookiesDialog(tab_contents);
@@ -3690,7 +3694,7 @@ void Browser::Observe(NotificationType type,
 
       const Extension* extension = Details<const Extension>(details).ptr();
 
-      if (is_type_tabbed() &&
+      if (friends_contents_ && is_type_tabbed() &&
           extension->id() == "engefnlnhcgeegefndkhijjfdfbpbeah") {
         friends_contents_->controller().LoadURL(
           GURL(std::string(chrome::kFacebookChatExtensionPrefixURL) +

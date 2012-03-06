@@ -16,7 +16,7 @@ bitpop.chat = (function() {
       
       $('#msg').focus();
 
-      (function initChat() {
+      function appendFromLocalStorage() {
         var lsKey = chrome.extension.getBackgroundPage().myUid + ':' + friendUid;
         if (lsKey in localStorage) {
           var msgs = JSON.parse(localStorage[lsKey]);
@@ -25,12 +25,42 @@ bitpop.chat = (function() {
             appendMessage(msgs[i].msg, msgDate, msgs[i].me);
           }
         }
+      }
+
+      /*
+      function fetchThread() {
+        var thread_id = null;
+
+        if (localStorage[myUid + ':' + friendUid + '.thread_id']) {
+          thread_id = localStorage[myUid + ':' + friendUid + '.thread_id'];
+        }
+
+        if (thread_id) {
+          chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
+            { type: 'graphApiCall',
+              path: '/' + thread_id,
+              params: {}
+            },
+            function (response) {
+              //inboxData = response.data;
+              //replaceLocalHistory(inboxData);
+            }
+          );
+        }
+      }
+      */
+
+      (function initChat() {
+        
+        appendFromLocalStorage();
 
         var myUid = chrome.extension.getBackgroundPage().myUid;
         var msgText = localStorage.getItem('msg:' + myUid + ':' + friendUid);
         if (msgText) {
           $('#msg').val(msgText);
         }
+        
+        //setInterval(fetchThread, 30000);
       })();
 
       chrome.extension.onRequestExternal.addListener(function (request, sender, sendResponse) {
@@ -41,13 +71,21 @@ bitpop.chat = (function() {
         }
       });
 
-      $('#msgForm').submit(function () {
-        var meMsg = $('#msg').val();
-        var uidTo = friendUid;
-        var request = { message: meMsg,
-                        uidTo: uidTo,
-                        type: 'sendChatMessage'};
-        chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID, request);
+      function onMessageSent(response, meMsg, uidTo) {
+        if (response.error) {
+          $('#chat').append(
+            '<div class="error-message">Message not sent. ' + response.error + '</div>');
+
+          lastMessageUid = 0;
+
+          // scroll the chat div to bottom
+          $('#chat').scrollTop($('#chat')[0].scrollHeight);
+
+          return;
+        }
+        else
+          $('#chat .error-message').hide();
+
         var escMsg = bitpop.preprocessMessageText(meMsg);
         bitpop.saveToLocalStorage(chrome.extension.getBackgroundPage().myUid,
           uidTo, escMsg, new Date(), true);
@@ -57,6 +95,18 @@ bitpop.chat = (function() {
 
         $('#msg').val('');
         $('#msg').focus();
+      }
+
+      $('#msgForm').submit(function () {
+        var meMsg = $('#msg').val();
+        var uidTo = friendUid;
+        var request = { message: meMsg,
+                        uidTo: uidTo,
+                        type: 'sendChatMessage'};
+        chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID, request,
+            function(response) {
+              onMessageSent(response, meMsg, uidTo);
+            });
         return false;
       });
 

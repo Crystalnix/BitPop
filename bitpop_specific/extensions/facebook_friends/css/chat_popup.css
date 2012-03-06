@@ -61,7 +61,14 @@ p {
   overflow-x: hidden;
 }
 
-#chat .message-group {
+#chat .error-message {
+  color: red;
+  font-size: 11px;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+#chat .message-group, #chat .error-message {
   margin: 0;
   padding: 0;
   border-top: 1px solid #eee;

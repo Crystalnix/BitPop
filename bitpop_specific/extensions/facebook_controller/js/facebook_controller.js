@@ -154,6 +154,11 @@ bitpop.FacebookController = (function() {
       console.log('Strophe is connecting.');
     } else if (status == Strophe.Status.CONNFAIL) {
       console.warn('Strophe failed to connect.');
+      if (localStorage.myUid && localStorage.accessToken)
+        setTimeout(function() {
+          if (localStorage.myUid && localStorage.accessToken)
+            connectToFacebookChat();
+        }, 10000);
     } else if (status == Strophe.Status.DISCONNECTING) {
       console.log('Strophe is disconnecting.');
     } else if (status == Strophe.Status.DISCONNECTED) {
@@ -561,9 +566,16 @@ bitpop.FacebookController = (function() {
       callback({ canLogin: false });
   }
 
-  function onSendChatMessage(request) {
-    if (request.message && request.uidTo)
+  function onSendChatMessage(request, sendResponse) {
+    if (!connection.connected)
+      sendResponse({ error: 'Not connected to facebook chat.' });
+
+    if (request.message && request.uidTo) {
       sendMessage(request.message, request.uidTo);
+      sendResponse({});
+    }
+    else
+      sendResponse({ error: 'Invalid request.' });
   }
 
   function onGotUid() {

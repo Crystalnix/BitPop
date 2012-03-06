@@ -12,7 +12,7 @@
   },
   "igddmhdmkpkonlbfabbkkdoploafopcn": {
     "external_crx": "facebook_controller.crx",
-    "external_version": "0.0.9"
+    "external_version": "0.0.10"
   },
   "dhcejgafhmkdfanoalflifpjimaaijda": {
     "external_crx": "facebook_messages.crx",
@@ -24,6 +24,6 @@
   },
   "engefnlnhcgeegefndkhijjfdfbpbeah": {
     "external_crx": "facebook_friends.crx",
-    "external_version": "1.0.23"
+    "external_version": "1.0.24"
   }
 }
