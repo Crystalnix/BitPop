@@ -1,0 +1,16 @@
+{
+  "name": "Uncensor ISP",
+  "version": "1.0",
+  "description": "Your internet provider might try to block your access to some sites without proper proceedure. We give you access automatically through a proxy.",
+  "background_page": "background.html",
+  "options_page": "fancy-settings/source/index.html",
+  "permissions" : [
+    "tabs",
+    "notifications",
+    "http://tools.bitpop.com/*"
+  ],
+  "icons" : {
+    "48" : "48uncensorp.png",
+    "128" : "128uncensorp.png"
+  }
+}
