@@ -24,6 +24,7 @@ Copyright (c) 2012 Crystalnix <vgachkaylo@crystalnix.com>
   var settings = new Store("settings", {
     "last_update_time": 0,
     "domains": [],
+    "cached_domains": {},
     "country_code": '',
     "country_name": '',
     "proxy_control": 'use_auto',
@@ -57,15 +58,18 @@ Copyright (c) 2012 Crystalnix <vgachkaylo@crystalnix.com>
           changed = true;
         } else {
           for (var i = 0; i < domains.length; i++) {
-            if (changed = changed || domains[i] != old_domains[i])
+            if (changed = changed || 
+                domains[i] != old_domains[i].description)
               break;
           }
         }
 
         if (changed) {
-          settings.set('domains', domains);
+          setDomains(domains);
           settings.set('country_code', response.country_code);
           settings.set('country_name', response.country_name);
+
+          chrome.extension.sendRequest({ reason: 'settingsChanged' });
 
           var notification = webkitNotifications.createNotification(
             '48uncensorp.png',  // icon url - can be relative
@@ -87,14 +91,89 @@ Copyright (c) 2012 Crystalnix <vgachkaylo@crystalnix.com>
     xhr.send();
   }
 
+  function setDomains(newDomains) {
+    var i;
+    var oldDomains = settings.get('domains');
+    var cachedDomains = settings.get('cached_domains');
+
+    for (i = 0; i < oldDomains.length; i++) {
+      if (oldDomains[i].value !== 'use_global') {
+        cachedDomains[oldDomains[i].description] = oldDomains[i].value;
+      }
+    }
+    settings.set('cached_domains', cachedDomains);
+
+    var domains = [];
+    for (i = 0; i < newDomains.length; i++) {
+      var curDomain = newDomains[i];
+      domains.push({ 
+        description: curDomain,
+        value: cachedDomains[curDomain] || 'use_global'
+      });
+    }
+    settings.set('domains', domains);
+  }
+
   function onTabUpdated(tabId, changeInfo, tab) {
     var uri = parseUri(tab.url);
     var domains = settings.get('domains');
     if (!domains || domains.length == 0)
       return;
     for (var i = 0; i < domains.length; i++) {
-      if (uri['host'].endsWith(domains[i]) && changeInfo.status == 'loading') {
-        navigate(tab, changeInfo.url);
+      if (uri['host'].endsWith(domains[i].description)) {
+        var proxyControl = null;
+        if (domains[i].value == 'use_global') {
+          proxyControl = settings.get('proxy_control').replace(/"/g, '');
+        }
+        else {
+          proxyControl = domains[i].value;
+        }
+
+        switch (proxyControl) {
+          case 'use_auto':
+            if (changeInfo.status == 'loading') {
+              chrome.tabs.update(tab.id, {
+                  url: navigate(tab, tab.url)
+                }, function(tab) {
+                  if (!tab) { return; }
+
+                  setTimeout(function() {
+                    chrome.tabs.get(tab.id, function(tab) {
+                      if (!tab) { return; }
+
+                      chrome.tabs.insertCSS(tab.id, { file: 'infobar.css' });
+                      chrome.tabs.executeScript(tab.id, {
+                        code: 'var bitpop_uncensor_proxy_options = {' +
+                        '  reason: "setJippi" };'
+                      }, function() {
+                        chrome.tabs.executeScript(tab.id, { file: 'infobar_script.js' });
+                      });
+                    });
+                  }, 5000);
+                }
+              );
+            }
+            break;
+
+          case 'never_use':
+            return;  // do nothing
+
+          case 'ask_me':
+            if (changeInfo.status == 'loading') {
+              chrome.tabs.insertCSS(tab.id, { file: 'infobar.css' });
+              chrome.tabs.executeScript(tab.id, {
+                code: 'var bitpop_uncensor_proxy_options = {' +
+                      '  reason: "setAsk",' +
+                      '  url: "' + navigate(tab, changeInfo.url || tab.url) + '",' +
+                      '  country_name: "' + settings.get('country_name') + 
+                      '" };'
+                }, function () {
+                  chrome.tabs.executeScript(tab.id, { file: 'infobar_script.js' });
+                }
+              );
+            }
+            break;
+        }
       }
     }
   }
@@ -145,9 +224,7 @@ Copyright (c) 2012 Crystalnix <vgachkaylo@crystalnix.com>
     }
     svc_url += svc_url_path.replace('%url', encoded_url).replace('%hash', 2);
     
-    chrome.tabs.update(tab.id, {
-      url: svc_url
-    });
+    return svc_url;
   }
 
   function checkURLCredibility(url) {

@@ -1,6 +1,6 @@
 WD=`pwd`
 BASE_DIR=`dirname $0`
-EXT_DIR="$BASE_DIR/../../chrome/browser/extensions/default_extensions"
+EXT_DIR="../../chrome/browser/extensions/default_extensions"
 EXT_DEFS="$EXT_DIR/external_extensions.json"
 
 # extension names list

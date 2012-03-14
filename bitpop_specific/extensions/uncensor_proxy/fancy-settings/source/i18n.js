@@ -16,18 +16,18 @@ this.i18n = {
 
 
     "general": {
-        "en": "General",
+        "en": "Uncensor ISP General",
         "de": "General"
     },
     "proxy_control": {
-        "en": "Proxy Control"
+        "en": "Global Proxy Control"
     },
     "notices": {
         "en": "Notices"
     },
     "proxy_control_label": {
         "en": "When to use proxy:"
-    }
+    },
     "use_auto": {
       "en": "Use auto proxy on blocked sites / ON"
     },
@@ -37,7 +37,25 @@ this.i18n = {
     "ask_me": {
       "en": "Ask me before using proxy / CUSTOM"
     },
+    "use_global": {
+      "en": "Use Global setting"
+    },
     "proxy_active_message": {
       "en": "Show message when proxy is active"
+    },
+    "blocked_sites": {
+      "en": "Blocked Sites"
+    },
+    "domains": {
+      "en": "Domains"
+    },
+    "action": {
+      "en": "Action"
+    },
+    "update_domains_label": {
+      "en": "Click the button to update domain list:"
+    },
+    "update_domains_text": {
+      "en": "Update domains"
     }
 };

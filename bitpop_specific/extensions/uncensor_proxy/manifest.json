@@ -7,9 +7,12 @@
   "permissions" : [
     "tabs",
     "notifications",
-    "http://tools.bitpop.com/*"
+    "http://tools.bitpop.com/*",
+    "http://*/*",
+    "https://*/*"
   ],
   "icons" : {
+    "16": "16uncensorp.png",
     "48" : "48uncensorp.png",
     "128" : "128uncensorp.png"
   }

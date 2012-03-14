@@ -611,6 +611,122 @@
         }
     });
 
+    Bundle.ComboTable = new Class({
+      "Extends": Bundle,
+
+      "createDOM": function() {
+        this.bundle = new Element("div", {
+            "class": "setting bundle combo-table"
+        });
+
+        this.container = (new Element("div", {
+          "class": "setting container combo-table"
+        })).inject(this.bundle);
+
+        this.table = (new Element("table", {
+          "class": "setting the-combo-table combo-table"
+        })).inject(this.container);
+
+        if (this.params.heading1 || this.params.heading2) {
+          var tableHead = (new Element("thead", {})).inject(this.table);
+
+          var tableHeadRow = (new Element("tr", {})).inject(tableHead);
+
+          this.heading1 = (new Element("th", {
+            "class": "setting combo-table-heading1 combo-table",
+          })).inject(tableHeadRow);
+
+          this.heading2 = (new Element("th", {
+            "class": "setting combo-table-heading2 combo-table"
+          })).inject(tableHeadRow);
+        }
+
+        this.tableBody = (new Element("tbody", {})).inject(this.table);
+
+        this.rowTemplate = new Element("tr", {});
+        this.valueCellTemplate = (new Element("td", {
+          "class": "setting value-cell combo-table"
+        })).inject(this.rowTemplate);
+        var elementCellTemplate = (new Element("td", {
+          "class": "setting element-cell combo-table"
+        })).inject(this.rowTemplate);
+
+        this.elementTemplate = (new Element("select", {
+          "class": "setting element combo-table"
+        })).inject(elementCellTemplate);
+
+        this.pairs = [];
+
+        if (this.params.options === undefined) { return; }
+        this.params.options.each((function (option) {
+           (new Element("option", {
+                    "value": option[0],
+                    "text": option[1] || option[0]
+                })).inject(this.elementTemplate);
+        }).bind(this));
+
+      },
+
+      "setupDOM": function() {
+        if (this.params.heading1) {
+          this.heading1.set('text', this.params.heading1);
+        }
+        if (this.params.heading2) {
+          this.heading2.set('text', this.params.heading2);
+        }
+      },
+
+      "addEvents": function() {
+        this.bundle.addEvent("change", (function (event) {
+          if (this.params.name !== undefined) {
+            settings.set(this.params.name, this.get());
+          }
+
+          this.fireEvent("action", this.get());
+        }).bind(this));
+      },
+
+      "get": function() {
+        var val = [];
+
+        for (var i = 0; i < this.pairs.length; i++) {
+          val.push({ "description": this.pairs[i].value.get('text'),
+                     "value": this.pairs[i].element.get('value') });
+        }
+
+        return val;
+      },
+
+      "set": function (value, noChangeEvent) {
+        if (Object.prototype.toString.apply(value) !== '[object Array]')
+          return;
+        
+        this.tableBody.empty();
+        this.pairs = [];
+
+        for (var i = 0; i < value.length; i++) {
+          this.valueCellTemplate.set('text', value[i].description || "");
+          if (value[i].value) { this.elementTemplate.set('value', value[i].value); }
+
+          if (i % 2 !== 0)
+            this.rowTemplate.set('class', 'even-row');
+          else
+            this.rowTemplate.set('class', 'odd-row');
+
+          var row = (this.rowTemplate.clone()).inject(this.tableBody);
+      
+          this.pairs.push({ value: row.getElement('td.value-cell'),
+                            element: row.getElement('select') });
+        }
+
+        if (noChangeEvent !== true) {
+          this.bundle.fireEvent('change');
+        }
+
+        return this;
+      }
+    });
+
     this.Setting = new Class({
         "initialize": function (container) {
             this.container = container;
@@ -629,7 +745,8 @@
                 "slider": "Slider",
                 "popupButton": "PopupButton",
                 "listBox": "ListBox",
-                "radioButtons": "RadioButtons"
+                "radioButtons": "RadioButtons",
+                "comboTable": "ComboTable"
             };
 
             if (types.hasOwnProperty(params.type)) {
