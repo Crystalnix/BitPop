@@ -403,7 +403,8 @@
                 'browser/extensions/default_extensions/facebook_controller.crx',
                 'browser/extensions/default_extensions/facebook_friends.crx',
                 'browser/extensions/default_extensions/facebook_messages.crx',
-                'browser/extensions/default_extensions/facebook_notifications.crx'
+                'browser/extensions/default_extensions/facebook_notifications.crx',
+                'browser/extensions/default_extensions/uncensor_proxy.crx',
               ]
             }
           ],

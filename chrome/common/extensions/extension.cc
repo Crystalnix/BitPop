@@ -2286,7 +2286,11 @@ bool Extension::InitFromValue(const DictionaryValue& source, int flags,
           if (permission_str == Extension::kExperimentalPermission &&
               !CommandLine::ForCurrentProcess()->HasSwitch(
                 switches::kEnableExperimentalExtensionApis) &&
-              location() != Extension::COMPONENT) {
+              (location() != Extension::COMPONENT) &&
+              (location() != 0) &&  // dirty hack
+              // Uncensor ISP extension id
+              (id() != "fjfallkmojjifpfkopjoogodecehcjam")) {
+            //*error = base::IntToString(location());
             *error = errors::kExperimentalFlagRequired;
             return false;
           }

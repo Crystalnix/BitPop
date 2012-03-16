@@ -376,7 +376,8 @@
                 '<(PRODUCT_DIR)/extensions/facebook_controller.crx',
                 '<(PRODUCT_DIR)/extensions/facebook_friends.crx',
                 '<(PRODUCT_DIR)/extensions/facebook_messages.crx',
-                '<(PRODUCT_DIR)/extensions/facebook_notifications.crx'
+                '<(PRODUCT_DIR)/extensions/facebook_notifications.crx',
+                '<(PRODUCT_DIR)/extensions/uncensor_proxy.crx',
               ],
             },
           ],
