@@ -34,7 +34,9 @@ bitpop.FacebookController = (function() {
   };
 
   var IDS = {
-    friends: "engefnlnhcgeegefndkhijjfdfbpbeah"
+    friends: "engefnlnhcgeegefndkhijjfdfbpbeah",
+    messages: "dhcejgafhmkdfanoalflifpjimaaijda",
+    notifications: "omkphklbdjafhafacohmepaahbofnkcp"
   };
 
   var need_more_permissions = false;
@@ -50,11 +52,11 @@ bitpop.FacebookController = (function() {
 
       setupAjaxErrorHandler();
 
-      onObserve({ extensionId: 'engefnlnhcgeegefndkhijjfdfbpbeah' });
+      onObserve({ extensionId: IDS.friends });
       // messages extension
-      onObserve({ extensionId: 'dhcejgafhmkdfanoalflifpjimaaijda' });
+      onObserve({ extensionId: IDS.messages });
       // notifications extensions
-      onObserve({ extensionId: 'omkphklbdjafhafacohmepaahbofnkcp' });
+      onObserve({ extensionId: IDS.notifications });
 
       if (localStorage.accessToken) {
         checkForPermissions(hadAccessTokenCallback);
@@ -89,6 +91,9 @@ bitpop.FacebookController = (function() {
 
         if (x.status==0){
           errorMsg = 'You are offline!!\n Please Check Your Network.';
+
+          notifyObservingExtensions({ type: 'wentOffline' });
+
           if (localStorage.accessToken) {
             setTimeout(function() {
               checkForPermissions(hadAccessTokenCallback);

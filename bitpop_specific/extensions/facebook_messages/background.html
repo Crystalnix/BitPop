@@ -51,6 +51,9 @@
           DesktopNotifications.received_cache.shift();
       } else if (request.type == 'loggedOut') {
         DesktopNotifications.just_connected = false;
+      } else if (request.type == 'wentOffline') {
+        DesktopNotifications.threads_unseen_before = [];
+        DesktopNotifications.just_connected = true;
       }
     });
 
