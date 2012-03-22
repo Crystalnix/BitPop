@@ -9,6 +9,7 @@
                      '</div>' +
                      '<div class="bitpop-infobar-buttonblock">' +
                        '<div class="bitpop-infobar-close"></div>' +
+                       '<a href="#" id="bitpop-infobar-but-try-another" class="bitpop-infobar-button bitpop-infobar-button-green">Try another proxy</a>' +
                      '</div' +
                     '</div>';
 
@@ -94,8 +95,10 @@
     document.getElementById('bitpop-infobar-country-name').innerText = 
         options.country_name;
   }
-  else if (options.reason == 'setJippi') {
+  else if (options.reason == 'setJippi' && options.url) {
     initJippi();
+
+    document.getElementById('bitpop-infobar-but-try-another').href = options.url;
   }
 }());
 
