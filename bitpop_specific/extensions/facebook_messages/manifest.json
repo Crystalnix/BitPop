@@ -2,7 +2,7 @@
    "background_page": "background.html",
    "browser_action": {
       "default_icon": "images/icon19.png",
-      "default_popup": "popup.html",
+      //"default_popup": "popup.html",
       "default_title": "Facebook Messages"
    },
    "description": "Keep up with your friends, even when you're not on Facebook.",
@@ -15,5 +15,5 @@
    "name": "Facebook Notify Messages",
    //"options_page": "options.html",
    "permissions": [ "notifications", "tabs", "chrome://favicon/" ],
-   "version": "1.4"
+   "version": "1.5"
 }

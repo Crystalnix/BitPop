@@ -30,6 +30,7 @@
 #include "chrome/browser/tab_contents/background_contents.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/webui/extension_icon_source.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/url_pattern.h"
@@ -63,7 +64,16 @@ bool ShouldShowExtension(const Extension* extension) {
   // Don't show component extensions because they are only extensions as an
   // implementation detail of Chrome.
   if (extension->location() == Extension::COMPONENT)
+    return false;
+
+  if (extension->id() == chrome::kFacebookControllerExtensionId ||
+      extension->id() == chrome::kFacebookMessagesExtensionId ||
+      extension->id() == chrome::kFacebookNotificationsExtensionId)
+#if defined(NDEBUG)
+    return false;
+#else
     return true;
+#endif
 
   // Always show unpacked extensions and apps.
   if (extension->location() == Extension::LOAD)
@@ -368,7 +378,12 @@ void ExtensionsDOMHandler::HandleEnableMessage(const ListValue* args) {
   const Extension* extension =
       extension_service_->GetExtensionById(extension_id, true);
   DCHECK(extension);
-  if (!Extension::UserMayDisable(extension->location())) {
+  if (!Extension::UserMayDisable(extension->location()) ||
+      extension_id == chrome::kFacebookControllerExtensionId ||
+      extension_id == chrome::kFacebookChatExtensionId ||
+      extension_id == chrome::kFacebookMessagesExtensionId ||
+      extension_id == chrome::kFacebookNotificationsExtensionId ||
+      extension_id == chrome::kUncensorISPExtensionId) {
     LOG(ERROR) << "Attempt to enable an extension that is non-usermanagable was"
                << "made. Extension id: " << extension->id();
     return;
@@ -441,7 +456,12 @@ void ExtensionsDOMHandler::HandleUninstallMessage(const ListValue* args) {
   if (!extension)
     return;
 
-  if (!Extension::UserMayDisable(extension->location())) {
+  if (!Extension::UserMayDisable(extension->location()) ||
+      extension_id == chrome::kFacebookControllerExtensionId ||
+      extension_id == chrome::kFacebookChatExtensionId ||
+      extension_id == chrome::kFacebookMessagesExtensionId ||
+      extension_id == chrome::kFacebookNotificationsExtensionId ||
+      extension_id == chrome::kUncensorISPExtensionId) {
     LOG(ERROR) << "Attempt to uninstall an extension that is non-usermanagable "
                << "was made. Extension id : " << extension->id();
     return;

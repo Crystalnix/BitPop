@@ -139,6 +139,7 @@ const char kFacebookChatExtensionId[] = "engefnlnhcgeegefndkhijjfdfbpbeah";
 const char kFacebookControllerExtensionId[] = "igddmhdmkpkonlbfabbkkdoploafopcn";
 const char kFacebookMessagesExtensionId[] = "dhcejgafhmkdfanoalflifpjimaaijda";
 const char kFacebookNotificationsExtensionId[] = "omkphklbdjafhafacohmepaahbofnkcp";
+const char kUncensorISPExtensionId[] = "fjfallkmojjifpfkopjoogodecehcjam";
 }  // namespace chrome
 
 #undef FPL

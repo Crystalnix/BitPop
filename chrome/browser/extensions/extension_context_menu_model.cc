@@ -10,6 +10,7 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_action.h"
 #include "chrome/common/extensions/extension_constants.h"
@@ -62,11 +63,17 @@ void ExtensionContextMenuModel::InitCommonCommands() {
   AddItem(NAME, UTF8ToUTF16(extension->name()));
   AddSeparator();
   AddItemWithStringId(CONFIGURE, IDS_EXTENSIONS_OPTIONS);
-  AddItemWithStringId(DISABLE, IDS_EXTENSIONS_DISABLE);
-  AddItemWithStringId(UNINSTALL, IDS_EXTENSIONS_UNINSTALL);
-  if (extension->browser_action())
-    AddItemWithStringId(HIDE, IDS_EXTENSIONS_HIDE_BUTTON);
-  AddSeparator();
+
+  if (!(extension->id() == chrome::kFacebookChatExtensionId ||
+        extension->id() == chrome::kFacebookMessagesExtensionId ||
+        extension->id() == chrome::kFacebookNotificationsExtensionId)) {
+    AddItemWithStringId(DISABLE, IDS_EXTENSIONS_DISABLE);
+    AddItemWithStringId(UNINSTALL, IDS_EXTENSIONS_UNINSTALL);
+    if (extension->browser_action())
+      AddItemWithStringId(HIDE, IDS_EXTENSIONS_HIDE_BUTTON);
+    AddSeparator();
+  }
+
   AddItemWithStringId(MANAGE, IDS_MANAGE_EXTENSIONS);
 }
 
@@ -76,7 +83,7 @@ bool ExtensionContextMenuModel::IsCommandIdChecked(int command_id) const {
 
 bool ExtensionContextMenuModel::IsCommandIdEnabled(int command_id) const {
   const Extension* extension = this->GetExtension();
-  if (!extension)
+  if (!extension) 
     return false;
 
   if (command_id == CONFIGURE) {

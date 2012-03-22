@@ -10,6 +10,7 @@ echo "=== Started ==="
 echo
 
 cd "$BASE_DIR"
+find . -name "*.swl" -o -name "*.swm" -o -name "*.swn" -o -name "*.swo" -o -name "*.swp" -o -name "*.un~" -o -name ".DS_Store" | xargs rm -f
 
 echo "// This json file will contain a list of extensions that will be included" > "$EXT_DEFS"
 echo "// in the installer." >> "$EXT_DEFS"

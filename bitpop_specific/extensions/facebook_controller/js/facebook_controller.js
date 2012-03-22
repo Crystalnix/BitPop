@@ -42,6 +42,10 @@ bitpop.FacebookController = (function() {
   var need_more_permissions = false;
   var seen_message_timeout = null;
   var doing_permissions_request = false;
+  var offline_wait_timer = null;
+  var auth_wait_timer = null;
+  var strophe_wait_timer = null;
+  var manual_disconnect = false;
 
   // -------------------------------------------------------------------------------
   // Public methods
@@ -94,16 +98,23 @@ bitpop.FacebookController = (function() {
 
           notifyObservingExtensions({ type: 'wentOffline' });
 
-          if (localStorage.accessToken) {
-            setTimeout(function() {
+          if (localStorage.accessToken && offline_wait_timer === null) {
+            offline_wait_timer = setTimeout(function() {
               checkForPermissions(hadAccessTokenCallback);
+              offline_wait_timer = null;
             }, 15000);
           }
         } else if (x.status == 400) {
           var response = JSON.parse(x.responseText);
           if (response.error && response.error.type == 'OAuthException') {
-            if (doing_permissions_request)
-              setTimeout(checkForPermissions, 15000);
+            if (doing_permissions_request) {
+              if (auth_wait_timer === null) {
+                auth_wait_timer = setTimeout(function() {
+                  checkForPermissions();
+                  auth_wait_timer = null;
+                }, 15000);
+              }
+            } 
             else
               checkForPermissions();
           }
@@ -143,6 +154,13 @@ bitpop.FacebookController = (function() {
   function connectToFacebookChat() {
     if (!connection)
       connection = new Strophe.Connection(BOSH_SERVER_URL + '/http-bind/');
+    if (connection && connection.connected) {
+      connection.sync = true;
+      connection.flush();
+      connection.disconnect();
+      connection.sync = false;
+      return;
+    }
 
     connection.facebookConnect(
                             localStorage.myUid + "@chat.facebook.com",
@@ -159,6 +177,7 @@ bitpop.FacebookController = (function() {
       console.log('Strophe is connecting.');
     } else if (status == Strophe.Status.CONNFAIL) {
       console.warn('Strophe failed to connect.');
+      connection.reset();
       if (localStorage.myUid && localStorage.accessToken)
         setTimeout(function() {
           if (localStorage.myUid && localStorage.accessToken)
@@ -166,8 +185,18 @@ bitpop.FacebookController = (function() {
         }, 10000);
     } else if (status == Strophe.Status.DISCONNECTING) {
       console.log('Strophe is disconnecting.');
+      // if (strophe_wait_timer === null) {
+      //   strophe_wait_timer = setTimeout(function() {
+      //     if (localStorage.myUid && localStorage.accessToken)
+      //       connection.connected = false;
+      //       connectToFacebookChat();
+
+      //     strophe_wait_timer = null;
+      //   }, 10000);
+      // }
     } else if (status == Strophe.Status.DISCONNECTED) {
       console.log('Strophe is disconnected.');
+      connection.reset();
       if (localStorage.myUid && localStorage.accessToken)
         connectToFacebookChat();
     } else if (status == Strophe.Status.CONNECTED) {
