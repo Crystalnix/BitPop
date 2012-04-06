@@ -30,6 +30,10 @@ chrome.extension.onRequestExternal.addListener(function (request, sender, sendRe
   } else if (request.type == 'friendListReceived') {
     friendList = request.data;
   } else if (request.type == 'loggedOut') {
+    statuses = {};
+    friendList = null;
+  } else if (request.type == 'wentOffline') {
+    statuses = {};
     friendList = null;
   } else if (request.type == 'userStatusChanged') {
     // send change status message: empty message body signals to only check
